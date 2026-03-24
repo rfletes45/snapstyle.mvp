@@ -25,6 +25,27 @@
 
 import AppImage from "@/components/AppImage";
 import { usePrefetchChatImages } from "@/utils/imagePrefetch";
+
+const IMAGE_MAX_WIDTH = 240;
+const IMAGE_MAX_HEIGHT = 320;
+const IMAGE_MIN_WIDTH = 150;
+
+function getImageBubbleSize(w?: number, h?: number) {
+  if (!w || !h) return { width: IMAGE_MAX_WIDTH, height: IMAGE_MAX_WIDTH };
+  const aspect = w / h;
+  let bw = Math.min(w, IMAGE_MAX_WIDTH);
+  let bh = bw / aspect;
+  if (bh > IMAGE_MAX_HEIGHT) {
+    bh = IMAGE_MAX_HEIGHT;
+    bw = bh * aspect;
+  }
+  if (bw < IMAGE_MIN_WIDTH) {
+    bw = IMAGE_MIN_WIDTH;
+    bh = bw / aspect;
+  }
+  return { width: Math.round(bw), height: Math.round(bh) };
+}
+
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import React, {
   useCallback,
@@ -77,7 +98,7 @@ import {
   MessageActionsSheet,
   MessageHighlightOverlay,
   MessageWithMentions,
-  ReactionsSummary,
+  ReactionPills,
   ReplyBubble,
   ScrollReturnButton,
   SwipeableMessage,
@@ -101,8 +122,10 @@ import {
   MentionableMember,
 } from "@/services/mentionParser";
 import {
+  applyOptimisticReaction,
   ReactionSummary,
   subscribeToMultipleMessageReactions,
+  toggleReaction,
 } from "@/services/reactions";
 import {
   getScheduledMessagesForChat,
@@ -116,6 +139,9 @@ import { useAnimalEntitlement } from "@/hooks/useAnimalEntitlement";
 import { playAnimalSound } from "@/services/chat/animalSoundService";
 
 // Voice channels (Stream-powered)
+import { VoiceRoomAvatarStack } from "@/components/stream/VoiceRoomAvatarStack";
+import { useStreamCall } from "@/contexts/StreamCallContext";
+import { useVoiceRoomOccupancy } from "@/hooks/useVoiceRoomOccupancy";
 import { getVoiceChannelId } from "@/services/stream/voiceChannelService";
 
 // Types
@@ -169,6 +195,14 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     uid,
     profile?.chatAppearance ?? null,
   );
+
+  // Voice room occupancy (Stream-powered)
+  const voiceRoom = useVoiceRoomOccupancy(groupId);
+  const { isBusy, activeSession } = useStreamCall();
+  const voiceChannelId = groupId ? getVoiceChannelId(groupId) : "";
+  const isCurrentUserInThisVoiceRoom =
+    activeSession?.type === "voice_channel" &&
+    activeSession.channelId === voiceChannelId;
 
   // Resolve outgoing chat cosmetics (bubble color, text color, font)
   const chatStyle = useMemo(
@@ -238,6 +272,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   const [messageReactions, setMessageReactions] = useState<
     Map<string, ReactionSummary[]>
   >(new Map());
+  const optimisticIds = useRef<Set<string>>(new Set());
 
   // Scheduled messages state (UNI-09)
   const [scheduleModalVisible, setScheduleModalVisible] = useState(false);
@@ -521,10 +556,47 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   // Reactions Subscription (H8)
   // ==========================================================================
 
+  const handleOptimisticReaction = useCallback(
+    (messageId: string, emoji: string) => {
+      if (!uid) return;
+      optimisticIds.current.add(messageId);
+      setMessageReactions((prev) => {
+        const next = new Map(prev);
+        const current = next.get(messageId) || [];
+        next.set(messageId, applyOptimisticReaction(current, emoji, uid));
+        return next;
+      });
+    },
+    [uid],
+  );
+
+  const handleSheetReaction = useCallback(
+    (emoji: string) => {
+      if (!selectedMessage || !groupId || !uid) return;
+      const messageId = selectedMessage.id;
+      handleOptimisticReaction(messageId, emoji);
+      toggleReaction({
+        scope: "group",
+        conversationId: groupId,
+        messageId,
+        emoji,
+        uid,
+      })
+        .then((result) => {
+          if (!result.success) handleOptimisticReaction(messageId, emoji);
+        })
+        .catch(() => handleOptimisticReaction(messageId, emoji));
+    },
+    [selectedMessage, groupId, uid, handleOptimisticReaction],
+  );
+
   useEffect(() => {
     if (!groupId || !uid || messages.length === 0) return;
 
-    const messageIds = messages.slice(0, 50).map((m) => m.id);
+    const baseIds = new Set(messages.slice(0, 50).map((m) => m.id));
+    optimisticIds.current.forEach((id) => baseIds.add(id));
+    const messageIds = Array.from(baseIds);
+
     const unsubscribe = subscribeToMultipleMessageReactions(
       "group",
       groupId,
@@ -1177,7 +1249,13 @@ export default function GroupChatScreen({ route, navigation }: Props) {
                         {item.kind === "media" && imageAttachment ? (
                           <AppImage
                             source={{ uri: imageAttachment.url }}
-                            style={styles.standaloneImage}
+                            style={[
+                              styles.standaloneImage,
+                              getImageBubbleSize(
+                                imageAttachment.width,
+                                imageAttachment.height,
+                              ),
+                            ]}
                             contentFit="cover"
                             debugLabel="GroupChatImage"
                           />
@@ -1250,20 +1328,19 @@ export default function GroupChatScreen({ route, navigation }: Props) {
               </View>
             </View>
 
+            {/* Reaction pills — anchored below the bubble, aligned to sender */}
             {(messageReactions.get(item.id) || []).length > 0 && (
-              <ReactionsSummary
-                reactionsSummary={Object.fromEntries(
-                  (messageReactions.get(item.id) || []).map((r) => [
-                    r.emoji,
-                    r.count,
-                  ]),
-                )}
-                userReactions={(messageReactions.get(item.id) || [])
-                  .filter((r) => r.hasReacted)
-                  .map((r) => r.emoji)}
-                compact
-                onPress={() => handleMessageLongPress(item)}
-              />
+              <View style={!isOwnMessage ? { paddingLeft: 45 } : undefined}>
+                <ReactionPills
+                  reactions={messageReactions.get(item.id) || []}
+                  isOwnMessage={isOwnMessage}
+                  scope="group"
+                  conversationId={groupId}
+                  messageId={item.id}
+                  currentUid={uid || ""}
+                  onOptimisticToggle={handleOptimisticReaction}
+                />
+              </View>
             )}
 
             {/* Thread indicator — show when this message is the root of a thread */}
@@ -1303,6 +1380,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
       handleMessageLongPress,
       handleOpenMediaViewer,
       scrollToMessage,
+      handleOptimisticReaction,
     ],
   );
 
@@ -1384,12 +1462,36 @@ export default function GroupChatScreen({ route, navigation }: Props) {
               </Text>
             </View>
           </TouchableOpacity>
+          {CALL_FEATURES.CALLS_ENABLED && voiceRoom.isActive && (
+            <VoiceRoomAvatarStack
+              occupants={voiceRoom.occupants}
+              onPress={handleJoinVoiceChannel}
+            />
+          )}
           {CALL_FEATURES.CALLS_ENABLED && (
             <TouchableOpacity
               onPress={handleJoinVoiceChannel}
               style={styles.callButton}
+              accessibilityLabel={
+                isCurrentUserInThisVoiceRoom
+                  ? "Return to voice room"
+                  : voiceRoom.isActive
+                    ? "Join voice room"
+                    : "Start voice room"
+              }
+              accessibilityRole="button"
             >
-              <Ionicons name="headset" size={22} color={colors.primary} />
+              <Ionicons
+                name="headset"
+                size={22}
+                color={
+                  isCurrentUserInThisVoiceRoom
+                    ? "#43A047"
+                    : voiceRoom.isActive
+                      ? colors.primary
+                      : colors.textMuted
+                }
+              />
             </TouchableOpacity>
           )}
           <Appbar.Action
@@ -1565,7 +1667,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
         onReply={handleReply}
         onEdited={handleMessageEdited}
         onDeleted={handleMessageDeleted}
-        onReactionAdded={NOOP}
+        onReactionAdded={handleSheetReaction}
       />
 
       <Snackbar
@@ -1652,7 +1754,7 @@ const styles = StyleSheet.create({
   },
   voiceBubble: { padding: 8 },
   messageText: { fontSize: 17, lineHeight: 25 },
-  standaloneImage: { width: 200, height: 200, borderRadius: 16 },
+  standaloneImage: { borderRadius: 16 },
   messageTime: { fontSize: 10 },
   timestampRow: { flexDirection: "row", alignItems: "center", marginTop: 6 },
   timestampRowSent: { alignSelf: "flex-end", marginRight: 4 },

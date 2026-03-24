@@ -1,12 +1,13 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { LightColors } from "@/constants/theme";
 import { createLogger } from "@/utils/log";
+import { generateUUID } from "@/utils/uuid";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
+import * as Crypto from "expo-crypto";
 import * as Device from "expo-device";
 import * as Notifications from "expo-notifications";
 import { doc, serverTimestamp, setDoc } from "firebase/firestore";
 import { Platform } from "react-native";
-import { v4 as uuidv4 } from "uuid";
 import { getFirestoreInstance } from "./firebase";
 
 const logger = createLogger("services/notifications");
@@ -35,27 +36,53 @@ Notifications.setNotificationHandler({
   }),
 });
 
+/**
+ * Generate a device-stable UUID using expo-crypto (preferred) with a
+ * Math.random-based fallback.  This avoids the "crypto.getRandomValues()
+ * not supported" crash that uuid v4 triggers in React Native.
+ */
+function safeUUID(): string {
+  try {
+    return Crypto.randomUUID();
+  } catch {
+    return generateUUID();
+  }
+}
+
 export async function getNotificationDeviceId(): Promise<string> {
-  const existingId = await AsyncStorage.getItem(NOTIFICATION_DEVICE_ID_KEY);
-  if (existingId) {
-    return existingId;
+  try {
+    const existingId = await AsyncStorage.getItem(NOTIFICATION_DEVICE_ID_KEY);
+    if (existingId) {
+      return existingId;
+    }
+  } catch (e) {
+    logger.warn("Failed to read device ID from storage, generating new one", e);
   }
 
-  const nextId = uuidv4();
-  await AsyncStorage.setItem(NOTIFICATION_DEVICE_ID_KEY, nextId);
+  const nextId = safeUUID();
+  try {
+    await AsyncStorage.setItem(NOTIFICATION_DEVICE_ID_KEY, nextId);
+  } catch (e) {
+    logger.warn("Failed to persist device ID", e);
+  }
   return nextId;
 }
 
 export async function registerForPushNotifications(): Promise<string | null> {
   try {
     if (Platform.OS === "web") {
+      logger.info("Push registration skipped (web)");
       return null;
     }
 
     if (!Device.isDevice) {
       if (__DEV__) {
+        logger.info(
+          "Push registration: non-device dev environment, using dev token",
+        );
         return `ExponentPushToken[dev-${Date.now()}]`;
       }
+      logger.info("Push registration skipped (not a physical device)");
       return null;
     }
 
@@ -66,9 +93,13 @@ export async function registerForPushNotifications(): Promise<string | null> {
     if (existingStatus !== "granted") {
       const { status } = await Notifications.requestPermissionsAsync();
       finalStatus = status;
+      logger.info("Notification permission requested", { result: finalStatus });
     }
 
     if (finalStatus !== "granted") {
+      logger.info("Push registration skipped (permission not granted)", {
+        status: finalStatus,
+      });
       return null;
     }
 
@@ -77,6 +108,9 @@ export async function registerForPushNotifications(): Promise<string | null> {
       "a57e6af7-ac18-4751-90ee-3b9cda7ea645";
     const tokenResponse = await Notifications.getExpoPushTokenAsync({
       projectId,
+    });
+    logger.info("Push token obtained", {
+      token: tokenResponse.data.slice(0, 30) + "...",
     });
 
     if (Platform.OS === "android") {
@@ -131,27 +165,36 @@ export async function savePushToken(
   const db = getFirestoreInstance();
   const deviceId = await getNotificationDeviceId();
 
-  await Promise.all([
-    setDoc(
-      doc(db, "Users", userId, "NotificationDevices", deviceId),
-      {
-        deviceId,
-        expoPushToken: token,
-        platform: Platform.OS,
-        pushEnabled: true,
-        updatedAt: serverTimestamp(),
-        lastRegisteredAt: serverTimestamp(),
-      },
-      { merge: true },
-    ),
-    setDoc(
+  // Primary write — device registry (essential)
+  await setDoc(
+    doc(db, "Users", userId, "NotificationDevices", deviceId),
+    {
+      deviceId,
+      expoPushToken: token,
+      platform: Platform.OS,
+      pushEnabled: true,
+      updatedAt: serverTimestamp(),
+      lastRegisteredAt: serverTimestamp(),
+    },
+    { merge: true },
+  );
+
+  // Legacy fallback write — root user doc (non-critical; server reads
+  // from NotificationDevices as primary source).  The Users/{uid} update
+  // rule enforces strict field validation, so a bare merge of just
+  // expoPushToken can be rejected. Do not let it block device registration.
+  try {
+    await setDoc(
       doc(db, "Users", userId),
-      {
-        expoPushToken: token,
-      },
+      { expoPushToken: token },
       { merge: true },
-    ),
-  ]);
+    );
+  } catch (e) {
+    logger.warn(
+      "Failed to write legacy expoPushToken to user doc (non-critical)",
+      e,
+    );
+  }
 }
 
 export async function removePushToken(userId: string): Promise<void> {
@@ -159,6 +202,7 @@ export async function removePushToken(userId: string): Promise<void> {
     const db = getFirestoreInstance();
     const deviceId = await getNotificationDeviceId();
 
+    // Critical: disable device + clear session
     await Promise.all([
       setDoc(
         doc(db, "Users", userId, "NotificationDevices", deviceId),
@@ -170,15 +214,19 @@ export async function removePushToken(userId: string): Promise<void> {
         },
         { merge: true },
       ),
-      setDoc(
-        doc(db, "Users", userId),
-        {
-          expoPushToken: null,
-        },
-        { merge: true },
-      ),
       clearNotificationSession(userId),
     ]);
+
+    // Non-critical legacy root-doc cleanup
+    try {
+      await setDoc(
+        doc(db, "Users", userId),
+        { expoPushToken: null },
+        { merge: true },
+      );
+    } catch {
+      // Silently ignore — Users update rule may reject bare merges
+    }
   } catch (error) {
     logger.warn("Failed to remove push token", error);
   }

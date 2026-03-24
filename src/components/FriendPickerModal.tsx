@@ -210,7 +210,7 @@ export default function FriendPickerModal({
   return (
     <Modal
       visible={visible}
-      animationType="slide"
+      animationType="fade"
       transparent={true}
       onRequestClose={onDismiss}
     >

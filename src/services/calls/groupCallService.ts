@@ -19,6 +19,8 @@ import {
   GroupCallSettings,
   MAX_GROUP_PARTICIPANTS,
 } from "@/types/call";
+import { generateUUID } from "@/utils/uuid";
+import * as Crypto from "expo-crypto";
 import {
   arrayUnion,
   doc,
@@ -29,9 +31,16 @@ import {
   updateDoc,
   writeBatch,
 } from "firebase/firestore";
-import { v4 as uuidv4 } from "uuid";
 import { callKeepService } from "./callKeepService";
 import { webRTCService } from "./webRTCService";
+
+function uuidv4(): string {
+  try {
+    return Crypto.randomUUID();
+  } catch {
+    return generateUUID();
+  }
+}
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("services/calls/groupCallService");

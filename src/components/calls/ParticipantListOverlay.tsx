@@ -265,7 +265,7 @@ export function ParticipantListOverlay({
     <Modal
       visible={visible}
       transparent
-      animationType="slide"
+      animationType="fade"
       onRequestClose={onClose}
     >
       <View style={styles.container}>

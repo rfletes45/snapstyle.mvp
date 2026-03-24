@@ -8,21 +8,24 @@
  * - Messages/{messageId}/Reactions/{emoji}: { emoji, uids[], count, updatedAt }
  * - message.reactionsSummary: Record<string, number> (denormalized counts)
  *
+ * Supports the full Unicode emoji set — no restricted whitelist on client.
+ * Server validates emoji is a non-empty string ≤ 10 chars long.
+ *
  * @module services/reactions
  */
 
+import { MessageV2 } from "@/types/messaging";
+import { createLogger } from "@/utils/log";
 import {
   collection,
   doc,
-  onSnapshot,
-  getDocs,
   getDoc,
+  getDocs,
+  onSnapshot,
   Unsubscribe,
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { getFirestoreInstance, getFunctionsInstance } from "./firebase";
-import { MessageV2 } from "@/types/messaging";
-import { createLogger } from "@/utils/log";
 
 // Lazy initialization - don't call at module load time
 const getDb = () => getFirestoreInstance();
@@ -33,14 +36,14 @@ const log = createLogger("reactions");
 // Types
 // =============================================================================
 
-interface ReactionToggleResult {
+export interface ReactionToggleResult {
   success: boolean;
   action: "added" | "removed";
   reactionsSummary: Record<string, number>;
   error?: string;
 }
 
-interface ReactionSummary {
+export interface ReactionSummary {
   emoji: string;
   count: number;
   userIds: string[];
@@ -59,30 +62,13 @@ interface ReactionDoc {
 // =============================================================================
 
 /** Maximum unique reactions per message */
-const MAX_REACTIONS_PER_MESSAGE = 12;
+const MAX_REACTIONS_PER_MESSAGE = 20;
 
 /** Maximum users displayed per reaction */
 const MAX_USERS_PER_REACTION = 10;
 
-/** Allowed emoji set (matches server-side) */
-const ALLOWED_EMOJIS = new Set([
-  "👍",
-  "👎",
-  "❤️",
-  "🔥",
-  "😂",
-  "😢",
-  "😮",
-  "😡",
-  "🎉",
-  "👏",
-  "🙌",
-  "💯",
-  "⭐",
-  "🚀",
-  "💪",
-  "🤔",
-]);
+/** Quick-reaction emojis shown in the reaction tray */
+export const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🔥"];
 
 // =============================================================================
 // Cloud Function Callable (lazy initialized)
@@ -105,13 +91,11 @@ function getToggleReactionCallable() {
 // =============================================================================
 
 /**
- * Toggle a reaction on a message
+ * Toggle a reaction on a message.
  *
  * If user has already reacted with this emoji, remove it.
  * If user hasn't reacted, add it.
- *
- * @param params - Reaction parameters
- * @returns Toggle result
+ * Accepts any valid emoji string (server validates length ≤ 10 chars).
  */
 export async function toggleReaction(params: {
   scope: "dm" | "group";
@@ -127,13 +111,13 @@ export async function toggleReaction(params: {
     data: { messageId, emoji, scope },
   });
 
-  // Validate emoji client-side first
-  if (!ALLOWED_EMOJIS.has(emoji)) {
+  // Basic client-side validation
+  if (!emoji || typeof emoji !== "string" || emoji.length > 10) {
     return {
       success: false,
       action: "added",
       reactionsSummary: {},
-      error: "Emoji not allowed",
+      error: "Invalid emoji",
     };
   }
 
@@ -165,63 +149,12 @@ export async function toggleReaction(params: {
   }
 }
 
-/**
- * Add a reaction (convenience wrapper)
- *
- * @param params - Reaction parameters
- */
-export async function addReaction(params: {
-  scope: "dm" | "group";
-  conversationId: string;
-  messageId: string;
-  emoji: string;
-  uid: string;
-}): Promise<{ success: boolean; error?: string }> {
-  const result = await toggleReaction(params);
-
-  // If toggle removed the reaction, toggle again to add it
-  if (result.success && result.action === "removed") {
-    const retoggle = await toggleReaction(params);
-    return { success: retoggle.success, error: retoggle.error };
-  }
-
-  return { success: result.success, error: result.error };
-}
-
-/**
- * Remove a reaction (convenience wrapper)
- *
- * @param params - Reaction parameters
- */
-export async function removeReaction(params: {
-  scope: "dm" | "group";
-  conversationId: string;
-  messageId: string;
-  emoji: string;
-  uid: string;
-}): Promise<{ success: boolean; error?: string }> {
-  const result = await toggleReaction(params);
-
-  // If toggle added the reaction, toggle again to remove it
-  if (result.success && result.action === "added") {
-    const retoggle = await toggleReaction(params);
-    return { success: retoggle.success, error: retoggle.error };
-  }
-
-  return { success: result.success, error: result.error };
-}
-
 // =============================================================================
 // Reaction Queries
 // =============================================================================
 
 /**
  * Get reactions for a message from subcollection
- *
- * @param scope - "dm" or "group"
- * @param conversationId - Chat/Group ID
- * @param messageId - Message ID
- * @param currentUid - Current user ID (for hasReacted)
  */
 export async function getReactions(
   scope: "dm" | "group",
@@ -260,11 +193,6 @@ export async function getReactions(
 
 /**
  * Get users who reacted with a specific emoji
- *
- * @param scope - "dm" or "group"
- * @param conversationId - Chat/Group ID
- * @param messageId - Message ID
- * @param emoji - Emoji to query
  */
 export async function getReactionUsers(
   scope: "dm" | "group",
@@ -298,13 +226,6 @@ export async function getReactionUsers(
 
 /**
  * Subscribe to reactions on a message
- *
- * @param scope - "dm" or "group"
- * @param conversationId - Chat/Group ID
- * @param messageId - Message ID
- * @param currentUid - Current user ID
- * @param callback - Callback for updates
- * @returns Unsubscribe function
  */
 export function subscribeToReactions(
   scope: "dm" | "group",
@@ -348,13 +269,6 @@ export function subscribeToReactions(
 
 /**
  * Subscribe to multiple messages' reactions (batch subscription)
- *
- * @param scope - "dm" or "group"
- * @param conversationId - Chat/Group ID
- * @param messageIds - Array of message IDs
- * @param currentUid - Current user ID
- * @param callback - Callback with map of messageId -> reactions
- * @returns Unsubscribe function
  */
 export function subscribeToMultipleMessageReactions(
   scope: "dm" | "group",
@@ -366,10 +280,8 @@ export function subscribeToMultipleMessageReactions(
   const reactionsMap = new Map<string, ReactionSummary[]>();
   const unsubscribes: Unsubscribe[] = [];
 
-  // Initialize all message IDs with empty arrays
   messageIds.forEach((id) => reactionsMap.set(id, []));
 
-  // Subscribe to each message's reactions
   messageIds.forEach((messageId) => {
     const unsub = subscribeToReactions(
       scope,
@@ -378,14 +290,12 @@ export function subscribeToMultipleMessageReactions(
       currentUid,
       (reactions) => {
         reactionsMap.set(messageId, reactions);
-        // Trigger callback with updated map
         callback(new Map(reactionsMap));
       },
     );
     unsubscribes.push(unsub);
   });
 
-  // Return combined unsubscribe
   return () => {
     unsubscribes.forEach((unsub) => unsub());
   };
@@ -400,41 +310,27 @@ export function subscribeToMultipleMessageReactions(
  */
 export function parseReactionsFromMessage(
   reactionsSummary: MessageV2["reactionsSummary"],
-  currentUid: string,
+  _currentUid: string,
 ): ReactionSummary[] {
   if (!reactionsSummary) return [];
 
-  // reactionsSummary is Record<string, number> for counts only
-  // For full user list, would need to query Reactions subcollection
   return Object.entries(reactionsSummary).map(([emoji, count]) => ({
     emoji,
     count,
-    userIds: [], // Would need separate query for user list
-    hasReacted: false, // Would need separate query to check
+    userIds: [],
+    hasReacted: false,
   }));
 }
 
 /**
- * Check if emoji is in allowed set
- */
-export function isAllowedEmoji(emoji: string): boolean {
-  return ALLOWED_EMOJIS.has(emoji);
-}
-
-/**
- * Get allowed emoji list
- */
-export function getAllowedEmojis(): string[] {
-  return Array.from(ALLOWED_EMOJIS);
-}
-
-/**
- * Sort reactions by count (descending)
+ * Sort reactions by count (descending), then alphabetically for ties
  */
 export function sortReactionsByCount(
   reactions: ReactionSummary[],
 ): ReactionSummary[] {
-  return [...reactions].sort((a, b) => b.count - a.count);
+  return [...reactions].sort(
+    (a, b) => b.count - a.count || a.emoji.localeCompare(b.emoji),
+  );
 }
 
 /**
@@ -444,10 +340,8 @@ export function canAddReaction(
   currentReactions: ReactionSummary[],
   emoji: string,
 ): boolean {
-  // Check if emoji is allowed
-  if (!isAllowedEmoji(emoji)) return false;
+  if (!emoji || emoji.length > 10) return false;
 
-  // Check max unique emojis
   const uniqueEmojis = currentReactions.length;
   const emojiExists = currentReactions.some((r) => r.emoji === emoji);
 
@@ -469,7 +363,62 @@ export function formatReactionCount(count: number): string {
 }
 
 // =============================================================================
-// Export Types
+// Optimistic Updates
 // =============================================================================
 
-export type { ReactionSummary, ReactionToggleResult };
+/**
+ * Compute the next reactions array after toggling an emoji.
+ *
+ * Pure function — produces a new array without mutating the input.
+ * Used for optimistic UI so the pill appears/disappears instantly.
+ */
+export function applyOptimisticReaction(
+  reactions: ReactionSummary[],
+  emoji: string,
+  uid: string,
+): ReactionSummary[] {
+  const existing = reactions.find((r) => r.emoji === emoji);
+
+  if (existing && existing.hasReacted) {
+    // User is removing their reaction
+    if (existing.count <= 1) {
+      // Last reactor — remove the entry entirely
+      return reactions.filter((r) => r.emoji !== emoji);
+    }
+    // Decrement count, remove user from list
+    return sortReactionsByCount(
+      reactions.map((r) =>
+        r.emoji === emoji
+          ? {
+              ...r,
+              count: r.count - 1,
+              hasReacted: false,
+              userIds: r.userIds.filter((id) => id !== uid),
+            }
+          : r,
+      ),
+    );
+  }
+
+  if (existing) {
+    // Emoji exists but user hasn't reacted — add them
+    return sortReactionsByCount(
+      reactions.map((r) =>
+        r.emoji === emoji
+          ? {
+              ...r,
+              count: r.count + 1,
+              hasReacted: true,
+              userIds: [...r.userIds, uid],
+            }
+          : r,
+      ),
+    );
+  }
+
+  // Brand new emoji
+  return sortReactionsByCount([
+    ...reactions,
+    { emoji, count: 1, hasReacted: true, userIds: [uid] },
+  ]);
+}

@@ -227,7 +227,7 @@ export const ReactionDetailSheet = memo(function ReactionDetailSheet({
     <Modal
       visible={visible}
       transparent
-      animationType="slide"
+      animationType="fade"
       onRequestClose={onClose}
     >
       <TouchableWithoutFeedback onPress={onClose}>

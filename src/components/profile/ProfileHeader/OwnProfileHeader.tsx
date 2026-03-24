@@ -9,9 +9,12 @@
  */
 
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import React, { memo, useMemo } from "react";
 import { StyleSheet, TouchableOpacity, View, ViewStyle } from "react-native";
 import { Text } from "react-native-paper";
+
+import { BorderRadius, FontSizes, Spacing } from "@/constants/theme";
 
 import { CosmeticImage } from "@/components/CosmeticImage";
 import { LevelProgress } from "@/components/profile/LevelProgress";
@@ -56,6 +59,10 @@ export interface OwnProfileHeaderProps {
   onEditNamePress?: () => void;
   /** Handler for level bar press (navigates to level rewards) */
   onLevelPress?: () => void;
+  /** Handler for Customize button press */
+  onCustomizePress?: () => void;
+  /** Handler for Shop button press */
+  onShopPress?: () => void;
   /** Custom container style */
   style?: ViewStyle;
 }
@@ -79,6 +86,8 @@ function OwnProfileHeaderBase({
   onEditStatusPress,
   onEditNamePress,
   onLevelPress,
+  onCustomizePress,
+  onShopPress,
   style,
 }: OwnProfileHeaderProps) {
   const colors = useColors();
@@ -115,6 +124,7 @@ function OwnProfileHeaderBase({
       <View
         style={[
           styles.headerRegion,
+          { borderBottomColor: colors.outline },
           topInset > 0 && { marginTop: -topInset, paddingTop: 0 },
         ]}
       >
@@ -128,8 +138,14 @@ function OwnProfileHeaderBase({
           />
         )}
 
-        {/* Scrim overlay for text readability when background is present */}
-        {backgroundSource && <View style={styles.backgroundScrim} />}
+        {/* Gradient scrim — fades to dark only at the bottom portion */}
+        {backgroundSource && (
+          <LinearGradient
+            colors={["transparent", "rgba(0,0,0,0.55)"]}
+            locations={[0, 1]}
+            style={styles.bottomGradient}
+          />
+        )}
 
         {/* Foreground content — padded down by the safe-area inset */}
         <View
@@ -259,7 +275,17 @@ function OwnProfileHeaderBase({
 
           {/* Level Progress */}
           <TouchableOpacity
-            style={styles.levelContainer}
+            style={[
+              styles.levelContainer,
+              {
+                backgroundColor: backgroundSource
+                  ? "rgba(0,0,0,0.55)"
+                  : `${colors.surfaceVariant}D9`,
+                borderRadius: BorderRadius.md,
+                paddingHorizontal: 14,
+                paddingVertical: 10,
+              },
+            ]}
             onPress={onLevelPress}
             activeOpacity={0.7}
             disabled={!onLevelPress}
@@ -268,6 +294,48 @@ function OwnProfileHeaderBase({
           >
             <LevelProgress level={level} compact={!!backgroundSource} />
           </TouchableOpacity>
+
+          {/* Primary Actions (Customize / Shop) */}
+          <View style={styles.primaryActions}>
+            {onCustomizePress && (
+              <TouchableOpacity
+                style={[styles.primaryBtn, { backgroundColor: colors.primary }]}
+                onPress={onCustomizePress}
+                accessibilityLabel="Customize profile"
+              >
+                <MaterialCommunityIcons name="palette" size={18} color="#fff" />
+                <Text style={styles.primaryBtnText}>Customize</Text>
+              </TouchableOpacity>
+            )}
+            {onShopPress && (
+              <TouchableOpacity
+                style={[
+                  styles.primaryBtn,
+                  {
+                    backgroundColor: backgroundSource
+                      ? "rgba(255,255,255,0.2)"
+                      : colors.surfaceVariant,
+                  },
+                ]}
+                onPress={onShopPress}
+                accessibilityLabel="Open shop"
+              >
+                <MaterialCommunityIcons
+                  name="shopping-outline"
+                  size={18}
+                  color={backgroundSource ? "#fff" : colors.text}
+                />
+                <Text
+                  style={[
+                    styles.primaryBtnText,
+                    { color: backgroundSource ? "#fff" : colors.text },
+                  ]}
+                >
+                  Shop
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
       </View>
     </View>
@@ -284,10 +352,9 @@ const styles = StyleSheet.create({
   },
   headerRegion: {
     overflow: "hidden",
-    borderBottomLeftRadius: 16,
-    borderBottomRightRadius: 16,
     minHeight: 220,
     justifyContent: "flex-end",
+    borderBottomWidth: 1,
   },
   backgroundImage: {
     ...StyleSheet.absoluteFillObject,
@@ -298,11 +365,18 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(0,0,0,0.25)",
   },
+  bottomGradient: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: "40%",
+  },
   foregroundContent: {
     alignItems: "center",
     paddingHorizontal: 16,
     paddingTop: 24,
-    paddingBottom: 16,
+    paddingBottom: 24,
   },
   pictureSection: {
     marginBottom: 16,
@@ -383,7 +457,26 @@ const styles = StyleSheet.create({
   },
   levelContainer: {
     width: "100%",
-    paddingHorizontal: 16,
+  },
+  primaryActions: {
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: Spacing.md,
+    marginTop: Spacing.md,
+    width: "100%",
+  },
+  primaryBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+    paddingHorizontal: Spacing.xl,
+    paddingVertical: Spacing.md,
+    borderRadius: BorderRadius.xl,
+  },
+  primaryBtnText: {
+    fontSize: FontSizes.md,
+    fontWeight: "600",
+    color: "#fff",
   },
 });
 

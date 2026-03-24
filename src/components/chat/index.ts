@@ -41,6 +41,7 @@ export {
   QuickReactionBar,
   ReactionBar,
   default as ReactionBarDefault,
+  ReactionPills,
   ReactionsSummary,
 } from "./ReactionBar";
 

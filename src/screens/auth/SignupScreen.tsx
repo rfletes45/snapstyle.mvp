@@ -258,7 +258,12 @@ export default function SignupScreen({ navigation }: any) {
           {/* Password Strength Indicator */}
           {passwordStrength && (
             <View style={styles.strengthContainer}>
-              <View style={styles.strengthBarBg}>
+              <View
+                style={[
+                  styles.strengthBarBg,
+                  { backgroundColor: theme.colors.outlineVariant },
+                ]}
+              >
                 <View
                   style={[
                     styles.strengthBarFill,

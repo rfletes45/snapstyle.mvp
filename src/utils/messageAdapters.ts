@@ -66,7 +66,11 @@ export function messageV2ToWithProfile(
       : {}),
     // Image attachment URL for media messages
     ...(type === "image" && msg.attachments?.[0]?.url
-      ? { imageUrl: msg.attachments[0].url }
+      ? {
+          imageUrl: msg.attachments[0].url,
+          imageWidth: msg.attachments[0].width,
+          imageHeight: msg.attachments[0].height,
+        }
       : {}),
     // Sender's chat style snapshot (bubble color, font, etc.)
     senderStyle: msg.senderStyle ?? null,
@@ -74,6 +78,8 @@ export function messageV2ToWithProfile(
     replyCount: msg.replyCount,
     // Animal theme ID (for animal signal messages)
     ...(type === "animal" && msg.animalId ? { animalId: msg.animalId } : {}),
+    // Denormalized reaction counts (for subscription filter)
+    reactionsSummary: msg.reactionsSummary,
   };
 }
 

@@ -1382,25 +1382,10 @@ const REACTION_RATE_LIMIT_PER_MINUTE = 10;
 /** Max unique emojis per message */
 const MAX_EMOJIS_PER_MESSAGE = 12;
 
-/** Allowed emoji set */
-const ALLOWED_EMOJIS = new Set([
-  "👍",
-  "👎",
-  "❤️",
-  "🔥",
-  "😂",
-  "😢",
-  "😮",
-  "😡",
-  "🎉",
-  "👏",
-  "🙌",
-  "💯",
-  "⭐",
-  "🚀",
-  "💪",
-  "🤔",
-]);
+/** Allowed emoji set — accepts any valid emoji string (≤ 10 chars) */
+function isValidEmoji(emoji: unknown): emoji is string {
+  return typeof emoji === "string" && emoji.length > 0 && emoji.length <= 10;
+}
 
 interface ToggleReactionInput {
   conversationId: string;
@@ -1515,10 +1500,10 @@ export const toggleReactionV2 = functions.https.onCall(
     }
 
     // Validate emoji
-    if (!emoji || typeof emoji !== "string" || !ALLOWED_EMOJIS.has(emoji)) {
+    if (!isValidEmoji(emoji)) {
       throw new functions.https.HttpsError(
         "invalid-argument",
-        "Invalid or disallowed emoji",
+        "Invalid emoji — must be a non-empty string of at most 10 characters",
       );
     }
 

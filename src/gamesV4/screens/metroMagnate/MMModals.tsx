@@ -78,7 +78,7 @@ export function AssetDetailModal({
   const sector = space.sectorId ? getSector(space.sectorId) : null;
 
   return (
-    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={s.backdrop} onPress={onClose}>
         <Pressable style={[s.sheet, { backgroundColor: surfaceColor }]}>
           {/* Accent strip */}
@@ -399,7 +399,7 @@ export function HelpModal({
 }: HelpModalProps) {
   if (!visible) return null;
   return (
-    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={s.backdrop} onPress={onClose}>
         <Pressable style={[s.helpSheet, { backgroundColor: surfaceColor }]}>
           <View style={s.helpHeader}>

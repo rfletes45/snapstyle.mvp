@@ -41,6 +41,7 @@ export type ProfileTabStackParamList = {
 export type AppTabsParamList = {
   Profile: NavigatorScreenParams<ProfileTabStackParamList> | undefined;
   Messages: NavigatorScreenParams<InboxStackParamList> | undefined;
+  Calls: undefined;
   Shop: undefined;
 };
 
@@ -76,7 +77,6 @@ export type MainStackParamList = {
     channelName: string;
     groupId: string;
   };
-  CallHistory: undefined;
   CallSettings: undefined;
   Friends:
     | {

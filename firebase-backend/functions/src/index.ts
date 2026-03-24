@@ -105,6 +105,9 @@ import { deleteAccountFunction } from "./deleteAccount";
 // Stream Video token issuance
 import { getStreamVideoToken } from "./streamToken";
 
+// Stream Call History webhook
+import { streamCallWebhook } from "./streamCallHistory";
+
 // Privacy-Enforced Publish APIs (Segment 7)
 import {
   onChatSettingsChanged,
@@ -232,7 +235,7 @@ export {
 export const deleteAccount = deleteAccountFunction;
 
 // ─── Stream Video ──────────────────────────────────────────────────────────
-export { getStreamVideoToken };
+export { getStreamVideoToken, streamCallWebhook };
 
 // ─── Callable aliases for client backward-compat ───────────────────────────
 // Client iap.ts calls "verifyIAPPurchase" — map it to the canonical handler.

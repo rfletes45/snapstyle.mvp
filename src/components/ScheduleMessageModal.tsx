@@ -235,7 +235,7 @@ export default function ScheduleMessageModal({
     <Modal
       visible={visible}
       transparent
-      animationType="slide"
+      animationType="fade"
       onRequestClose={onClose}
     >
       <View style={styles.overlay}>
@@ -484,7 +484,7 @@ export default function ScheduleMessageModal({
               onPress={handleSchedule}
               style={styles.actionButton}
               buttonColor={theme.colors.primary}
-              textColor="#000"
+              textColor={theme.colors.onPrimary}
               disabled={!selectedDate}
             >
               Schedule

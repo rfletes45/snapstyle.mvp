@@ -83,17 +83,20 @@ export default function IncomingCallHandler({
     }
   }, [pendingCall, rejectCall]);
 
-  if (!pendingCall) return null;
-
-  // If user is already busy, auto-reject incoming calls
-  if (isBusy && activeSession) {
-    if (pendingCall) {
+  // Auto-reject incoming calls when user is already busy
+  useEffect(() => {
+    if (isBusy && activeSession && pendingCall) {
       rejectCall(pendingCall).catch((err) =>
         console.warn("[IncomingCallHandler] Auto-reject failed:", err),
       );
+      setPendingCall(null);
     }
-    return null;
-  }
+  }, [isBusy, activeSession, pendingCall, rejectCall]);
+
+  if (!pendingCall) return null;
+
+  // Don't show incoming UI while busy (effect above handles rejection)
+  if (isBusy && activeSession) return null;
 
   // Derive caller info from the call state
   const callerName =

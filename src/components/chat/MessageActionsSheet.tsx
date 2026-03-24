@@ -12,6 +12,7 @@
  * @module components/chat/MessageActionsSheet
  */
 
+import { BorderRadius, Spacing } from "@/constants/theme";
 import {
   canDeleteForAll,
   canDeleteForMe,
@@ -20,7 +21,6 @@ import {
   deleteMessageForMe,
   editMessage,
 } from "@/services/messageActions";
-import { toggleReaction } from "@/services/reactions";
 import { MessageV2, ReplyToMetadata } from "@/types/messaging";
 import React, { useCallback, useState } from "react";
 import {
@@ -41,9 +41,7 @@ import {
   Text,
   useTheme,
 } from "react-native-paper";
-import { BorderRadius, Spacing } from "@/constants/theme";
 import { QuickReactionBar } from "./ReactionBar";
-
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("components/chat/MessageActionsSheet");
@@ -112,35 +110,14 @@ export function MessageActionsSheet({
     }
   }, [isEditing, message?.text]);
 
-  // H8: Handle quick reaction
+  // H8: Handle quick reaction — close immediately, parent handles optimistic + server call
   const handleQuickReaction = useCallback(
-    async (emoji: string) => {
-      if (!message || reactionLoading) return;
-
-      setReactionLoading(true);
-      try {
-        const result = await toggleReaction({
-          scope: message.scope,
-          conversationId: message.conversationId,
-          messageId: message.id,
-          emoji,
-          uid: currentUid,
-        });
-
-        if (result.success) {
-          onReactionAdded?.(emoji);
-          onClose();
-        } else {
-          Alert.alert("Error", result.error || "Failed to add reaction");
-        }
-      } catch (error) {
-        logger.error("[MessageActionsSheet] Reaction failed:", error);
-        Alert.alert("Error", "Failed to add reaction");
-      } finally {
-        setReactionLoading(false);
-      }
+    (emoji: string) => {
+      if (!message) return;
+      onClose();
+      onReactionAdded?.(emoji);
     },
-    [message, currentUid, reactionLoading, onReactionAdded, onClose],
+    [message, onReactionAdded, onClose],
   );
 
   // Permission checks
@@ -320,7 +297,7 @@ export function MessageActionsSheet({
       <Modal
         visible={visible}
         transparent
-        animationType="slide"
+        animationType="fade"
         onRequestClose={onClose}
       >
         <TouchableWithoutFeedback onPress={onClose}>
@@ -375,7 +352,7 @@ export function MessageActionsSheet({
     <Modal
       visible={visible}
       transparent
-      animationType="slide"
+      animationType="fade"
       onRequestClose={onClose}
     >
       <TouchableWithoutFeedback onPress={onClose}>
@@ -392,14 +369,10 @@ export function MessageActionsSheet({
 
         {/* H8: Quick Reaction Bar */}
         <View style={styles.quickReactionContainer}>
-          <QuickReactionBar onSelect={handleQuickReaction} />
-          {reactionLoading && (
-            <ActivityIndicator
-              size="small"
-              style={styles.reactionLoading}
-              color={theme.colors.primary}
-            />
-          )}
+          <QuickReactionBar
+            onSelect={handleQuickReaction}
+            loading={reactionLoading}
+          />
         </View>
 
         {/* Message preview */}

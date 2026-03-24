@@ -676,6 +676,13 @@ export async function notifyUser(
   const prefs = await getNotificationPreferences(request.recipientUid);
   const decision = await chooseNotificationDecision(request, prefs);
 
+  functions.logger.info("[notificationCenter] Decision", {
+    recipientUid: request.recipientUid,
+    type: request.type,
+    channel: decision.channel,
+    reason: decision.reason,
+  });
+
   if (decision.channel === "none") {
     return {
       channel: "none",
@@ -689,6 +696,11 @@ export async function notifyUser(
     prefs,
   );
   if (!record.created) {
+    functions.logger.info("[notificationCenter] Duplicate suppressed", {
+      recipientUid: request.recipientUid,
+      type: request.type,
+      notificationId: record.notificationId,
+    });
     return {
       channel: decision.channel,
       notificationId: record.notificationId,
@@ -704,6 +716,11 @@ export async function notifyUser(
         decision.pushDevices,
         prefs,
       );
+      functions.logger.info("[notificationCenter] Push sent", {
+        recipientUid: request.recipientUid,
+        type: request.type,
+        deviceCount: decision.pushDevices.length,
+      });
     } catch (error) {
       functions.logger.error("[notificationCenter] Failed to send push", {
         recipientUid: request.recipientUid,

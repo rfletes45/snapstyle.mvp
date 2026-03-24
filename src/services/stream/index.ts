@@ -31,3 +31,14 @@ export {
   leaveVoiceChannel,
   queryVoiceChannel,
 } from "./voiceChannelService";
+
+export {
+  buildDirectCallEntry,
+  buildVoiceRoomEntry,
+  clearAllStreamCallHistory,
+  deleteCallHistoryEntry,
+  getStreamCallHistory,
+  recordCallHistory,
+  subscribeToStreamCallHistory,
+  updateCallHistory,
+} from "./streamCallHistoryService";

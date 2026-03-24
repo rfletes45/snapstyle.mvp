@@ -26,6 +26,8 @@ export { default as EmptyState } from "./EmptyState";
 export { default as ErrorState } from "./ErrorState";
 export { default as LoadingState } from "./LoadingState";
 export { PresenceIndicator } from "./PresenceIndicator";
+export { ThemedTextInput } from "./ThemedTextInput";
+export type { ThemedTextInputProps } from "./ThemedTextInput";
 
 // Skeleton Components (Phase 7)
 export {

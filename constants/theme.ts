@@ -1283,6 +1283,26 @@ export interface ThemeColors {
   // Chat type differentiation
   dmAccent?: string;
   groupChatAccent?: string;
+
+  // Input / Composer surfaces
+  inputBackground?: string;
+  inputBorder?: string;
+  inputText?: string;
+  inputPlaceholder?: string;
+  composerBackground?: string;
+  composerBorder?: string;
+  keyboardSurface?: string;
+
+  // Mention system
+  suggestionPanelBackground?: string;
+  suggestionPanelBorder?: string;
+  mentionChipBackground?: string;
+  mentionChipText?: string;
+  mentionHighlight?: string;
+  mentionHighlightText?: string;
+
+  // Utility
+  dividerSubtle?: string;
 }
 
 // ============================================================================
@@ -3027,6 +3047,43 @@ export const NavigationDarkTheme = createNavigationTheme(DarkColors, true);
 // COMBINED THEME HELPER
 // ============================================================================
 
+/**
+ * Resolve optional semantic tokens by deriving from core tokens when not set.
+ * This avoids having to manually add new tokens to all 30 theme definitions.
+ */
+function resolveSemanticTokens(
+  colors: ThemeColors,
+  isDark: boolean,
+): ThemeColors {
+  return {
+    ...colors,
+    // Input / Composer surfaces
+    inputBackground:
+      colors.inputBackground ??
+      (isDark ? colors.surface : colors.surfaceVariant),
+    inputBorder: colors.inputBorder ?? colors.outline,
+    inputText: colors.inputText ?? colors.text,
+    inputPlaceholder: colors.inputPlaceholder ?? colors.textMuted,
+    composerBackground: colors.composerBackground ?? colors.background,
+    composerBorder: colors.composerBorder ?? colors.divider,
+    keyboardSurface:
+      colors.keyboardSurface ?? (isDark ? colors.background : colors.surface),
+    // Mention system
+    suggestionPanelBackground:
+      colors.suggestionPanelBackground ?? colors.surfaceElevated,
+    suggestionPanelBorder: colors.suggestionPanelBorder ?? colors.border,
+    mentionChipBackground:
+      colors.mentionChipBackground ?? colors.primaryContainer,
+    mentionChipText: colors.mentionChipText ?? colors.primary,
+    mentionHighlight: colors.mentionHighlight ?? colors.primaryContainer,
+    mentionHighlightText: colors.mentionHighlightText ?? colors.primary,
+    // Utility
+    dividerSubtle:
+      colors.dividerSubtle ??
+      (isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.06)"),
+  };
+}
+
 export interface AppTheme {
   id: ThemeId;
   meta: ThemeMeta;
@@ -3042,7 +3099,8 @@ export interface AppTheme {
 
 export function getThemeById(themeId: ThemeId): AppTheme {
   const meta = THEME_METADATA[themeId];
-  const colors = THEME_COLORS[themeId];
+  const rawColors = THEME_COLORS[themeId];
+  const colors = resolveSemanticTokens(rawColors, meta.isDark);
 
   return {
     id: themeId,

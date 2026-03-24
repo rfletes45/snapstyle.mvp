@@ -225,6 +225,12 @@ export interface MentionSpan {
 
   /** End index in text string (exclusive) */
   end: number;
+
+  /** Display name at time of mention (for resilient rendering) */
+  displayName?: string;
+
+  /** Username at time of mention (for resilient rendering) */
+  username?: string;
 }
 
 /**

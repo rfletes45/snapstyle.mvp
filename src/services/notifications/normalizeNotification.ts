@@ -93,6 +93,10 @@ export function normalizeNotificationPayload(
       asString(payload.conversationId) || asString(payload.groupId);
     if (!groupId) return null;
 
+    const mentioned =
+      payload.mentioned === true || payload.mentioned === "true";
+    const messageId = asString(payload.messageId);
+
     return {
       type: "group_message",
       notificationId,
@@ -104,6 +108,9 @@ export function normalizeNotificationPayload(
           params: {
             groupId,
             groupName: asString(payload.groupName),
+            ...(mentioned && messageId
+              ? { highlightMessageId: messageId }
+              : {}),
           },
         } satisfies CanonicalNotificationRoute),
     };

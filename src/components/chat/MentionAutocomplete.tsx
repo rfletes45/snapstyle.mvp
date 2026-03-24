@@ -1,163 +1,117 @@
 /**
- * MentionAutocomplete Component (H9)
+ * MentionAutocomplete Component (Rebuilt)
  *
- * Displays a dropdown list of group members when the user types "@"
- * in the chat composer. Allows selecting a member to mention.
+ * A polished, production-grade mention suggestion panel and mention rendering
+ * system. Appears above the composer when user types "@", with smooth
+ * animations, avatar display, and theme-aware styling.
  *
- * Features:
- * - Shows filtered list of members based on query
- * - Displays avatar, display name, and username
- * - Keyboard-friendly selection
- * - Dismissable via tap outside or escape
+ * Also exports MessageWithMentions for read-time rendering of mentions.
  *
  * @module components/chat/MentionAutocomplete
  */
 
-import { MentionableMember } from "@/services/mentionParser";
+import type { MentionableMember } from "@/services/mentionParser";
+import { segmentTextWithMentions } from "@/services/mentionParser";
+import { useAppTheme } from "@/store/ThemeContext";
+import type { MentionSpan } from "@/types/messaging";
 import React, { memo, useCallback, useEffect, useRef } from "react";
 import {
   Animated,
+  Image,
   Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
-  TouchableOpacity,
   View,
 } from "react-native";
-import { useTheme } from "react-native-paper";
-
-// =============================================================================
-// Constants (inline to avoid path issues)
-// =============================================================================
-
-const Spacing = {
-  xs: 4,
-  sm: 8,
-  md: 12,
-  lg: 16,
-  xl: 24,
-} as const;
-
-const BorderRadius = {
-  xs: 4,
-  sm: 8,
-  md: 12,
-  lg: 16,
-} as const;
-
-const FontSizes = {
-  xs: 11,
-  sm: 13,
-  md: 15,
-} as const;
 
 // =============================================================================
 // Types
 // =============================================================================
 
 export interface MentionAutocompleteProps {
-  /**
-   * List of member suggestions to display
-   */
+  /** Member suggestions to display */
   suggestions: MentionableMember[];
-
-  /**
-   * Whether the autocomplete is visible
-   */
+  /** Whether the autocomplete is visible */
   visible: boolean;
-
-  /**
-   * Current search query (for highlighting)
-   */
+  /** Current search query (for highlighting matches) */
   query?: string;
-
-  /**
-   * Called when a member is selected
-   */
+  /** Called when a member is selected */
   onSelect: (member: MentionableMember) => void;
-
-  /**
-   * Called when the autocomplete should be dismissed
-   */
+  /** Called when the autocomplete should be dismissed */
   onDismiss: () => void;
-
-  /**
-   * Maximum height of the dropdown
-   * @default 200
-   */
+  /** Maximum height of the dropdown @default 240 */
   maxHeight?: number;
-
-  /**
-   * Position from bottom of composer
-   * @default 4
-   */
+  /** Position from bottom of composer @default 6 */
   bottomOffset?: number;
+  /** Optional: avatar URLs keyed by uid */
+  avatarUrls?: Record<string, string | undefined>;
 }
 
 // =============================================================================
 // Constants
 // =============================================================================
 
-const DEFAULT_MAX_HEIGHT = 200;
-const DEFAULT_BOTTOM_OFFSET = 4;
-const ITEM_HEIGHT = 52;
-const ANIMATION_DURATION = 150;
+const MAX_HEIGHT = 240;
+const BOTTOM_OFFSET = 6;
+const ITEM_HEIGHT = 56;
+const ANIMATION_DURATION = 180;
 
 // =============================================================================
 // Sub-Components
 // =============================================================================
 
-interface MemberItemProps {
+interface SuggestionRowProps {
   member: MentionableMember;
   query?: string;
   onPress: () => void;
   isLast: boolean;
+  avatarUrl?: string;
 }
 
-/**
- * Individual member suggestion item
- */
-const MemberItem = memo(function MemberItem({
+/** Individual suggestion row with avatar, name, username */
+const SuggestionRow = memo(function SuggestionRow({
   member,
   query,
   onPress,
   isLast,
-}: MemberItemProps) {
-  const theme = useTheme();
+  avatarUrl,
+}: SuggestionRowProps) {
+  const { colors } = useAppTheme();
 
-  // Highlight matching text
-  const highlightText = (text: string, highlight?: string) => {
+  const renderHighlightedName = (text: string, highlight?: string) => {
     if (!highlight || !text) {
       return (
-        <Text style={[styles.displayName, { color: theme.colors.onSurface }]}>
-          {text}
-        </Text>
+        <Text style={[styles.displayName, { color: colors.text }]}>{text}</Text>
       );
     }
 
-    const lowerText = text.toLowerCase();
-    const lowerHighlight = highlight.toLowerCase();
-    const startIndex = lowerText.indexOf(lowerHighlight);
+    const lower = text.toLowerCase();
+    const lowerQ = highlight.toLowerCase();
+    const idx = lower.indexOf(lowerQ);
 
-    if (startIndex === -1) {
+    if (idx === -1) {
       return (
-        <Text style={[styles.displayName, { color: theme.colors.onSurface }]}>
-          {text}
-        </Text>
+        <Text style={[styles.displayName, { color: colors.text }]}>{text}</Text>
       );
     }
 
-    const before = text.substring(0, startIndex);
-    const match = text.substring(startIndex, startIndex + highlight.length);
-    const after = text.substring(startIndex + highlight.length);
+    const before = text.substring(0, idx);
+    const match = text.substring(idx, idx + highlight.length);
+    const after = text.substring(idx + highlight.length);
 
     return (
-      <Text style={[styles.displayName, { color: theme.colors.onSurface }]}>
+      <Text style={[styles.displayName, { color: colors.text }]}>
         {before}
         <Text
           style={[
-            styles.highlight,
-            { backgroundColor: theme.colors.primaryContainer },
+            styles.matchHighlight,
+            {
+              color: colors.primary,
+              backgroundColor:
+                colors.mentionChipBackground ?? colors.primaryContainer,
+            },
           ]}
         >
           {match}
@@ -167,97 +121,98 @@ const MemberItem = memo(function MemberItem({
     );
   };
 
+  const initials = (member.displayName || "?").charAt(0).toUpperCase();
+
   return (
-    <TouchableOpacity
-      style={[
-        styles.memberItem,
-        { backgroundColor: theme.colors.surface },
+    <Pressable
+      style={({ pressed }) => [
+        styles.suggestionRow,
+        {
+          backgroundColor: pressed
+            ? colors.surfaceVariant
+            : (colors.suggestionPanelBackground ?? colors.surfaceElevated),
+        },
         !isLast && [
-          styles.memberItemBorder,
-          { borderBottomColor: theme.colors.outlineVariant },
+          styles.rowDivider,
+          { borderBottomColor: colors.dividerSubtle ?? colors.divider },
         ],
       ]}
       onPress={onPress}
-      activeOpacity={0.7}
+      android_ripple={{ color: colors.surfaceVariant }}
     >
+      {/* Avatar */}
       <View
         style={[
           styles.avatar,
-          { backgroundColor: theme.colors.primaryContainer },
+          {
+            backgroundColor:
+              colors.mentionChipBackground ?? colors.primaryContainer,
+          },
         ]}
       >
-        <Text
-          style={[
-            styles.avatarText,
-            { color: theme.colors.onPrimaryContainer },
-          ]}
-        >
-          {(member.displayName || "?").charAt(0).toUpperCase()}
-        </Text>
+        {avatarUrl ? (
+          <Image
+            source={{ uri: avatarUrl }}
+            style={styles.avatarImage}
+            resizeMode="cover"
+          />
+        ) : (
+          <Text
+            style={[
+              styles.avatarInitials,
+              { color: colors.mentionChipText ?? colors.primary },
+            ]}
+          >
+            {initials}
+          </Text>
+        )}
       </View>
-      <View style={styles.memberInfo}>
-        {highlightText(member.displayName, query)}
+
+      {/* Name + username */}
+      <View style={styles.nameContainer}>
+        {renderHighlightedName(member.displayName, query)}
         {member.username && (
           <Text
-            style={[styles.username, { color: theme.colors.onSurfaceVariant }]}
+            style={[styles.username, { color: colors.textMuted }]}
             numberOfLines={1}
           >
             @{member.username}
           </Text>
         )}
       </View>
-    </TouchableOpacity>
+    </Pressable>
   );
 });
 
 // =============================================================================
-// Main Component
+// Main Component: MentionAutocomplete
 // =============================================================================
 
-/**
- * Mention autocomplete dropdown component.
- *
- * Renders above the chat composer when typing "@".
- *
- * @example
- * ```tsx
- * <MentionAutocomplete
- *   visible={mentionState.isVisible}
- *   suggestions={mentionState.suggestions}
- *   query={mentionState.query}
- *   onSelect={(member) => {
- *     const result = mentionState.onSelectMember(member, text, cursor);
- *     setText(result.newText);
- *   }}
- *   onDismiss={mentionState.onDismiss}
- * />
- * ```
- */
 export const MentionAutocomplete = memo(function MentionAutocomplete({
   suggestions,
   visible,
   query,
   onSelect,
   onDismiss,
-  maxHeight = DEFAULT_MAX_HEIGHT,
-  bottomOffset = DEFAULT_BOTTOM_OFFSET,
+  maxHeight = MAX_HEIGHT,
+  bottomOffset = BOTTOM_OFFSET,
+  avatarUrls,
 }: MentionAutocompleteProps) {
-  const theme = useTheme();
+  const { colors } = useAppTheme();
 
-  // Animation
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(10)).current;
+  // Animation values
+  const opacity = useRef(new Animated.Value(0)).current;
+  const slideY = useRef(new Animated.Value(12)).current;
 
-  // Animate visibility changes
   useEffect(() => {
-    if (visible) {
+    if (visible && suggestions.length > 0) {
       Animated.parallel([
-        Animated.timing(fadeAnim, {
+        Animated.timing(opacity, {
           toValue: 1,
           duration: ANIMATION_DURATION,
           useNativeDriver: true,
         }),
-        Animated.timing(slideAnim, {
+        Animated.timing(slideY, {
           toValue: 0,
           duration: ANIMATION_DURATION,
           useNativeDriver: true,
@@ -265,21 +220,20 @@ export const MentionAutocomplete = memo(function MentionAutocomplete({
       ]).start();
     } else {
       Animated.parallel([
-        Animated.timing(fadeAnim, {
+        Animated.timing(opacity, {
           toValue: 0,
-          duration: ANIMATION_DURATION,
+          duration: ANIMATION_DURATION * 0.7,
           useNativeDriver: true,
         }),
-        Animated.timing(slideAnim, {
-          toValue: 10,
-          duration: ANIMATION_DURATION,
+        Animated.timing(slideY, {
+          toValue: 12,
+          duration: ANIMATION_DURATION * 0.7,
           useNativeDriver: true,
         }),
       ]).start();
     }
-  }, [visible, fadeAnim, slideAnim]);
+  }, [visible, suggestions.length, opacity, slideY]);
 
-  // Handle member selection
   const handleSelect = useCallback(
     (member: MentionableMember) => {
       onSelect(member);
@@ -287,65 +241,64 @@ export const MentionAutocomplete = memo(function MentionAutocomplete({
     [onSelect],
   );
 
-  // Don't render if not visible or no suggestions
   if (!visible || suggestions.length === 0) {
     return null;
   }
 
-  // Calculate dynamic height
   const contentHeight = Math.min(suggestions.length * ITEM_HEIGHT, maxHeight);
 
   return (
     <Animated.View
       style={[
-        styles.container,
+        styles.panelContainer,
         {
-          backgroundColor: theme.colors.surface,
-          borderColor: theme.colors.outlineVariant,
+          backgroundColor:
+            colors.suggestionPanelBackground ?? colors.surfaceElevated,
+          borderColor: colors.suggestionPanelBorder ?? colors.border,
           bottom: "100%",
           marginBottom: bottomOffset,
           maxHeight,
-          opacity: fadeAnim,
-          transform: [{ translateY: slideAnim }],
+          opacity,
+          transform: [{ translateY: slideY }],
         },
       ]}
     >
-      {/* Header */}
+      {/* Suggestion header */}
       <View
         style={[
-          styles.header,
-          { borderBottomColor: theme.colors.outlineVariant },
+          styles.panelHeader,
+          { borderBottomColor: colors.dividerSubtle ?? colors.divider },
         ]}
       >
-        <Text
-          style={[styles.headerText, { color: theme.colors.onSurfaceVariant }]}
-        >
+        <Text style={[styles.panelTitle, { color: colors.textMuted }]}>
           Mention someone
         </Text>
-        <TouchableOpacity
-          style={styles.dismissButton}
+        <Pressable
+          style={styles.dismissBtn}
           onPress={onDismiss}
-          hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
+          hitSlop={{ top: 10, right: 10, bottom: 10, left: 10 }}
         >
-          <Text style={[styles.dismissText, { color: theme.colors.primary }]}>
-            Cancel
+          <Text style={[styles.dismissText, { color: colors.primary }]}>
+            Done
           </Text>
-        </TouchableOpacity>
+        </Pressable>
       </View>
 
-      {/* Member list */}
+      {/* Suggestion list */}
       <ScrollView
         style={{ maxHeight: contentHeight }}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
+        bounces={false}
       >
-        {suggestions.map((member, index) => (
-          <MemberItem
+        {suggestions.map((member, idx) => (
+          <SuggestionRow
             key={member.uid}
             member={member}
             query={query}
             onPress={() => handleSelect(member)}
-            isLast={index === suggestions.length - 1}
+            isLast={idx === suggestions.length - 1}
+            avatarUrl={avatarUrls?.[member.uid]}
           />
         ))}
       </ScrollView>
@@ -354,82 +307,57 @@ export const MentionAutocomplete = memo(function MentionAutocomplete({
 });
 
 // =============================================================================
-// Inline Mention Text Component
+// MentionText — renders a single mention token in read-time
 // =============================================================================
 
 export interface MentionTextProps {
-  /**
-   * Text segment from mention parser
-   */
   content: string;
-
-  /**
-   * Whether this is a mention
-   */
   isMention: boolean;
-
-  /**
-   * UID of the mentioned user (if mention)
-   */
   uid?: string;
-
-  /**
-   * Current user's UID (to highlight self-mentions)
-   */
   currentUid?: string;
-
-  /**
-   * Called when a mention is pressed
-   */
   onMentionPress?: (uid: string) => void;
+  textStyle?: any;
 }
 
-/**
- * Renders a text segment with mention styling.
- *
- * Mentions are highlighted with a different background color.
- */
 export const MentionText = memo(function MentionText({
   content,
   isMention,
   uid,
   currentUid,
   onMentionPress,
+  textStyle,
 }: MentionTextProps) {
-  const theme = useTheme();
+  const { colors } = useAppTheme();
 
   if (!isMention) {
-    return <Text>{content}</Text>;
+    return <Text style={textStyle}>{content}</Text>;
   }
 
-  const isSelfMention = uid === currentUid;
+  const isSelf = uid === currentUid;
+  const bg = isSelf
+    ? colors.tertiaryContainer
+    : (colors.mentionHighlight ?? colors.primaryContainer);
+  const fg = isSelf
+    ? colors.tertiary
+    : (colors.mentionHighlightText ?? colors.primary);
 
+  // borderRadius doesn't work on <Text> in React Native, so we wrap in a View.
   return (
-    <Text
-      style={[
-        styles.mentionText,
-        {
-          backgroundColor: isSelfMention
-            ? theme.colors.tertiaryContainer
-            : theme.colors.primaryContainer,
-          color: isSelfMention
-            ? theme.colors.onTertiaryContainer
-            : theme.colors.onPrimaryContainer,
-        },
-      ]}
-      onPress={uid && onMentionPress ? () => onMentionPress(uid) : undefined}
-    >
-      {content}
-    </Text>
+    <View style={[styles.mentionTokenContainer, { backgroundColor: bg }]}>
+      <Text
+        style={[textStyle, styles.mentionTokenText, { color: fg }]}
+        onPress={uid && onMentionPress ? () => onMentionPress(uid) : undefined}
+        suppressHighlighting={false}
+      >
+        {content}
+      </Text>
+    </View>
   );
 });
 
 // =============================================================================
-// Utility: Render Message with Mentions
+// MessageWithMentions — renders message text with highlighted mentions
 // =============================================================================
-
-import { segmentTextWithMentions } from "@/services/mentionParser";
-import { MentionSpan } from "@/types/messaging";
 
 export interface RenderMessageWithMentionsProps {
   text: string;
@@ -439,19 +367,6 @@ export interface RenderMessageWithMentionsProps {
   textStyle?: any;
 }
 
-/**
- * Renders message text with highlighted mentions.
- *
- * @example
- * ```tsx
- * <MessageWithMentions
- *   text={message.text}
- *   mentionSpans={message.mentionSpans}
- *   currentUid={currentUser.uid}
- *   onMentionPress={(uid) => navigateToProfile(uid)}
- * />
- * ```
- */
 export const MessageWithMentions = memo(function MessageWithMentions({
   text,
   mentionSpans,
@@ -461,19 +376,31 @@ export const MessageWithMentions = memo(function MessageWithMentions({
 }: RenderMessageWithMentionsProps) {
   const segments = segmentTextWithMentions(text, mentionSpans);
 
+  // Use a flex-wrap View so mention <View> tokens can have borderRadius.
+  // Plain text segments stay as <Text>, mention segments render as View-backed chips.
   return (
-    <Text style={textStyle}>
-      {segments.map((segment, index) => (
-        <MentionText
-          key={`${index}-${segment.content.substring(0, 10)}`}
-          content={segment.content}
-          isMention={segment.type === "mention"}
-          uid={segment.uid}
-          currentUid={currentUid}
-          onMentionPress={onMentionPress}
-        />
-      ))}
-    </Text>
+    <View style={styles.messageWithMentions}>
+      {segments.map((segment, index) => {
+        if (segment.type === "mention") {
+          return (
+            <MentionText
+              key={`${index}-mention-${segment.uid ?? ""}`}
+              content={segment.content}
+              isMention
+              uid={segment.uid}
+              currentUid={currentUid}
+              onMentionPress={onMentionPress}
+              textStyle={textStyle}
+            />
+          );
+        }
+        return (
+          <Text key={`${index}-text`} style={textStyle}>
+            {segment.content}
+          </Text>
+        );
+      })}
+    </View>
   );
 });
 
@@ -482,92 +409,118 @@ export const MessageWithMentions = memo(function MessageWithMentions({
 // =============================================================================
 
 const styles = StyleSheet.create({
-  container: {
+  // Panel container
+  panelContainer: {
     position: "absolute",
-    left: Spacing.md,
-    right: Spacing.md,
-    borderRadius: BorderRadius.lg,
+    left: 8,
+    right: 8,
+    borderRadius: 16,
     borderWidth: 1,
-    zIndex: 10,
+    zIndex: 20,
+    overflow: "hidden",
     ...Platform.select({
       ios: {
         shadowColor: "#000",
-        shadowOffset: { width: 0, height: -2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 8,
+        shadowOffset: { width: 0, height: -3 },
+        shadowOpacity: 0.12,
+        shadowRadius: 12,
       },
       android: {
-        elevation: 8,
+        elevation: 12,
       },
       web: {
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: -2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 8,
+        boxShadow: "0 -3px 12px rgba(0,0,0,0.12)",
       },
     }),
   },
-  header: {
+  panelHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    borderBottomWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  headerText: {
-    fontSize: FontSizes.sm,
-    fontWeight: "500",
+  panelTitle: {
+    fontSize: 12,
+    fontWeight: "600",
+    letterSpacing: 0.3,
+    textTransform: "uppercase",
   },
-  dismissButton: {
-    paddingVertical: Spacing.xs,
-    paddingHorizontal: Spacing.sm,
+  dismissBtn: {
+    paddingVertical: 4,
+    paddingHorizontal: 8,
   },
   dismissText: {
-    fontSize: FontSizes.sm,
-    fontWeight: "500",
+    fontSize: 13,
+    fontWeight: "600",
   },
-  memberItem: {
+
+  // Suggestion rows
+  suggestionRow: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
     height: ITEM_HEIGHT,
   },
-  memberItemBorder: {
+  rowDivider: {
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   avatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    marginRight: Spacing.md,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    marginRight: 12,
     alignItems: "center",
     justifyContent: "center",
+    overflow: "hidden",
   },
-  avatarText: {
-    fontSize: FontSizes.md,
-    fontWeight: "600",
+  avatarImage: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
   },
-  memberInfo: {
+  avatarInitials: {
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  nameContainer: {
     flex: 1,
+    justifyContent: "center",
   },
   displayName: {
-    fontSize: FontSizes.md,
-    fontWeight: "500",
+    fontSize: 15,
+    fontWeight: "600",
+    lineHeight: 20,
+  },
+  matchHighlight: {
+    borderRadius: 3,
+    paddingHorizontal: 1,
   },
   username: {
-    fontSize: FontSizes.sm,
-    marginTop: 2,
+    fontSize: 13,
+    marginTop: 1,
+    lineHeight: 17,
   },
-  highlight: {
-    borderRadius: BorderRadius.xs,
-    paddingHorizontal: 2,
-  },
-  mentionText: {
-    borderRadius: BorderRadius.xs,
-    paddingHorizontal: 2,
+
+  // Mention token (read-time) — View container for borderRadius support
+  mentionTokenContainer: {
+    borderRadius: 5,
+    paddingHorizontal: 3,
     paddingVertical: 1,
+    overflow: "hidden",
+    alignSelf: "center",
+  },
+  mentionTokenText: {
+    fontWeight: "600",
+    fontSize: 14,
+  },
+  // Flex-wrap container for MessageWithMentions
+  messageWithMentions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
   },
 });
 

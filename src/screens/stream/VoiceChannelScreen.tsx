@@ -21,8 +21,9 @@ import {
   StreamCall,
   useCallStateHooks,
 } from "@stream-io/video-react-native-sdk";
-import React, { useCallback, useEffect } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   FlatList,
   Platform,
   SafeAreaView,
@@ -41,8 +42,26 @@ export default function VoiceChannelScreen({ route, navigation }: Props) {
     groupId: string;
   };
 
-  const { leaveChannel, activeCall } = useStreamCall();
+  const { leaveChannel, joinChannel, activeCall, activeSession } =
+    useStreamCall();
   const { colors } = useAppTheme();
+  const [joinError, setJoinError] = useState<string | null>(null);
+  const joinAttemptedRef = useRef(false);
+
+  // Auto-join the voice channel on mount if not already in it
+  const isAlreadyInChannel =
+    activeSession?.type === "voice_channel" &&
+    activeSession.channelId === channelId;
+
+  useEffect(() => {
+    if (isAlreadyInChannel || joinAttemptedRef.current) return;
+    joinAttemptedRef.current = true;
+
+    joinChannel(groupId, channelName).catch((err: any) => {
+      console.error("[VoiceChannelScreen] joinChannel error:", err);
+      setJoinError(err?.message || "Failed to join voice channel");
+    });
+  }, [groupId, channelName, isAlreadyInChannel, joinChannel]);
 
   const handleLeave = useCallback(async () => {
     try {
@@ -56,15 +75,27 @@ export default function VoiceChannelScreen({ route, navigation }: Props) {
     }
   }, [leaveChannel, navigation]);
 
-  // Auto-dismiss if no active call
-  useEffect(() => {
-    if (!activeCall) {
-      const timer = setTimeout(() => {
-        if (navigation.canGoBack()) navigation.goBack();
-      }, 500);
-      return () => clearTimeout(timer);
-    }
-  }, [activeCall, navigation]);
+  if (joinError) {
+    return (
+      <SafeAreaView
+        style={[styles.container, { backgroundColor: colors.background }]}
+      >
+        <View style={styles.centered}>
+          <Text style={[styles.statusText, { color: colors.text }]}>
+            {joinError}
+          </Text>
+          <TouchableOpacity
+            style={[styles.retryButton, { backgroundColor: colors.primary }]}
+            onPress={() => {
+              if (navigation.canGoBack()) navigation.goBack();
+            }}
+          >
+            <Text style={styles.retryButtonText}>Go Back</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   if (!activeCall) {
     return (
@@ -72,8 +103,14 @@ export default function VoiceChannelScreen({ route, navigation }: Props) {
         style={[styles.container, { backgroundColor: colors.background }]}
       >
         <View style={styles.centered}>
-          <Text style={[styles.statusText, { color: colors.text }]}>
-            Disconnected
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text
+            style={[
+              styles.statusText,
+              { color: colors.textSecondary, marginTop: 12 },
+            ]}
+          >
+            Joining voice channel...
           </Text>
         </View>
       </SafeAreaView>
@@ -364,5 +401,16 @@ const styles = StyleSheet.create({
     fontSize: 11,
     marginTop: 3,
     fontWeight: "500",
+  },
+  retryButton: {
+    marginTop: 20,
+    paddingHorizontal: 24,
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "600",
   },
 });

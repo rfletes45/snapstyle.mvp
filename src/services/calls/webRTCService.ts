@@ -5,6 +5,8 @@
 
 import { getAuthInstance, getFirestoreInstance } from "@/services/firebase";
 import { DEFAULT_ICE_SERVERS, IceConfig, SignalingMessage } from "@/types/call";
+import { generateUUID } from "@/utils/uuid";
+import * as Crypto from "expo-crypto";
 import {
   collection,
   deleteDoc,
@@ -25,7 +27,14 @@ import {
   RTCPeerConnection,
   RTCSessionDescription,
 } from "react-native-webrtc";
-import { v4 as uuidv4 } from "uuid";
+
+function uuidv4(): string {
+  try {
+    return Crypto.randomUUID();
+  } catch {
+    return generateUUID();
+  }
+}
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("services/calls/webRTCService");

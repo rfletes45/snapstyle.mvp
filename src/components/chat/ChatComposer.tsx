@@ -18,6 +18,7 @@
 
 import { BorderRadius, Spacing } from "@/constants/theme";
 import { VoiceRecording } from "@/hooks/useVoiceRecorder";
+import { useAppTheme } from "@/store/ThemeContext";
 import { ReplyToMetadata } from "@/types/messaging";
 import React, { useCallback, useMemo, useRef } from "react";
 import {
@@ -197,6 +198,7 @@ export function ChatComposer({
   textInputRef,
 }: ChatComposerProps): React.JSX.Element {
   const theme = useTheme();
+  const { colors, isDark } = useAppTheme();
   const insets = useSafeAreaInsets();
   const safeAreaBottom = customSafeAreaBottom ?? insets.bottom;
 
@@ -317,7 +319,7 @@ export function ChatComposer({
   // Keyboard backdrop: opaque black view behind the iOS translucent keyboard
   // so chat content/images are not visible through the keyboard blur.
   // Positioned absolutely at the bottom; height tracks keyboard height on UI thread.
-  const KEYBOARD_BACKDROP_COLOR = "#000";
+  const keyboardBackdropColor = colors.keyboardSurface ?? colors.background;
   const backdropAnimatedStyle = useAnimatedStyle(() => {
     "worklet";
     if (!keyboardHeight) {
@@ -349,12 +351,12 @@ export function ChatComposer({
   const isOwnMessage =
     replyTo && currentUid ? replyTo.senderId === currentUid : false;
 
-  // Background colors based on theme
-  const containerBg = theme.colors.background;
-  const inputBg = theme.dark ? theme.colors.surface : "#f0f0f0";
-  const inputColor = theme.colors.onSurface;
-  const borderColor = theme.dark ? theme.colors.outlineVariant : "#e0e0e0";
-  const placeholderColor = theme.dark ? theme.colors.onSurfaceDisabled : "#999";
+  // Background colors from semantic theme tokens
+  const containerBg = colors.composerBackground ?? colors.background;
+  const inputBg = colors.inputBackground ?? colors.surface;
+  const inputColor = colors.inputText ?? colors.text;
+  const borderColor = colors.composerBorder ?? colors.divider;
+  const placeholderColor = colors.inputPlaceholder ?? colors.textMuted;
 
   // Static container style (non-animated properties)
   // When absolutePosition is true, position at bottom of screen to prevent jumping
@@ -375,7 +377,7 @@ export function ChatComposer({
         <Animated.View
           style={[
             styles.keyboardBackdrop,
-            { backgroundColor: KEYBOARD_BACKDROP_COLOR },
+            { backgroundColor: keyboardBackdropColor },
             backdropAnimatedStyle,
           ]}
           pointerEvents="none"
@@ -416,6 +418,10 @@ export function ChatComposer({
               style={[styles.textInput, { color: inputColor }]}
               placeholder={placeholder}
               placeholderTextColor={placeholderColor}
+              selectionColor={colors.primary}
+              keyboardAppearance={
+                Platform.OS === "ios" ? (isDark ? "dark" : "light") : undefined
+              }
               value={value}
               onChangeText={onChangeText}
               onSelectionChange={
@@ -506,7 +512,7 @@ export function ChatComposer({
                   <IconButton
                     icon="close"
                     size={18}
-                    iconColor="#fff"
+                    iconColor={colors.onPrimary}
                     style={{ margin: 0 }}
                   />
                 </Pressable>
@@ -636,7 +642,7 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: "#E53935",
+    backgroundColor: "#D32F2F",
     justifyContent: "center",
     alignItems: "center",
     overflow: "hidden",

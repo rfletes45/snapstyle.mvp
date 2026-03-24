@@ -1,18 +1,24 @@
 # In-App Notifications QA Script
 
-Last verified: 2026-03-05
+Last verified: 2026-03-24
 
 Feature scope:
 
-- inbox/chat in-app notifications (`message`, `friend_request`)
-- games in-app notifications (`game_turn`, `achievement_unlocked`)
+- inbox/chat in-app notifications (`dm_message`, `group_message`, `message_request`, `friend_request`)
+- games in-app notifications (`game_invite`, `game_lobby_ready`, `game_turn`, `game_resolved`, `achievement_unlocked`)
+- commerce notifications (`gift_received`, `gift_opened`)
 - payload normalization and dedupe behavior
+- push token registration and badge count
+- notification architecture docs: [NOTIFICATION_SYSTEM.md](NOTIFICATION_SYSTEM.md)
 
 Primary runtime files:
 
 - `src/store/InAppNotificationsContext.tsx`
 - `src/store/AuthContext.tsx`
+- `src/services/notifications.ts`
+- `src/services/userNotifications.ts`
 - `src/services/notifications/normalizeNotification.ts`
+- `firebase-backend/functions/src/notificationCenter.ts`
 - `firebase-backend/functions/src/notifications.ts`
 
 ## Prerequisites
@@ -141,7 +147,7 @@ Firestore check:
 
 - `Users/{uid}/Notifications/{notificationId}` exists with `channel == "in_app"`
 - `type` is `game_turn`
-- `deliveredAt` gets set by client after handling
+- `presentedAt` gets set by client after handling
 
 ### D2) Turn suppression inside games area
 
@@ -223,7 +229,7 @@ Input:
 Expected canonical route:
 
 - screen: `ChatDetail`
-- dedupeKey: `message:chat_1`
+- dedupeKey: `dm_message:chat_1`
 
 ### F2) Group payload
 
@@ -262,7 +268,7 @@ Input:
 Expected canonical route:
 
 - screen: `AchievementSection`
-- dedupeKey: `achievement:champion`
+- dedupeKey: `achievement_unlocked:champion`
 
 ## Test G - Security And Ownership Checks
 
@@ -278,7 +284,7 @@ Expected:
 
 - denied by rules
 
-### G3) Owner can update `deliveredAt` and `readAt`
+### G3) Owner can update `readAt`, `presentedAt`, and `archivedAt`
 
 Expected:
 
@@ -317,3 +323,11 @@ Expected:
 - [ ] Dedupe/debounce behavior prevents duplicates
 - [ ] Firestore ownership/rule constraints are enforced
 - [ ] Legacy migration flag intent is verified for environment
+- [ ] Push token registration completes without crypto.getRandomValues crash
+- [ ] Badge count subscription succeeds (no persistent permissions error)
+- [ ] Badge count updates when notifications are read/created
+- [ ] Push notifications received when app is backgrounded
+- [ ] Cold-start notification tap navigates to correct screen
+- [ ] Android 13+ POST_NOTIFICATIONS permission is requested
+- [ ] Notification channels are created on Android
+- [ ] Denied permissions result in graceful degradation, not crash

@@ -230,9 +230,7 @@ export default function ThreadScreen({ navigation, route }: Props) {
                 : [
                     styles.otherBubble,
                     {
-                      backgroundColor: isDark
-                        ? colors.surfaceVariant
-                        : "#F0F0F0",
+                      backgroundColor: colors.surfaceVariant,
                     },
                   ],
             ]}
@@ -240,7 +238,7 @@ export default function ThreadScreen({ navigation, route }: Props) {
             <Text
               style={[
                 styles.messageText,
-                { color: isOwn ? "#FFFFFF" : colors.text },
+                { color: isOwn ? colors.onPrimary : colors.text },
               ]}
             >
               {message.text || ""}
@@ -335,7 +333,8 @@ export default function ThreadScreen({ navigation, route }: Props) {
             style={[
               styles.composerInput,
               {
-                backgroundColor: isDark ? colors.surfaceVariant : "#F0F0F0",
+                backgroundColor:
+                  colors.inputBackground ?? colors.surfaceVariant,
                 borderColor: colors.outline,
               },
             ]}
@@ -344,9 +343,15 @@ export default function ThreadScreen({ navigation, route }: Props) {
               value={replyText}
               onChangeText={setReplyText}
               placeholder="Reply in thread..."
-              placeholderTextColor={colors.textSecondary}
+              placeholderTextColor={
+                colors.inputPlaceholder ?? colors.textSecondary
+              }
               multiline
               style={[styles.input, { color: colors.text }]}
+              selectionColor={colors.primary}
+              keyboardAppearance={
+                Platform.OS === "ios" ? (isDark ? "dark" : "light") : undefined
+              }
               editable={!sending}
               returnKeyType="default"
             />
@@ -371,7 +376,9 @@ export default function ThreadScreen({ navigation, route }: Props) {
               name="send"
               size={20}
               color={
-                replyText.trim() && !sending ? "#FFFFFF" : colors.textSecondary
+                replyText.trim() && !sending
+                  ? colors.onPrimary
+                  : colors.textSecondary
               }
             />
           </TouchableOpacity>

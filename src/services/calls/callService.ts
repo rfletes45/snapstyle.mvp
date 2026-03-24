@@ -16,6 +16,8 @@ import {
   MAX_GROUP_PARTICIPANTS,
   StartCallParams,
 } from "@/types/call";
+import { generateUUID } from "@/utils/uuid";
+import * as Crypto from "expo-crypto";
 import {
   collection,
   doc,
@@ -29,7 +31,14 @@ import {
   updateDoc,
   where,
 } from "firebase/firestore";
-import { v4 as uuidv4 } from "uuid";
+
+function uuidv4(): string {
+  try {
+    return Crypto.randomUUID();
+  } catch {
+    return generateUUID();
+  }
+}
 
 // Lazy getters to avoid Firebase initialization issues at module load time
 const getDb = () => getFirestoreInstance();

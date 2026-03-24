@@ -53,6 +53,12 @@ import { useUnifiedChatScreen } from "@/hooks/useUnifiedChatScreen";
 import { useVoiceRecorder, VoiceRecording } from "@/hooks/useVoiceRecorder";
 
 // Services
+import {
+  applyOptimisticReaction,
+  ReactionSummary,
+  subscribeToMultipleMessageReactions,
+  toggleReaction,
+} from "@/services/reactions";
 import { updateStreakAfterMessage } from "@/services/streakCosmetics";
 
 // Chat components
@@ -444,6 +450,96 @@ export default function ChatScreen({
     () => messageWithProfileToV2(selectedMessage, chatId, uid, friendProfile),
     [selectedMessage, chatId, uid, friendProfile],
   );
+
+  // ==========================================================================
+  // Reactions Subscription (H8) — with optimistic updates
+  // ==========================================================================
+
+  const [messageReactions, setMessageReactions] = useState<
+    Map<string, ReactionSummary[]>
+  >(new Map());
+
+  // Track message IDs that have been optimistically reacted to (for subscriptions)
+  const optimisticIds = React.useRef<Set<string>>(new Set());
+
+  /**
+   * Optimistic reaction toggle — mutates local state immediately.
+   * Called from ReactionPills (pill tap) and MessageActionsSheet (quick reaction).
+   */
+  const handleOptimisticReaction = useCallback(
+    (messageId: string, emoji: string) => {
+      if (!uid) return;
+      optimisticIds.current.add(messageId);
+      setMessageReactions((prev) => {
+        const next = new Map(prev);
+        const current = next.get(messageId) || [];
+        next.set(messageId, applyOptimisticReaction(current, emoji, uid));
+        return next;
+      });
+    },
+    [uid],
+  );
+
+  /**
+   * Handle reaction from MessageActionsSheet — apply optimistic + fire server call
+   */
+  const handleSheetReaction = useCallback(
+    (emoji: string) => {
+      if (!selectedMessage || !chatId || !uid) return;
+      const messageId = selectedMessage.id;
+      handleOptimisticReaction(messageId, emoji);
+
+      // Fire-and-forget server call; listener will reconcile
+      toggleReaction({
+        scope: "dm",
+        conversationId: chatId,
+        messageId,
+        emoji,
+        uid,
+      })
+        .then((result) => {
+          if (!result.success) {
+            // Rollback
+            handleOptimisticReaction(messageId, emoji);
+          }
+        })
+        .catch(() => {
+          handleOptimisticReaction(messageId, emoji);
+        });
+    },
+    [selectedMessage, chatId, uid, handleOptimisticReaction],
+  );
+
+  useEffect(() => {
+    if (!chatId || !uid || displayMessages.length === 0) return;
+
+    // Subscribe to messages that have reactionsSummary OR were optimistically reacted to
+    const idsWithReactions = new Set<string>();
+    for (const m of displayMessages) {
+      if (m.reactionsSummary && Object.keys(m.reactionsSummary).length > 0) {
+        idsWithReactions.add(m.id);
+      }
+    }
+    for (const id of optimisticIds.current) {
+      idsWithReactions.add(id);
+    }
+
+    if (idsWithReactions.size === 0) {
+      setMessageReactions(new Map());
+      return;
+    }
+
+    const unsubscribe = subscribeToMultipleMessageReactions(
+      "dm",
+      chatId,
+      Array.from(idsWithReactions),
+      (reactionsMap) => setMessageReactions(reactionsMap),
+    );
+
+    return unsubscribe;
+    // Re-subscribe when the set of message-ids-with-reactions changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chatId, uid, displayMessages.map((m) => m.id).join(",")]);
 
   // ==========================================================================
   // Message Grouping Logic (for inverted FlatList)
@@ -993,6 +1089,8 @@ export default function ChatScreen({
         isHighlighted={item.id === highlightedMessageId}
         isGrouped={isGroupedMessage(index, item)}
         showTimestamp={shouldShowTimestamp(index, item)}
+        reactions={messageReactions.get(item.id) || []}
+        onOptimisticReaction={handleOptimisticReaction}
       />
     ),
     [
@@ -1008,6 +1106,8 @@ export default function ChatScreen({
       highlightedMessageId,
       isGroupedMessage,
       shouldShowTimestamp,
+      messageReactions,
+      handleOptimisticReaction,
     ],
   );
 
@@ -1228,6 +1328,7 @@ export default function ChatScreen({
         onReply={handleReply}
         onEdited={NOOP}
         onDeleted={NOOP}
+        onReactionAdded={handleSheetReaction}
       />
 
       <MediaViewerModal

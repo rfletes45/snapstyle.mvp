@@ -1,11 +1,16 @@
 /**
  * Call Screens - Barrel Export
  *
- * Legacy call screens (AudioCallScreen, VideoCallScreen, GroupCallScreen)
- * have been replaced by Stream-based screens in @/screens/stream/.
- * Only CallHistoryScreen and CallSettingsScreen remain here.
+ * CallsScreen is the new main Calls tab (replaces old CallHistoryScreen route).
+ * CallSettingsScreen is still used for call preferences.
+ * CallHistoryScreen is legacy and no longer routed.
  */
 
-// Platform-agnostic screens (no native dependencies)
-export { CallHistoryScreen } from "./CallHistoryScreen";
+// Main Calls tab
+export { default as CallsScreen } from "./CallsScreen";
+
+// Settings (navigated from Calls tab)
 export { CallSettingsScreen } from "./CallSettingsScreen";
+
+// Legacy — kept for reference but no longer routed
+export { CallHistoryScreen } from "./CallHistoryScreen";

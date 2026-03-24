@@ -1247,7 +1247,7 @@ export default function FriendsScreen({ navigation }: any) {
         visible={addFriendModalVisible}
         onRequestClose={handleCloseAddFriendModal}
         transparent
-        animationType="slide"
+        animationType="fade"
       >
         <KeyboardAvoidingView
           behavior={Platform.OS === "ios" ? "padding" : "height"}

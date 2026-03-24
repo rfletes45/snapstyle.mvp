@@ -21,6 +21,7 @@ import {
 } from "@react-navigation/native";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar as ExpoStatusBar } from "expo-status-bar";
+import * as SystemUI from "expo-system-ui";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -112,6 +113,11 @@ function AppContent() {
 
   // Stream Video SDK handles its own initialization via StreamCallProvider.
   // No legacy call bootstrap needed.
+
+  // Sync Android system UI (navigation bar) background with theme
+  useEffect(() => {
+    SystemUI.setBackgroundColorAsync(colors.background).catch(() => {});
+  }, [colors.background]);
 
   /**
    * Handle navigation from in-app toast notifications

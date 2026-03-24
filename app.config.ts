@@ -72,6 +72,8 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       // Vibration & wake
       "android.permission.VIBRATE",
       "android.permission.WAKE_LOCK",
+      // Push notifications (Android 13+)
+      "android.permission.POST_NOTIFICATIONS",
     ],
   },
   web: {
@@ -100,6 +102,13 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     ],
     "expo-audio",
     "expo-sqlite",
+    [
+      "expo-notifications",
+      {
+        icon: "./assets/images/icon.png",
+        color: "#ffffff",
+      },
+    ],
     [
       "expo-splash-screen",
       {

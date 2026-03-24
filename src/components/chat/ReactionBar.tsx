@@ -1,636 +1,425 @@
 /**
  * ReactionBar Component (H8)
  *
- * Displays emoji reactions on a message bubble and provides
- * a quick emoji picker for adding reactions.
+ * Displays emoji reactions on/below a message bubble.
+ * Provides inline reaction chips with toggle, a quick-reaction tray
+ * (from the long-press action sheet), and a "+" button to open
+ * the full emoji picker.
  *
- * Features:
- * - Shows existing reactions with counts
- * - Tap reaction to toggle (add/remove)
- * - Long-press to show full emoji picker
- * - Highlights user's own reactions
+ * Architecture:
+ * - ReactionPills: Inline chips rendered below the message bubble.
+ * - QuickReactionBar: 6-emoji tray shown in MessageActionsSheet.
+ * - Full emoji picker (rn-emoji-keyboard) opened via "+" button.
  *
  * @module components/chat/ReactionBar
  */
 
 import {
   formatReactionCount,
-  getAllowedEmojis,
-  isAllowedEmoji,
+  QUICK_REACTIONS,
   ReactionSummary,
   toggleReaction,
 } from "@/services/reactions";
+import * as Haptics from "expo-haptics";
 import React, { memo, useCallback, useState } from "react";
 import {
-  ActivityIndicator,
-  Modal,
+  Platform,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
 import { useTheme } from "react-native-paper";
+import Animated, {
+  FadeIn,
+  FadeOut,
+  LinearTransition,
+  useAnimatedStyle,
+  useSharedValue,
+  withSequence,
+  withSpring,
+} from "react-native-reanimated";
+import type { EmojiType } from "rn-emoji-keyboard";
+import EmojiPicker from "rn-emoji-keyboard";
 
 import { createLogger } from "@/utils/log";
-const logger = createLogger("components/chat/ReactionBar");
+const logger = createLogger("ReactionBar");
+
 // =============================================================================
 // Types
 // =============================================================================
 
-interface ReactionBarProps {
-  /** Current reactions on the message */
+export interface ReactionPillsProps {
+  /** Reactions to display */
   reactions: ReactionSummary[];
-  /** Message scope - DM or Group */
+  /** Whether the message was sent by the current user */
+  isOwnMessage: boolean;
+  /** Scope for the toggle call */
   scope: "dm" | "group";
-  /** Conversation ID */
+  /** Conversation ID for the toggle call */
   conversationId: string;
-  /** Message ID */
+  /** Message ID for the toggle call */
   messageId: string;
-  /** Current user ID */
+  /** Current user UID */
   currentUid: string;
-  /** Whether the message is from the current user */
-  isOwnMessage?: boolean;
-  /** Callback after reaction is toggled */
-  onReactionToggled?: (emoji: string, action: "added" | "removed") => void;
-  /** Optional compact mode for smaller bubbles */
-  compact?: boolean;
+  /** Called when reaction detail sheet should open */
+  onShowDetail?: () => void;
+  /** Called immediately with optimistic state before server round-trip */
+  onOptimisticToggle?: (messageId: string, emoji: string) => void;
 }
 
-interface ReactionChipProps {
-  emoji: string;
-  count: number;
-  hasReacted: boolean;
-  onPress: () => void;
-  isLoading?: boolean;
-  compact?: boolean;
-}
-
-interface EmojiPickerModalProps {
-  visible: boolean;
-  onClose: () => void;
+interface QuickReactionBarProps {
+  /** Called when user picks an emoji (quick or from full picker) */
   onSelect: (emoji: string) => void;
-  currentReactions: ReactionSummary[];
+  /** Whether a reaction toggle call is in-flight */
+  loading?: boolean;
 }
 
 // =============================================================================
-// Sub-Components
+// ReactionPills — displayed below message bubbles
 // =============================================================================
 
 /**
- * Individual reaction chip showing emoji + count
+ * Animated pill for a single reaction.
  */
-const ReactionChip = memo(function ReactionChip({
+const ReactionPill = memo(function ReactionPill({
   emoji,
   count,
   hasReacted,
   onPress,
-  isLoading,
-  compact,
-}: ReactionChipProps) {
-  const theme = useTheme();
-
-  return (
-    <TouchableOpacity
-      style={[
-        styles.chip,
-        compact && styles.chipCompact,
-        hasReacted && {
-          backgroundColor: theme.colors.primaryContainer,
-          borderColor: theme.colors.primary,
-        },
-      ]}
-      onPress={onPress}
-      disabled={isLoading}
-      activeOpacity={0.7}
-    >
-      {isLoading ? (
-        <ActivityIndicator size="small" color={theme.colors.primary} />
-      ) : (
-        <>
-          <Text style={[styles.chipEmoji, compact && styles.chipEmojiCompact]}>
-            {emoji}
-          </Text>
-          <Text
-            style={[
-              styles.chipCount,
-              compact && styles.chipCountCompact,
-              hasReacted && { color: theme.colors.primary },
-            ]}
-          >
-            {formatReactionCount(count)}
-          </Text>
-        </>
-      )}
-    </TouchableOpacity>
-  );
-});
-
-/**
- * Add reaction button (+ icon)
- */
-const AddReactionButton = memo(function AddReactionButton({
-  onPress,
-  compact,
 }: {
+  emoji: string;
+  count: number;
+  hasReacted: boolean;
   onPress: () => void;
-  compact?: boolean;
 }) {
   const theme = useTheme();
+  const scale = useSharedValue(1);
+
+  const handlePress = useCallback(() => {
+    scale.value = withSequence(
+      withSpring(1.25, { damping: 6, stiffness: 400 }),
+      withSpring(1, { damping: 8, stiffness: 300 }),
+    );
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    onPress();
+  }, [onPress, scale]);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
 
   return (
-    <TouchableOpacity
-      style={[
-        styles.addButton,
-        compact && styles.addButtonCompact,
-        { borderColor: theme.colors.outline },
-      ]}
-      onPress={onPress}
-      activeOpacity={0.7}
+    <Animated.View
+      entering={FadeIn.duration(200)}
+      exiting={FadeOut.duration(150)}
+      layout={LinearTransition.springify().damping(14).stiffness(120)}
+      style={animatedStyle}
     >
-      <Text
-        style={[
-          styles.addButtonText,
-          compact && styles.addButtonTextCompact,
-          { color: theme.colors.onSurfaceVariant },
+      <Pressable
+        onPress={handlePress}
+        style={({ pressed }) => [
+          styles.pill,
+          hasReacted && {
+            backgroundColor: theme.colors.primaryContainer,
+            borderColor: theme.colors.primary,
+          },
+          !hasReacted && {
+            backgroundColor: theme.dark
+              ? "rgba(255,255,255,0.08)"
+              : "rgba(0,0,0,0.05)",
+            borderColor: theme.dark
+              ? "rgba(255,255,255,0.12)"
+              : "rgba(0,0,0,0.08)",
+          },
+          pressed && { opacity: 0.7 },
         ]}
+        accessibilityRole="button"
+        accessibilityLabel={`${emoji} reaction, ${count} ${count === 1 ? "person" : "people"}${hasReacted ? ", you reacted" : ""}`}
+        accessibilityHint="Double tap to toggle your reaction"
       >
-        +
-      </Text>
-    </TouchableOpacity>
-  );
-});
-
-/**
- * Full emoji picker modal
- */
-const EmojiPickerModal = memo(function EmojiPickerModal({
-  visible,
-  onClose,
-  onSelect,
-  currentReactions,
-}: EmojiPickerModalProps) {
-  const theme = useTheme();
-  const allEmojis = getAllowedEmojis();
-
-  // Create a set of emojis user has already reacted with
-  const userReactions = new Set(
-    currentReactions.filter((r) => r.hasReacted).map((r) => r.emoji),
-  );
-
-  return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="fade"
-      onRequestClose={onClose}
-    >
-      <Pressable style={styles.modalOverlay} onPress={onClose}>
-        <Pressable
+        <Text style={styles.pillEmoji}>{emoji}</Text>
+        <Text
           style={[
-            styles.pickerContainer,
-            { backgroundColor: theme.colors.surface },
+            styles.pillCount,
+            {
+              color: hasReacted
+                ? theme.colors.primary
+                : theme.colors.onSurfaceVariant,
+            },
           ]}
-          onPress={(e) => e.stopPropagation()}
         >
-          <Text style={[styles.pickerTitle, { color: theme.colors.onSurface }]}>
-            React with emoji
-          </Text>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.emojiGrid}
-          >
-            {allEmojis.map((emoji) => {
-              const isSelected = userReactions.has(emoji);
-              return (
-                <TouchableOpacity
-                  key={emoji}
-                  style={[
-                    styles.emojiOption,
-                    isSelected && {
-                      backgroundColor: theme.colors.primaryContainer,
-                    },
-                  ]}
-                  onPress={() => {
-                    onSelect(emoji);
-                    onClose();
-                  }}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.emojiOptionText}>{emoji}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        </Pressable>
+          {formatReactionCount(count)}
+        </Text>
       </Pressable>
-    </Modal>
+    </Animated.View>
   );
 });
 
-// =============================================================================
-// Main Component
-// =============================================================================
-
 /**
- * ReactionBar - Displays and manages reactions on a message
+ * ReactionPills — renders all reaction pills below a message bubble.
+ * Correctly aligned for sent (right) and received (left) messages.
  */
-export const ReactionBar = memo(function ReactionBar({
+export const ReactionPills = memo(function ReactionPills({
   reactions,
+  isOwnMessage,
   scope,
   conversationId,
   messageId,
   currentUid,
-  isOwnMessage,
-  onReactionToggled,
-  compact = false,
-}: ReactionBarProps) {
-  const theme = useTheme();
-  const [pickerVisible, setPickerVisible] = useState(false);
-  const [loadingEmoji, setLoadingEmoji] = useState<string | null>(null);
+  onShowDetail,
+  onOptimisticToggle,
+}: ReactionPillsProps) {
+  // Track in-flight emoji to debounce rapid same-emoji taps
+  const inflight = React.useRef<Set<string>>(new Set());
 
-  // Handle reaction toggle
   const handleToggle = useCallback(
-    async (emoji: string) => {
-      if (!isAllowedEmoji(emoji)) return;
-
-      setLoadingEmoji(emoji);
-
-      try {
-        const result = await toggleReaction({
-          scope,
-          conversationId,
-          messageId,
-          emoji,
-          uid: currentUid,
-        });
-
-        if (result.success && onReactionToggled) {
-          onReactionToggled(emoji, result.action);
-        }
-      } catch (error) {
-        logger.error("[ReactionBar] Toggle failed:", error);
-      } finally {
-        setLoadingEmoji(null);
-      }
-    },
-    [scope, conversationId, messageId, currentUid, onReactionToggled],
-  );
-
-  // Handle picker selection
-  const handlePickerSelect = useCallback(
     (emoji: string) => {
-      handleToggle(emoji);
+      if (inflight.current.has(emoji)) return; // debounce same emoji
+      inflight.current.add(emoji);
+
+      // 1. Apply optimistic update immediately (parent mutates state)
+      onOptimisticToggle?.(messageId, emoji);
+
+      // 2. Fire server call in the background — no await
+      toggleReaction({
+        scope,
+        conversationId,
+        messageId,
+        emoji,
+        uid: currentUid,
+      })
+        .then((result) => {
+          if (!result.success) {
+            logger.warn(
+              "Reaction toggle failed, listener will reconcile",
+              result.error,
+            );
+            // Rollback: re-toggle optimistically to undo the local change
+            onOptimisticToggle?.(messageId, emoji);
+          }
+        })
+        .catch((e) => {
+          logger.error("Toggle reaction error", e);
+          // Rollback on network error
+          onOptimisticToggle?.(messageId, emoji);
+        })
+        .finally(() => {
+          inflight.current.delete(emoji);
+        });
     },
-    [handleToggle],
+    [scope, conversationId, messageId, currentUid, onOptimisticToggle],
   );
 
-  // Don't render if no reactions and it's not own message (can't add reactions to own messages initially)
-  // Actually, users can react to any message, so always show add button
-  const hasReactions = reactions.length > 0;
+  if (reactions.length === 0) return null;
 
   return (
-    <View
-      style={[styles.container, isOwnMessage && styles.containerOwnMessage]}
+    <Animated.View
+      entering={FadeIn.duration(200)}
+      layout={LinearTransition.springify().damping(14)}
+      style={[
+        styles.pillsContainer,
+        isOwnMessage ? styles.pillsContainerOwn : styles.pillsContainerOther,
+      ]}
     >
-      {/* Existing reactions */}
-      {reactions.map((reaction) => (
-        <ReactionChip
-          key={reaction.emoji}
-          emoji={reaction.emoji}
-          count={reaction.count}
-          hasReacted={reaction.hasReacted}
-          onPress={() => handleToggle(reaction.emoji)}
-          isLoading={loadingEmoji === reaction.emoji}
-          compact={compact}
+      {reactions.map((r) => (
+        <ReactionPill
+          key={r.emoji}
+          emoji={r.emoji}
+          count={r.count}
+          hasReacted={r.hasReacted}
+          onPress={() => handleToggle(r.emoji)}
         />
       ))}
+    </Animated.View>
+  );
+});
 
-      {/* Add reaction button - only show if there's space for more */}
-      {reactions.length < 12 && (
-        <AddReactionButton
-          onPress={() => setPickerVisible(true)}
-          compact={compact}
-        />
-      )}
+// =============================================================================
+// QuickReactionBar — shown inside MessageActionsSheet
+// =============================================================================
 
-      {/* Emoji picker modal */}
-      <EmojiPickerModal
-        visible={pickerVisible}
-        onClose={() => setPickerVisible(false)}
-        onSelect={handlePickerSelect}
-        currentReactions={reactions}
+/**
+ * QuickReactionBar — 6 quick emojis + a "+" button that opens the
+ * full rn-emoji-keyboard picker.
+ */
+export const QuickReactionBar = memo(function QuickReactionBar({
+  onSelect,
+  loading = false,
+}: QuickReactionBarProps) {
+  const theme = useTheme();
+  const [fullPickerOpen, setFullPickerOpen] = useState(false);
+
+  const handleQuick = useCallback(
+    (emoji: string) => {
+      if (loading) return;
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+      onSelect(emoji);
+    },
+    [onSelect, loading],
+  );
+
+  const handleFullSelect = useCallback(
+    (emojiObject: EmojiType) => {
+      setFullPickerOpen(false);
+      onSelect(emojiObject.emoji);
+    },
+    [onSelect],
+  );
+
+  return (
+    <View style={styles.quickBar}>
+      {QUICK_REACTIONS.map((emoji) => (
+        <TouchableOpacity
+          key={emoji}
+          style={[
+            styles.quickEmoji,
+            {
+              backgroundColor: theme.dark
+                ? "rgba(255,255,255,0.08)"
+                : "rgba(0,0,0,0.04)",
+            },
+          ]}
+          onPress={() => handleQuick(emoji)}
+          activeOpacity={0.6}
+          disabled={loading}
+        >
+          <Text style={styles.quickEmojiText}>{emoji}</Text>
+        </TouchableOpacity>
+      ))}
+
+      {/* "+" to open full picker */}
+      <TouchableOpacity
+        style={[
+          styles.quickEmoji,
+          styles.quickExpandBtn,
+          { borderColor: theme.colors.outline },
+        ]}
+        onPress={() => setFullPickerOpen(true)}
+        activeOpacity={0.6}
+        disabled={loading}
+      >
+        <Text
+          style={[
+            styles.quickExpandText,
+            { color: theme.colors.onSurfaceVariant },
+          ]}
+        >
+          +
+        </Text>
+      </TouchableOpacity>
+
+      {/* Full emoji picker (rn-emoji-keyboard) */}
+      <EmojiPicker
+        onEmojiSelected={handleFullSelect}
+        open={fullPickerOpen}
+        onClose={() => setFullPickerOpen(false)}
+        enableSearchBar
+        enableRecentlyUsed
+        categoryPosition="bottom"
+        disabledCategories={["search"]}
+        theme={{
+          backdrop: theme.dark ? "#00000099" : "#00000066",
+          knob: theme.colors.outline,
+          container: theme.colors.surface,
+          header: theme.colors.onSurface,
+          category: {
+            icon: theme.colors.onSurfaceVariant,
+            iconActive: theme.colors.primary,
+            container: theme.colors.surface,
+            containerActive: theme.colors.primaryContainer,
+          },
+          search: {
+            text: theme.colors.onSurface,
+            placeholder: theme.colors.onSurfaceVariant,
+            icon: theme.colors.onSurfaceVariant,
+            background: theme.colors.surfaceVariant,
+          },
+        }}
       />
     </View>
   );
 });
 
 // =============================================================================
-// Quick Reaction Bar (for long-press action sheet)
+// Legacy exports (kept for barrel-file compatibility)
 // =============================================================================
 
-interface QuickReactionBarProps {
-  onSelect: (emoji: string) => void;
-  selectedEmoji?: string;
-  /** When true, a "+" button is shown that opens the full emoji picker */
-  showExpandButton?: boolean;
-}
+/** @deprecated Use ReactionPills instead */
+export const ReactionBar = ReactionPills;
 
-/**
- * QuickReactionBar - Shows frequently used emojis for quick selection.
- * Optionally includes a "+" button that opens the full EmojiPickerModal.
- */
-export const QuickReactionBar = memo(function QuickReactionBar({
-  onSelect,
-  selectedEmoji,
-  showExpandButton = true,
-}: QuickReactionBarProps) {
-  const theme = useTheme();
-  const [pickerOpen, setPickerOpen] = useState(false);
-
-  // Frequently used emojis (top 6)
-  const quickEmojis = ["👍", "❤️", "😂", "🔥", "😮", "😢"];
-
-  return (
-    <View style={styles.quickBar}>
-      {quickEmojis.map((emoji) => (
-        <TouchableOpacity
-          key={emoji}
-          style={[
-            styles.quickEmoji,
-            selectedEmoji === emoji && {
-              backgroundColor: theme.colors.primaryContainer,
-            },
-          ]}
-          onPress={() => onSelect(emoji)}
-          activeOpacity={0.7}
-        >
-          <Text style={styles.quickEmojiText}>{emoji}</Text>
-        </TouchableOpacity>
-      ))}
-
-      {/* Expand to full emoji picker */}
-      {showExpandButton && (
-        <>
-          <TouchableOpacity
-            style={[
-              styles.quickEmoji,
-              {
-                borderWidth: 1,
-                borderStyle: "dashed",
-                borderColor: theme.colors.outline,
-              },
-            ]}
-            onPress={() => setPickerOpen(true)}
-            activeOpacity={0.7}
-          >
-            <Text
-              style={[
-                styles.quickEmojiText,
-                { color: theme.colors.onSurfaceVariant },
-              ]}
-            >
-              +
-            </Text>
-          </TouchableOpacity>
-          <EmojiPickerModal
-            visible={pickerOpen}
-            onClose={() => setPickerOpen(false)}
-            onSelect={(emoji) => {
-              onSelect(emoji);
-              setPickerOpen(false);
-            }}
-            currentReactions={[]}
-          />
-        </>
-      )}
-    </View>
-  );
-});
-
-// =============================================================================
-// Reactions Summary Row (for message list)
-// =============================================================================
-
-interface ReactionsSummaryProps {
-  /** Denormalized reactions summary from message */
-  reactionsSummary?: Record<string, number>;
-  /** Whether current user has reacted (needs separate query or tracking) */
-  userReactions?: string[];
-  /** Compact display mode */
-  compact?: boolean;
-  /** Callback when tapped */
-  onPress?: () => void;
-}
-
-/**
- * ReactionsSummary - Compact display of reactions from message summary
- */
-export const ReactionsSummary = memo(function ReactionsSummary({
-  reactionsSummary,
-  userReactions = [],
-  compact = true,
-  onPress,
-}: ReactionsSummaryProps) {
-  const theme = useTheme();
-
-  if (!reactionsSummary || Object.keys(reactionsSummary).length === 0) {
-    return null;
-  }
-
-  // Sort by count and take top 3
-  const sortedReactions = Object.entries(reactionsSummary)
-    .sort(([, a], [, b]) => b - a)
-    .slice(0, 3);
-
-  const totalCount = Object.values(reactionsSummary).reduce((a, b) => a + b, 0);
-
-  return (
-    <TouchableOpacity
-      style={[
-        styles.summaryContainer,
-        { backgroundColor: theme.colors.surfaceVariant },
-      ]}
-      onPress={onPress}
-      activeOpacity={0.7}
-      disabled={!onPress}
-    >
-      <View style={styles.summaryEmojis}>
-        {sortedReactions.map(([emoji]) => (
-          <Text key={emoji} style={styles.summaryEmoji}>
-            {emoji}
-          </Text>
-        ))}
-      </View>
-      {totalCount > 1 && (
-        <Text
-          style={[
-            styles.summaryCount,
-            { color: theme.colors.onSurfaceVariant },
-          ]}
-        >
-          {formatReactionCount(totalCount)}
-        </Text>
-      )}
-    </TouchableOpacity>
-  );
-});
+/** @deprecated Use ReactionPills instead */
+export const ReactionsSummary = ReactionPills;
 
 // =============================================================================
 // Styles
 // =============================================================================
 
 const styles = StyleSheet.create({
-  container: {
+  // Pills container
+  pillsContainer: {
     flexDirection: "row",
     flexWrap: "wrap",
-    alignItems: "center",
-    marginTop: 4,
     gap: 4,
+    marginTop: 4,
+    paddingTop: 0,
   },
-  containerOwnMessage: {
+  pillsContainerOwn: {
     justifyContent: "flex-end",
+    paddingRight: 4,
+  },
+  pillsContainerOther: {
+    justifyContent: "flex-start",
+    paddingLeft: 4,
   },
 
-  // Reaction chip
-  chip: {
+  // Individual pill
+  pill: {
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingVertical: 3,
     borderRadius: 12,
-    backgroundColor: "rgba(0,0,0,0.05)",
     borderWidth: 1,
-    borderColor: "transparent",
-    minWidth: 40,
+    gap: 3,
   },
-  chipCompact: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 10,
-    minWidth: 32,
+  pillEmoji: {
+    fontSize: 14,
+    lineHeight: Platform.OS === "android" ? 20 : undefined,
   },
-  chipEmoji: {
-    fontSize: 16,
-    marginRight: 4,
-  },
-  chipEmojiCompact: {
+  pillCount: {
     fontSize: 12,
-    marginRight: 2,
-  },
-  chipCount: {
-    fontSize: 12,
-    color: "#666",
-  },
-  chipCountCompact: {
-    fontSize: 10,
-  },
-
-  // Add button
-  addButton: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderStyle: "dashed",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  addButtonCompact: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-  },
-  addButtonText: {
-    fontSize: 16,
-    fontWeight: "500",
-  },
-  addButtonTextCompact: {
-    fontSize: 12,
-  },
-
-  // Modal
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.4)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  pickerContainer: {
-    width: "90%",
-    maxWidth: 360,
-    padding: 16,
-    borderRadius: 16,
-    elevation: 8,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-  },
-  pickerTitle: {
-    fontSize: 16,
     fontWeight: "600",
-    marginBottom: 12,
-    textAlign: "center",
-  },
-  emojiGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "center",
-    gap: 8,
-  },
-  emojiOption: {
-    width: 44,
-    height: 44,
-    borderRadius: 8,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  emojiOptionText: {
-    fontSize: 24,
   },
 
-  // Quick bar
+  // Quick bar (inside MessageActionsSheet)
   quickBar: {
     flexDirection: "row",
     justifyContent: "center",
-    gap: 8,
-    paddingVertical: 8,
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
   },
   quickEmoji: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: "center",
     justifyContent: "center",
   },
   quickEmojiText: {
-    fontSize: 24,
+    fontSize: 26,
   },
-
-  // Summary
-  summaryContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 10,
-    alignSelf: "flex-start",
-    marginTop: 2,
+  quickExpandBtn: {
+    borderWidth: 1.5,
+    borderStyle: "dashed",
   },
-  summaryEmojis: {
-    flexDirection: "row",
-  },
-  summaryEmoji: {
-    fontSize: 12,
-    marginRight: -2,
-  },
-  summaryCount: {
-    fontSize: 10,
-    marginLeft: 4,
+  quickExpandText: {
+    fontSize: 22,
+    fontWeight: "600",
   },
 });
 
-export default ReactionBar;
+export default ReactionPills;

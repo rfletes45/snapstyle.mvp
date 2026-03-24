@@ -14,16 +14,13 @@
  * @module screens/profile/OwnProfileScreen
  */
 
-import { MaterialCommunityIcons } from "@expo/vector-icons";
-import React, { useCallback, useEffect, useState } from "react";
-import {
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  TouchableOpacity,
-  View,
-} from "react-native";
-import { Text } from "react-native-paper";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { ActivityIndicator, ScrollView, StyleSheet, View } from "react-native";
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+} from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
@@ -37,7 +34,7 @@ import { ProfileOverflowMenu } from "@/components/profile/ProfileOverflowMenu";
 import { ProfilePictureEditor } from "@/components/profile/ProfilePicture";
 import { SocialProofSection } from "@/components/profile/SocialProof";
 import { LoadingState } from "@/components/ui";
-import { BorderRadius, FontSizes, Spacing } from "@/constants/theme";
+import { Spacing } from "@/constants/theme";
 import { prefetchCriticalProfileAssets } from "@/services/cosmeticsAssetCache";
 
 import { useFullProfileData } from "@/hooks/useFullProfileData";
@@ -96,6 +93,15 @@ export default function OwnProfileScreen({
   const [pictureEditorVisible, setPictureEditorVisible] = useState(false);
   const [bioEditorVisible, setBioEditorVisible] = useState(false);
 
+  // Pull-to-refresh state
+  const pullDistance = useSharedValue(0);
+  const scrollAtTop = useRef(true);
+  const pullStartY = useRef<number | null>(null);
+
+  const PULL_THRESHOLD = 60;
+  const MAX_PULL = 80;
+  const SPINNER_SIZE = 36;
+
   const colors = useColors();
 
   // Bio and status from full profile data
@@ -138,6 +144,66 @@ export default function OwnProfileScreen({
     await Promise.all([refresh(), refreshPicture(), refreshFullProfile()]);
     setRefreshing(false);
   }, [refresh, refreshPicture, refreshFullProfile]);
+
+  // Reset spinner when refresh completes
+  useEffect(() => {
+    if (!refreshing) {
+      pullDistance.value = withSpring(0, { damping: 15, stiffness: 150 });
+    }
+  }, [refreshing]);
+
+  // Touch-based pull tracking (works with bounces={false})
+  const handleTouchMove = useCallback(
+    (e: any) => {
+      if (refreshing) return;
+      const currentY = e.nativeEvent.pageY;
+      if (scrollAtTop.current) {
+        if (pullStartY.current === null) {
+          pullStartY.current = currentY;
+        }
+        const delta = currentY - pullStartY.current;
+        if (delta > 0) {
+          pullDistance.value = Math.min(delta, MAX_PULL);
+        } else {
+          pullStartY.current = currentY;
+        }
+      } else {
+        // Not at top yet — keep resetting the anchor so pull starts from 0
+        pullStartY.current = currentY;
+        if (pullDistance.value > 0) pullDistance.value = 0;
+      }
+    },
+    [refreshing],
+  );
+
+  const handleTouchEnd = useCallback(() => {
+    if (pullDistance.value >= PULL_THRESHOLD && !refreshing) {
+      handleRefresh();
+    } else if (!refreshing) {
+      pullDistance.value = withSpring(0, { damping: 15, stiffness: 150 });
+    }
+    pullStartY.current = null;
+  }, [handleRefresh, refreshing]);
+
+  const handleScroll = useCallback((e: any) => {
+    const y = e.nativeEvent.contentOffset.y;
+    scrollAtTop.current = y <= 0;
+    if (y > 0 && pullDistance.value > 0) {
+      pullDistance.value = 0;
+      pullStartY.current = null;
+    }
+  }, []);
+
+  const spinnerAnimatedStyle = useAnimatedStyle(() => {
+    const progress = Math.min(pullDistance.value / PULL_THRESHOLD, 1);
+    return {
+      opacity: progress,
+      transform: [
+        { translateY: pullDistance.value * 0.5 - SPINNER_SIZE },
+        { scale: 0.5 + progress * 0.5 },
+      ],
+    };
+  });
 
   const handleEditPicture = useCallback(() => {
     setPictureEditorVisible(true);
@@ -198,15 +264,39 @@ export default function OwnProfileScreen({
         />
       </View>
 
+      {/* Pull-to-refresh spinner overlay */}
+      <Animated.View
+        style={[
+          styles.spinnerContainer,
+          { top: insets.top + 12 },
+          spinnerAnimatedStyle,
+        ]}
+        pointerEvents="none"
+      >
+        <View
+          style={[styles.spinnerBubble, { backgroundColor: colors.surface }]}
+        >
+          <ActivityIndicator
+            size="small"
+            color={colors.primary}
+            animating={refreshing}
+          />
+        </View>
+      </Animated.View>
+
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={[
           styles.content,
           { paddingBottom: insets.bottom + 32 },
         ]}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
-        }
+        bounces={false}
+        overScrollMode="never"
+        scrollEventThrottle={16}
+        onScroll={handleScroll}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        onTouchCancel={handleTouchEnd}
       >
         {/* ============================================================ */}
         {/* A) Showcase Header */}
@@ -233,42 +323,12 @@ export default function OwnProfileScreen({
           onEditStatusPress={handleEditStatus}
           onEditNamePress={handleEditName}
           onLevelPress={() => navigation.navigate("LevelRewards")}
+          onCustomizePress={() => navigation.navigate("Customization")}
+          onShopPress={() => navigation.navigate("Shop")}
         />
 
         {/* ============================================================ */}
-        {/* B) Primary Actions (max 2-3) */}
-        {/* ============================================================ */}
-        <View style={styles.primaryActions}>
-          <TouchableOpacity
-            style={[styles.primaryBtn, { backgroundColor: colors.primary }]}
-            onPress={() => navigation.navigate("Customization")}
-            accessibilityLabel="Customize profile"
-          >
-            <MaterialCommunityIcons name="palette" size={18} color="#fff" />
-            <Text style={styles.primaryBtnText}>Customize</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.primaryBtn,
-              { backgroundColor: colors.surfaceVariant },
-            ]}
-            onPress={() => navigation.navigate("Shop")}
-            accessibilityLabel="Open shop"
-          >
-            <MaterialCommunityIcons
-              name="shopping-outline"
-              size={18}
-              color={colors.text}
-            />
-            <Text style={[styles.primaryBtnText, { color: colors.text }]}>
-              Shop
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* ============================================================ */}
-        {/* D) Social Proof (streak + recent activity) */}
+        {/* B) Social Proof (streak + recent activity) */}
         {/* ============================================================ */}
         <SocialProofSection
           userId={currentFirebaseUser?.uid || ""}
@@ -377,25 +437,24 @@ const styles = StyleSheet.create({
     right: Spacing.md,
     zIndex: 10,
   },
-  primaryActions: {
-    flexDirection: "row",
-    justifyContent: "center",
-    gap: Spacing.md,
-    paddingHorizontal: Spacing.lg,
-    marginVertical: Spacing.lg,
-  },
-  primaryBtn: {
-    flexDirection: "row",
+  spinnerContainer: {
+    position: "absolute",
+    left: 0,
+    right: 0,
     alignItems: "center",
-    gap: Spacing.sm,
-    paddingHorizontal: Spacing.xl,
-    paddingVertical: Spacing.md,
-    borderRadius: BorderRadius.xl,
+    zIndex: 20,
   },
-  primaryBtnText: {
-    fontSize: FontSizes.md,
-    fontWeight: "600",
-    color: "#fff",
+  spinnerBubble: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: "center",
+    alignItems: "center",
+    elevation: 4,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
   },
   cardsSection: {
     marginTop: Spacing.sm,

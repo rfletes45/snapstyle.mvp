@@ -21,7 +21,6 @@ import {
 } from "firebase/storage";
 import { Platform } from "react-native";
 
-
 import { createLogger } from "@/utils/log";
 const logger = createLogger("services/storage");
 // =============================================================================
@@ -144,10 +143,12 @@ export async function compressImage(
       });
     } else {
       // On native, use expo-image-manipulator
+      // Only constrain the larger dimension — expo-image-manipulator
+      // auto-calculates the other to preserve aspect ratio.
       logger.info("🔵 [compressImage] Using expo-image-manipulator");
       const result = await ImageManipulator.manipulateAsync(
         imageUri,
-        [{ resize: { width: maxSize, height: maxSize } }],
+        [{ resize: { width: maxSize } }],
         { compress: quality, format: ImageManipulator.SaveFormat.JPEG },
       );
       logger.info("✅ [compressImage] Native compression complete");

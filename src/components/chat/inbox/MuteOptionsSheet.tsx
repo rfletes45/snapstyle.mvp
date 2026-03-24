@@ -11,6 +11,7 @@
  * @module components/chat/inbox/MuteOptionsSheet
  */
 
+import { BorderRadius, Spacing } from "@/constants/theme";
 import type { MuteDuration } from "@/hooks/useConversationActions";
 import { useAppTheme } from "@/store/ThemeContext";
 import { light as hapticLight } from "@/utils/haptics";
@@ -25,7 +26,6 @@ import {
 } from "react-native";
 import { Button, Text } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { BorderRadius, Spacing } from "@/constants/theme";
 
 // =============================================================================
 // Types
@@ -114,7 +114,7 @@ export const MuteOptionsSheet = memo(function MuteOptionsSheet({
     <Modal
       visible={visible}
       transparent
-      animationType="slide"
+      animationType="fade"
       onRequestClose={onClose}
       statusBarTranslucent
     >
@@ -167,7 +167,9 @@ export const MuteOptionsSheet = memo(function MuteOptionsSheet({
                     activeOpacity={0.7}
                   >
                     <MaterialCommunityIcons
-                      name={option.icon as keyof typeof MaterialCommunityIcons.glyphMap}
+                      name={
+                        option.icon as keyof typeof MaterialCommunityIcons.glyphMap
+                      }
                       size={24}
                       color={colors.primary}
                       style={styles.optionIcon}

@@ -469,7 +469,7 @@ function WordChoiceModal({
   textColor: string;
 }) {
   return (
-    <Modal visible={visible} transparent animationType="slide">
+    <Modal visible={visible} transparent animationType="fade">
       <View style={styles.modalOverlay}>
         <View
           style={[

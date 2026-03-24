@@ -475,6 +475,12 @@ async function sendPushNotifications(request, notificationId, pushDevices, prefs
 async function notifyUser(request) {
     const prefs = await getNotificationPreferences(request.recipientUid);
     const decision = await chooseNotificationDecision(request, prefs);
+    functions.logger.info("[notificationCenter] Decision", {
+        recipientUid: request.recipientUid,
+        type: request.type,
+        channel: decision.channel,
+        reason: decision.reason,
+    });
     if (decision.channel === "none") {
         return {
             channel: "none",
@@ -483,6 +489,11 @@ async function notifyUser(request) {
     }
     const record = await createNotificationRecordIfNeeded(request, decision, prefs);
     if (!record.created) {
+        functions.logger.info("[notificationCenter] Duplicate suppressed", {
+            recipientUid: request.recipientUid,
+            type: request.type,
+            notificationId: record.notificationId,
+        });
         return {
             channel: decision.channel,
             notificationId: record.notificationId,
@@ -492,6 +503,11 @@ async function notifyUser(request) {
     if (decision.channel === "push" && decision.pushDevices?.length) {
         try {
             await sendPushNotifications(request, record.notificationId, decision.pushDevices, prefs);
+            functions.logger.info("[notificationCenter] Push sent", {
+                recipientUid: request.recipientUid,
+                type: request.type,
+                deviceCount: decision.pushDevices.length,
+            });
         }
         catch (error) {
             functions.logger.error("[notificationCenter] Failed to send push", {

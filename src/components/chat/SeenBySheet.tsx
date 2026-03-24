@@ -90,7 +90,7 @@ export const SeenBySheet = memo(function SeenBySheet({
     <Modal
       visible={visible}
       transparent
-      animationType="slide"
+      animationType="fade"
       onRequestClose={onClose}
     >
       <TouchableWithoutFeedback onPress={onClose}>

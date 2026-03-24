@@ -8,10 +8,18 @@
  * elsewhere in the app.
  */
 
+import { generateUUID } from "@/utils/uuid";
+import * as Crypto from "expo-crypto";
 import { AppState, AppStateStatus, Platform } from "react-native";
-import { v4 as uuidv4 } from "uuid";
 import { callKeepService } from "./callKeepService";
 
+function uuidv4(): string {
+  try {
+    return Crypto.randomUUID();
+  } catch {
+    return generateUUID();
+  }
+}
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("services/calls/backgroundCallHandler");

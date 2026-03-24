@@ -1,3 +1,4 @@
+import { createLogger } from "@/utils/log";
 import {
   QueryConstraint,
   collection,
@@ -13,7 +14,6 @@ import {
   writeBatch,
 } from "firebase/firestore";
 import { getFirestoreInstance } from "./firebase";
-import { createLogger } from "@/utils/log";
 
 const logger = createLogger("services/userNotifications");
 
@@ -155,70 +155,157 @@ export function subscribeToUserNotifications(
   callback: (notifications: UserNotificationRecord[]) => void,
   maxItems: number = 50,
 ): () => void {
-  const notificationsQuery = query(
-    notificationCollection(uid),
-    orderBy("createdAt", "desc"),
-    limit(maxItems),
-  );
+  let cancelled = false;
+  let currentUnsub: (() => void) | null = null;
+  let retryTimer: ReturnType<typeof setTimeout> | null = null;
+  let attempt = 0;
+  const MAX_RETRIES = 3;
+  const RETRY_DELAYS = [2000, 4000, 8000];
 
-  return onSnapshot(
-    notificationsQuery,
-    (snapshot) => {
-      const notifications = snapshot.docs
-        .map((docSnap) =>
-          mapNotification(
-            docSnap.id,
-            docSnap.data() as Record<string, unknown>,
-          ),
-        )
-        .filter((item): item is UserNotificationRecord => item !== null);
-      callback(notifications);
-    },
-    (error) => {
-      logger.error("Notification subscription failed", error);
-      callback([]);
-    },
-  );
+  function attach() {
+    if (cancelled) return;
+
+    const notificationsQuery = query(
+      notificationCollection(uid),
+      orderBy("createdAt", "desc"),
+      limit(maxItems),
+    );
+
+    currentUnsub = onSnapshot(
+      notificationsQuery,
+      (snapshot) => {
+        attempt = 0;
+        const notifications = snapshot.docs
+          .map((docSnap) =>
+            mapNotification(
+              docSnap.id,
+              docSnap.data() as Record<string, unknown>,
+            ),
+          )
+          .filter((item): item is UserNotificationRecord => item !== null);
+        callback(notifications);
+      },
+      (error) => {
+        const code = (error as any)?.code ?? "";
+        const isPermission =
+          code === "permission-denied" ||
+          String(error).includes("Missing or insufficient permissions");
+
+        if (isPermission && attempt < MAX_RETRIES) {
+          const delay = RETRY_DELAYS[attempt] ?? 8000;
+          logger.warn(
+            `Notification subscription failed (attempt ${attempt + 1}/${MAX_RETRIES}), ` +
+              `retrying in ${delay}ms`,
+            { uid, code },
+          );
+          attempt++;
+          currentUnsub = null;
+          retryTimer = setTimeout(attach, delay);
+        } else {
+          logger.error("Notification subscription failed", {
+            uid,
+            code,
+            error,
+          });
+          callback([]);
+        }
+      },
+    );
+  }
+
+  attach();
+
+  return () => {
+    cancelled = true;
+    if (retryTimer) clearTimeout(retryTimer);
+    if (currentUnsub) currentUnsub();
+  };
 }
 
 export function subscribeToUnreadBadgeCount(
   uid: string,
   callback: (count: number) => void,
 ): () => void {
-  const unreadQuery = query(
-    notificationCollection(uid),
-    where("badgeEligible", "==", true),
-    where("readAt", "==", null),
-  );
+  let cancelled = false;
+  let currentUnsub: (() => void) | null = null;
+  let retryTimer: ReturnType<typeof setTimeout> | null = null;
+  let attempt = 0;
+  const MAX_RETRIES = 3;
+  const RETRY_DELAYS = [2000, 4000, 8000];
 
-  return onSnapshot(
-    unreadQuery,
-    (snapshot) => callback(snapshot.size),
-    (error) => {
-      logger.error("Badge count subscription failed", error);
-      callback(0);
-    },
-  );
+  function attach() {
+    if (cancelled) return;
+
+    const unreadQuery = query(
+      notificationCollection(uid),
+      where("badgeEligible", "==", true),
+      where("readAt", "==", null),
+    );
+
+    currentUnsub = onSnapshot(
+      unreadQuery,
+      (snapshot) => {
+        attempt = 0; // reset on success
+        callback(snapshot.size);
+      },
+      (error) => {
+        const code = (error as any)?.code ?? "";
+        const isPermission =
+          code === "permission-denied" ||
+          String(error).includes("Missing or insufficient permissions");
+
+        if (isPermission && attempt < MAX_RETRIES) {
+          // Auth token may not have propagated to Firestore yet — retry
+          const delay = RETRY_DELAYS[attempt] ?? 8000;
+          logger.warn(
+            `Badge count subscription failed (attempt ${attempt + 1}/${MAX_RETRIES}), ` +
+              `retrying in ${delay}ms`,
+            { uid, code },
+          );
+          attempt++;
+          currentUnsub = null;
+          retryTimer = setTimeout(attach, delay);
+        } else {
+          logger.error("Badge count subscription failed", { uid, code, error });
+          callback(0);
+        }
+      },
+    );
+  }
+
+  attach();
+
+  return () => {
+    cancelled = true;
+    if (retryTimer) clearTimeout(retryTimer);
+    if (currentUnsub) currentUnsub();
+  };
 }
 
 export async function markUserNotificationRead(
   uid: string,
   notificationId: string,
 ): Promise<void> {
-  await updateDoc(doc(getFirestoreInstance(), "Users", uid, "Notifications", notificationId), {
-    readAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-  });
+  await updateDoc(
+    doc(getFirestoreInstance(), "Users", uid, "Notifications", notificationId),
+    {
+      readAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    },
+  );
 }
 
 export async function markUserNotificationPresented(
   uid: string,
   notificationId: string,
 ): Promise<void> {
-  await updateDoc(doc(getFirestoreInstance(), "Users", uid, "Notifications", notificationId), {
-    presentedAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-  });
+  await updateDoc(
+    doc(getFirestoreInstance(), "Users", uid, "Notifications", notificationId),
+    {
+      presentedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    },
+  );
 }
 
 async function markNotificationsReadByConstraints(
@@ -253,7 +340,11 @@ export async function markConversationNotificationsRead(
     where("readAt", "==", null),
   ];
   if (conversationScope) {
-    constraints.splice(1, 0, where("conversationScope", "==", conversationScope));
+    constraints.splice(
+      1,
+      0,
+      where("conversationScope", "==", conversationScope),
+    );
   }
   await markNotificationsReadByConstraints(uid, constraints);
 }

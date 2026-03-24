@@ -289,6 +289,9 @@ export function extractMentionsExact(
     (a, b) => b.displayName.length - a.displayName.length,
   );
 
+  // Track already-matched ranges to avoid overlapping spans
+  const matchedRanges: Array<{ start: number; end: number }> = [];
+
   for (const member of sortedMembers) {
     if (mentionUids.length >= MAX_MENTIONS_PER_MESSAGE) {
       break;
@@ -313,15 +316,27 @@ export function extractMentionsExact(
       const isFollowedByBoundary =
         endIndex < text.length && /[\s.,!?;:]/.test(text[endIndex]);
 
-      if ((isStart || isPrecededBySpace) && (isEnd || isFollowedByBoundary)) {
+      // Check not overlapping with existing match
+      const overlaps = matchedRanges.some(
+        (r) => foundIndex < r.end && endIndex > r.start,
+      );
+
+      if (
+        (isStart || isPrecededBySpace) &&
+        (isEnd || isFollowedByBoundary) &&
+        !overlaps
+      ) {
         if (!mentionUids.includes(member.uid)) {
           mentionUids.push(member.uid);
-          mentionSpans.push({
-            uid: member.uid,
-            start: foundIndex,
-            end: endIndex,
-          });
         }
+        mentionSpans.push({
+          uid: member.uid,
+          start: foundIndex,
+          end: endIndex,
+          displayName: member.displayName,
+          username: member.username,
+        });
+        matchedRanges.push({ start: foundIndex, end: endIndex });
       }
 
       // Continue searching
@@ -392,6 +407,8 @@ export interface TextSegment {
   type: "text" | "mention";
   content: string;
   uid?: string;
+  displayName?: string;
+  username?: string;
 }
 
 export function segmentTextWithMentions(
@@ -409,6 +426,11 @@ export function segmentTextWithMentions(
   const sortedSpans = [...mentionSpans].sort((a, b) => a.start - b.start);
 
   for (const span of sortedSpans) {
+    // Guard against out-of-bounds spans (backward compat with old data)
+    if (span.start < 0 || span.end > text.length || span.start >= span.end) {
+      continue;
+    }
+
     // Add text before this mention
     if (span.start > lastEnd) {
       segments.push({
@@ -422,6 +444,8 @@ export function segmentTextWithMentions(
       type: "mention",
       content: text.substring(span.start, span.end),
       uid: span.uid,
+      displayName: span.displayName,
+      username: span.username,
     });
 
     lastEnd = span.end;

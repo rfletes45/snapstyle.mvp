@@ -332,7 +332,7 @@ function PropertyPanel({
   if (!visible || myPlayer.ownedProperties.length === 0) return null;
 
   return (
-    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={pps.backdrop} onPress={onClose}>
         <Pressable style={[pps.sheet, { backgroundColor: surfaceColor }]}>
           <View style={pps.header}>

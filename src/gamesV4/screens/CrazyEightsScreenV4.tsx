@@ -1196,7 +1196,7 @@ function ColorPicker({
   isDark,
 }: ColorPickerProps) {
   return (
-    <Modal visible={visible} transparent animationType="slide">
+    <Modal visible={visible} transparent animationType="fade">
       <View style={cpStyles.overlay}>
         <View
           style={[

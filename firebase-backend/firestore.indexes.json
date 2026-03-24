@@ -1,10 +1,18 @@
 {
   "indexes": [
     {
-      "collectionGroup": "InAppNotificationsV4",
+      "collectionGroup": "StreamCallHistory",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "deliveredAt", "order": "ASCENDING" },
+        { "fieldPath": "result", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "StreamCallHistory",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "entryType", "order": "ASCENDING" },
         { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
     },
@@ -504,6 +512,82 @@
       "fields": [
         { "fieldPath": "status", "order": "ASCENDING" },
         { "fieldPath": "createdAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "Notifications",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "badgeEligible", "order": "ASCENDING" },
+        { "fieldPath": "readAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "Notifications",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "conversationId", "order": "ASCENDING" },
+        { "fieldPath": "readAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "Notifications",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "conversationId", "order": "ASCENDING" },
+        { "fieldPath": "conversationScope", "order": "ASCENDING" },
+        { "fieldPath": "readAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "Notifications",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "type", "order": "ASCENDING" },
+        { "fieldPath": "readAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "Notifications",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "type", "order": "ASCENDING" },
+        { "fieldPath": "readAt", "order": "ASCENDING" },
+        { "fieldPath": "sectionId", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "Notifications",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "type", "order": "ASCENDING" },
+        { "fieldPath": "readAt", "order": "ASCENDING" },
+        { "fieldPath": "sessionId", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "Notifications",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "type", "order": "ASCENDING" },
+        { "fieldPath": "readAt", "order": "ASCENDING" },
+        { "fieldPath": "inviteId", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "Notifications",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "readAt", "order": "ASCENDING" },
+        { "fieldPath": "sessionId", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "Notifications",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "readAt", "order": "ASCENDING" },
+        { "fieldPath": "inviteId", "order": "ASCENDING" }
       ]
     }
   ],

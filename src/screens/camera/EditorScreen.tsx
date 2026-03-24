@@ -926,7 +926,7 @@ const EditorScreen: React.FC = () => {
       </Modal>
 
       {/* -- Sticker Picker Modal ------------------------------------------- */}
-      <Modal visible={showStickerPicker} transparent animationType="slide">
+      <Modal visible={showStickerPicker} transparent animationType="fade">
         <View style={styles.stickerModal}>
           <View style={styles.stickerHeader}>
             <Text style={styles.stickerTitle}>Stickers</Text>

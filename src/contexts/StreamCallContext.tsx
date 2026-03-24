@@ -14,10 +14,12 @@
 import { CALL_FEATURES } from "@/constants/featureFlags";
 import { useAuth } from "@/store/AuthContext";
 import type { ActiveMediaSession, DirectCallMode } from "@/types/streamCall";
+import { generateUUID } from "@/utils/uuid";
 import type {
   Call,
   StreamVideoClient,
 } from "@stream-io/video-react-native-sdk";
+import * as Crypto from "expo-crypto";
 import React, {
   createContext,
   useCallback,
@@ -27,7 +29,14 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { v4 as uuidv4 } from "uuid";
+
+function uuidv4(): string {
+  try {
+    return Crypto.randomUUID();
+  } catch {
+    return generateUUID();
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Lazy imports — prevents native module crash in Expo Go.
@@ -52,6 +61,11 @@ const leaveVoiceChannel = streamSvc?.leaveVoiceChannel;
 const initStreamClient = streamSvc?.initStreamClient;
 const destroyStreamClient = streamSvc?.destroyStreamClient;
 const clearTokenCache = streamSvc?.clearTokenCache;
+
+// Lazy-load history recording
+const streamHistorySvc = CALL_FEATURES.CALLS_ENABLED
+  ? (require("@/services/stream/streamCallHistoryService") as typeof import("@/services/stream/streamCallHistoryService"))
+  : null;
 
 // ---------------------------------------------------------------------------
 // Context type
@@ -107,10 +121,71 @@ function StreamCallInnerProvider({
   const [activeCall, setActiveCall] = useState<Call | null>(null);
   const busyRef = useRef(false);
 
+  // Track metadata for history recording
+  const sessionMetaRef = useRef<{
+    mode?: "audio" | "video";
+    recipientId?: string;
+    recipientName?: string;
+    groupId?: string;
+    groupName?: string;
+    startedAt: number;
+    isOutgoing: boolean;
+  } | null>(null);
+
   // Keep busyRef in sync with activeSession
   useEffect(() => {
     busyRef.current = activeSession !== null;
   }, [activeSession]);
+
+  // Record history for the ended session
+  const recordSessionHistory = useCallback(
+    (result: "completed" | "missed" | "declined" | "canceled" | "left") => {
+      const meta = sessionMetaRef.current;
+      if (!meta || !streamHistorySvc) return;
+      sessionMetaRef.current = null;
+
+      const now = Date.now();
+
+      try {
+        if (meta.groupId) {
+          // Voice room
+          const callId =
+            activeCallRef.current?.id ?? `voice_channel_${meta.groupId}`;
+          const participantCount =
+            activeCallRef.current?.state?.participants?.length ?? 0;
+          const entry = streamHistorySvc.buildVoiceRoomEntry({
+            callId,
+            groupId: meta.groupId,
+            groupName: meta.groupName ?? "Voice Room",
+            startedAt: meta.startedAt,
+            endedAt: now,
+            participantCount,
+            initiatedBy: userId,
+            currentUserId: userId,
+          });
+          streamHistorySvc.recordCallHistory(entry).catch(() => {});
+        } else if (meta.recipientId) {
+          // Direct call
+          const callId = activeCallRef.current?.id ?? uuidv4();
+          const entry = streamHistorySvc.buildDirectCallEntry({
+            callId,
+            mode: meta.mode ?? "audio",
+            direction: meta.isOutgoing ? "outgoing" : "incoming",
+            result,
+            startedAt: meta.startedAt,
+            endedAt: now,
+            otherUserId: meta.recipientId,
+            otherUserName: meta.recipientName ?? "Unknown",
+            initiatedBy: meta.isOutgoing ? userId : meta.recipientId,
+          });
+          streamHistorySvc.recordCallHistory(entry).catch(() => {});
+        }
+      } catch {
+        // Swallow — history recording should never block
+      }
+    },
+    [userId],
+  );
 
   // Track active session from the call's calling state
   useEffect(() => {
@@ -119,6 +194,7 @@ function StreamCallInnerProvider({
 
     const sub = call.state.callingState$.subscribe((state) => {
       if (state === CallingState.LEFT || state === CallingState.IDLE) {
+        recordSessionHistory("completed");
         activeCallRef.current = null;
         setActiveCall(null);
         setActiveSession(null);
@@ -126,7 +202,7 @@ function StreamCallInnerProvider({
     });
 
     return () => sub.unsubscribe();
-  }, [activeCall]);
+  }, [activeCall, recordSessionHistory]);
 
   const isBusy = activeSession !== null;
 
@@ -145,6 +221,12 @@ function StreamCallInnerProvider({
         activeCallRef.current = call;
         setActiveCall(call);
         setActiveSession({ type: "direct_call", callId });
+        sessionMetaRef.current = {
+          mode,
+          recipientId,
+          startedAt: Date.now(),
+          isOutgoing: true,
+        };
         return callId;
       } catch (err) {
         busyRef.current = false;
@@ -162,27 +244,60 @@ function StreamCallInnerProvider({
     }
     busyRef.current = true;
 
-    const mode = (call.state.custom?.mode as DirectCallMode) ?? "audio";
-    await acceptDirectCall(call, mode);
+    try {
+      const mode = (call.state.custom?.mode as DirectCallMode) ?? "audio";
+      await acceptDirectCall(call, mode);
 
-    activeCallRef.current = call;
-    setActiveCall(call);
-    setActiveSession({ type: "direct_call", callId: call.id });
+      // Set metadata BEFORE state updates so useEffect subscription has it
+      sessionMetaRef.current = {
+        mode,
+        recipientId: call.state.createdBy?.id,
+        recipientName: call.state.createdBy?.name,
+        startedAt: Date.now(),
+        isOutgoing: false,
+      };
+      activeCallRef.current = call;
+      setActiveCall(call);
+      setActiveSession({ type: "direct_call", callId: call.id });
+    } catch (err) {
+      busyRef.current = false;
+      throw err;
+    }
   }, []);
 
   const rejectCallAction = useCallback(async (call: Call) => {
+    // Record as declined in local history
+    if (streamHistorySvc) {
+      const callerId = call.state.createdBy?.id ?? "";
+      const callerName = call.state.createdBy?.name ?? "Unknown";
+      const mode = (call.state.custom?.mode as DirectCallMode) ?? "audio";
+      const entry = streamHistorySvc.buildDirectCallEntry({
+        callId: call.id,
+        mode,
+        direction: "incoming",
+        result: "declined",
+        startedAt: Date.now(),
+        endedAt: Date.now(),
+        otherUserId: callerId,
+        otherUserName: callerName,
+        initiatedBy: callerId,
+      });
+      streamHistorySvc.recordCallHistory(entry).catch(() => {});
+    }
+    sessionMetaRef.current = null;
     await rejectDirectCall(call);
   }, []);
 
   const endCallAction = useCallback(async () => {
     const call = activeCallRef.current;
     if (call && activeSession?.type === "direct_call") {
+      recordSessionHistory("completed");
       await endDirectCall(call);
     }
     activeCallRef.current = null;
     setActiveCall(null);
     setActiveSession(null);
-  }, [activeSession]);
+  }, [activeSession, recordSessionHistory]);
 
   // ── Voice channel actions ───────────────────────────────────────────────
 
@@ -201,6 +316,12 @@ function StreamCallInnerProvider({
           type: "voice_channel",
           channelId: call.id,
         });
+        sessionMetaRef.current = {
+          groupId,
+          groupName,
+          startedAt: Date.now(),
+          isOutgoing: true,
+        };
       } catch (err) {
         busyRef.current = false;
         throw err;
@@ -212,12 +333,13 @@ function StreamCallInnerProvider({
   const leaveChannelAction = useCallback(async () => {
     const call = activeCallRef.current;
     if (call && activeSession?.type === "voice_channel") {
+      recordSessionHistory("left");
       await leaveVoiceChannel(call);
     }
     activeCallRef.current = null;
     setActiveCall(null);
     setActiveSession(null);
-  }, [activeSession]);
+  }, [activeSession, recordSessionHistory]);
 
   // ── Context value ───────────────────────────────────────────────────────
 

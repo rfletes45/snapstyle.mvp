@@ -918,25 +918,10 @@ exports.deleteMessageForAllV2Function = exports.deleteMessageForAllV2;
 const REACTION_RATE_LIMIT_PER_MINUTE = 10;
 /** Max unique emojis per message */
 const MAX_EMOJIS_PER_MESSAGE = 12;
-/** Allowed emoji set */
-const ALLOWED_EMOJIS = new Set([
-    "👍",
-    "👎",
-    "❤️",
-    "🔥",
-    "😂",
-    "😢",
-    "😮",
-    "😡",
-    "🎉",
-    "👏",
-    "🙌",
-    "💯",
-    "⭐",
-    "🚀",
-    "💪",
-    "🤔",
-]);
+/** Allowed emoji set — accepts any valid emoji string (≤ 10 chars) */
+function isValidEmoji(emoji) {
+    return typeof emoji === "string" && emoji.length > 0 && emoji.length <= 10;
+}
 /**
  * Check and update rate limit for reactions
  */
@@ -1005,8 +990,8 @@ exports.toggleReactionV2 = functions.https.onCall(async (data, context) => {
         throw new functions.https.HttpsError("invalid-argument", "Invalid messageId");
     }
     // Validate emoji
-    if (!emoji || typeof emoji !== "string" || !ALLOWED_EMOJIS.has(emoji)) {
-        throw new functions.https.HttpsError("invalid-argument", "Invalid or disallowed emoji");
+    if (!isValidEmoji(emoji)) {
+        throw new functions.https.HttpsError("invalid-argument", "Invalid emoji — must be a non-empty string of at most 10 characters");
     }
     // Membership check
     const isMember = await checkMembership(conversationId, scope, uid);

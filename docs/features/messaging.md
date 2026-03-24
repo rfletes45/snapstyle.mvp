@@ -216,8 +216,22 @@ Edit and delete:
 
 Reactions:
 
-- type: `reactionsSummary` field on `MessageV2` (`Record<string, number>`)
-- UI: `ReactionBar` (picker) and `ReactionDetailSheet` (who reacted)
+- Denormalized on message: `reactionsSummary?: Record<string, number>` on `MessageV2`
+- Subcollection: `Messages/{messageId}/Reactions/{emoji}` stores `{ emoji, uids[], count, updatedAt }`
+- Toggle: Server-side Cloud Function `toggleReactionV2` (atomic transaction, rate-limited 10/min)
+- Client service: `src/services/reactions.ts` — `toggleReaction()`, `subscribeToReactions()`, `subscribeToMultipleMessageReactions()`
+- Full emoji support: Any Unicode emoji accepted (≤ 10 chars), no fixed whitelist
+- Quick reactions: 6 curated emojis in `MessageActionsSheet` tray (👍 ❤️ 😂 😮 😢 🔥)
+- Full emoji picker: `rn-emoji-keyboard` (categories, search, recent, skin tones)
+- UI — pills: `ReactionPills` component renders animated pills below message bubbles
+- UI — detail: `ReactionDetailSheet` shows who reacted with each emoji
+- DM support: `ChatScreen` subscribes to reactions via `subscribeToMultipleMessageReactions`
+- Group support: `GroupChatScreen` subscribes to reactions via `subscribeToMultipleMessageReactions`
+- Placement: Pills rendered inside `messageBubbleWrapper` (DM) / after `messageRow` with avatar indent (Group)
+- Haptic feedback: `expo-haptics` on pill tap and quick reaction selection
+- Animations: `react-native-reanimated` spring scale on tap, FadeIn/FadeOut, layout transitions
+- Theme-aware: Pill colors use `theme.colors.primaryContainer`, `primary`, `surfaceVariant`
+- Max: 20 unique emojis per message, 10 user IDs displayed per reaction
 
 Voice messages:
 
@@ -248,6 +262,14 @@ Attachment pipeline:
 - backend service: `firebase-backend/functions/src/chatMedia.ts`
 - client hooks: `src/hooks/useAttachmentPicker.ts` (camera + gallery)
 - UI: `AttachmentTray` (send queue), `AttachmentGrid` (message display), `MediaViewerModal` (full-screen viewer)
+
+Image compression & bubble sizing:
+
+- `compressImage()` in `src/services/storage.ts` resizes images on upload. Native uses `expo-image-manipulator` with `resize: { width: maxSize }` (aspect-ratio-preserving); web uses canvas scaling.
+- Upload stores `AttachmentV2.width` and `AttachmentV2.height` metadata from the original image.
+- Image bubbles use `getImageBubbleSize(w, h)` to compute dynamic dimensions: max 240×320, min width 150, preserving aspect ratio.
+- DMs: `DMMessageItem` reads `message.imageWidth`/`imageHeight`; Groups: `GroupChatScreen` reads `imageAttachment.width`/`height` directly from `AttachmentV2`.
+- Fullscreen viewer (`MediaViewerModal`) uses `contentFit="contain"` with pinch-to-zoom.
 
 Scheduled messages:
 

@@ -134,4 +134,31 @@ describe("normalizeNotificationPayload", () => {
       shouldHandleNotificationByDedupeKey(dedupeMap, key, 12_600, 1_500),
     ).toBe(true);
   });
+
+  it("includes highlightMessageId for group mention notifications", () => {
+    const normalized = normalizeNotificationPayload({
+      type: "group_message",
+      groupId: "group-1",
+      groupName: "Study Group",
+      mentioned: "true",
+      messageId: "msg-42",
+    });
+
+    expect(normalized?.route.screen).toBe("GroupChat");
+    expect(normalized?.route.params).toEqual(
+      expect.objectContaining({
+        highlightMessageId: "msg-42",
+      }),
+    );
+  });
+
+  it("omits highlightMessageId when not mentioned", () => {
+    const normalized = normalizeNotificationPayload({
+      type: "group_message",
+      groupId: "group-1",
+      groupName: "Study Group",
+    });
+
+    expect(normalized?.route.params).not.toHaveProperty("highlightMessageId");
+  });
 });

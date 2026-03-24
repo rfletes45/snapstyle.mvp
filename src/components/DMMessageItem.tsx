@@ -26,6 +26,7 @@ import AppImage from "@/components/AppImage";
 import { ReplyBubble, SwipeableMessage } from "@/components/chat";
 import { AnimalBubble } from "@/components/chat/AnimalBubble";
 import { LinkPreviewCard } from "@/components/chat/LinkPreviewCard";
+import { ReactionPills } from "@/components/chat/ReactionBar";
 import { ThreadIndicator } from "@/components/chat/ThreadIndicator";
 import { VoiceMessagePlayer } from "@/components/chat/VoiceMessagePlayer";
 import { Spacing } from "@/constants/theme";
@@ -36,7 +37,28 @@ import {
 import type { ChatAppearance, SenderStyle } from "@/cosmetics/types";
 import { useLinkPreviews } from "@/hooks/useLinkPreviews";
 import { extractUrls, hasUrls } from "@/services/linkPreview";
+import type { ReactionSummary } from "@/services/reactions";
 import type { ReplyToMetadata } from "@/types/messaging";
+
+const IMAGE_MAX_WIDTH = 240;
+const IMAGE_MAX_HEIGHT = 320;
+const IMAGE_MIN_WIDTH = 150;
+
+function getImageBubbleSize(w?: number, h?: number) {
+  if (!w || !h) return { width: IMAGE_MAX_WIDTH, height: IMAGE_MAX_WIDTH };
+  const aspect = w / h;
+  let bw = Math.min(w, IMAGE_MAX_WIDTH);
+  let bh = bw / aspect;
+  if (bh > IMAGE_MAX_HEIGHT) {
+    bh = IMAGE_MAX_HEIGHT;
+    bw = bh * aspect;
+  }
+  if (bw < IMAGE_MIN_WIDTH) {
+    bw = IMAGE_MIN_WIDTH;
+    bh = bw / aspect;
+  }
+  return { width: Math.round(bw), height: Math.round(bh) };
+}
 
 export interface MessageWithProfile {
   id: string;
@@ -54,12 +76,17 @@ export interface MessageWithProfile {
   voiceDurationMs?: number;
   /** Image attachment URL (for media messages) */
   imageUrl?: string;
+  /** Image dimensions from upload metadata */
+  imageWidth?: number;
+  imageHeight?: number;
   /** Sender's chat style snapshot (bubble color, font, etc.) */
   senderStyle?: SenderStyle | null;
   /** Thread reply count (for thread indicator) */
   replyCount?: number;
   /** Animal theme ID (for animal signal messages) */
   animalId?: string;
+  /** Denormalized reaction counts from the message document */
+  reactionsSummary?: Record<string, number>;
 }
 
 interface DMMessageItemProps {
@@ -97,6 +124,10 @@ interface DMMessageItemProps {
   isGrouped?: boolean;
   /** Whether to show the timestamp for this message */
   showTimestamp?: boolean;
+  /** Live reactions for this message (from subscription) */
+  reactions?: ReactionSummary[];
+  /** Called immediately for optimistic reaction toggle */
+  onOptimisticReaction?: (messageId: string, emoji: string) => void;
 }
 
 export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
@@ -114,6 +145,8 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
     isHighlighted = false,
     isGrouped = false,
     showTimestamp = true,
+    reactions = [],
+    onOptimisticReaction,
   }) => {
     const theme = useTheme();
     const navigation = useNavigation<NativeStackNavigationProp<any>>();
@@ -327,10 +360,14 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
 
       if (message.type === "image") {
         if (message.imageUrl) {
+          const imgSize = getImageBubbleSize(
+            message.imageWidth,
+            message.imageHeight,
+          );
           return (
             <AppImage
               source={{ uri: message.imageUrl }}
-              style={styles.standaloneImage}
+              style={[styles.standaloneImage, imgSize]}
               contentFit="cover"
               debugLabel="DMMessageImage"
             />
@@ -516,6 +553,19 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
                 )}
               </View>
             </View>
+
+            {/* Reaction pills — anchored below the bubble, aligned to sender */}
+            {reactions.length > 0 && (
+              <ReactionPills
+                reactions={reactions}
+                isOwnMessage={isSentByMe}
+                scope="dm"
+                conversationId={chatId || ""}
+                messageId={message.id}
+                currentUid={currentUid || ""}
+                onOptimisticToggle={onOptimisticReaction}
+              />
+            )}
           </View>
         </View>
 
@@ -633,8 +683,6 @@ const styles = StyleSheet.create({
     borderRadius: 0,
   },
   standaloneImage: {
-    width: 200,
-    height: 200,
     borderRadius: 16,
   },
 });

@@ -99,7 +99,8 @@ import LevelRewardsScreen from "@/gamesV4/screens/LevelRewardsScreen";
 import ProfileAchievementsScreen from "@/screens/profile/ProfileAchievementsScreen";
 
 // Call screens (Stream-based)
-import { CallHistoryScreen, CallSettingsScreen } from "@/screens/calls";
+import { CallSettingsScreen } from "@/screens/calls";
+import CallsScreen from "@/screens/calls/CallsScreen";
 // Lazy-load Stream screens to avoid native module crash in Expo Go
 const DirectCallScreen = CALL_FEATURES.CALLS_ENABLED
   ? require("@/screens/stream/DirectCallScreen").default
@@ -344,6 +345,9 @@ function AppTabs() {
             case "Messages":
               iconName = "message-outline";
               break;
+            case "Calls":
+              iconName = "phone-outline";
+              break;
             case "Shop":
               iconName = "store-outline";
               break;
@@ -366,6 +370,11 @@ function AppTabs() {
         options={{
           headerShown: false,
         }}
+      />
+      <Tab.Screen
+        name="Calls"
+        component={CallsScreen}
+        options={{ headerShown: false }}
       />
       <Tab.Screen
         name="Shop"
@@ -491,15 +500,6 @@ function MainStack() {
               presentation: "fullScreenModal",
               gestureEnabled: false,
               animation: "fade",
-            }}
-          />
-
-          <MainStack_Nav.Screen
-            name="CallHistory"
-            component={CallHistoryScreen}
-            options={{
-              headerShown: false,
-              animation: "slide_from_right",
             }}
           />
 
@@ -682,6 +682,7 @@ export default function RootNavigator({
                   ChatList: "messages",
                 },
               },
+              Calls: "calls",
               Shop: "shop",
             },
           },
