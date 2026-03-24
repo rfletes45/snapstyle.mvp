@@ -11,14 +11,7 @@ import {
   toggleReactionV2Function,
 } from "./messaging";
 
-// Shop/IAP/Gifting/Deals/Calls/Preview
-import {
-  cleanupCallSignaling,
-  getTurnCredentials,
-  handleCallTimeouts,
-  onCallCreated,
-  onCallUpdated,
-} from "./calls";
+// Shop/IAP/Gifting/Deals/Preview
 import {
   cleanupOldDeals,
   generateDailyDeals,
@@ -109,6 +102,9 @@ import { getRateLimitStatus } from "./rateLimiter";
 // Account Deletion (comprehensive server-side cleanup)
 import { deleteAccountFunction } from "./deleteAccount";
 
+// Stream Video token issuance
+import { getStreamVideoToken } from "./streamToken";
+
 // Privacy-Enforced Publish APIs (Segment 7)
 import {
   onChatSettingsChanged,
@@ -175,7 +171,6 @@ export {
   adminSetBan,
   checkMessageRateLimit,
   claimTaskReward,
-  cleanupCallSignaling,
   cleanupExpiredPushTokens,
   cleanupExpiredSnaps,
   cleanupExpiredStories,
@@ -189,17 +184,13 @@ export {
   getGiftHistory,
   getPurchaseHistory,
   getRateLimitStatus,
-  getTurnCredentials,
   grantCosmeticEntitlement,
   grantItem,
-  handleCallTimeouts,
   incrementProfileViews,
   initializeExistingWallets,
   initializeFirstAdmin,
   markInboxRead,
   mintChatMediaUrl,
-  onCallCreated,
-  onCallUpdated,
   onDeleteMessage,
   onDMMessageInbox,
   onFriendAddedTaskProgress,
@@ -239,6 +230,9 @@ export {
 
 // ─── Account Deletion ──────────────────────────────────────────────────────
 export const deleteAccount = deleteAccountFunction;
+
+// ─── Stream Video ──────────────────────────────────────────────────────────
+export { getStreamVideoToken };
 
 // ─── Callable aliases for client backward-compat ───────────────────────────
 // Client iap.ts calls "verifyIAPPurchase" — map it to the canonical handler.

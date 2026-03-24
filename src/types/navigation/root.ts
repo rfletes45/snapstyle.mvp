@@ -65,9 +65,17 @@ export type MainStackParamList = {
   SnapViewer: OptionalRouteParams;
   Camera: OptionalRouteParams;
   CameraShare: OptionalRouteParams;
-  AudioCall: OptionalRouteParams;
-  VideoCall: OptionalRouteParams;
-  GroupCall: OptionalRouteParams;
+  DirectCall: {
+    callId: string;
+    recipientName: string;
+    mode: "audio" | "video";
+    isOutgoing: boolean;
+  };
+  VoiceChannel: {
+    channelId: string;
+    channelName: string;
+    groupId: string;
+  };
   CallHistory: undefined;
   CallSettings: undefined;
   Friends:

@@ -33,13 +33,7 @@ import React, {
   useRef,
   useState,
 } from "react";
-import {
-  Alert,
-  Platform,
-  StyleSheet,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { Alert, StyleSheet, TouchableOpacity, View } from "react-native";
 import {
   ActivityIndicator,
   Appbar,
@@ -121,23 +115,8 @@ import { AnimalBubble } from "@/components/chat/AnimalBubble";
 import { useAnimalEntitlement } from "@/hooks/useAnimalEntitlement";
 import { playAnimalSound } from "@/services/chat/animalSoundService";
 
-// Group Calls (Phase 3) - lazy loaded to avoid native module issues
-import { CallType } from "@/types/call";
-import Constants from "expo-constants";
-
-// Platform detection for native calls
-const isWeb = Platform.OS === "web";
-const isExpoGo = Constants.appOwnership === "expo";
-const areNativeCallsAvailable = !isWeb && !isExpoGo;
-
-// Helper to lazy-load groupCallService (avoids react-native-webrtc at module load)
-// Use relative path because require() doesn't always resolve @/ alias correctly
-const getGroupCallService = () => {
-  if (!areNativeCallsAvailable) {
-    return null;
-  }
-  return require("@/services/calls/groupCallService").groupCallService;
-};
+// Voice channels (Stream-powered)
+import { getVoiceChannelId } from "@/services/stream/voiceChannelService";
 
 // Types
 import {
@@ -266,9 +245,6 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   const [scheduledMessages, setScheduledMessages] = useState<
     ScheduledMessage[]
   >([]);
-
-  // Group call state (Phase 3)
-  const [isStartingCall, setIsStartingCall] = useState(false);
 
   // Games V4 state
   const [gamePickerVisible, setGamePickerVisible] = useState(false);
@@ -564,85 +540,18 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   // Handlers
   // ==========================================================================
 
-  // Group Call Handler (Phase 3)
-  const handleStartGroupCall = useCallback(
-    async (callType: CallType = "video") => {
-      if (!CALL_FEATURES.CALLS_ENABLED) return;
-      if (!group || !uid || isStartingCall) return;
+  // Voice Channel Handler (Stream-powered)
+  const handleJoinVoiceChannel = useCallback(() => {
+    if (!CALL_FEATURES.CALLS_ENABLED) return;
+    if (!group || !groupId) return;
 
-      // Check if native calls are available
-      if (!areNativeCallsAvailable) {
-        Alert.alert(
-          "Calls Not Available",
-          `Video and audio calls require a development build and are not available in ${isWeb ? "web browsers" : "Expo Go"}. Please use a development build to make calls.`,
-        );
-        return;
-      }
-
-      setIsStartingCall(true);
-      try {
-        // Get member IDs excluding current user
-        const memberIds = groupMembers
-          .filter((m) => m.uid !== uid)
-          .map((m) => m.uid);
-
-        if (memberIds.length === 0) {
-          Alert.alert("Cannot Start Call", "No other members in this group.");
-          return;
-        }
-
-        const service = getGroupCallService();
-        if (!service) {
-          Alert.alert(
-            "Calls Not Available",
-            "Call service is not available on this platform.",
-          );
-          return;
-        }
-
-        const callId = await service.startGroupCall(
-          groupId,
-          group.name,
-          memberIds,
-          callType,
-        );
-
-        // Navigate to group call screen
-        navigation.navigate("GroupCall", {
-          callId,
-          groupName: group.name,
-          isOutgoing: true,
-        });
-      } catch (error: any) {
-        logger.error("[GroupChatScreen] Failed to start group call:", error);
-        Alert.alert(
-          "Call Failed",
-          error.message || "Failed to start group call. Please try again.",
-        );
-      } finally {
-        setIsStartingCall(false);
-      }
-    },
-    [group, groupId, groupMembers, uid, isStartingCall, navigation],
-  );
-
-  const handleShowCallOptions = useCallback(() => {
-    Alert.alert(
-      "Start Group Call",
-      `Call ${group?.name || "group"} (${groupMembers.length} members)`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Audio Call",
-          onPress: () => handleStartGroupCall("audio"),
-        },
-        {
-          text: "Video Call",
-          onPress: () => handleStartGroupCall("video"),
-        },
-      ],
-    );
-  }, [group?.name, groupMembers.length, handleStartGroupCall]);
+    const channelId = getVoiceChannelId(groupId);
+    navigation.navigate("VoiceChannel" as any, {
+      channelId,
+      channelName: group.name || "Voice Channel",
+      groupId,
+    });
+  }, [group, groupId, navigation]);
 
   // Games V4: handle game selection from picker
   const handleGameSelected = useCallback(
@@ -1477,15 +1386,10 @@ export default function GroupChatScreen({ route, navigation }: Props) {
           </TouchableOpacity>
           {CALL_FEATURES.CALLS_ENABLED && (
             <TouchableOpacity
-              onPress={handleShowCallOptions}
-              disabled={isStartingCall}
+              onPress={handleJoinVoiceChannel}
               style={styles.callButton}
             >
-              {isStartingCall ? (
-                <ActivityIndicator size="small" color={colors.primary} />
-              ) : (
-                <Ionicons name="videocam" size={22} color={colors.primary} />
-              )}
+              <Ionicons name="headset" size={22} color={colors.primary} />
             </TouchableOpacity>
           )}
           <Appbar.Action

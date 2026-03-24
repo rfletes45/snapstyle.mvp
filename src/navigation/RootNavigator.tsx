@@ -98,14 +98,15 @@ import LevelRewardsScreen from "@/gamesV4/screens/LevelRewardsScreen";
 // Profile screens (standalone routes)
 import ProfileAchievementsScreen from "@/screens/profile/ProfileAchievementsScreen";
 
-// Call screens
-import {
-  AudioCallScreen,
-  CallHistoryScreen,
-  CallSettingsScreen,
-  GroupCallScreen,
-  VideoCallScreen,
-} from "@/screens/calls";
+// Call screens (Stream-based)
+import { CallHistoryScreen, CallSettingsScreen } from "@/screens/calls";
+// Lazy-load Stream screens to avoid native module crash in Expo Go
+const DirectCallScreen = CALL_FEATURES.CALLS_ENABLED
+  ? require("@/screens/stream/DirectCallScreen").default
+  : () => null;
+const VoiceChannelScreen = CALL_FEATURES.CALLS_ENABLED
+  ? require("@/screens/stream/VoiceChannelScreen").default
+  : () => null;
 
 const AuthStack_Nav = createNativeStackNavigator<AuthStackParamList>();
 const InboxStack_Nav = createNativeStackNavigator<InboxStackParamList>();
@@ -473,8 +474,8 @@ function MainStack() {
       {CALL_FEATURES.CALLS_ENABLED && (
         <>
           <MainStack_Nav.Screen
-            name="AudioCall"
-            component={AudioCallScreen}
+            name="DirectCall"
+            component={DirectCallScreen}
             options={{
               headerShown: false,
               presentation: "fullScreenModal",
@@ -483,18 +484,8 @@ function MainStack() {
             }}
           />
           <MainStack_Nav.Screen
-            name="VideoCall"
-            component={VideoCallScreen}
-            options={{
-              headerShown: false,
-              presentation: "fullScreenModal",
-              gestureEnabled: false,
-              animation: "fade",
-            }}
-          />
-          <MainStack_Nav.Screen
-            name="GroupCall"
-            component={GroupCallScreen}
+            name="VoiceChannel"
+            component={VoiceChannelScreen}
             options={{
               headerShown: false,
               presentation: "fullScreenModal",

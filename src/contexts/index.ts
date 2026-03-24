@@ -2,5 +2,5 @@
  * Contexts Index
  */
 
-// Call Context
-export { CallContext, CallProvider, useCallContext } from "./CallContext";
+// Stream Call Context (replaces legacy CallContext)
+export { StreamCallProvider, useStreamCall } from "./StreamCallContext";

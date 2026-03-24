@@ -20,20 +20,16 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import Avatar from "@/components/Avatar";
 import { theme } from "@/constants/theme";
+import { useStreamCall } from "@/contexts/StreamCallContext";
+import { useColors } from "@/store/ThemeContext";
 import {
   CallHistoryEntry,
   CallHistoryFilter,
   CallHistoryStats,
   CallType,
 } from "@/types/call";
-import { useColors } from "@/store/ThemeContext";
 
-import {
-  areNativeCallsAvailable,
-  callHistoryService,
-  getCallService,
-} from "@/services/calls";
-
+import { callHistoryService } from "@/services/calls";
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("screens/calls/CallHistoryScreen");
@@ -58,6 +54,7 @@ const FILTER_OPTIONS: { key: FilterOption; label: string; icon: string }[] = [
 export function CallHistoryScreen() {
   const navigation = useNavigation<any>();
   const colors = useColors();
+  const { startCall } = useStreamCall();
 
   // State
   const [history, setHistory] = useState<CallHistoryEntry[]>([]);
@@ -125,47 +122,31 @@ export function CallHistoryScreen() {
     loadHistory();
   }, [loadHistory]);
 
-  // Call from history
+  // Call from history (Stream-powered)
   const handleCallFromHistory = useCallback(
     async (entry: CallHistoryEntry, callType?: CallType) => {
-      // Check if native calls are available
-      if (!areNativeCallsAvailable) {
-        Alert.alert(
-          "Not Available",
-          "Video and audio calls require a development build and are not available on this platform.",
-        );
-        return;
-      }
-
       const otherParticipant = entry.otherParticipants[0];
       if (!otherParticipant) return;
 
       const type = callType || entry.type;
+      const mode = type === "video" ? "video" : ("audio" as const);
 
       try {
-        const callService = await getCallService();
-        if (!callService) {
-          Alert.alert("Error", "Call service not available");
-          return;
-        }
-
-        const callId = await callService.startCall({
-          conversationId:
-            entry.scope === "dm" ? otherParticipant.odId : entry.callId,
-          participantIds: [otherParticipant.odId],
-          type,
-          scope: entry.scope,
-        });
-
-        navigation.navigate(type === "video" ? "VideoCall" : "AudioCall", {
+        const callId = await startCall(otherParticipant.odId, mode);
+        navigation.navigate("DirectCall", {
           callId,
+          recipientName: otherParticipant.displayName || "User",
+          mode,
           isOutgoing: true,
         });
-      } catch (error: any) {
-        Alert.alert("Error", error.message || "Failed to start call");
+      } catch (err: any) {
+        Alert.alert(
+          "Call Failed",
+          err?.message || "Unable to start call. Please try again.",
+        );
       }
     },
-    [navigation],
+    [navigation, startCall],
   );
 
   // Delete single entry

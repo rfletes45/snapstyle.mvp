@@ -203,206 +203,46 @@ export const PROFILE_V2_FEATURES = {
 // =============================================================================
 
 /**
- * Video calling feature flags
- * Enable these progressively as each phase completes
+ * Check whether Stream Video native modules are available at runtime.
+ * Returns false in Expo Go where the native WebRTC module is missing.
+ */
+function isStreamNativeAvailable(): boolean {
+  try {
+    require("@stream-io/react-native-webrtc");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Calling feature flags (Stream Video SDK)
  *
- * @see docs/VIDEO_CALL_IMPLEMENTATION_PLAN.md
+ * The call system is now powered by Stream Video.
+ * Legacy WebRTC/Firestore signaling flags have been removed.
+ * CALLS_ENABLED auto-disables when native modules are unavailable (Expo Go).
  */
 export const CALL_FEATURES = {
-  // =========================================================================
-  // Phase 1: Foundation (1:1 Audio Calls)
-  // =========================================================================
+  /** Master switch for all calling features */
+  CALLS_ENABLED: isStreamNativeAvailable(),
 
-  /**
-   * Master switch for calling feature
-   *
-   * When enabled:
-   * - Call buttons appear in DM chat headers
-   * - Users can initiate and receive calls
-   * - Call history is tracked
-   *
-   * @default true - Enabled
-   */
-  CALLS_ENABLED: true,
+  /** Enable 1:1 direct calls (audio + video, with ringing) */
+  DIRECT_CALLS_ENABLED: true,
 
-  /**
-   * Enable audio-only calls
-   * Requires CALLS_ENABLED to be true
-   *
-   * @default true
-   */
-  AUDIO_CALLS_ENABLED: true,
+  /** Enable Discord-style voice channels in group chats */
+  VOICE_CHANNELS_ENABLED: true,
 
-  // =========================================================================
-  // Phase 2: Video & Native Integration
-  // =========================================================================
-
-  /**
-   * Enable video calls
-   * Requires CALLS_ENABLED to be true
-   *
-   * @default true - Enabled
-   */
-  VIDEO_CALLS_ENABLED: true,
-
-  /**
-   * Enable CallKeep integration for native call UI
-   * iOS: CallKit integration
-   * Android: ConnectionService integration
-   *
-   * @default true
-   */
-  NATIVE_CALL_UI_ENABLED: true,
-
-  /**
-   * Enable background audio during calls
-   * Allows calls to continue when app is minimized
-   *
-   * @default true
-   */
-  BACKGROUND_CALLS_ENABLED: true,
-
-  // =========================================================================
-  // Phase 3: Group Calls
-  // =========================================================================
-
-  /**
-   * Enable group audio/video calls
-   * Requires CALLS_ENABLED to be true
-   * Max 8 participants
-   *
-   * @default true - Enabled
-   */
-  GROUP_CALLS_ENABLED: true,
-
-  /**
-   * Enable host controls for group calls
-   * Includes: mute all, remove participant, pin video
-   *
-   * @default true
-   */
-  HOST_CONTROLS_ENABLED: true,
-
-  /**
-   * Enable adaptive bitrate for video calls
-   * Automatically adjusts quality based on network
-   *
-   * @default true
-   */
-  ADAPTIVE_BITRATE_ENABLED: true,
-
-  // =========================================================================
-  // Phase 4: Polish & Launch
-  // =========================================================================
-
-  /**
-   * Enable call history screen
-   * Shows recent calls with filtering and stats
-   *
-   * @default true
-   */
+  /** Enable call history screen */
   CALL_HISTORY_ENABLED: true,
 
-  /**
-   * Enable call settings screen
-   * Camera, audio, ringtone, DND, privacy settings
-   *
-   * @default true
-   */
+  /** Enable call settings screen */
   CALL_SETTINGS_ENABLED: true,
 
-  /**
-   * Enable call quality analytics
-   * Tracks metrics, issues, and user feedback
-   *
-   * @default true
-   */
-  CALL_ANALYTICS_ENABLED: true,
-
-  /**
-   * Show missed calls badge in tab bar
-   *
-   * @default true
-   */
+  /** Show missed calls badge in tab bar */
   MISSED_CALL_BADGE_ENABLED: true,
 
-  /**
-   * Enable call quality indicator during calls
-   *
-   * @default true
-   */
-  QUALITY_INDICATOR_ENABLED: true,
-
-  // =========================================================================
-  // Future Features
-  // =========================================================================
-
-  /**
-   * Enable screen sharing during calls
-   * Future feature - not yet implemented
-   *
-   * @default false
-   */
-  SCREEN_SHARING_ENABLED: false,
-
-  /**
-   * Enable call recording
-   * Future feature - requires additional permissions
-   *
-   * @default false
-   */
-  CALL_RECORDING_ENABLED: false,
-
-  // =========================================================================
-  // Rollout Configuration
-  // =========================================================================
-
-  /**
-   * Enable percentage-based rollout for calls
-   *
-   * When enabled:
-   * - Uses user ID hashing for consistent bucketing
-   * - Respects CALL_ROLLOUT_PERCENTAGE
-   *
-   * @default true
-   */
-  PERCENTAGE_ROLLOUT_ENABLED: true,
-
-  /**
-   * Rollout percentage for calling feature
-   *
-   * Values: 0-100
-   * - 0: Only beta users (internal testing)
-   * - 5: Beta + 5% (beta phase)
-   * - 25: Canary release
-   * - 50: Gradual rollout
-   * - 100: Full rollout
-   *
-   * @default 0 - Start with internal testing only
-   */
-  ROLLOUT_PERCENTAGE: 0,
-
-  // =========================================================================
-  // Debug Flags
-  // =========================================================================
-
-  /** Debug: Log call events to console */
+  /** Debug: Log Stream call events to console */
   DEBUG_CALLS: __DEV__,
-
-  /** Debug: Log WebRTC events */
-  DEBUG_WEBRTC: __DEV__,
-
-  /** Debug: Log signaling messages */
-  DEBUG_SIGNALING: __DEV__,
-
-  /** Debug: Force call quality issues for testing */
-  DEBUG_FORCE_POOR_QUALITY: false,
-
-  /** Debug: Skip permission checks */
-  DEBUG_SKIP_PERMISSIONS: false,
-
-  /** Debug: Show call state overlay */
-  DEBUG_CALL_STATE_OVERLAY: __DEV__,
 } as const;
 
 // =============================================================================

@@ -45,11 +45,11 @@ import { UserProfileHeader } from "@/components/profile/ProfileHeader/index";
 import { SocialProofSection } from "@/components/profile/SocialProof";
 import { CALL_FEATURES } from "@/constants/featureFlags";
 import { Spacing } from "@/constants/theme";
+import { useStreamCall } from "@/contexts/StreamCallContext";
 import { useBadges } from "@/hooks/useBadges";
 import { useAuth } from "@/store/AuthContext";
 import { useColors } from "@/store/ThemeContext";
 import * as haptics from "@/utils/haptics";
-import { areNativeCallsAvailable } from "@/utils/platform";
 
 // Services
 import { blockUser, unblockUser } from "@/services/blocking";
@@ -111,12 +111,12 @@ function UserProfileScreenContent({
 }: UserProfileScreenProps) {
   const { userId } = route.params as { userId: string };
   const { currentFirebaseUser } = useAuth();
+  const { startCall } = useStreamCall();
   const insets = useSafeAreaInsets();
   const currentUserId = currentFirebaseUser?.uid;
 
   const colors = useColors();
-  const canInitiateCalls =
-    CALL_FEATURES.CALLS_ENABLED && areNativeCallsAvailable;
+  const canInitiateCalls = CALL_FEATURES.CALLS_ENABLED;
 
   // ==========================================================================
   // State
@@ -369,16 +369,24 @@ function UserProfileScreenContent({
     navigation.navigate("ChatDetail", { friendUid: userId });
   }, [userId, navigation]);
 
-  const handleCall = useCallback(() => {
+  const handleCall = useCallback(async () => {
     if (!userId) return;
     haptics.buttonPress();
-    // Navigate to audio call
-    navigation.navigate("AudioCall", {
-      recipientId: userId,
-      recipientName: profile?.displayName,
-      isOutgoing: true,
-    });
-  }, [userId, profile, navigation]);
+    try {
+      const callId = await startCall(userId, "audio");
+      navigation.navigate("DirectCall" as any, {
+        callId,
+        recipientName: profile?.displayName || "User",
+        mode: "audio",
+        isOutgoing: true,
+      });
+    } catch (err: any) {
+      Alert.alert(
+        "Call Failed",
+        err?.message || "Unable to start call. Please try again.",
+      );
+    }
+  }, [userId, startCall, profile, navigation]);
 
   const handleRemoveFriend = useCallback(async () => {
     if (!currentUserId || !userId || actionLoading) return;

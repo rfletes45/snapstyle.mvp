@@ -1,0 +1,348 @@
+/**
+ * Stream Call Context
+ *
+ * Replaces the legacy CallContext. Provides unified state management
+ * for both direct calls and voice channels using Stream Video SDK.
+ *
+ * Architecture:
+ * - One StreamVideoClient, initialized on auth and torn down on logout
+ * - Direct calls: uses Stream ringing flow (unique call IDs)
+ * - Voice channels: uses Stream audio_room (deterministic IDs per group)
+ * - Busy policy: user can only be in one active media session at a time
+ */
+
+import { CALL_FEATURES } from "@/constants/featureFlags";
+import { useAuth } from "@/store/AuthContext";
+import type { ActiveMediaSession, DirectCallMode } from "@/types/streamCall";
+import type {
+  Call,
+  StreamVideoClient,
+} from "@stream-io/video-react-native-sdk";
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { v4 as uuidv4 } from "uuid";
+
+// ---------------------------------------------------------------------------
+// Lazy imports — prevents native module crash in Expo Go.
+// These modules are only loaded when CALLS_ENABLED is true.
+// ---------------------------------------------------------------------------
+const streamSDK = CALL_FEATURES.CALLS_ENABLED
+  ? (require("@stream-io/video-react-native-sdk") as any)
+  : null;
+const streamSvc = CALL_FEATURES.CALLS_ENABLED
+  ? (require("@/services/stream") as any)
+  : null;
+
+const CallingState = streamSDK?.CallingState;
+const StreamVideo = streamSDK?.StreamVideo;
+
+const startDirectCall = streamSvc?.startDirectCall;
+const acceptDirectCall = streamSvc?.acceptDirectCall;
+const rejectDirectCall = streamSvc?.rejectDirectCall;
+const endDirectCall = streamSvc?.endDirectCall;
+const joinVoiceChannel = streamSvc?.joinVoiceChannel;
+const leaveVoiceChannel = streamSvc?.leaveVoiceChannel;
+const initStreamClient = streamSvc?.initStreamClient;
+const destroyStreamClient = streamSvc?.destroyStreamClient;
+const clearTokenCache = streamSvc?.clearTokenCache;
+
+// ---------------------------------------------------------------------------
+// Context type
+// ---------------------------------------------------------------------------
+
+interface StreamCallContextType {
+  /** Whether the Stream client is initialized and ready */
+  isReady: boolean;
+
+  /** The current active media session (direct call or voice channel), or null */
+  activeSession: ActiveMediaSession;
+
+  /** Whether the user is currently busy (in any call/channel) */
+  isBusy: boolean;
+
+  // Direct call actions
+  /** Start an outgoing 1:1 call */
+  startCall: (recipientId: string, mode: DirectCallMode) => Promise<string>;
+  /** Accept an incoming ringing call */
+  acceptCall: (call: Call) => Promise<void>;
+  /** Reject/decline an incoming ringing call */
+  rejectCall: (call: Call) => Promise<void>;
+  /** End/leave the current direct call */
+  endCall: () => Promise<void>;
+
+  // Voice channel actions
+  /** Join a voice channel for a group */
+  joinChannel: (groupId: string, groupName: string) => Promise<void>;
+  /** Leave the current voice channel */
+  leaveChannel: () => Promise<void>;
+
+  /** The currently active Stream Call object (direct or voice), if any */
+  activeCall: Call | null;
+}
+
+const StreamCallContext = createContext<StreamCallContextType | undefined>(
+  undefined,
+);
+
+// ---------------------------------------------------------------------------
+// Inner provider — requires StreamVideo wrapper to be present
+// ---------------------------------------------------------------------------
+
+function StreamCallInnerProvider({
+  children,
+  userId,
+}: {
+  children: React.ReactNode;
+  userId: string;
+}) {
+  const [activeSession, setActiveSession] = useState<ActiveMediaSession>(null);
+  const activeCallRef = useRef<Call | null>(null);
+  const [activeCall, setActiveCall] = useState<Call | null>(null);
+  const busyRef = useRef(false);
+
+  // Keep busyRef in sync with activeSession
+  useEffect(() => {
+    busyRef.current = activeSession !== null;
+  }, [activeSession]);
+
+  // Track active session from the call's calling state
+  useEffect(() => {
+    const call = activeCallRef.current;
+    if (!call) return;
+
+    const sub = call.state.callingState$.subscribe((state) => {
+      if (state === CallingState.LEFT || state === CallingState.IDLE) {
+        activeCallRef.current = null;
+        setActiveCall(null);
+        setActiveSession(null);
+      }
+    });
+
+    return () => sub.unsubscribe();
+  }, [activeCall]);
+
+  const isBusy = activeSession !== null;
+
+  // ── Direct call actions ─────────────────────────────────────────────────
+
+  const startCall = useCallback(
+    async (recipientId: string, mode: DirectCallMode): Promise<string> => {
+      if (busyRef.current) {
+        throw new Error("Already in a call or voice channel.");
+      }
+      busyRef.current = true;
+
+      const callId = uuidv4();
+      try {
+        const call = await startDirectCall(callId, userId, recipientId, mode);
+        activeCallRef.current = call;
+        setActiveCall(call);
+        setActiveSession({ type: "direct_call", callId });
+        return callId;
+      } catch (err) {
+        busyRef.current = false;
+        throw err;
+      }
+    },
+    [userId],
+  );
+
+  const acceptCall = useCallback(async (call: Call) => {
+    if (busyRef.current) {
+      // Auto-reject if already in a session
+      await rejectDirectCall(call);
+      return;
+    }
+    busyRef.current = true;
+
+    const mode = (call.state.custom?.mode as DirectCallMode) ?? "audio";
+    await acceptDirectCall(call, mode);
+
+    activeCallRef.current = call;
+    setActiveCall(call);
+    setActiveSession({ type: "direct_call", callId: call.id });
+  }, []);
+
+  const rejectCallAction = useCallback(async (call: Call) => {
+    await rejectDirectCall(call);
+  }, []);
+
+  const endCallAction = useCallback(async () => {
+    const call = activeCallRef.current;
+    if (call && activeSession?.type === "direct_call") {
+      await endDirectCall(call);
+    }
+    activeCallRef.current = null;
+    setActiveCall(null);
+    setActiveSession(null);
+  }, [activeSession]);
+
+  // ── Voice channel actions ───────────────────────────────────────────────
+
+  const joinChannelAction = useCallback(
+    async (groupId: string, groupName: string) => {
+      if (busyRef.current) {
+        throw new Error("Already in a call or voice channel.");
+      }
+      busyRef.current = true;
+
+      try {
+        const call = await joinVoiceChannel(groupId, groupName);
+        activeCallRef.current = call;
+        setActiveCall(call);
+        setActiveSession({
+          type: "voice_channel",
+          channelId: call.id,
+        });
+      } catch (err) {
+        busyRef.current = false;
+        throw err;
+      }
+    },
+    [],
+  );
+
+  const leaveChannelAction = useCallback(async () => {
+    const call = activeCallRef.current;
+    if (call && activeSession?.type === "voice_channel") {
+      await leaveVoiceChannel(call);
+    }
+    activeCallRef.current = null;
+    setActiveCall(null);
+    setActiveSession(null);
+  }, [activeSession]);
+
+  // ── Context value ───────────────────────────────────────────────────────
+
+  const value = useMemo<StreamCallContextType>(
+    () => ({
+      isReady: true,
+      activeSession,
+      isBusy,
+      startCall,
+      acceptCall,
+      rejectCall: rejectCallAction,
+      endCall: endCallAction,
+      joinChannel: joinChannelAction,
+      leaveChannel: leaveChannelAction,
+      activeCall,
+    }),
+    [
+      activeSession,
+      isBusy,
+      startCall,
+      acceptCall,
+      rejectCallAction,
+      endCallAction,
+      joinChannelAction,
+      leaveChannelAction,
+      activeCall,
+    ],
+  );
+
+  return (
+    <StreamCallContext.Provider value={value}>
+      {children}
+    </StreamCallContext.Provider>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Outer provider — handles client init/teardown based on auth
+// ---------------------------------------------------------------------------
+
+export function StreamCallProvider({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  const { currentFirebaseUser } = useAuth();
+  const [client, setClient] = useState<StreamVideoClient | null>(null);
+
+  useEffect(() => {
+    if (!CALL_FEATURES.CALLS_ENABLED) return;
+
+    const user = currentFirebaseUser;
+    if (!user) {
+      // Destroy client on logout
+      destroyStreamClient()
+        .then(() => clearTokenCache())
+        .then(() => setClient(null));
+      return;
+    }
+
+    let cancelled = false;
+
+    initStreamClient(
+      user.uid,
+      user.displayName ?? undefined,
+      user.photoURL ?? undefined,
+    )
+      .then((c: StreamVideoClient) => {
+        if (!cancelled) setClient(c);
+      })
+      .catch((err: any) => {
+        console.error(
+          "[StreamCallProvider] Failed to init Stream client:",
+          err,
+        );
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentFirebaseUser?.uid]);
+
+  // If calls are disabled or client not ready, render children without Stream
+  if (!CALL_FEATURES.CALLS_ENABLED || !client) {
+    const noopValue: StreamCallContextType = {
+      isReady: false,
+      activeSession: null,
+      isBusy: false,
+      startCall: async () => {
+        throw new Error("Calls not available");
+      },
+      acceptCall: async () => {},
+      rejectCall: async () => {},
+      endCall: async () => {},
+      joinChannel: async () => {
+        throw new Error("Calls not available");
+      },
+      leaveChannel: async () => {},
+      activeCall: null,
+    };
+
+    return (
+      <StreamCallContext.Provider value={noopValue}>
+        {children}
+      </StreamCallContext.Provider>
+    );
+  }
+
+  return (
+    <StreamVideo client={client}>
+      <StreamCallInnerProvider userId={currentFirebaseUser!.uid}>
+        {children}
+      </StreamCallInnerProvider>
+    </StreamVideo>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Hook
+// ---------------------------------------------------------------------------
+
+export function useStreamCall(): StreamCallContextType {
+  const ctx = useContext(StreamCallContext);
+  if (!ctx) {
+    throw new Error("useStreamCall must be used within StreamCallProvider");
+  }
+  return ctx;
+}

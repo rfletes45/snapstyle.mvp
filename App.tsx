@@ -1,17 +1,11 @@
-import { IncomingCallOverlay } from "@/components/calls";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import InAppToast from "@/components/InAppToast";
-import { CALL_FEATURES } from "@/constants/featureFlags";
-import { CallProvider } from "@/contexts/CallContext";
+import { IncomingCallHandler } from "@/components/stream";
+import { StreamCallProvider } from "@/contexts/StreamCallContext";
 import { loadCustomFonts } from "@/fonts/fontLoader";
 import { useOutboxProcessor } from "@/hooks/useOutboxProcessor";
 import { lockToPortrait } from "@/hooks/useScreenOrientation";
 import RootNavigator from "@/navigation/RootNavigator";
-import {
-  createCallNotificationChannel,
-  initializeAppStateListener,
-  initializeBackgroundCallHandler,
-} from "@/services/calls";
 import { initializeFirebase } from "@/services/firebase";
 import { firebaseConfig } from "@/services/firebaseConfig";
 import { AuthProvider } from "@/store/AuthContext";
@@ -116,23 +110,8 @@ function AppContent() {
     };
   }, []);
 
-  // Defer call bootstrap work until after first render, and only if calls
-  // are feature-enabled.
-  useEffect(() => {
-    if (!CALL_FEATURES.CALLS_ENABLED) {
-      return;
-    }
-
-    const timer = setTimeout(() => {
-      initializeBackgroundCallHandler();
-      initializeAppStateListener();
-      createCallNotificationChannel();
-    }, 0);
-
-    return () => {
-      clearTimeout(timer);
-    };
-  }, []);
+  // Stream Video SDK handles its own initialization via StreamCallProvider.
+  // No legacy call bootstrap needed.
 
   /**
    * Handle navigation from in-app toast notifications
@@ -205,7 +184,7 @@ function AppContent() {
       <SnackbarProvider>
         <AuthProvider>
           <UserProvider>
-            <CallProvider>
+            <StreamCallProvider>
               <InAppNotificationsProvider>
                 <CameraProvider>
                   <OutboxProcessorProvider />
@@ -217,11 +196,16 @@ function AppContent() {
                   >
                     <RootNavigator navigationRef={navigationRef} />
                     <InAppToast onNavigate={handleToastNavigate} />
-                    <IncomingCallOverlay
-                      onNavigateToCall={(screenName, params) => {
+                    <IncomingCallHandler
+                      onNavigateToCall={(callId, mode) => {
                         navigationRef.current?.navigate(
-                          screenName as any,
-                          params as any,
+                          "DirectCall" as any,
+                          {
+                            callId,
+                            recipientName: "",
+                            mode,
+                            isOutgoing: false,
+                          } as any,
                         );
                       }}
                     />
@@ -229,7 +213,7 @@ function AppContent() {
                   <ExpoStatusBar style={isDark ? "light" : "dark"} />
                 </CameraProvider>
               </InAppNotificationsProvider>
-            </CallProvider>
+            </StreamCallProvider>
           </UserProvider>
         </AuthProvider>
       </SnackbarProvider>

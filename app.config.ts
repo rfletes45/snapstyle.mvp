@@ -129,9 +129,9 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
         enableFrameProcessors: true,
       },
     ],
-    // Note: react-native-webrtc and react-native-callkeep require
-    // expo-dev-client for native module support. They don't have
-    // Expo config plugins but work with bare workflow / dev client.
+    // Stream Video SDK + WebRTC config plugins
+    "@stream-io/video-react-native-sdk",
+    "@config-plugins/react-native-webrtc",
   ],
   experiments: {
     typedRoutes: true,

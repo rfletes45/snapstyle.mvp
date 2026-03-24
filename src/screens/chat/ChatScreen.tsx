@@ -88,14 +88,14 @@ import { getOrCreateChat } from "@/services/chat";
 import { getUserProfileByUid } from "@/services/friends";
 import { retryMessage } from "@/services/messaging";
 import { submitReport } from "@/services/reporting";
-import { markConversationNotificationsRead } from "@/services/userNotifications";
 import {
   getScheduledMessagesForChat,
   scheduleMessage,
 } from "@/services/scheduledMessages";
+import { markConversationNotificationsRead } from "@/services/userNotifications";
 
 // Call buttons
-import { CallButtonGroup } from "@/components/calls";
+import { DirectCallButton } from "@/components/stream";
 
 // Types & Utils
 import { DEBUG_CHAT_V2, GAMES_V4_ENABLED } from "@/constants/featureFlags";
@@ -584,10 +584,17 @@ export default function ChatScreen({
   const renderHeaderRight = useCallback(
     () => (
       <View style={styles.headerRightRow}>
-        <CallButtonGroup
-          participantId={friendUid}
-          participantName={friendProfile?.username || "Friend"}
-          conversationId={chatId || ""}
+        <DirectCallButton
+          recipientId={friendUid}
+          recipientName={friendProfile?.username || "Friend"}
+          onCallStarted={(callId, mode) => {
+            navigation.navigate("DirectCall" as any, {
+              callId,
+              recipientName: friendProfile?.username || "Friend",
+              mode,
+              isOutgoing: true,
+            });
+          }}
           size={22}
         />
         <Menu
