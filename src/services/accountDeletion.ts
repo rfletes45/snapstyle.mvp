@@ -56,6 +56,7 @@ const ASYNC_STORAGE_KEYS_TO_CLEAR = [
   "@vibe/cached_friends",
   "@vibe/game_settings",
   "@vibe/push_token",
+  "@vibe/conversation_display_mode",
 ];
 
 // ─── Re-authentication ──────────────────────────────────────────────────────

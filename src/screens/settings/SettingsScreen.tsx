@@ -21,6 +21,7 @@ import {
 } from "@/services/inboxSettings";
 import { equipTheme, updateDisplayName } from "@/services/profileService";
 import { useAuth } from "@/store/AuthContext";
+import { useConversationDisplayMode } from "@/store/ConversationDisplayModeContext";
 import { useSnackbar } from "@/store/SnackbarContext";
 import { useAppTheme } from "@/store/ThemeContext";
 import { useUser } from "@/store/UserContext";
@@ -70,6 +71,7 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
   const { profile, refreshProfile } = useUser();
   const { showSuccess, showError, showInfo } = useSnackbar();
   const { setTheme, isDark, useSystemTheme, setUseSystemTheme } = useAppTheme();
+  const { displayMode, setDisplayMode } = useConversationDisplayMode();
   const [notificationSettings, setNotificationSettings] =
     useState<InboxSettings | null>(null);
 
@@ -417,6 +419,49 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
             icon="brightness-auto"
           >
             Auto
+          </Button>
+        </View>
+
+        {/* Conversation Style */}
+        <Text
+          style={[
+            styles.conversationStyleLabel,
+            { color: theme.colors.onSurface },
+          ]}
+        >
+          Conversation Style
+        </Text>
+        <Text
+          style={[
+            styles.conversationStyleDescription,
+            { color: theme.colors.onSurfaceVariant },
+          ]}
+        >
+          Choose how messages appear on your screen. This only affects your
+          view.
+        </Text>
+        <View style={styles.themeButtonsContainer}>
+          <Button
+            mode={displayMode === "bubbles" ? "contained" : "outlined"}
+            onPress={() => {
+              setDisplayMode("bubbles");
+              showSuccess("Bubbles mode enabled");
+            }}
+            style={styles.themeButton}
+            icon="chat"
+          >
+            Bubbles
+          </Button>
+          <Button
+            mode={displayMode === "stacked" ? "contained" : "outlined"}
+            onPress={() => {
+              setDisplayMode("stacked");
+              showSuccess("Stacked mode enabled");
+            }}
+            style={styles.themeButton}
+            icon="format-list-text"
+          >
+            Stacked
           </Button>
         </View>
       </List.Section>
@@ -1003,6 +1048,18 @@ const styles = StyleSheet.create({
   },
   themeButton: {
     flex: 1,
+  },
+  conversationStyleLabel: {
+    fontSize: 14,
+    fontWeight: "600" as const,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 2,
+  },
+  conversationStyleDescription: {
+    fontSize: 12,
+    paddingHorizontal: 16,
+    paddingBottom: 8,
   },
   actionsSection: {
     padding: 16,

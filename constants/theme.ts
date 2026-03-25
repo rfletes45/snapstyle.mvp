@@ -1324,7 +1324,7 @@ export const CatppuccinLatteColors: ThemeColors = {
   onSecondaryContainer: Latte.peach,
   tertiary: Latte.teal,
   tertiaryContainer: "#e0f7f7",
-  text: Latte.text,
+  text: "#000000",
   textSecondary: Latte.subtext1,
   textMuted: Latte.overlay1,
   textOnPrimary: "#ffffff",
@@ -1351,7 +1351,7 @@ export const CatppuccinLatteColors: ThemeColors = {
   tabActive: Latte.mauve,
   tabInactive: Latte.overlay1,
   headerBackground: "#ffffff",
-  headerText: Latte.text,
+  headerText: "#000000",
 };
 
 export const CatppuccinMochaColors: ThemeColors = {

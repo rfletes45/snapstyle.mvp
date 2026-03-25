@@ -41,6 +41,16 @@ export const DEFAULT_CHAT_FONT_ID: string | null = null;
 export const DEFAULT_CHAT_FONT_FAMILY: string | undefined = undefined;
 
 // =============================================================================
+// Default Font Color
+// =============================================================================
+
+/**
+ * Default chat font color ID.
+ * null means "use the active theme's text token (theme-adaptive)".
+ */
+export const DEFAULT_CHAT_FONT_COLOR_ID: string | null = null;
+
+// =============================================================================
 // Supported Chat Fonts
 // =============================================================================
 
@@ -110,4 +120,43 @@ export function getChatBubbleColor(
 ): string | null {
   if (!bubbleColorId) return null;
   return CHAT_BUBBLE_COLORS[bubbleColorId] ?? null;
+}
+
+// =============================================================================
+// Font Color Lookup
+// =============================================================================
+
+/**
+ * Registry of font color values keyed by catalog ID.
+ * Mirrors CHAT_BUBBLE_COLORS pattern — static map for O(1) lookup.
+ */
+export const CHAT_FONT_COLORS: Record<string, string> = {
+  // Free / Starter
+  font_color_snow: "#FFFFFF",
+  font_color_charcoal: "#2D2D2D",
+  font_color_silver: "#B0B0B0",
+  // Shop (Common)
+  font_color_sky_blue: "#64B5F6",
+  font_color_lavender: "#B39DDB",
+  font_color_mint: "#80CBC4",
+  font_color_rose: "#F48FB1",
+  font_color_peach: "#FFAB91",
+  // Shop (Uncommon)
+  font_color_coral: "#FF8A65",
+  font_color_gold: "#FFD54F",
+  font_color_aqua: "#4DD0E1",
+  font_color_lime: "#AED581",
+  // Shop (Rare)
+  font_color_neon_pink: "#FF4081",
+  font_color_electric_blue: "#448AFF",
+  font_color_emerald: "#66BB6A",
+};
+
+/**
+ * Look up the hex color for a font color cosmetic ID.
+ * Returns null if unknown or null input (caller should use theme-adaptive default).
+ */
+export function getChatFontColor(fontColorId: string | null): string | null {
+  if (!fontColorId) return null;
+  return CHAT_FONT_COLORS[fontColorId] ?? null;
 }

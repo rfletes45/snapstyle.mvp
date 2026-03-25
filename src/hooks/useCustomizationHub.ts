@@ -31,11 +31,13 @@ import {
   equipChatAnimalTheme,
   equipChatBubbleColor,
   equipChatFont,
+  equipChatFontColor,
   equipDecoration,
   equipTheme,
   unequipChatAnimalTheme,
   unequipChatBubbleColor,
   unequipChatFont,
+  unequipChatFontColor,
   unequipDecoration,
 } from "@/services/profileService";
 import { doc, updateDoc } from "firebase/firestore";
@@ -66,6 +68,8 @@ export interface UseCustomizationHubOptions {
   currentBubbleColorId: string | null;
   /** Currently equipped chat font ID */
   currentFontId: string | null;
+  /** Currently equipped chat font color ID */
+  currentFontColorId: string | null;
   /** Currently equipped animal theme ID */
   currentAnimalThemeId: string | null;
   /** Callback to set the app-wide UI theme (from ThemeContext). */
@@ -137,6 +141,7 @@ export const CHAT_TABS: {
 }[] = [
   { id: "chat_bubble_color", label: "Bubble Colors", icon: "chat" },
   { id: "chat_font", label: "Fonts", icon: "format-font" },
+  { id: "chat_font_color", label: "Font Colors", icon: "format-color-text" },
   { id: "chat_animal_theme", label: "Animals", icon: "paw" },
 ];
 
@@ -161,6 +166,7 @@ export function useCustomizationHub(
     currentBadgeIds,
     currentBubbleColorId,
     currentFontId,
+    currentFontColorId,
     currentAnimalThemeId,
     setAppTheme,
   } = options;
@@ -315,6 +321,7 @@ export function useCustomizationHub(
         const isChatCosmetic =
           item.type === "chat_bubble_color" ||
           item.type === "chat_font" ||
+          item.type === "chat_font_color" ||
           item.type === "chat_animal_theme";
 
         // If the item is free/starter and not yet owned, grant entitlement first
@@ -355,6 +362,9 @@ export function useCustomizationHub(
             break;
           case "chat_font":
             await equipChatFont(uid, item.id);
+            break;
+          case "chat_font_color":
+            await equipChatFontColor(uid, item.id);
             break;
           case "chat_animal_theme":
             await equipChatAnimalTheme(uid, item.id);
@@ -403,6 +413,9 @@ export function useCustomizationHub(
             break;
           case "chat_font":
             await unequipChatFont(uid);
+            break;
+          case "chat_font_color":
+            await unequipChatFontColor(uid);
             break;
           case "chat_animal_theme":
             await unequipChatAnimalTheme(uid);

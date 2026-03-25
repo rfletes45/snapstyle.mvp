@@ -314,6 +314,23 @@ Group calls:
 - keyboard tracking: `src/hooks/chat/useChatKeyboard.ts` (Reanimated animated values)
 - auto-scroll on new messages: `src/hooks/chat/useNewMessageAutoscroll.ts`
 
+## Conversation Display Modes
+
+Users can switch between **Bubbles** (classic right-aligned outgoing) and **Stacked** (Discord-style dense feed) layouts. The setting is viewer-side only and does not affect message storage or other participants.
+
+The stacked mode is a true feed layout — not "bubbles moved left." It uses a fixed gutter/content-column grid with no bubble chrome around text messages, content-column-anchored images and reactions, and self-message row tints instead of alignment changes.
+
+See [`docs/features/conversation-display-modes.md`](conversation-display-modes.md) for full documentation.
+
+Key integration points:
+
+- `src/chat/displayMode.ts` — types, `FeedLayoutTokens`, `ChatLayoutTokens`, view-model builder
+- `src/store/ConversationDisplayModeContext.tsx` — React context with AsyncStorage + Firestore persistence
+- `src/components/chat/ChatMessageRenderer.tsx` — unified DM renderer (delegates by mode)
+- `src/components/chat/StackedMessageRenderer.tsx` — DM feed-mode renderer
+- `src/components/chat/GroupStackedMessageRenderer.tsx` — group feed-mode renderer
+- `ChatScreen.tsx` and `GroupChatScreen.tsx` both consume `useConversationDisplayMode()` to select the active renderer
+
 ## Live Compatibility Debt
 
 - The web fallback path still relies on wrapper services that delegate into older `chatV2` and `messageList` modules.

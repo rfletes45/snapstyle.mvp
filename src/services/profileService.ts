@@ -1465,3 +1465,62 @@ export async function unequipChatAnimalTheme(userId: string): Promise<void> {
     throw error;
   }
 }
+
+// =============================================================================
+// Chat Font Color
+// =============================================================================
+
+/**
+ * Equip a chat font color cosmetic.
+ * Validates ownership (entitlement or free/starter) before writing.
+ */
+export async function equipChatFontColor(
+  userId: string,
+  fontColorId: string,
+): Promise<void> {
+  try {
+    const db = getFirestoreInstance();
+    const userRef = doc(db, "Users", userId);
+
+    // Ownership check
+    const ownsViaEntitlement = await hasEntitlement(userId, fontColorId);
+    const catalogDef = getCosmeticById(fontColorId);
+    const isFreeItem =
+      catalogDef?.type === "chat_font_color" &&
+      (catalogDef.source === "free" || catalogDef.source === "starter");
+
+    if (!ownsViaEntitlement && !isFreeItem) {
+      throw new Error("You do not own this font color");
+    }
+
+    await updateDoc(userRef, {
+      "chatAppearance.fontColorId": fontColorId,
+      lastProfileUpdate: Date.now(),
+    });
+
+    log.info("Chat font color equipped", { data: { fontColorId } });
+  } catch (error) {
+    log.error("Error equipping chat font color", error);
+    throw error;
+  }
+}
+
+/**
+ * Unequip chat font color (reset to theme-adaptive default).
+ */
+export async function unequipChatFontColor(userId: string): Promise<void> {
+  try {
+    const db = getFirestoreInstance();
+    const userRef = doc(db, "Users", userId);
+
+    await updateDoc(userRef, {
+      "chatAppearance.fontColorId": null,
+      lastProfileUpdate: Date.now(),
+    });
+
+    log.info("Chat font color unequipped (reset to default)");
+  } catch (error) {
+    log.error("Error unequipping chat font color", error);
+    throw error;
+  }
+}

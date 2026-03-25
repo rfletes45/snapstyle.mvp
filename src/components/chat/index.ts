@@ -138,6 +138,14 @@ export { ReactionDetailSheet } from "./ReactionDetailSheet";
 // Seen By Sheet (group read receipts)
 export { SeenBySheet } from "./SeenBySheet";
 
+// Unified Message Renderer (display-mode-aware)
+export { ChatMessageRenderer } from "./ChatMessageRenderer";
+export type { ChatMessageRendererProps } from "./ChatMessageRenderer";
+
+// Stacked Message Renderer (dense left-aligned mode)
+export { StackedMessageRenderer } from "./StackedMessageRenderer";
+export type { StackedMessageRendererProps } from "./StackedMessageRenderer";
+
 // Thread Indicator (reply thread navigation)
 export { ThreadIndicator } from "./ThreadIndicator";
 export type { ThreadIndicatorProps } from "./ThreadIndicator";

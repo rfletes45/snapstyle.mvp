@@ -195,6 +195,11 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
     const bubbleFontFamily = isSentByMe
       ? chatStyle.fontFamily
       : incomingStyle!.fontFamily;
+    // Custom font color overrides contrast-computed bubbleTextColor when set
+    const fontColorHex = isSentByMe
+      ? chatStyle.fontColorHex
+      : (incomingStyle?.fontColorHex ?? null);
+    const resolvedTextColor = fontColorHex ?? bubbleTextColor;
 
     // Link preview support for text messages
     const messagesForPreview = React.useMemo(
@@ -383,7 +388,7 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
             style={[
               styles.messageText,
               {
-                color: bubbleTextColor,
+                color: resolvedTextColor,
                 ...(bubbleFontFamily ? { fontFamily: bubbleFontFamily } : {}),
               },
             ]}

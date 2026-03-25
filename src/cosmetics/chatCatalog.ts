@@ -4,6 +4,7 @@
  * Catalog entries for chat-related cosmetics:
  *   - chat_bubble_color: Outgoing message bubble background color
  *   - chat_font: Outgoing message font family
+ *   - chat_font_color: Custom font/text color override
  *   - chat_animal_theme: Animal-themed chat decoration (COMING SOON)
  *
  * These are appended to the main COSMETICS_CATALOG in catalog.ts.
@@ -331,6 +332,206 @@ export const CHAT_FONT_CATALOG: CosmeticDefinition[] = [
 ];
 
 // =============================================================================
+// Chat Font Colors
+// =============================================================================
+
+/**
+ * Font color catalog entries.
+ *
+ * "Default" is NOT a catalog entry: when fontColorId is null the app
+ * automatically uses the theme's text token (theme-adaptive).
+ *
+ * Every entry here represents a **fixed** custom color that persists
+ * regardless of theme changes.
+ */
+export const CHAT_FONT_COLOR_CATALOG: CosmeticDefinition[] = [
+  // ── Free / Starter ──────────────────────────────────────────────────────────
+  {
+    id: "font_color_snow",
+    type: "chat_font_color",
+    name: "Snow",
+    description: "Crisp white text",
+    rarity: "common",
+    source: "free",
+    tags: ["chat", "font-color", "light"],
+    sortOrder: 0,
+    metadata: { fontColorValue: "#FFFFFF" },
+  },
+  {
+    id: "font_color_charcoal",
+    type: "chat_font_color",
+    name: "Charcoal",
+    description: "Deep, dark charcoal text",
+    rarity: "common",
+    source: "free",
+    tags: ["chat", "font-color", "dark"],
+    sortOrder: 1,
+    metadata: { fontColorValue: "#2D2D2D" },
+  },
+  {
+    id: "font_color_silver",
+    type: "chat_font_color",
+    name: "Silver",
+    description: "Soft silver for a subtle look",
+    rarity: "common",
+    source: "starter",
+    tags: ["chat", "font-color", "neutral"],
+    sortOrder: 2,
+    metadata: { fontColorValue: "#B0B0B0" },
+  },
+
+  // ── Shop (Common) ──────────────────────────────────────────────────────────
+  {
+    id: "font_color_sky_blue",
+    type: "chat_font_color",
+    name: "Sky Blue",
+    description: "A calming sky-blue accent",
+    rarity: "common",
+    source: "shop",
+    priceTokens: 150,
+    tags: ["chat", "font-color", "blue"],
+    sortOrder: 10,
+    metadata: { fontColorValue: "#64B5F6" },
+  },
+  {
+    id: "font_color_lavender",
+    type: "chat_font_color",
+    name: "Lavender",
+    description: "Soft purple lavender",
+    rarity: "common",
+    source: "shop",
+    priceTokens: 150,
+    tags: ["chat", "font-color", "purple"],
+    sortOrder: 11,
+    metadata: { fontColorValue: "#B39DDB" },
+  },
+  {
+    id: "font_color_mint",
+    type: "chat_font_color",
+    name: "Mint",
+    description: "Fresh minty green",
+    rarity: "common",
+    source: "shop",
+    priceTokens: 150,
+    tags: ["chat", "font-color", "green"],
+    sortOrder: 12,
+    metadata: { fontColorValue: "#80CBC4" },
+  },
+  {
+    id: "font_color_rose",
+    type: "chat_font_color",
+    name: "Rose",
+    description: "Warm rose-pink tone",
+    rarity: "common",
+    source: "shop",
+    priceTokens: 150,
+    tags: ["chat", "font-color", "pink"],
+    sortOrder: 13,
+    metadata: { fontColorValue: "#F48FB1" },
+  },
+  {
+    id: "font_color_peach",
+    type: "chat_font_color",
+    name: "Peach",
+    description: "Soft warm peach",
+    rarity: "common",
+    source: "shop",
+    priceTokens: 150,
+    tags: ["chat", "font-color", "warm"],
+    sortOrder: 14,
+    metadata: { fontColorValue: "#FFAB91" },
+  },
+
+  // ── Shop (Uncommon) ────────────────────────────────────────────────────────
+  {
+    id: "font_color_coral",
+    type: "chat_font_color",
+    name: "Coral",
+    description: "Vivid coral accent",
+    rarity: "uncommon",
+    source: "shop",
+    priceTokens: 250,
+    tags: ["chat", "font-color", "warm"],
+    sortOrder: 20,
+    metadata: { fontColorValue: "#FF8A65" },
+  },
+  {
+    id: "font_color_gold",
+    type: "chat_font_color",
+    name: "Gold",
+    description: "Luxurious golden text",
+    rarity: "uncommon",
+    source: "shop",
+    priceTokens: 250,
+    tags: ["chat", "font-color", "warm", "premium"],
+    sortOrder: 21,
+    metadata: { fontColorValue: "#FFD54F" },
+  },
+  {
+    id: "font_color_aqua",
+    type: "chat_font_color",
+    name: "Aqua",
+    description: "Electric aquamarine",
+    rarity: "uncommon",
+    source: "shop",
+    priceTokens: 250,
+    tags: ["chat", "font-color", "blue", "neon"],
+    sortOrder: 22,
+    metadata: { fontColorValue: "#4DD0E1" },
+  },
+  {
+    id: "font_color_lime",
+    type: "chat_font_color",
+    name: "Lime",
+    description: "Bright energetic lime",
+    rarity: "uncommon",
+    source: "shop",
+    priceTokens: 250,
+    tags: ["chat", "font-color", "green", "neon"],
+    sortOrder: 23,
+    metadata: { fontColorValue: "#AED581" },
+  },
+
+  // ── Shop (Rare) ────────────────────────────────────────────────────────────
+  {
+    id: "font_color_neon_pink",
+    type: "chat_font_color",
+    name: "Neon Pink",
+    description: "Bold neon pink that pops",
+    rarity: "rare",
+    source: "shop",
+    priceTokens: 400,
+    tags: ["chat", "font-color", "neon", "vibrant"],
+    sortOrder: 30,
+    metadata: { fontColorValue: "#FF4081" },
+  },
+  {
+    id: "font_color_electric_blue",
+    type: "chat_font_color",
+    name: "Electric Blue",
+    description: "High-voltage electric blue",
+    rarity: "rare",
+    source: "shop",
+    priceTokens: 400,
+    tags: ["chat", "font-color", "neon", "vibrant"],
+    sortOrder: 31,
+    metadata: { fontColorValue: "#448AFF" },
+  },
+  {
+    id: "font_color_emerald",
+    type: "chat_font_color",
+    name: "Emerald",
+    description: "Rich emerald green",
+    rarity: "rare",
+    source: "shop",
+    priceTokens: 400,
+    tags: ["chat", "font-color", "green", "premium"],
+    sortOrder: 32,
+    metadata: { fontColorValue: "#66BB6A" },
+  },
+];
+
+// =============================================================================
 // Chat Animal Themes
 // =============================================================================
 
@@ -408,6 +609,7 @@ export function getChatCosmeticDefinitions(): CosmeticDefinition[] {
   return [
     ...CHAT_BUBBLE_COLOR_CATALOG,
     ...CHAT_FONT_CATALOG,
+    ...CHAT_FONT_COLOR_CATALOG,
     ...CHAT_ANIMAL_THEME_CATALOG,
   ];
 }

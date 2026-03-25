@@ -15,6 +15,7 @@ import {
   DEFAULT_CHAT_BUBBLE_COLOR_LIGHT,
   DEFAULT_CHAT_FONT_FAMILY,
   getChatBubbleColor,
+  getChatFontColor,
   getChatFontFamily,
 } from "./chatDefaults";
 import type { ChatAppearance, SenderStyle } from "./types";
@@ -32,6 +33,12 @@ export interface ResolvedChatStyle {
   bubbleTextColor: string;
   /** Font family for outgoing messages (undefined = platform default). */
   fontFamily: string | undefined;
+  /**
+   * Custom font color hex (null = theme-adaptive default).
+   * When non-null, this fixed color should be used regardless of theme.
+   * When null, consumers should use the active theme's text token.
+   */
+  fontColorHex: string | null;
 }
 
 /** Options for resolving chat style. */
@@ -177,7 +184,33 @@ export function resolveOutgoingChatStyle(
     fontFamily = DEFAULT_CHAT_FONT_FAMILY;
   }
 
-  return { bubbleBgColor, bubbleTextColor, fontFamily };
+  // -- Font Color --
+  // null = theme-adaptive (consumer uses theme.colors.text / onSurface)
+  // non-null = fixed custom color
+  let fontColorHex: string | null = null;
+  if (chatAppearance.fontColorId) {
+    const def = getCosmeticById(chatAppearance.fontColorId);
+    if (!def || def.type !== "chat_font_color") {
+      devWarn(
+        `fontColorId "${chatAppearance.fontColorId}" not found in catalog or wrong type. Using default (theme-adaptive).`,
+        { fontColorId: chatAppearance.fontColorId },
+      );
+    } else {
+      const color = getChatFontColor(chatAppearance.fontColorId);
+      if (!color) {
+        devWarn(
+          `fontColorId "${chatAppearance.fontColorId}" has no color value in chatDefaults map. Using metadata.`,
+          { fontColorId: chatAppearance.fontColorId },
+        );
+        const metaColor = def.metadata?.fontColorValue;
+        fontColorHex = typeof metaColor === "string" ? metaColor : null;
+      } else {
+        fontColorHex = color;
+      }
+    }
+  }
+
+  return { bubbleBgColor, bubbleTextColor, fontFamily, fontColorHex };
 }
 
 /**
@@ -189,7 +222,10 @@ export function sanitizeChatAppearance(
 ): ChatAppearance {
   if (!chatAppearance) return { ...DEFAULT_CHAT_APPEARANCE };
 
-  const result: ChatAppearance = { ...chatAppearance };
+  const result: ChatAppearance = {
+    ...DEFAULT_CHAT_APPEARANCE,
+    ...chatAppearance,
+  };
 
   // Validate bubbleColorId
   if (result.bubbleColorId) {
@@ -210,6 +246,17 @@ export function sanitizeChatAppearance(
         `sanitizeChatAppearance: invalid fontId "${result.fontId}" — resetting to null.`,
       );
       result.fontId = null;
+    }
+  }
+
+  // Validate fontColorId
+  if (result.fontColorId) {
+    const def = getCosmeticById(result.fontColorId);
+    if (!def || def.type !== "chat_font_color") {
+      devWarn(
+        `sanitizeChatAppearance: invalid fontColorId "${result.fontColorId}" — resetting to null.`,
+      );
+      result.fontColorId = null;
     }
   }
 
@@ -263,6 +310,7 @@ export function resolveIncomingBubbleStyle(
       bubbleBgColor: defaultBgColor,
       bubbleTextColor: defaultTextColor,
       fontFamily: undefined,
+      fontColorHex: null,
     };
   }
 
@@ -291,6 +339,21 @@ export function resolveIncomingBubbleStyle(
     }
   }
 
+  // Resolve font color: prefer pre-resolved hex, fall back to catalog ID lookup
+  let resolvedFontColor = senderStyle.fontColorHex ?? null;
+  if (!resolvedFontColor && senderStyle.fontColorId) {
+    const catalogColor = getChatFontColor(senderStyle.fontColorId);
+    if (catalogColor) {
+      resolvedFontColor = catalogColor;
+    } else {
+      const def = getCosmeticById(senderStyle.fontColorId);
+      const meta = def?.metadata?.fontColorValue;
+      if (typeof meta === "string") {
+        resolvedFontColor = meta;
+      }
+    }
+  }
+
   // Bubble background
   const bubbleBgColor = resolvedHex ?? defaultBgColor;
 
@@ -302,7 +365,10 @@ export function resolveIncomingBubbleStyle(
   // Font family
   const fontFamily = resolvedFont ?? undefined;
 
-  return { bubbleBgColor, bubbleTextColor, fontFamily };
+  // Font color (null = theme-adaptive)
+  const fontColorHex = resolvedFontColor;
+
+  return { bubbleBgColor, bubbleTextColor, fontFamily, fontColorHex };
 }
 
 /**
@@ -345,11 +411,28 @@ export function buildSenderStyle(
     }
   }
 
+  // Resolve font color ID → hex (null = theme-adaptive)
+  let fontColorHex: string | null = null;
+  if (appearance.fontColorId) {
+    const color = getChatFontColor(appearance.fontColorId);
+    if (color) {
+      fontColorHex = color;
+    } else {
+      const def = getCosmeticById(appearance.fontColorId);
+      const meta = def?.metadata?.fontColorValue;
+      if (typeof meta === "string") {
+        fontColorHex = meta;
+      }
+    }
+  }
+
   return {
     bubbleColorId: appearance.bubbleColorId ?? null,
     bubbleColorHex,
     fontId: appearance.fontId ?? null,
     fontKey,
+    fontColorId: appearance.fontColorId ?? null,
+    fontColorHex,
     animalThemeId: appearance.animalThemeId ?? null,
     v: 1,
   };

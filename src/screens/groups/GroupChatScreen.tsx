@@ -134,9 +134,12 @@ import {
 import { markConversationNotificationsRead } from "@/services/userNotifications";
 
 // Animal feature
+import { buildMessageViewModel } from "@/chat/displayMode";
 import { AnimalBubble } from "@/components/chat/AnimalBubble";
+import { GroupStackedMessageRenderer } from "@/components/chat/GroupStackedMessageRenderer";
 import { useAnimalEntitlement } from "@/hooks/useAnimalEntitlement";
 import { playAnimalSound } from "@/services/chat/animalSoundService";
+import { useConversationDisplayMode } from "@/store/ConversationDisplayModeContext";
 
 // Voice channels (Stream-powered)
 import { VoiceRoomAvatarStack } from "@/components/stream/VoiceRoomAvatarStack";
@@ -195,6 +198,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     uid,
     profile?.chatAppearance ?? null,
   );
+  const { displayMode } = useConversationDisplayMode();
 
   // Voice room occupancy (Stream-powered)
   const voiceRoom = useVoiceRoomOccupancy(groupId);
@@ -1052,11 +1056,108 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     ({ item, index }: { item: MessageV2; index: number }) => {
       const isOwnMessage = item.senderId === uid;
       const showSender = shouldShowSender(index, item);
-      const showTimestamp = shouldShowTimestamp(index, item);
+      const showTS = shouldShowTimestamp(index, item);
       const showAvatar = shouldShowAvatar(index, item);
       const isGrouped = isGroupedMessage(index, item);
       const senderDisplayName = getSenderDisplayName(item);
       const senderProfile = getSenderProfileInfo(item.senderId);
+
+      // ── Stacked mode branch ─────────────────────────────────────────
+      if (displayMode === "stacked" && item.kind !== "system") {
+        const isGroupedWithPrev = isGrouped;
+        const msgBelow = index > 0 ? messages[index - 1] : null;
+        const isGroupedWithNextMsg = areMessagesGrouped(item, msgBelow);
+
+        const vm = buildMessageViewModel({
+          isMine: isOwnMessage,
+          isGroupChat: true,
+          isGroupedWithPrevious: isGroupedWithPrev,
+          isGroupedWithNext: isGroupedWithNextMsg,
+          isSystemMessage: false,
+          hasReactions: (messageReactions.get(item.id) || []).length > 0,
+          hasReplyPreview: !!item.replyTo,
+          hasThread: !!item.replyCount && item.replyCount > 0,
+          displayMode: "stacked",
+        });
+
+        const incomingStyleStacked = !isOwnMessage
+          ? resolveIncomingBubbleStyle({
+              senderStyle: showMemberChatStyles
+                ? (item.senderStyle ?? null)
+                : null,
+              appearanceMode: isDark ? "dark" : "light",
+              defaultBgColor: colors.surfaceVariant,
+              defaultTextColor: colors.text,
+            })
+          : null;
+
+        const txtColor = isOwnMessage
+          ? chatStyle.bubbleTextColor
+          : incomingStyleStacked!.bubbleTextColor;
+        const fntFamily = isOwnMessage
+          ? chatStyle.fontFamily
+          : incomingStyleStacked!.fontFamily;
+        const fntColorHex = isOwnMessage
+          ? chatStyle.fontColorHex
+          : incomingStyleStacked!.fontColorHex;
+
+        const imageAttachmentStacked = item.attachments?.find(
+          (a) => a.kind === "image",
+        );
+
+        return (
+          <GroupStackedMessageRenderer
+            item={item}
+            uid={uid}
+            groupId={groupId}
+            vm={vm}
+            senderDisplayName={senderDisplayName}
+            senderProfilePictureUrl={senderProfile.profilePictureUrl}
+            senderDecorationId={senderProfile.decorationId}
+            bubbleTextColor={txtColor}
+            bubbleFontFamily={fntFamily}
+            fontColorHex={fntColorHex}
+            isHighlighted={item.id === highlightedMessageId}
+            reactions={messageReactions.get(item.id) || []}
+            linkPreview={
+              linkPreviews.get(item.id) ||
+              (hasUrls(item.text || "")
+                ? {
+                    url: extractUrls(item.text || "")[0] || "",
+                    fetchedAt: Date.now(),
+                  }
+                : undefined)
+            }
+            loadingPreview={loadingPreviews.has(item.id)}
+            mentionableMembers={mentionableMembers}
+            colors={colors}
+            onReply={handleReply}
+            onMessageLongPress={handleMessageLongPress}
+            onScrollToMessage={scrollToMessage}
+            onImagePress={() => {
+              if (item.kind === "media" && imageAttachmentStacked) {
+                handleOpenMediaViewer(
+                  [imageAttachmentStacked],
+                  0,
+                  senderDisplayName,
+                  item.createdAt,
+                );
+              }
+            }}
+            onOptimisticReaction={handleOptimisticReaction}
+            onThreadPress={() =>
+              navigation.navigate("ThreadView", {
+                conversationId: groupId,
+                scope: "group" as const,
+                rootMessageId: item.id,
+              })
+            }
+          />
+        );
+      }
+
+      // ── Bubble mode (existing) ──────────────────────────────────────
+      const showTimestamp = showTS;
 
       // Resolve incoming sender style (custom bubble color/font from sender)
       // When showMemberChatStyles is false, suppress sender styles → theme defaults
@@ -1081,6 +1182,11 @@ export default function GroupChatScreen({ route, navigation }: Props) {
       const bubbleFontFamily = isOwnMessage
         ? chatStyle.fontFamily
         : incomingStyle!.fontFamily;
+      // Custom font color overrides contrast-computed bubbleTextColor when set
+      const bubbleFontColorHex = isOwnMessage
+        ? chatStyle.fontColorHex
+        : (incomingStyle?.fontColorHex ?? null);
+      const resolvedBubbleTextColor = bubbleFontColorHex ?? bubbleTextColor;
 
       if (item.kind === "system") {
         // Defensive: extract displayText from legacy JSON-encoded system
@@ -1282,7 +1388,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
                               textStyle={[
                                 styles.messageText,
                                 {
-                                  color: bubbleTextColor,
+                                  color: resolvedBubbleTextColor,
                                   ...(bubbleFontFamily
                                     ? { fontFamily: bubbleFontFamily }
                                     : {}),
@@ -1381,6 +1487,13 @@ export default function GroupChatScreen({ route, navigation }: Props) {
       handleOpenMediaViewer,
       scrollToMessage,
       handleOptimisticReaction,
+      displayMode,
+      areMessagesGrouped,
+      messages,
+      mentionableMembers,
+      highlightedMessageId,
+      navigation,
+      groupId,
     ],
   );
 

@@ -21,6 +21,7 @@ export type CosmeticType =
   | "theme"
   | "chat_bubble_color"
   | "chat_font"
+  | "chat_font_color"
   | "chat_animal_theme";
 
 /** Rarity tiers (ordered lowest → highest). */
@@ -193,11 +194,13 @@ export interface CosmeticBundle {
  *
  * - bubbleColorId: references a chat_bubble_color catalog entry (null = default)
  * - fontId: references a chat_font catalog entry (null = system/default font)
+ * - fontColorId: references a chat_font_color catalog entry (null = theme-adaptive default)
  * - animalThemeId: references a chat_animal_theme catalog entry (null = default duck)
  */
 export interface ChatAppearance {
   bubbleColorId: string | null;
   fontId: string | null;
+  fontColorId: string | null;
   animalThemeId: string | null;
 }
 
@@ -205,6 +208,7 @@ export interface ChatAppearance {
 export const DEFAULT_CHAT_APPEARANCE: ChatAppearance = {
   bubbleColorId: null,
   fontId: null,
+  fontColorId: null,
   animalThemeId: null,
 };
 
@@ -225,6 +229,10 @@ export interface SenderStyle {
   fontId?: string | null;
   /** Resolved font family key (for forward-compat / no catalog lookup). */
   fontKey?: string | null;
+  /** Font color catalog ID (null = theme-adaptive default). */
+  fontColorId?: string | null;
+  /** Resolved hex font color (for forward-compat / no catalog lookup). */
+  fontColorHex?: string | null;
   /** Animal theme catalog ID (null = default duck). */
   animalThemeId?: string | null;
   /** Schema version for future migrations. */

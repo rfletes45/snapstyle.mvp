@@ -1,5 +1,6 @@
 // User model
 
+import type { ConversationDisplayMode } from "@/chat/displayMode";
 import type { ChatAppearance } from "@/cosmetics/types";
 
 export interface User {
@@ -23,6 +24,9 @@ export interface User {
 
   /** User level & XP (written by backend on game completion) */
   level?: UserLevelData;
+
+  /** Chat display mode: "bubbles" (classic) or "stacked" (dense left-aligned) */
+  conversationDisplayMode?: ConversationDisplayMode;
 }
 
 export interface AvatarConfig {

@@ -825,6 +825,7 @@ export const DEFAULT_USER_PROFILE_DATA: Omit<
   chatAppearance: {
     bubbleColorId: null,
     fontId: null,
+    fontColorId: null,
     animalThemeId: null,
   },
   ownedDecorations: [],

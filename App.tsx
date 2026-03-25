@@ -10,6 +10,7 @@ import { initializeFirebase } from "@/services/firebase";
 import { firebaseConfig } from "@/services/firebaseConfig";
 import { AuthProvider } from "@/store/AuthContext";
 import { CameraProvider } from "@/store/CameraContext";
+import { ConversationDisplayModeProvider } from "@/store/ConversationDisplayModeContext";
 import { InAppNotificationsProvider } from "@/store/InAppNotificationsContext";
 import { SnackbarProvider } from "@/store/SnackbarContext";
 import { ThemeProvider, useAppTheme } from "@/store/ThemeContext";
@@ -190,36 +191,38 @@ function AppContent() {
       <SnackbarProvider>
         <AuthProvider>
           <UserProvider>
-            <StreamCallProvider>
-              <InAppNotificationsProvider>
-                <CameraProvider>
-                  <OutboxProcessorProvider />
-                  <View
-                    style={[
-                      styles.container,
-                      { backgroundColor: colors.background },
-                    ]}
-                  >
-                    <RootNavigator navigationRef={navigationRef} />
-                    <InAppToast onNavigate={handleToastNavigate} />
-                    <IncomingCallHandler
-                      onNavigateToCall={(callId, mode) => {
-                        navigationRef.current?.navigate(
-                          "DirectCall" as any,
-                          {
-                            callId,
-                            recipientName: "",
-                            mode,
-                            isOutgoing: false,
-                          } as any,
-                        );
-                      }}
-                    />
-                  </View>
-                  <ExpoStatusBar style={isDark ? "light" : "dark"} />
-                </CameraProvider>
-              </InAppNotificationsProvider>
-            </StreamCallProvider>
+            <ConversationDisplayModeProvider>
+              <StreamCallProvider>
+                <InAppNotificationsProvider>
+                  <CameraProvider>
+                    <OutboxProcessorProvider />
+                    <View
+                      style={[
+                        styles.container,
+                        { backgroundColor: colors.background },
+                      ]}
+                    >
+                      <RootNavigator navigationRef={navigationRef} />
+                      <InAppToast onNavigate={handleToastNavigate} />
+                      <IncomingCallHandler
+                        onNavigateToCall={(callId, mode) => {
+                          navigationRef.current?.navigate(
+                            "DirectCall" as any,
+                            {
+                              callId,
+                              recipientName: "",
+                              mode,
+                              isOutgoing: false,
+                            } as any,
+                          );
+                        }}
+                      />
+                    </View>
+                    <ExpoStatusBar style={isDark ? "light" : "dark"} />
+                  </CameraProvider>
+                </InAppNotificationsProvider>
+              </StreamCallProvider>
+            </ConversationDisplayModeProvider>
           </UserProvider>
         </AuthProvider>
       </SnackbarProvider>

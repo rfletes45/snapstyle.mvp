@@ -48,6 +48,7 @@ import {
 } from "@/cosmetics/chatAppearanceResolver";
 import {
   CHAT_BUBBLE_COLORS,
+  CHAT_FONT_COLORS,
   CHAT_FONT_FAMILIES,
 } from "@/cosmetics/chatDefaults";
 import type { ChatAppearance, CosmeticDefinition } from "@/cosmetics/types";
@@ -481,6 +482,96 @@ const FontCard = React.memo(function FontCard({
 });
 
 // =============================================================================
+// Font Color Card (color swatch preview)
+// =============================================================================
+
+interface FontColorCardProps {
+  item: CosmeticDefinition;
+  isEquipped: boolean;
+  isDefault: boolean;
+  onPress: (item: CosmeticDefinition) => void;
+}
+
+const FontColorCard = React.memo(function FontColorCard({
+  item,
+  isEquipped,
+  isDefault,
+  onPress,
+}: FontColorCardProps) {
+  const colors = useColors();
+  const fontColorHex =
+    (item.metadata?.fontColorValue as string) ??
+    CHAT_FONT_COLORS[item.id] ??
+    colors.text;
+
+  return (
+    <Pressable
+      onPress={() => onPress(item)}
+      accessibilityRole="button"
+      accessibilityLabel={`${item.name} font color${isEquipped ? ", currently equipped" : ""}`}
+      accessibilityState={{ selected: isEquipped }}
+      style={({ pressed }) => [
+        styles.bubbleCard,
+        {
+          borderColor: isEquipped ? colors.primary : colors.border,
+          borderWidth: isEquipped ? 2 : 1,
+          backgroundColor: colors.surface,
+          opacity: pressed ? 0.8 : 1,
+        },
+      ]}
+    >
+      {/* Color swatch preview */}
+      <View
+        style={[
+          styles.fontColorSwatch,
+          {
+            backgroundColor: isDefault
+              ? colors.surfaceVariant
+              : colors.background,
+          },
+        ]}
+      >
+        <Text
+          style={[
+            styles.fontColorPreviewText,
+            { color: isDefault ? colors.text : fontColorHex },
+          ]}
+        >
+          Aa
+        </Text>
+      </View>
+      {/* Label */}
+      <View style={styles.bubbleCardInfo}>
+        <Text
+          style={[styles.bubbleCardName, { color: colors.text }]}
+          numberOfLines={1}
+        >
+          {item.name}
+        </Text>
+        {isDefault && (
+          <Text
+            style={[styles.fontColorHint, { color: colors.textSecondary }]}
+            numberOfLines={1}
+          >
+            Adapts to theme
+          </Text>
+        )}
+        {isEquipped && (
+          <View
+            style={[
+              styles.bubbleCheckmark,
+              { backgroundColor: colors.primary },
+            ]}
+          >
+            <Ionicons name="checkmark" size={10} color="#fff" />
+          </View>
+        )}
+      </View>
+    </Pressable>
+  );
+});
+
+// =============================================================================
 // Animal Theme Card (animal image preview)
 // =============================================================================
 
@@ -706,10 +797,12 @@ export default function CustomizationHubScreen({
   const currentChatAppearance: ChatAppearance = baseProfile?.chatAppearance ?? {
     bubbleColorId: null,
     fontId: null,
+    fontColorId: null,
     animalThemeId: null,
   };
   const currentBubbleColorId = currentChatAppearance.bubbleColorId;
   const currentFontId = currentChatAppearance.fontId;
+  const currentFontColorId = currentChatAppearance.fontColorId;
   const currentAnimalThemeId = currentChatAppearance.animalThemeId;
 
   // Hub hook
@@ -721,6 +814,7 @@ export default function CustomizationHubScreen({
     currentBadgeIds,
     currentBubbleColorId,
     currentFontId,
+    currentFontColorId,
     currentAnimalThemeId,
     setAppTheme,
   });
@@ -764,9 +858,12 @@ export default function CustomizationHubScreen({
       // If an initialTab matches a chat tab, set it
       if (
         initialTab &&
-        ["chat_bubble_color", "chat_font", "chat_animal_theme"].includes(
-          initialTab,
-        )
+        [
+          "chat_bubble_color",
+          "chat_font",
+          "chat_font_color",
+          "chat_animal_theme",
+        ].includes(initialTab)
       ) {
         hub.setActiveTab(initialTab as any);
       } else {
@@ -854,6 +951,8 @@ export default function CustomizationHubScreen({
         return currentBubbleColorId === selectedItem.id;
       case "chat_font":
         return currentFontId === selectedItem.id;
+      case "chat_font_color":
+        return currentFontColorId === selectedItem.id;
       case "chat_animal_theme":
         return currentAnimalThemeId === selectedItem.id;
       default:
@@ -867,6 +966,7 @@ export default function CustomizationHubScreen({
     currentBadgeIds,
     currentBubbleColorId,
     currentFontId,
+    currentFontColorId,
     currentAnimalThemeId,
   ]);
 
@@ -888,6 +988,8 @@ export default function CustomizationHubScreen({
             return currentBubbleColorId === item.id;
           case "chat_font":
             return currentFontId === item.id;
+          case "chat_font_color":
+            return currentFontColorId === item.id;
           case "chat_animal_theme":
             return currentAnimalThemeId === item.id;
           default:
@@ -911,6 +1013,7 @@ export default function CustomizationHubScreen({
       currentBadgeIds,
       currentBubbleColorId,
       currentFontId,
+      currentFontColorId,
       currentAnimalThemeId,
     ],
   );
@@ -1274,6 +1377,152 @@ export default function CustomizationHubScreen({
             />
             <Text style={[styles.themeShopHintText, { color: colors.text }]}>
               Want more fonts? Visit the Shop
+            </Text>
+            <MaterialCommunityIcons
+              name="chevron-right"
+              size={18}
+              color={colors.textSecondary}
+            />
+          </Pressable>
+        </ScrollView>
+      ) : hub.activeTab === "chat_font_color" ? (
+        /* ── Font Color cards (2-column, swatch preview, tap to equip) ── */
+        <ScrollView
+          contentContainerStyle={styles.themeGridContent}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Default (theme-adaptive) option */}
+          <View style={styles.fontColorDefaultSection}>
+            <Pressable
+              onPress={async () => {
+                try {
+                  await hub.unequipSlot("chat_font_color");
+                  await refreshProfile();
+                } catch (error: any) {
+                  Alert.alert("Error", error?.message || "Failed to reset");
+                }
+              }}
+              style={({ pressed }) => [
+                styles.fontColorDefaultCard,
+                {
+                  borderColor: !currentFontColorId
+                    ? colors.primary
+                    : colors.border,
+                  borderWidth: !currentFontColorId ? 2 : 1,
+                  backgroundColor: colors.surface,
+                  opacity: pressed ? 0.8 : 1,
+                },
+              ]}
+            >
+              <View
+                style={[
+                  styles.fontColorDefaultSwatch,
+                  { backgroundColor: colors.surfaceVariant },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.fontColorDefaultLetter,
+                    { color: colors.text },
+                  ]}
+                >
+                  Aa
+                </Text>
+                <MaterialCommunityIcons
+                  name="theme-light-dark"
+                  size={14}
+                  color={colors.textSecondary}
+                  style={styles.fontColorAdaptiveIcon}
+                />
+              </View>
+              <View style={styles.fontColorDefaultInfo}>
+                <Text
+                  style={[styles.fontColorDefaultTitle, { color: colors.text }]}
+                >
+                  Default
+                </Text>
+                <Text
+                  style={[
+                    styles.fontColorDefaultDesc,
+                    { color: colors.textSecondary },
+                  ]}
+                >
+                  Adapts automatically to your theme
+                </Text>
+              </View>
+              {!currentFontColorId && (
+                <View
+                  style={[
+                    styles.bubbleCheckmark,
+                    { backgroundColor: colors.primary },
+                  ]}
+                >
+                  <Ionicons name="checkmark" size={10} color="#fff" />
+                </View>
+              )}
+            </Pressable>
+          </View>
+
+          {/* Custom colors */}
+          {hub.filteredItems.length > 0 ? (
+            <>
+              <Text
+                style={[
+                  styles.fontColorSectionLabel,
+                  { color: colors.textSecondary },
+                ]}
+              >
+                Custom Colors — Stay the same across themes
+              </Text>
+              <View style={styles.themeGrid}>
+                {hub.filteredItems.map((item) => (
+                  <FontColorCard
+                    key={item.id}
+                    item={item}
+                    isEquipped={currentFontColorId === item.id}
+                    isDefault={false}
+                    onPress={handleChatDirectEquip}
+                  />
+                ))}
+              </View>
+            </>
+          ) : (
+            <View style={styles.emptyContainer}>
+              <MaterialCommunityIcons
+                name="format-color-text"
+                size={48}
+                color={colors.textSecondary}
+              />
+              <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+                No custom font colors owned yet.
+              </Text>
+              <Pressable
+                onPress={() => navigation.navigate("CosmeticsShop" as any)}
+                style={[
+                  styles.goToShopButton,
+                  { backgroundColor: colors.primary },
+                ]}
+              >
+                <MaterialCommunityIcons name="store" size={16} color="#fff" />
+                <Text style={styles.goToShopText}>Browse Shop</Text>
+              </Pressable>
+            </View>
+          )}
+          {/* Shop upsell */}
+          <Pressable
+            onPress={() => navigation.navigate("CosmeticsShop" as any)}
+            style={[
+              styles.themeShopHint,
+              { backgroundColor: colors.surfaceVariant },
+            ]}
+          >
+            <MaterialCommunityIcons
+              name="store"
+              size={18}
+              color={colors.primary}
+            />
+            <Text style={[styles.themeShopHintText, { color: colors.text }]}>
+              Want more font colors? Visit the Shop
             </Text>
             <MaterialCommunityIcons
               name="chevron-right"
@@ -1906,6 +2155,69 @@ const styles = StyleSheet.create({
     borderRadius: 9,
     justifyContent: "center",
     alignItems: "center",
+  },
+
+  // ── Font Color Card ──────────────────────────────────────────────────
+  fontColorSwatch: {
+    height: 60,
+    justifyContent: "center",
+    alignItems: "center",
+    borderRadius: BorderRadius.md,
+    marginHorizontal: Spacing.sm,
+    marginTop: Spacing.sm,
+  },
+  fontColorPreviewText: {
+    fontSize: 28,
+    fontWeight: "700",
+  },
+  fontColorHint: {
+    fontSize: 10,
+    marginTop: 2,
+  },
+  fontColorDefaultSection: {
+    marginBottom: Spacing.md,
+  },
+  fontColorDefaultCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.md,
+    gap: Spacing.md,
+  },
+  fontColorDefaultSwatch: {
+    width: 52,
+    height: 52,
+    borderRadius: BorderRadius.md,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  fontColorDefaultLetter: {
+    fontSize: 24,
+    fontWeight: "700",
+  },
+  fontColorAdaptiveIcon: {
+    position: "absolute",
+    bottom: 2,
+    right: 2,
+  },
+  fontColorDefaultInfo: {
+    flex: 1,
+    gap: 2,
+  },
+  fontColorDefaultTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  fontColorDefaultDesc: {
+    fontSize: 12,
+  },
+  fontColorSectionLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginBottom: Spacing.sm,
+    paddingHorizontal: 2,
   },
 
   // ── Animal Theme Card ──────────────────────────────────────────────────

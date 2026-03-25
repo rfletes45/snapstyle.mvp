@@ -80,13 +80,15 @@ import { VoiceRecordButton } from "@/components/chat/VoiceRecordButton";
 // UI components
 import BlockUserModal from "@/components/BlockUserModal";
 import { ChatHeader } from "@/components/chat/ChatHeader";
-import { DMMessageItem, MessageWithProfile } from "@/components/DMMessageItem";
+import { ChatMessageRenderer } from "@/components/chat/ChatMessageRenderer";
+import { MessageWithProfile } from "@/components/DMMessageItem";
 import ReportUserModal from "@/components/ReportUserModal";
 import ScheduleMessageModal from "@/components/ScheduleMessageModal";
 import { GamePickerModal } from "@/gamesV4/components/GamePickerModal";
 import { PinnedInviteBar } from "@/gamesV4/components/PinnedInviteBar";
 import { createGameInvite } from "@/gamesV4/services/gameServiceV4";
 import type { GameId } from "@/gamesV4/types";
+import { useConversationDisplayMode } from "@/store/ConversationDisplayModeContext";
 
 // Services
 import { blockUser } from "@/services/blocking";
@@ -172,6 +174,7 @@ export default function ChatScreen({
   const { profile, refreshProfile } = useUser();
   const uid = currentFirebaseUser?.uid;
   const chatAppearance = profile?.chatAppearance ?? null;
+  const { displayMode } = useConversationDisplayMode();
 
   // Animal entitlement gating
   const animalEntitlement = useAnimalEntitlement(uid, chatAppearance);
@@ -581,6 +584,15 @@ export default function ChatScreen({
       const messageAbove =
         index < displayMessages.length - 1 ? displayMessages[index + 1] : null;
       return areMessagesGrouped(message, messageAbove);
+    },
+    [displayMessages, areMessagesGrouped],
+  );
+
+  /** Is this message grouped with the one visually below it? (inverted: index - 1) */
+  const isGroupedWithNext = useCallback(
+    (index: number, message: MessageWithProfile): boolean => {
+      const messageBelow = index > 0 ? displayMessages[index - 1] : null;
+      return areMessagesGrouped(message, messageBelow);
     },
     [displayMessages, areMessagesGrouped],
   );
@@ -1075,7 +1087,7 @@ export default function ChatScreen({
 
   const renderMessageItem = useCallback(
     ({ item, index }: { item: MessageWithProfile; index: number }) => (
-      <DMMessageItem
+      <ChatMessageRenderer
         message={item}
         currentUid={uid}
         chatId={chatId}
@@ -1087,10 +1099,18 @@ export default function ChatScreen({
         onRetry={handleRetryMessage}
         onImagePress={handleOpenMediaViewer}
         isHighlighted={item.id === highlightedMessageId}
-        isGrouped={isGroupedMessage(index, item)}
-        showTimestamp={shouldShowTimestamp(index, item)}
         reactions={messageReactions.get(item.id) || []}
         onOptimisticReaction={handleOptimisticReaction}
+        displayMode={displayMode}
+        isGroupChat={false}
+        isGroupedWithPrevious={isGroupedMessage(index, item)}
+        isGroupedWithNext={isGroupedWithNext(index, item)}
+        currentUserDisplayName={
+          profile?.displayName ||
+          profile?.username ||
+          currentFirebaseUser?.displayName ||
+          "User"
+        }
       />
     ),
     [
@@ -1105,9 +1125,13 @@ export default function ChatScreen({
       handleOpenMediaViewer,
       highlightedMessageId,
       isGroupedMessage,
-      shouldShowTimestamp,
+      isGroupedWithNext,
       messageReactions,
       handleOptimisticReaction,
+      displayMode,
+      profile?.displayName,
+      profile?.username,
+      currentFirebaseUser?.displayName,
     ],
   );
 
