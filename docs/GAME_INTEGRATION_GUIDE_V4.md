@@ -214,13 +214,13 @@ These have metadata only and should not be used as proof of an implemented patte
 
 ### 4.3 Additional touchpoints for realtime games
 
-| Area                    | Primary files                                        | Why it matters                           |
-| ----------------------- | ---------------------------------------------------- | ---------------------------------------- |
-| Realtime client contract | `src/gamesV4/realtime/games/{game}Def.ts` and `src/gamesV4/realtime/useRealtimeRoom.ts` | room join, event handling, senders |
-| Settings helpers        | `src/gamesV4/data/{game}Settings.ts`                 | merged runtime settings and helper logic |
-| Room server             | `colyseus-server/src/games/{game}/Room.ts`           | live authority                           |
-| Realtime bridge         | `colyseus-server/src/bridge/firebaseBridge.ts`       | handoff into Firebase result pipeline    |
-| Trigger target          | `firebase-backend/functions/src/gamesV4/triggers.ts` | Firestore trigger into shared resolution |
+| Area                     | Primary files                                                                           | Why it matters                           |
+| ------------------------ | --------------------------------------------------------------------------------------- | ---------------------------------------- |
+| Realtime client contract | `src/gamesV4/realtime/games/{game}Def.ts` and `src/gamesV4/realtime/useRealtimeRoom.ts` | room join, event handling, senders       |
+| Settings helpers         | `src/gamesV4/data/{game}Settings.ts`                                                    | merged runtime settings and helper logic |
+| Room server              | `colyseus-server/src/games/{game}/Room.ts`                                              | live authority                           |
+| Realtime bridge          | `colyseus-server/src/bridge/firebaseBridge.ts`                                          | handoff into Firebase result pipeline    |
+| Trigger target           | `firebase-backend/functions/src/gamesV4/triggers.ts`                                    | Firestore trigger into shared resolution |
 
 ### 4.4 Shared UI surfaces your game must cooperate with
 

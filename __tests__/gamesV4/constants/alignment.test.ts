@@ -13,7 +13,7 @@
 
 // ---- Client-side imports ----
 import "@/gamesV4/adapters"; // triggers auto-registration
-import { getRegisteredGameIds, hasAdapter } from "@/gamesV4/adapters/registry";
+import { hasAdapter } from "@/gamesV4/adapters/registry";
 import {
   GAME_METADATA,
   IMPLEMENTED_GAME_IDS,
