@@ -327,7 +327,7 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
               <Text
                 style={[styles.readStatus, { color: theme.colors.primary }]}
               >
-                ✓✓
+                Read
               </Text>
             </View>
           );
@@ -623,11 +623,13 @@ const styles = StyleSheet.create({
   },
   bubbleColumn: {
     flexDirection: "column",
+    flexShrink: 1,
   },
   messageBubble: {
     padding: 10,
     borderRadius: 20,
     maxWidth: "100%",
+    alignSelf: "flex-start",
   },
   sentBubble: {
     borderBottomRightRadius: 6,
@@ -668,6 +670,7 @@ const styles = StyleSheet.create({
   },
   readStatus: {
     fontSize: 10,
+    fontWeight: "600",
     color: undefined, // Use theme.colors.primary inline for read receipts
   },
   failedStatus: {

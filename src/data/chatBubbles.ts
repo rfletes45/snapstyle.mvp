@@ -26,7 +26,7 @@ export const CHAT_BUBBLE_STYLES: ChatBubbleStyle[] = [
     name: "Default",
     description: "The classic message bubble",
     rarity: "common",
-    background: "#6200EE",
+    background: "#1976D2",
     borderRadius: 18,
     textColor: "#FFFFFF",
     linkColor: "#B9F2FF",

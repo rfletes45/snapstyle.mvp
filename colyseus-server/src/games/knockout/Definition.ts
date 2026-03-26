@@ -135,6 +135,9 @@ export const KNOCKOUT_DEFINITION: RealtimeGameDefinition = {
   // Reconnect
   reconnectGraceMs: 20_000,
 
+  // Join grace — abort or degrade if full roster not present within 60s
+  joinGraceMs: 60_000,
+
   // Timing
   countdownSec: 3,
   tickRate: 60,

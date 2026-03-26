@@ -107,11 +107,7 @@ export const ProfileOverflowMenu = memo(function ProfileOverflowMenu({
         accessibilityLabel="More options"
         accessibilityRole="button"
       >
-        <MaterialCommunityIcons
-          name="dots-vertical"
-          size={24}
-          color={colors.text}
-        />
+        <MaterialCommunityIcons name="dots-vertical" size={24} color="#333" />
       </TouchableOpacity>
 
       {/* Menu modal */}
@@ -165,9 +161,14 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: "rgba(0,0,0,0.55)",
+    backgroundColor: "rgba(255,255,255,0.85)",
     alignItems: "center",
     justifyContent: "center",
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.15,
+    shadowRadius: 2,
   },
   overlay: {
     flex: 1,

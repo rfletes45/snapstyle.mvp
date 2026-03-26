@@ -139,6 +139,9 @@ export const PONG_DEFINITION: RealtimeGameDefinition = {
   // Reconnect
   reconnectGraceMs: 15_000,
 
+  // Join grace — abort 1v1 if opponent never shows within 45s
+  joinGraceMs: 45_000,
+
   // Timing
   countdownSec: 3,
   tickRate: 60,

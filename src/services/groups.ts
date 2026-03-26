@@ -15,6 +15,19 @@
  */
 
 import {
+  canDeleteGroup,
+  canEditGroupName,
+  canEditGroupPhoto,
+  canKickMember,
+  canManageInvites,
+  canManageRoles,
+  canTransferOwnership,
+  DEFAULT_PERMISSIONS_CONFIG,
+  GroupPermissionsConfig,
+  OWNER_ONLY_PERMISSIONS,
+  PERMISSIONS_SCHEMA_VERSION,
+} from "@/permissions/groupPermissions";
+import {
   CreateGroupInput,
   Group,
   GROUP_LIMITS,
@@ -124,6 +137,12 @@ export async function createGroup(
     memberCount: 1, // Just creator initially
     createdAt: now,
     updatedAt: now,
+    // Initialize capability-based permissions config
+    permissionsConfig: {
+      ...DEFAULT_PERMISSIONS_CONFIG,
+      updatedAt: now,
+      updatedBy: creatorUid,
+    },
   };
 
   batch.set(groupRef, groupData);
@@ -176,7 +195,8 @@ export async function createGroup(
 // =============================================================================
 
 /**
- * Send a group invite to a user
+ * Send a group invite to a user.
+ * Requires MANAGE_INVITES permission.
  */
 export async function sendGroupInvite(
   groupId: string,
@@ -189,6 +209,17 @@ export async function sendGroupInvite(
   logger.debug(
     `[sendGroupInvite] Starting invite from ${fromUid} to ${toUid} for group ${groupId}`,
   );
+
+  // Verify inviter has permission
+  const groupDocSnap = await getDoc(doc(db, "Groups", groupId));
+  const groupData = groupDocSnap.exists()
+    ? (groupDocSnap.data() as Group)
+    : null;
+  const config = groupData?.permissionsConfig ?? null;
+  const fromRole = await getUserRole(groupId, fromUid);
+  if (!canManageInvites(fromRole, config)) {
+    throw new Error("You do not have permission to invite members");
+  }
 
   // Check if target is blocked by sender or vice versa
   const blocked = await isUserBlocked(fromUid, toUid);
@@ -799,7 +830,8 @@ export async function leaveGroup(groupId: string, uid: string): Promise<void> {
 }
 
 /**
- * Remove a member from a group (admin/owner only)
+ * Remove a member from a group.
+ * Requires KICK_MEMBERS permission and must outrank target.
  */
 export async function removeMember(
   groupId: string,
@@ -808,11 +840,13 @@ export async function removeMember(
 ): Promise<void> {
   const db = getFirestoreInstance();
 
+  // Load group for permissions config
+  const groupDoc = await getDoc(doc(db, "Groups", groupId));
+  const groupData = groupDoc.exists() ? (groupDoc.data() as Group) : null;
+  const config = groupData?.permissionsConfig ?? null;
+
   // Check admin's role
   const adminRole = await getUserRole(groupId, adminUid);
-  if (adminRole !== "owner" && adminRole !== "admin") {
-    throw new Error("Only admins can remove members");
-  }
 
   // Check target's role
   const targetRole = await getUserRole(groupId, targetUid);
@@ -820,14 +854,19 @@ export async function removeMember(
     throw new Error("User is not a member of this group");
   }
 
+  // Cannot kick yourself
+  if (adminUid === targetUid) {
+    throw new Error("Cannot remove yourself from the group");
+  }
+
   // Owner cannot be removed
   if (targetRole === "owner") {
     throw new Error("Cannot remove the group owner");
   }
 
-  // Admin can only remove members, not other admins
-  if (adminRole === "admin" && targetRole === "admin") {
-    throw new Error("Admins cannot remove other admins");
+  // Permission check: must have kickMembers and outrank target
+  if (!canKickMember(adminRole, targetRole, config)) {
+    throw new Error("You do not have permission to remove this member");
   }
 
   // Get profiles for system message
@@ -866,28 +905,43 @@ export async function removeMember(
 
   await batch.commit();
 
+  // Write audit log
+  await writeAuditLog(db, groupId, {
+    action: "member_removed",
+    actorUid: adminUid,
+    targetUid,
+    details: { targetRole: targetRole },
+  });
+
   logger.debug(`[groups] User ${targetUid} removed from group ${groupId}`);
 }
 
 /**
- * Change a member's role (owner only)
+ * Change a member's role.
+ * Requires MANAGE_ROLES permission and must outrank target.
  */
 export async function changeMemberRole(
   groupId: string,
-  ownerUid: string,
+  actorUid: string,
   targetUid: string,
   newRole: GroupRole,
 ): Promise<void> {
   const db = getFirestoreInstance();
 
-  // Verify requester is owner
-  const ownerRole = await getUserRole(groupId, ownerUid);
-  if (ownerRole !== "owner") {
-    throw new Error("Only the group owner can change roles");
+  // Load group for permissions config
+  const groupDoc = await getDoc(doc(db, "Groups", groupId));
+  const groupData = groupDoc.exists() ? (groupDoc.data() as Group) : null;
+  const config = groupData?.permissionsConfig ?? null;
+
+  // Verify requester has permission
+  const actorRole = await getUserRole(groupId, actorUid);
+  const targetCurrentRole = await getUserRole(groupId, targetUid);
+  if (!canManageRoles(actorRole, targetCurrentRole, config)) {
+    throw new Error("You do not have permission to change roles");
   }
 
   // Cannot change own role
-  if (ownerUid === targetUid) {
+  if (actorUid === targetUid) {
     throw new Error("Cannot change your own role");
   }
 
@@ -915,7 +969,7 @@ export async function changeMemberRole(
   const systemMessageRef = doc(collection(db, "Groups", groupId, "Messages"));
   const systemMessage: Omit<GroupMessage, "id"> = {
     groupId,
-    sender: ownerUid,
+    sender: actorUid,
     senderDisplayName: "System",
     type: "system",
     content: `${targetProfile?.displayName || "A member"} is now ${newRole === "admin" ? "an admin" : "a member"}`,
@@ -932,6 +986,14 @@ export async function changeMemberRole(
   // Update group timestamp
   batch.update(doc(db, "Groups", groupId), { updatedAt: now });
 
+  // Write audit log entry
+  await writeAuditLog(db, groupId, {
+    action: "role_changed",
+    actorUid: actorUid,
+    targetUid,
+    details: { newRole, previousRole: targetCurrentRole },
+  });
+
   await batch.commit();
 
   logger.debug(
@@ -940,7 +1002,7 @@ export async function changeMemberRole(
 }
 
 /**
- * Transfer group ownership
+ * Transfer group ownership. Always owner-only.
  */
 export async function transferOwnership(
   groupId: string,
@@ -951,8 +1013,13 @@ export async function transferOwnership(
 
   // Verify current owner
   const currentRole = await getUserRole(groupId, currentOwnerUid);
-  if (currentRole !== "owner") {
+  if (!canTransferOwnership(currentRole)) {
     throw new Error("Only the group owner can transfer ownership");
+  }
+
+  // Cannot transfer to yourself
+  if (currentOwnerUid === newOwnerUid) {
+    throw new Error("Cannot transfer ownership to yourself");
   }
 
   // Verify new owner is a member
@@ -975,6 +1042,14 @@ export async function transferOwnership(
   });
   batch.update(doc(db, "Groups", groupId, "Members", newOwnerUid), {
     role: "owner",
+  });
+
+  // Write audit log entry
+  await writeAuditLog(db, groupId, {
+    action: "ownership_transferred",
+    actorUid: currentOwnerUid,
+    targetUid: newOwnerUid,
+    details: {},
   });
 
   await batch.commit();
@@ -1057,19 +1132,25 @@ export async function getGroupMessages(
 // =============================================================================
 
 /**
- * Update group name
+ * Update group name.
+ * Requires EDIT_GROUP_NAME permission.
  */
 export async function updateGroupName(
   groupId: string,
-  adminUid: string,
+  actorUid: string,
   newName: string,
 ): Promise<void> {
   const db = getFirestoreInstance();
 
+  // Load group for permissions config
+  const groupDoc = await getDoc(doc(db, "Groups", groupId));
+  const groupData = groupDoc.exists() ? (groupDoc.data() as Group) : null;
+  const config = groupData?.permissionsConfig ?? null;
+
   // Verify user has permission
-  const role = await getUserRole(groupId, adminUid);
-  if (role !== "owner" && role !== "admin") {
-    throw new Error("Only admins can update the group name");
+  const role = await getUserRole(groupId, actorUid);
+  if (!canEditGroupName(role, config)) {
+    throw new Error("You do not have permission to update the group name");
   }
 
   // Validate name
@@ -1091,19 +1172,25 @@ export async function updateGroupName(
 }
 
 /**
- * Update group photo
+ * Update group photo.
+ * Requires EDIT_GROUP_PHOTO permission.
  */
 export async function updateGroupPhoto(
   groupId: string,
-  adminUid: string,
+  actorUid: string,
   avatarUrl: string,
 ): Promise<void> {
   const db = getFirestoreInstance();
 
+  // Load group for permissions config
+  const groupDoc = await getDoc(doc(db, "Groups", groupId));
+  const groupData = groupDoc.exists() ? (groupDoc.data() as Group) : null;
+  const config = groupData?.permissionsConfig ?? null;
+
   // Verify user has permission
-  const role = await getUserRole(groupId, adminUid);
-  if (role !== "owner" && role !== "admin") {
-    throw new Error("Only admins can update the group photo");
+  const role = await getUserRole(groupId, actorUid);
+  if (!canEditGroupPhoto(role, config)) {
+    throw new Error("You do not have permission to update the group photo");
   }
 
   await updateDoc(doc(db, "Groups", groupId), {
@@ -1115,7 +1202,7 @@ export async function updateGroupPhoto(
 }
 
 /**
- * Delete a group (owner only)
+ * Delete a group. Always owner-only.
  */
 export async function deleteGroup(
   groupId: string,
@@ -1128,10 +1215,17 @@ export async function deleteGroup(
   // Verify owner
   const role = await getUserRole(groupId, ownerUid);
 
-  if (role !== "owner") {
+  if (!canDeleteGroup(role)) {
     logger.error("Permission denied - user is not owner");
     throw new Error("Only the group owner can delete the group");
   }
+
+  // Write audit log before deletion
+  await writeAuditLog(db, groupId, {
+    action: "group_deleted",
+    actorUid: ownerUid,
+    details: {},
+  });
 
   // Note: In production, you'd use a Cloud Function to delete subcollections
   // For now, we just mark the group as deleted or remove the main doc
@@ -1140,4 +1234,155 @@ export async function deleteGroup(
   await deleteDoc(doc(db, "Groups", groupId));
 
   logger.debug(`[groups] Deleted group ${groupId}`);
+}
+
+// =============================================================================
+// Permissions Config Management
+// =============================================================================
+
+/**
+ * Get a group's current permissions config.
+ * Returns null for legacy groups without config — callers should use
+ * DEFAULT_PERMISSIONS_CONFIG as fallback.
+ */
+export async function getGroupPermissionsConfig(
+  groupId: string,
+): Promise<GroupPermissionsConfig | null> {
+  const db = getFirestoreInstance();
+  const groupDoc = await getDoc(doc(db, "Groups", groupId));
+  if (!groupDoc.exists()) return null;
+  return (groupDoc.data() as Group).permissionsConfig ?? null;
+}
+
+/**
+ * Update the group's permissions config. Owner-only.
+ * Validates that owner-only permissions cannot be granted to non-owners.
+ */
+export async function updateGroupPermissionsConfig(
+  groupId: string,
+  actorUid: string,
+  newConfig: Partial<GroupPermissionsConfig>,
+): Promise<void> {
+  const db = getFirestoreInstance();
+
+  // Verify actor is owner
+  const actorRole = await getUserRole(groupId, actorUid);
+  if (actorRole !== "owner") {
+    throw new Error("Only the group owner can change permissions");
+  }
+
+  // Load current config
+  const groupDocRef = doc(db, "Groups", groupId);
+  const groupSnap = await getDoc(groupDocRef);
+  if (!groupSnap.exists()) {
+    throw new Error("Group not found");
+  }
+
+  const currentGroup = groupSnap.data() as Group;
+  const currentConfig =
+    currentGroup.permissionsConfig ?? DEFAULT_PERMISSIONS_CONFIG;
+
+  // Merge new config into current
+  const mergedConfig: GroupPermissionsConfig = {
+    schemaVersion: PERMISSIONS_SCHEMA_VERSION,
+    admin: { ...currentConfig.admin, ...newConfig.admin },
+    member: { ...currentConfig.member, ...newConfig.member },
+    updatedAt: Date.now(),
+    updatedBy: actorUid,
+  };
+
+  // Enforce invariant: owner-only permissions can never be true for admin/member
+  for (const ownerOnlyPerm of OWNER_ONLY_PERMISSIONS) {
+    if (mergedConfig.admin[ownerOnlyPerm]) {
+      mergedConfig.admin[ownerOnlyPerm] = false;
+    }
+    if (mergedConfig.member[ownerOnlyPerm]) {
+      mergedConfig.member[ownerOnlyPerm] = false;
+    }
+  }
+
+  await updateDoc(groupDocRef, {
+    permissionsConfig: mergedConfig,
+    updatedAt: Date.now(),
+  });
+
+  // Write audit log
+  await writeAuditLog(db, groupId, {
+    action: "permissions_changed",
+    actorUid,
+    details: { admin: mergedConfig.admin, member: mergedConfig.member },
+  });
+
+  logger.debug(`[groups] Updated permissions config for group ${groupId}`);
+}
+
+/**
+ * Migrate a legacy group to the new permissions system.
+ * Called lazily when a group is opened that lacks permissionsConfig.
+ * Safe to call multiple times — checks if already migrated.
+ */
+export async function migrateGroupPermissions(
+  groupId: string,
+): Promise<GroupPermissionsConfig> {
+  const db = getFirestoreInstance();
+  const groupDocRef = doc(db, "Groups", groupId);
+  const groupSnap = await getDoc(groupDocRef);
+
+  if (!groupSnap.exists()) {
+    throw new Error("Group not found");
+  }
+
+  const groupData = groupSnap.data() as Group;
+
+  // Already migrated?
+  if (groupData.permissionsConfig?.schemaVersion) {
+    return groupData.permissionsConfig;
+  }
+
+  // Apply default permissions config
+  const config: GroupPermissionsConfig = {
+    ...DEFAULT_PERMISSIONS_CONFIG,
+    updatedAt: Date.now(),
+    updatedBy: "system_migration",
+  };
+
+  await updateDoc(groupDocRef, {
+    permissionsConfig: config,
+  });
+
+  logger.debug(`[groups] Migrated permissions for group ${groupId}`);
+  return config;
+}
+
+// =============================================================================
+// Audit Log
+// =============================================================================
+
+/** Audit log entry for group governance actions */
+export interface GroupAuditLogEntry {
+  action: string;
+  actorUid: string;
+  targetUid?: string;
+  details: Record<string, any>;
+  timestamp: number;
+}
+
+/**
+ * Write an audit log entry to the group's AuditLog subcollection.
+ */
+async function writeAuditLog(
+  db: ReturnType<typeof getFirestoreInstance>,
+  groupId: string,
+  entry: Omit<GroupAuditLogEntry, "timestamp">,
+): Promise<void> {
+  try {
+    const logRef = doc(collection(db, "Groups", groupId, "AuditLog"));
+    await setDoc(logRef, {
+      ...entry,
+      timestamp: Date.now(),
+    });
+  } catch (error) {
+    // Audit log failures should not block the primary action
+    logger.error("[groups] Failed to write audit log:", error);
+  }
 }

@@ -113,7 +113,10 @@ export default function AchievementsHubScreen() {
     useCallback(() => {
       if (!uid) return;
       markAchievementNotificationsRead(uid).catch((error) => {
-        console.warn("[gamesV4] Failed to mark achievement notifications read:", error);
+        console.warn(
+          "[gamesV4] Failed to mark achievement notifications read:",
+          error,
+        );
       });
     }, [uid]),
   );
@@ -544,7 +547,7 @@ const styles = StyleSheet.create({
   },
   filterChip: {
     paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingVertical: 10,
     borderRadius: 16,
     alignItems: "center",
     justifyContent: "center",
@@ -552,7 +555,7 @@ const styles = StyleSheet.create({
   filterChipText: {
     fontSize: 13,
     fontWeight: "600",
-    lineHeight: 18,
+    includeFontPadding: false,
   },
   list: { paddingHorizontal: 16, paddingBottom: 32, gap: 12 },
   sectionCard: {

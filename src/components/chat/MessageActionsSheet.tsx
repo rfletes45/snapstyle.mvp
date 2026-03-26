@@ -58,6 +58,10 @@ interface MessageActionsSheetProps {
   currentUid: string;
   /** Current user's role in group (for delete permissions) */
   userRole?: "owner" | "admin" | "moderator" | "member";
+  /** Group permissions config for capability-based checks */
+  permissionsConfig?:
+    | import("@/permissions/groupPermissions").GroupPermissionsConfig
+    | null;
   /** Called when sheet should close */
   onClose: () => void;
   /** Called when reply is selected */
@@ -79,6 +83,7 @@ export function MessageActionsSheet({
   message,
   currentUid,
   userRole,
+  permissionsConfig,
   onClose,
   onReply,
   onEdited,
@@ -125,7 +130,7 @@ export function MessageActionsSheet({
     ? canEditMessage(message, currentUid)
     : { canEdit: false };
   const deleteAllPermission = message
-    ? canDeleteForAll(message, currentUid, userRole)
+    ? canDeleteForAll(message, currentUid, userRole, permissionsConfig)
     : { canDelete: false };
   const deleteMePermission = message
     ? canDeleteForMe(message, currentUid)

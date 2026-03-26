@@ -221,10 +221,10 @@ describe("Lobby Settings — Crazy Eights", () => {
 // =============================================================================
 
 describe("Lobby Settings — Sketch Party", () => {
-  it("has exactly 7 schema fields", () => {
+  it("has exactly 6 schema fields", () => {
     const adapter = getAdapter("sketch_party_game" as GameId);
     expect(adapter).toBeDefined();
-    expect(adapter!.settingsSchema!.length).toBe(7);
+    expect(adapter!.settingsSchema!.length).toBe(6);
   });
 
   it("schema contains rounds, drawTimeSec, hints, customWords", () => {

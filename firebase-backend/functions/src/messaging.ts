@@ -63,6 +63,87 @@ interface GroupSettingsDoc {
 // Group Settings Helpers (Segment 9)
 // =============================================================================
 
+// Server-side permission resolution (mirrors client groupPermissions.ts)
+type GroupRole = "owner" | "admin" | "member";
+interface PermissionFlags {
+  [key: string]: boolean;
+}
+interface PermissionsConfig {
+  adminPermissions?: PermissionFlags;
+  memberPermissions?: PermissionFlags;
+}
+
+const OWNER_PERMISSIONS_SERVER: PermissionFlags = {
+  SEND_MESSAGES: true,
+  DELETE_OWN_MESSAGES: true,
+  DELETE_ANY_MESSAGE: true,
+  EDIT_GROUP_NAME: true,
+  EDIT_GROUP_PHOTO: true,
+  MANAGE_INVITES: true,
+  KICK_MEMBERS: true,
+  MANAGE_ROLES: true,
+  MANAGE_PERMISSIONS: true,
+  TRANSFER_OWNERSHIP: true,
+  DELETE_GROUP: true,
+  PIN_MESSAGES: true,
+  MUTE_MEMBERS: true,
+  MENTION_EVERYONE: true,
+  SEND_MEDIA: true,
+};
+
+const DEFAULT_ADMIN_PERMISSIONS_SERVER: PermissionFlags = {
+  SEND_MESSAGES: true,
+  DELETE_OWN_MESSAGES: true,
+  DELETE_ANY_MESSAGE: true,
+  EDIT_GROUP_NAME: true,
+  EDIT_GROUP_PHOTO: true,
+  MANAGE_INVITES: true,
+  KICK_MEMBERS: true,
+  MANAGE_ROLES: false,
+  MANAGE_PERMISSIONS: false,
+  TRANSFER_OWNERSHIP: false,
+  DELETE_GROUP: false,
+  PIN_MESSAGES: true,
+  MUTE_MEMBERS: true,
+  MENTION_EVERYONE: true,
+  SEND_MEDIA: true,
+};
+
+const DEFAULT_MEMBER_PERMISSIONS_SERVER: PermissionFlags = {
+  SEND_MESSAGES: true,
+  DELETE_OWN_MESSAGES: true,
+  DELETE_ANY_MESSAGE: false,
+  EDIT_GROUP_NAME: false,
+  EDIT_GROUP_PHOTO: false,
+  MANAGE_INVITES: false,
+  KICK_MEMBERS: false,
+  MANAGE_ROLES: false,
+  MANAGE_PERMISSIONS: false,
+  TRANSFER_OWNERSHIP: false,
+  DELETE_GROUP: false,
+  PIN_MESSAGES: false,
+  MUTE_MEMBERS: false,
+  MENTION_EVERYONE: false,
+  SEND_MEDIA: true,
+};
+
+function resolvePermissionsServer(
+  role: GroupRole,
+  config?: PermissionsConfig,
+): PermissionFlags {
+  if (role === "owner") return { ...OWNER_PERMISSIONS_SERVER };
+  if (role === "admin") {
+    return {
+      ...DEFAULT_ADMIN_PERMISSIONS_SERVER,
+      ...(config?.adminPermissions ?? {}),
+    };
+  }
+  return {
+    ...DEFAULT_MEMBER_PERMISSIONS_SERVER,
+    ...(config?.memberPermissions ?? {}),
+  };
+}
+
 /**
  * Load group-level settings from the Groups/{groupId} document.
  *
@@ -75,6 +156,42 @@ async function loadGroupSettings(
   const groupDoc = await db.collection("Groups").doc(groupId).get();
   if (!groupDoc.exists) return null;
   return (groupDoc.data()?.settings as GroupSettingsDoc) ?? null;
+}
+
+/**
+ * Load a user's role and resolved permissions for a group.
+ *
+ * Returns the user's role and capability-resolved permission flags,
+ * taking the group's permissionsConfig into account.
+ */
+async function getGroupMemberPermissions(
+  groupId: string,
+  uid: string,
+): Promise<{ role: GroupRole; permissions: PermissionFlags } | null> {
+  const db = getDb();
+  const [memberDoc, groupDoc] = await Promise.all([
+    db.collection("Groups").doc(groupId).collection("Members").doc(uid).get(),
+    db.collection("Groups").doc(groupId).get(),
+  ]);
+
+  if (!memberDoc.exists) return null;
+
+  const memberData = memberDoc.data();
+  let role: GroupRole = (memberData?.role as GroupRole) ?? "member";
+
+  // Also check owner via createdBy / ownerId
+  if (groupDoc.exists) {
+    const gd = groupDoc.data();
+    if (gd?.ownerId === uid || gd?.createdBy === uid) {
+      role = "owner";
+    }
+  }
+
+  const config = groupDoc.exists
+    ? (groupDoc.data()?.permissionsConfig as PermissionsConfig | undefined)
+    : undefined;
+
+  return { role, permissions: resolvePermissionsServer(role, config) };
 }
 
 /**
@@ -149,17 +266,22 @@ async function enforceGroupSettings(
   const settings = await loadGroupSettings(groupId);
   if (!settings) return; // no settings doc → no restrictions
 
-  const isAdmin = await isGroupAdminOrOwner(groupId, senderId);
+  // Resolve capability-based permissions for this user
+  const memberPerms = await getGroupMemberPermissions(groupId, senderId);
+  const perms = memberPerms?.permissions;
+  const isAdmin = perms
+    ? !!perms.MANAGE_ROLES || !!perms.KICK_MEMBERS
+    : await isGroupAdminOrOwner(groupId, senderId);
 
-  // 1. Announcement-only: non-admins cannot send any messages
-  if (settings.announcementOnly && !isAdmin) {
+  // 1. Announcement-only: users without SEND_MESSAGES cannot send
+  if (settings.announcementOnly && !(perms?.SEND_MESSAGES ?? isAdmin)) {
     throw new functions.https.HttpsError(
       "permission-denied",
       "This group is in announcement-only mode. Only admins can send messages.",
     );
   }
 
-  // 2. Slow mode: enforce minimum gap between messages
+  // 2. Slow mode: enforce minimum gap between messages (exempt admins/owners)
   if (settings.slowModeSeconds && settings.slowModeSeconds > 0 && !isAdmin) {
     const lastTs = await getLastGroupMessageTimestamp(groupId, senderId);
     if (lastTs > 0) {
@@ -174,10 +296,10 @@ async function enforceGroupSettings(
     }
   }
 
-  // 3. Media permission: non-admins may be blocked from sending media
+  // 3. Media permission: check SEND_MEDIA capability
   if (
     settings.allowMediaFromMembers === false &&
-    !isAdmin &&
+    !(perms?.SEND_MEDIA ?? isAdmin) &&
     (kind === "media" || kind === "voice" || kind === "file")
   ) {
     throw new functions.https.HttpsError(
@@ -186,9 +308,12 @@ async function enforceGroupSettings(
     );
   }
 
-  // 4. @mention all: non-admins may be blocked from @all
-  if (settings.allowMentionsAll === false && !isAdmin && mentionUids) {
-    // Convention: "all" or "@all" as a mention UID means everyone
+  // 4. @mention all: check MENTION_EVERYONE capability
+  if (
+    settings.allowMentionsAll === false &&
+    !(perms?.MENTION_EVERYONE ?? isAdmin) &&
+    mentionUids
+  ) {
     if (
       mentionUids.includes("all") ||
       mentionUids.includes("@all") ||

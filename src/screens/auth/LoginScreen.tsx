@@ -9,6 +9,7 @@
  * - OR-divider and link to Signup
  */
 
+import { BorderRadius, Spacing } from "@/constants/theme";
 import { login } from "@/services/auth";
 import { isValidEmail } from "@/utils/validators";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -29,8 +30,6 @@ import {
   TextInput,
   useTheme,
 } from "react-native-paper";
-import { BorderRadius, Spacing } from "@/constants/theme";
-
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("screens/auth/LoginScreen");
@@ -248,7 +247,7 @@ export default function LoginScreen({ navigation }: any) {
             <Button
               mode="text"
               compact
-              onPress={() => navigation.navigate("Signup")}
+              onPress={() => navigation.navigate("SignupEmail")}
               disabled={loading}
               labelStyle={styles.linkLabel}
             >

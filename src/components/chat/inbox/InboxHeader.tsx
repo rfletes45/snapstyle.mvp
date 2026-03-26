@@ -82,7 +82,7 @@ export function InboxHeader({ onSearchPress }: InboxHeaderProps) {
   }, [navigation]);
 
   const safeTop = Math.max(insets.top, 0);
-  const headerContentHeight = 48;
+  const headerContentHeight = 50;
   const iconBtnBg = isDark ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.08)";
 
   return (
@@ -99,7 +99,7 @@ export function InboxHeader({ onSearchPress }: InboxHeaderProps) {
     >
       {/* Absolutely centered title */}
       <View
-        style={[styles.titleOverlay, { top: safeTop + 8, bottom: 0 }]}
+        style={[styles.titleOverlay, { top: safeTop + 6, bottom: 0 }]}
         pointerEvents="none"
       >
         <Appbar.Content
@@ -121,7 +121,7 @@ export function InboxHeader({ onSearchPress }: InboxHeaderProps) {
             pictureUrl={picture?.url || null}
             name={profile?.displayName || ""}
             decorationId={decoration?.decorationId || null}
-            size={36}
+            size={38}
           />
         </TouchableOpacity>
         <IconButton

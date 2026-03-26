@@ -1,11 +1,11 @@
 // Firebase configuration and initialization
 // Import your actual config from firebaseConfig or firebaseConfig.local
-import { initializeApp, FirebaseApp } from "firebase/app";
-import { getAuth, Auth } from "firebase/auth";
-import { getFirestore, Firestore } from "firebase/firestore";
-import { getStorage, FirebaseStorage } from "firebase/storage";
-import { getFunctions, Functions } from "firebase/functions";
-
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { FirebaseApp, initializeApp } from "firebase/app";
+import { Auth, getReactNativePersistence, initializeAuth } from "firebase/auth";
+import { Firestore, getFirestore } from "firebase/firestore";
+import { Functions, getFunctions } from "firebase/functions";
+import { FirebaseStorage, getStorage } from "firebase/storage";
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("services/firebase");
@@ -22,7 +22,9 @@ let functions: Functions;
 export function initializeFirebase(config: any) {
   try {
     app = initializeApp(config);
-    auth = getAuth(app);
+    auth = initializeAuth(app, {
+      persistence: getReactNativePersistence(AsyncStorage),
+    });
     db = getFirestore(app);
     storage = getStorage(app);
     functions = getFunctions(app);

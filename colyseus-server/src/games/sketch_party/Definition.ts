@@ -180,6 +180,9 @@ export const SKETCH_PARTY_DEFINITION: RealtimeGameDefinition = {
   spectatorMode: "none",
 
   reconnectGraceMs: 30_000, // 30 seconds
+
+  // Join grace — abort or start with available players if roster incomplete after 60s
+  joinGraceMs: 60_000,
   countdownSec: 0,
   tickRate: null,
   maxMatchDurationMs: null, // No hard match time limit (turn timer handles it)

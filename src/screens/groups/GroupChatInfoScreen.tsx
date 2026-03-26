@@ -12,6 +12,16 @@
 import AppImage from "@/components/AppImage";
 import { ProfilePictureWithDecoration } from "@/components/profile/ProfilePicture";
 import { ErrorState, LoadingState } from "@/components/ui";
+import {
+  canDeleteGroup,
+  canEditGroupName,
+  canEditGroupPhoto,
+  canKickMember,
+  canManageInvites,
+  canManagePermissions,
+  canManageRoles,
+  GroupPermissionsConfig,
+} from "@/permissions/groupPermissions";
 import { getFriends, getUserProfileByUid } from "@/services/friends";
 import {
   changeMemberRole,
@@ -19,6 +29,7 @@ import {
   getGroup,
   getUserRole,
   leaveGroup,
+  migrateGroupPermissions,
   removeMember,
   sendGroupInvite,
   subscribeToGroupMembers,
@@ -66,6 +77,8 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
   const [group, setGroup] = useState<Group | null>(null);
   const [members, setMembers] = useState<GroupMember[]>([]);
   const [userRole, setUserRole] = useState<GroupRole | null>(null);
+  const [permissionsConfig, setPermissionsConfig] =
+    useState<GroupPermissionsConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [menuVisible, setMenuVisible] = useState<string | null>(null);
@@ -86,10 +99,10 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
 
   // Handle group photo change
   const handleChangePhoto = async () => {
-    if (!uid || (userRole !== "owner" && userRole !== "admin")) {
+    if (!uid || !canEditGroupPhoto(userRole, permissionsConfig)) {
       Alert.alert(
         "Permission Denied",
-        "Only admins can change the group photo",
+        "You do not have permission to change the group photo",
       );
       return;
     }
@@ -157,6 +170,15 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
         setGroup(groupData);
         setUserRole(role);
         setNewGroupName(groupData.name);
+
+        // Load or lazy-migrate permissions config
+        if (groupData.permissionsConfig?.schemaVersion) {
+          setPermissionsConfig(groupData.permissionsConfig);
+        } else {
+          // Legacy group — lazy migrate
+          const config = await migrateGroupPermissions(groupId);
+          setPermissionsConfig(config);
+        }
       } catch (err: any) {
         logger.error("Error loading group:", err);
         setError(err.message || "Failed to load group");
@@ -381,10 +403,15 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
   // Render member item
   const renderMember = (member: GroupMember) => {
     const isCurrentUser = member.uid === uid;
-    const canManage =
-      (userRole === "owner" || userRole === "admin") &&
+    const canKick =
       !isCurrentUser &&
-      member.role !== "owner";
+      member.role !== "owner" &&
+      canKickMember(userRole, member.role, permissionsConfig);
+    const canChangeRoles =
+      !isCurrentUser &&
+      member.role !== "owner" &&
+      canManageRoles(userRole, member.role, permissionsConfig);
+    const canManage = canKick || canChangeRoles;
 
     return (
       <View
@@ -458,7 +485,7 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
               }
               contentStyle={{ backgroundColor: theme.colors.surface }}
             >
-              {userRole === "owner" && (
+              {canChangeRoles && (
                 <>
                   {member.role === "admin" ? (
                     <Menu.Item
@@ -476,12 +503,14 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
                   <Divider />
                 </>
               )}
-              <Menu.Item
-                title="Remove"
-                leadingIcon="account-remove"
-                onPress={() => handleRemoveMember(member)}
-                titleStyle={{ color: colors.error }}
-              />
+              {canKick && (
+                <Menu.Item
+                  title="Remove"
+                  leadingIcon="account-remove"
+                  onPress={() => handleRemoveMember(member)}
+                  titleStyle={{ color: colors.error }}
+                />
+              )}
             </Menu>
           )}
         </View>
@@ -531,7 +560,7 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
       <Appbar.Header style={{ backgroundColor: colors.background }}>
         <Appbar.BackAction onPress={() => navigation.goBack()} />
         <Appbar.Content title="Group Info" />
-        {(userRole === "owner" || userRole === "admin") && (
+        {canEditGroupName(userRole, permissionsConfig) && (
           <Appbar.Action
             icon="pencil"
             onPress={() => setEditNameVisible(true)}
@@ -547,7 +576,7 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
           <TouchableOpacity
             onPress={handleChangePhoto}
             disabled={
-              uploadingPhoto || (userRole !== "owner" && userRole !== "admin")
+              uploadingPhoto || !canEditGroupPhoto(userRole, permissionsConfig)
             }
             style={styles.groupAvatarContainer}
           >
@@ -571,7 +600,7 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
                 />
               </View>
             )}
-            {(userRole === "owner" || userRole === "admin") && (
+            {canEditGroupPhoto(userRole, permissionsConfig) && (
               <View
                 style={[
                   styles.editAvatarBadge,
@@ -608,7 +637,7 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
             <Text style={[styles.sectionTitle, { color: colors.text }]}>
               Members
             </Text>
-            {(userRole === "owner" || userRole === "admin") &&
+            {canManageInvites(userRole, permissionsConfig) &&
               members.length < GROUP_LIMITS.MAX_MEMBERS && (
                 <TouchableOpacity
                   onPress={() => {
@@ -661,6 +690,25 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
             </Text>
           </TouchableOpacity>
 
+          {/* Admin Permissions - Owner only */}
+          {canManagePermissions(userRole) && (
+            <TouchableOpacity
+              style={styles.actionButton}
+              onPress={() =>
+                navigation.navigate("GroupPermissions", { groupId })
+              }
+            >
+              <MaterialCommunityIcons
+                name="shield-key-outline"
+                size={24}
+                color={theme.colors.primary}
+              />
+              <Text style={[styles.actionButtonText, { color: colors.text }]}>
+                Admin Permissions
+              </Text>
+            </TouchableOpacity>
+          )}
+
           {userRole !== "owner" && (
             <TouchableOpacity
               style={styles.actionButton}
@@ -680,7 +728,7 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
             </TouchableOpacity>
           )}
 
-          {userRole === "owner" && (
+          {canDeleteGroup(userRole) && (
             <TouchableOpacity
               style={styles.actionButton}
               onPress={() => {

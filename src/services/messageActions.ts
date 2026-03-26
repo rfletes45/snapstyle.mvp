@@ -7,19 +7,14 @@
  * @module services/messageActions
  */
 
+import { MessageV2, canEdit, isDeletedForAll } from "@/types/messaging";
+import { createLogger } from "@/utils/log";
+import { arrayUnion, doc, updateDoc } from "firebase/firestore";
 import { getFunctions, httpsCallable } from "firebase/functions";
-import { doc, updateDoc, arrayUnion } from "firebase/firestore";
-import { getFirestoreInstance, getAppInstance } from "./firebase";
+import { getAppInstance, getFirestoreInstance } from "./firebase";
 
 // Lazy initialization - don't call at module load time
 const getDb = () => getFirestoreInstance();
-import {
-  MessageV2,
-  EDIT_WINDOW_MS,
-  canEdit,
-  isDeletedForAll,
-} from "@/types/messaging";
-import { createLogger } from "@/utils/log";
 
 const log = createLogger("messageActions");
 
@@ -261,12 +256,18 @@ export function canEditMessage(
 }
 
 /**
- * Check if message can be deleted for all
+ * Check if message can be deleted for all.
+ * Uses the new capability-based permission system when permissionsConfig is available.
+ * Falls back to role-based check for backward compatibility.
  */
 export function canDeleteForAll(
   message: MessageV2,
   currentUid: string,
   userRole?: "owner" | "admin" | "moderator" | "member",
+  permissionsConfig?:
+    | import("@/permissions/groupPermissions").GroupPermissionsConfig
+    | null,
+  messageSenderRole?: import("@/types/models").GroupRole | null,
 ): { canDelete: boolean; reason?: string } {
   // Already deleted
   if (isDeletedForAll(message)) {
@@ -279,23 +280,44 @@ export function canDeleteForAll(
       return { canDelete: true };
     }
 
-    // For groups, check if admin
-    if (
-      message.scope === "group" &&
-      (userRole === "owner" || userRole === "admin" || userRole === "moderator")
-    ) {
-      return { canDelete: true };
+    // For groups, check deleteOwnMessages permission
+    if (message.scope === "group") {
+      // Use new permission system
+      const {
+        hasPermission,
+        GroupPermission,
+      } = require("@/permissions/groupPermissions");
+      const mappedRole = userRole === "moderator" ? "admin" : userRole;
+      if (
+        hasPermission(
+          mappedRole,
+          GroupPermission.DELETE_OWN_MESSAGES,
+          permissionsConfig,
+        )
+      ) {
+        return { canDelete: true };
+      }
     }
 
     return { canDelete: false, reason: "Delete window has expired" };
   }
 
-  // Group admins/mods can delete any message
+  // Group admins/mods can delete any message — use new permission system
   if (message.scope === "group") {
+    const {
+      hasPermissionOverTarget,
+      GroupPermission,
+    } = require("@/permissions/groupPermissions");
+    const mappedActorRole = userRole === "moderator" ? "admin" : userRole;
+    const mappedTargetRole = messageSenderRole ?? "member"; // Fallback for unknown senders
+
     if (
-      userRole === "owner" ||
-      userRole === "admin" ||
-      userRole === "moderator"
+      hasPermissionOverTarget(
+        mappedActorRole,
+        mappedTargetRole,
+        GroupPermission.DELETE_ANY_MESSAGE,
+        permissionsConfig,
+      )
     ) {
       return { canDelete: true };
     }

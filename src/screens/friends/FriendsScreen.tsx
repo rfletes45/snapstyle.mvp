@@ -976,7 +976,7 @@ export default function FriendsScreen({ navigation }: any) {
           onChangeText={setSearchQuery}
           value={searchQuery}
           style={[styles.searchbar, { backgroundColor: colors.surfaceVariant }]}
-          inputStyle={{ fontSize: 14 }}
+          inputStyle={{ fontSize: 14, alignSelf: "center", paddingVertical: 0 }}
           elevation={0}
           accessibilityLabel="Search friends"
         />
@@ -1523,7 +1523,8 @@ const styles = StyleSheet.create({
   },
   searchbar: {
     borderRadius: BorderRadius.md,
-    height: 42,
+    minHeight: 42,
+    justifyContent: "center",
   },
 
   /* Tab bar */

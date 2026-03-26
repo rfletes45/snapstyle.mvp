@@ -312,7 +312,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 10,
-    paddingVertical: 7,
+    paddingVertical: 5,
     minHeight: 66,
   },
   avatarContainer: {

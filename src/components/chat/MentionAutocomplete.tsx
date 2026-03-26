@@ -334,12 +334,9 @@ export const MentionText = memo(function MentionText({
   }
 
   const isSelf = uid === currentUid;
-  const bg = isSelf
-    ? colors.tertiaryContainer
-    : (colors.mentionHighlight ?? colors.primaryContainer);
-  const fg = isSelf
-    ? colors.tertiary
-    : (colors.mentionHighlightText ?? colors.primary);
+  // Darker backgrounds with light text for strong contrast and polish
+  const bg = isSelf ? `${colors.primary}88` : `${colors.primary}66`;
+  const fg = "#FFFFFF";
 
   // borderRadius doesn't work on <Text> in React Native, so we wrap in a View.
   return (
@@ -506,7 +503,7 @@ const styles = StyleSheet.create({
 
   // Mention token (read-time) — View container for borderRadius support
   mentionTokenContainer: {
-    borderRadius: 5,
+    borderRadius: 12,
     paddingHorizontal: 3,
     paddingVertical: 1,
     overflow: "hidden",

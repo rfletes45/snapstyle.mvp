@@ -107,7 +107,20 @@ export const InboxFAB = memo(function InboxFAB({
             icon: action.icon,
             label: action.label,
             onPress: action.onPress,
-            style: { backgroundColor: colors.surface },
+            style: {
+              backgroundColor: colors.surfaceElevated ?? colors.surface,
+              elevation: 3,
+            },
+            labelStyle: {
+              backgroundColor: colors.surfaceElevated ?? colors.surface,
+              color: colors.text,
+              paddingHorizontal: 10,
+              paddingVertical: 4,
+              borderRadius: 6,
+              elevation: 2,
+              fontWeight: "600" as const,
+              overflow: "hidden" as const,
+            },
             labelTextColor: colors.text,
             color: colors.primary,
           }))}
@@ -115,7 +128,7 @@ export const InboxFAB = memo(function InboxFAB({
           style={styles.fabGroup}
           fabStyle={[styles.fab, { backgroundColor: colors.primary }]}
           color={colors.onPrimary}
-          backdropColor={isDark ? "rgba(0,0,0,0.5)" : "rgba(0,0,0,0.3)"}
+          backdropColor={isDark ? "rgba(0,0,0,0.55)" : "rgba(0,0,0,0.15)"}
         />
       </Portal>
     )

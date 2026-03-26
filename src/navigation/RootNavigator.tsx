@@ -3,13 +3,15 @@ import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import {
   NavigationContainer,
   NavigationContainerRef,
+  useNavigation,
 } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
-import React, { useCallback, useMemo } from "react";
+import React, { useCallback, useEffect, useMemo, useRef } from "react";
 import { StyleSheet } from "react-native";
 
 import AppGate from "@/components/AppGate";
 import WarningModal from "@/components/WarningModal";
+import { clearLastOpenChat, getLastOpenChat } from "@/services/lastOpenChat";
 import { navigationRef } from "@/services/navigationRef";
 import { useInAppNotifications } from "@/store/InAppNotificationsContext";
 import { useAppTheme } from "@/store/ThemeContext";
@@ -26,9 +28,19 @@ import type {
 // Auth screens
 import ForgotPasswordScreen from "@/screens/auth/ForgotPasswordScreen";
 import LoginScreen from "@/screens/auth/LoginScreen";
-import ProfileSetupScreen from "@/screens/auth/ProfileSetupScreen";
-import SignupScreen from "@/screens/auth/SignupScreen";
+import SignupEmailScreen from "@/screens/auth/SignupEmailScreen";
+import SignupPasswordScreen from "@/screens/auth/SignupPasswordScreen";
 import WelcomeScreen from "@/screens/auth/WelcomeScreen";
+
+// Onboarding screens (post-auth, pre-profile)
+import OnboardingCompleteScreen from "@/screens/onboarding/OnboardingCompleteScreen";
+import OnboardingDisplayStyleScreen from "@/screens/onboarding/OnboardingDisplayStyleScreen";
+import OnboardingPhotoScreen from "@/screens/onboarding/OnboardingPhotoScreen";
+import OnboardingUsernameScreen from "@/screens/onboarding/OnboardingUsernameScreen";
+
+// Onboarding state providers
+import { OnboardingProvider } from "@/store/OnboardingContext";
+import { SignupProvider } from "@/store/SignupContext";
 
 // App screens
 import ChatListScreen from "@/screens/chat/ChatListScreenV2";
@@ -67,6 +79,7 @@ import GroupChatCreateScreen from "@/screens/groups/GroupChatCreateScreen";
 import GroupChatInfoScreen from "@/screens/groups/GroupChatInfoScreen";
 import GroupChatScreen from "@/screens/groups/GroupChatScreen";
 import GroupInvitesScreen from "@/screens/groups/GroupInvitesScreen";
+import GroupPermissionsScreen from "@/screens/groups/GroupPermissionsScreen";
 
 import ChatSettingsScreen from "@/screens/chat/ChatSettingsScreen";
 
@@ -121,27 +134,32 @@ function AuthStack() {
   const { colors } = useAppTheme();
 
   return (
-    <AuthStack_Nav.Navigator
-      screenOptions={{
-        headerShown: false,
-        contentStyle: {
-          backgroundColor: colors.background,
-        },
-        animation: "simple_push",
-      }}
-    >
-      <AuthStack_Nav.Screen name="Welcome" component={WelcomeScreen} />
-      <AuthStack_Nav.Screen name="Login" component={LoginScreen} />
-      <AuthStack_Nav.Screen name="Signup" component={SignupScreen} />
-      <AuthStack_Nav.Screen
-        name="ForgotPassword"
-        component={ForgotPasswordScreen}
-      />
-      <AuthStack_Nav.Screen
-        name="ProfileSetup"
-        component={ProfileSetupScreen}
-      />
-    </AuthStack_Nav.Navigator>
+    <SignupProvider>
+      <AuthStack_Nav.Navigator
+        screenOptions={{
+          headerShown: false,
+          contentStyle: {
+            backgroundColor: colors.background,
+          },
+          animation: "simple_push",
+        }}
+      >
+        <AuthStack_Nav.Screen name="Welcome" component={WelcomeScreen} />
+        <AuthStack_Nav.Screen name="Login" component={LoginScreen} />
+        <AuthStack_Nav.Screen
+          name="SignupEmail"
+          component={SignupEmailScreen}
+        />
+        <AuthStack_Nav.Screen
+          name="SignupPassword"
+          component={SignupPasswordScreen}
+        />
+        <AuthStack_Nav.Screen
+          name="ForgotPassword"
+          component={ForgotPasswordScreen}
+        />
+      </AuthStack_Nav.Navigator>
+    </SignupProvider>
   );
 }
 
@@ -291,7 +309,7 @@ function ProfileStack() {
 
 /**
  * Main App Tabs
- * Profile | Messages | Shop
+ * Profile | Messages | Calls
  */
 function AppTabs() {
   const { colors } = useAppTheme();
@@ -348,9 +366,6 @@ function AppTabs() {
             case "Calls":
               iconName = "phone-outline";
               break;
-            case "Shop":
-              iconName = "store-outline";
-              break;
           }
 
           return (
@@ -359,11 +374,6 @@ function AppTabs() {
         },
       })}
     >
-      <Tab.Screen
-        name="Profile"
-        component={ProfileStack}
-        options={{ headerShown: false }}
-      />
       <Tab.Screen
         name="Messages"
         component={InboxStack}
@@ -377,8 +387,8 @@ function AppTabs() {
         options={{ headerShown: false }}
       />
       <Tab.Screen
-        name="Shop"
-        component={ShopHubScreen}
+        name="Profile"
+        component={ProfileStack}
         options={{ headerShown: false }}
       />
     </Tab.Navigator>
@@ -391,6 +401,22 @@ function AppTabs() {
  */
 function MainStack() {
   const { colors } = useAppTheme();
+  const navigation = useNavigation<any>();
+  const hasRestoredRef = useRef(false);
+
+  // Resume last open chat on app reopen (one-shot on mount)
+  useEffect(() => {
+    if (hasRestoredRef.current) return;
+    hasRestoredRef.current = true;
+
+    getLastOpenChat().then((state) => {
+      if (!state) return;
+      // Clear immediately so we don't restore again on next mount
+      clearLastOpenChat();
+      // Navigate to the persisted chat screen
+      navigation.navigate(state.screen, state.params);
+    });
+  }, [navigation]);
 
   return (
     <MainStack_Nav.Navigator
@@ -449,8 +475,18 @@ function MainStack() {
         options={{ headerShown: false }}
       />
       <MainStack_Nav.Screen
+        name="GroupPermissions"
+        component={GroupPermissionsScreen}
+        options={{ headerShown: false }}
+      />
+      <MainStack_Nav.Screen
         name="ChatSettings"
         component={ChatSettingsScreen}
+        options={{ headerShown: false }}
+      />
+      <MainStack_Nav.Screen
+        name="InboxSettings"
+        component={InboxSettingsScreen}
         options={{ headerShown: false }}
       />
       <MainStack_Nav.Screen
@@ -634,14 +670,30 @@ interface RootNavigatorProps {
 }
 
 /**
+ * Signals the ThemeContext that the user's profile is loaded. This enables
+ * loading the stored theme preference for returning users, while keeping the
+ * onboarding flow on a stable default theme.
+ */
+function ProfileReadySignal({
+  markProfileReady,
+}: {
+  markProfileReady: () => void;
+}) {
+  useEffect(() => {
+    markProfileReady();
+  }, [markProfileReady]);
+  return null;
+}
+
+/**
  * RootNavigator
  * Uses AppGate for hydration-safe navigation
- * Three-tab layout: Profile, Messages, Shop
+ * Three-tab layout: Profile, Messages, Calls
  */
 export default function RootNavigator({
   navigationRef: externalRef,
 }: RootNavigatorProps) {
-  const { theme } = useAppTheme();
+  const { theme, markProfileReady } = useAppTheme();
   const { setCurrentScreen } = useInAppNotifications();
 
   const navRef = externalRef || navigationRef;
@@ -665,9 +717,13 @@ export default function RootNavigator({
         screens: {
           Welcome: "welcome",
           Login: "login",
-          Signup: "signup",
+          SignupEmail: "signup",
+          SignupPassword: "signup/password",
           ForgotPassword: "forgot-password",
-          ProfileSetup: "profile-setup",
+          OnboardingUsername: "onboarding/username",
+          OnboardingPhoto: "onboarding/photo",
+          OnboardingDisplayStyle: "onboarding/style",
+          OnboardingComplete: "onboarding/complete",
           MainTabs: {
             screens: {
               Profile: {
@@ -683,7 +739,6 @@ export default function RootNavigator({
                 },
               },
               Calls: "calls",
-              Shop: "shop",
             },
           },
           Friends: "friends",
@@ -716,24 +771,39 @@ export default function RootNavigator({
         >
           {hydrationState === "ready" ? (
             <>
+              <ProfileReadySignal markProfileReady={markProfileReady} />
               <MainStack />
               <WarningModal />
             </>
           ) : hydrationState === "needs_profile" ? (
-            <ProfileSetupStack_Nav.Navigator
-              screenOptions={{
-                headerShown: false,
-                contentStyle: {
-                  backgroundColor: theme.navigation.colors.background,
-                },
-                animation: "simple_push",
-              }}
-            >
-              <ProfileSetupStack_Nav.Screen
-                name="ProfileSetup"
-                component={ProfileSetupScreen}
-              />
-            </ProfileSetupStack_Nav.Navigator>
+            <OnboardingProvider>
+              <ProfileSetupStack_Nav.Navigator
+                screenOptions={{
+                  headerShown: false,
+                  contentStyle: {
+                    backgroundColor: theme.navigation.colors.background,
+                  },
+                  animation: "simple_push",
+                }}
+              >
+                <ProfileSetupStack_Nav.Screen
+                  name="OnboardingUsername"
+                  component={OnboardingUsernameScreen}
+                />
+                <ProfileSetupStack_Nav.Screen
+                  name="OnboardingPhoto"
+                  component={OnboardingPhotoScreen}
+                />
+                <ProfileSetupStack_Nav.Screen
+                  name="OnboardingDisplayStyle"
+                  component={OnboardingDisplayStyleScreen}
+                />
+                <ProfileSetupStack_Nav.Screen
+                  name="OnboardingComplete"
+                  component={OnboardingCompleteScreen}
+                />
+              </ProfileSetupStack_Nav.Navigator>
+            </OnboardingProvider>
           ) : (
             <AuthStack />
           )}

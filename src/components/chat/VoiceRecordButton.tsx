@@ -1,14 +1,10 @@
 /**
  * VoiceRecordButton Component
  *
- * Hold-to-record button with visual feedback.
+ * Polished hold-to-record button with modern visual feedback.
  *
- * Features:
- * - Press and hold to record
- * - Visual recording indicator
- * - Duration display
- * - Slide to cancel
- * - Haptic feedback
+ * Native: Hold to record, slide left to cancel, release to send.
+ * Web: Click to start/stop, separate cancel button.
  *
  * @module components/chat/VoiceRecordButton
  */
@@ -56,8 +52,7 @@ export interface VoiceRecordButtonProps {
 // =============================================================================
 
 const DEFAULT_SIZE = 40;
-const CANCEL_SLIDE_THRESHOLD = -80; // pixels to slide left to cancel
-const RECORDING_SCALE = 1.3;
+const CANCEL_SLIDE_THRESHOLD = -80;
 
 // =============================================================================
 // Main Component
@@ -75,7 +70,7 @@ export const VoiceRecordButton = memo(function VoiceRecordButton({
   const [slideOffset, setSlideOffset] = useState(0);
   const [isCancelling, setIsCancelling] = useState(false);
   const scaleAnim = useRef(new Animated.Value(1)).current;
-  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const pulseAnim = useRef(new Animated.Value(0)).current;
 
   const voiceRecorder = useVoiceRecorder({
     maxDuration,
@@ -83,254 +78,275 @@ export const VoiceRecordButton = memo(function VoiceRecordButton({
     onRecordingCancelled,
   });
 
-  // Pulse animation for recording indicator
-  const startPulseAnimation = useCallback(() => {
+  // Gentle glow pulse for the recording dot
+  const startPulse = useCallback(() => {
     Animated.loop(
       Animated.sequence([
         Animated.timing(pulseAnim, {
-          toValue: 1.2,
-          duration: 500,
+          toValue: 1,
+          duration: 800,
           useNativeDriver: true,
         }),
         Animated.timing(pulseAnim, {
-          toValue: 1,
-          duration: 500,
+          toValue: 0,
+          duration: 800,
           useNativeDriver: true,
         }),
       ]),
     ).start();
   }, [pulseAnim]);
 
-  const stopPulseAnimation = useCallback(() => {
+  const stopPulse = useCallback(() => {
     pulseAnim.stopAnimation();
-    pulseAnim.setValue(1);
+    pulseAnim.setValue(0);
   }, [pulseAnim]);
 
   // Handle press in (start recording)
   const handlePressIn = useCallback(async () => {
     if (disabled || !voiceRecorder.isAvailable) {
-      voiceRecorder.startRecording(); // Will show error alert if not available
+      voiceRecorder.startRecording();
       return;
     }
 
-    // Haptic feedback
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
-    // Scale up animation
     Animated.spring(scaleAnim, {
-      toValue: RECORDING_SCALE,
+      toValue: 1.15,
+      friction: 6,
       useNativeDriver: true,
     }).start();
 
-    // Start recording
     await voiceRecorder.startRecording();
 
-    // Start pulse animation
     if (voiceRecorder.isRecording) {
-      startPulseAnimation();
+      startPulse();
     }
-  }, [disabled, voiceRecorder, scaleAnim, startPulseAnimation]);
+  }, [disabled, voiceRecorder, scaleAnim, startPulse]);
 
   // Handle press out (stop recording)
   const handlePressOut = useCallback(async () => {
     if (!voiceRecorder.isRecording) return;
 
-    // Stop animations
-    stopPulseAnimation();
+    stopPulse();
     Animated.spring(scaleAnim, {
       toValue: 1,
+      friction: 6,
       useNativeDriver: true,
     }).start();
 
-    // Check if cancelling
     if (isCancelling || slideOffset < CANCEL_SLIDE_THRESHOLD) {
       await voiceRecorder.cancelRecording();
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
     } else {
-      // Stop and save recording
       const recording = await voiceRecorder.stopRecording();
       if (recording && recording.durationMs > 500) {
-        // Minimum 0.5 second recording
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      } else if (recording) {
-        // Too short, cancel it
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
       }
     }
 
-    // Reset state
     setSlideOffset(0);
     setIsCancelling(false);
-  }, [voiceRecorder, isCancelling, slideOffset, scaleAnim, stopPulseAnimation]);
+  }, [voiceRecorder, isCancelling, slideOffset, scaleAnim, stopPulse]);
 
-  // Use refs to store latest callback values to avoid stale closures in PanResponder
+  // Refs for stable PanResponder closures
   const handlePressInRef = useRef(handlePressIn);
   const handlePressOutRef = useRef(handlePressOut);
   const isRecordingRef = useRef(voiceRecorder.isRecording);
 
-  // Update refs when values change
   React.useEffect(() => {
     handlePressInRef.current = handlePressIn;
   }, [handlePressIn]);
-
   React.useEffect(() => {
     handlePressOutRef.current = handlePressOut;
   }, [handlePressOut]);
-
   React.useEffect(() => {
     isRecordingRef.current = voiceRecorder.isRecording;
   }, [voiceRecorder.isRecording]);
 
-  // Pan responder for slide-to-cancel
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: (_, gestureState) => {
-        // Only become pan responder if there's meaningful horizontal movement
-        return Math.abs(gestureState.dx) > 5;
-      },
+      onMoveShouldSetPanResponder: (_, gs) => Math.abs(gs.dx) > 5,
       onPanResponderGrant: () => {
         handlePressInRef.current();
       },
       onPanResponderMove: (
-        _event: GestureResponderEvent,
-        gestureState: PanResponderGestureState,
+        _e: GestureResponderEvent,
+        gs: PanResponderGestureState,
       ) => {
         if (isRecordingRef.current) {
-          const offset = Math.min(0, gestureState.dx);
+          const offset = Math.min(0, gs.dx);
           setSlideOffset(offset);
           setIsCancelling(offset < CANCEL_SLIDE_THRESHOLD);
         }
       },
-      onPanResponderRelease: () => {
-        handlePressOutRef.current();
-      },
-      onPanResponderTerminate: () => {
-        handlePressOutRef.current();
-      },
+      onPanResponderRelease: () => handlePressOutRef.current(),
+      onPanResponderTerminate: () => handlePressOutRef.current(),
     }),
   ).current;
 
-  // Web: Click-to-toggle handler (instead of hold-to-record)
+  // Web toggle handler
   const handleWebClick = useCallback(async () => {
     if (voiceRecorder.isRecording) {
-      // Stop recording
-      stopPulseAnimation();
+      stopPulse();
       Animated.spring(scaleAnim, {
         toValue: 1,
+        friction: 6,
         useNativeDriver: true,
       }).start();
-      const recording = await voiceRecorder.stopRecording();
-      if (recording && recording.durationMs > 500) {
-        // Success
-      }
+      await voiceRecorder.stopRecording();
     } else {
-      // Start recording
       if (disabled || !voiceRecorder.isAvailable) {
         voiceRecorder.startRecording();
         return;
       }
       Animated.spring(scaleAnim, {
-        toValue: RECORDING_SCALE,
+        toValue: 1.15,
+        friction: 6,
         useNativeDriver: true,
       }).start();
       await voiceRecorder.startRecording();
-      if (voiceRecorder.isRecording) {
-        startPulseAnimation();
-      }
+      if (voiceRecorder.isRecording) startPulse();
     }
-  }, [
-    voiceRecorder,
-    disabled,
-    scaleAnim,
-    startPulseAnimation,
-    stopPulseAnimation,
-  ]);
+  }, [voiceRecorder, disabled, scaleAnim, startPulse, stopPulse]);
 
-  // Web: Cancel handler
   const handleWebCancel = useCallback(async () => {
     if (voiceRecorder.isRecording) {
-      stopPulseAnimation();
+      stopPulse();
       Animated.spring(scaleAnim, {
         toValue: 1,
+        friction: 6,
         useNativeDriver: true,
       }).start();
       await voiceRecorder.cancelRecording();
     }
-  }, [voiceRecorder, scaleAnim, stopPulseAnimation]);
+  }, [voiceRecorder, scaleAnim, stopPulse]);
 
-  // Render not available state
+  // ---- Unavailable state ----
   if (!voiceRecorder.isAvailable) {
     return (
       <Pressable
-        style={[styles.button, { width: size, height: size, opacity: 0.5 }]}
+        style={[styles.micButton, { width: size, height: size, opacity: 0.4 }]}
         onPress={() => voiceRecorder.startRecording()}
       >
         <MaterialCommunityIcons
           name="microphone-off"
-          size={size * 0.6}
-          color="#888"
+          size={size * 0.55}
+          color={theme.colors.onSurfaceVariant}
         />
       </Pressable>
     );
   }
 
-  // Web: Use click-to-toggle pattern (more reliable than PanResponder on web)
+  // ---- Dot opacity driven by pulse animation ----
+  const dotOpacity = pulseAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [1, 0.3],
+  });
+
+  // ---- Slide cancel opacity ----
+  const cancelOpacity = Math.min(
+    1,
+    Math.abs(slideOffset) / Math.abs(CANCEL_SLIDE_THRESHOLD),
+  );
+
+  // ---- Recording overlay (shared between web & native) ----
+  const recordingOverlay = voiceRecorder.isRecording ? (
+    <View
+      style={[
+        styles.overlay,
+        {
+          backgroundColor: theme.dark
+            ? "rgba(30,30,30,0.95)"
+            : "rgba(245,245,245,0.97)",
+        },
+      ]}
+    >
+      {/* Left: recording indicator + duration */}
+      <View style={styles.overlayLeft}>
+        <Animated.View style={[styles.recordDot, { opacity: dotOpacity }]} />
+        <Text
+          style={[
+            styles.durationText,
+            { color: theme.dark ? "#FFF" : "#1a1a1a" },
+          ]}
+        >
+          {voiceRecorder.durationFormatted}
+        </Text>
+      </View>
+
+      {/* Center: slide-to-cancel (native) or cancel button (web) */}
+      {Platform.OS === "web" ? (
+        <Pressable onPress={handleWebCancel} style={styles.webCancel}>
+          <MaterialCommunityIcons
+            name="close-circle"
+            size={18}
+            color={theme.colors.error}
+          />
+          <Text style={[styles.cancelLabel, { color: theme.colors.error }]}>
+            Cancel
+          </Text>
+        </Pressable>
+      ) : (
+        <View style={styles.slideHint}>
+          <MaterialCommunityIcons
+            name={isCancelling ? "close-circle" : "chevron-left"}
+            size={16}
+            color={
+              isCancelling
+                ? theme.colors.error
+                : theme.dark
+                  ? "rgba(255,255,255,0.35)"
+                  : "rgba(0,0,0,0.3)"
+            }
+          />
+          <Text
+            style={[
+              styles.slideLabel,
+              {
+                color: isCancelling
+                  ? theme.colors.error
+                  : theme.dark
+                    ? "rgba(255,255,255,0.35)"
+                    : "rgba(0,0,0,0.3)",
+                opacity: isCancelling ? 1 : 1 - cancelOpacity * 0.5,
+              },
+            ]}
+          >
+            {isCancelling ? "Release to cancel" : "Slide to cancel"}
+          </Text>
+        </View>
+      )}
+    </View>
+  ) : null;
+
+  // ---- Web render ----
   if (Platform.OS === "web") {
     return (
       <View style={[styles.container, style]}>
-        {/* Recording overlay with cancel button */}
-        {voiceRecorder.isRecording && (
-          <View style={styles.recordingOverlay}>
-            {/* Cancel button */}
-            <Pressable onPress={handleWebCancel} style={styles.webCancelButton}>
-              <MaterialCommunityIcons
-                name="close-circle"
-                size={24}
-                color="#FF4444"
-              />
-              <Text style={styles.cancelText}>Cancel</Text>
-            </Pressable>
-
-            {/* Duration display */}
-            <View style={styles.durationContainer}>
-              <Animated.View
-                style={[
-                  styles.recordingDot,
-                  { transform: [{ scale: pulseAnim }] },
-                ]}
-              />
-              <Text style={styles.durationText}>
-                {voiceRecorder.durationFormatted}
-              </Text>
-            </View>
-          </View>
-        )}
-
-        {/* Record/Stop button */}
+        {recordingOverlay}
         <Pressable onPress={handleWebClick}>
-          <Animated.View
-            style={[
-              styles.buttonContainer,
-              { transform: [{ scale: scaleAnim }] },
-            ]}
-          >
+          <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
             <View
               style={[
-                styles.button,
+                styles.micButton,
                 {
                   width: size,
                   height: size,
                   backgroundColor: voiceRecorder.isRecording
-                    ? "#FF4444"
-                    : theme.colors.surfaceVariant,
+                    ? theme.colors.error
+                    : "transparent",
                 },
               ]}
             >
               <MaterialCommunityIcons
                 name={voiceRecorder.isRecording ? "stop" : "microphone-outline"}
-                size={size * 0.6}
-                color={voiceRecorder.isRecording ? "#FFF" : "#888"}
+                size={size * 0.55}
+                color={
+                  voiceRecorder.isRecording
+                    ? "#FFF"
+                    : theme.colors.onSurfaceVariant
+                }
               />
             </View>
           </Animated.View>
@@ -339,63 +355,23 @@ export const VoiceRecordButton = memo(function VoiceRecordButton({
     );
   }
 
-  // Native: Use PanResponder for hold-to-record
-
+  // ---- Native render ----
   return (
     <View style={[styles.container, style]}>
-      {/* Recording overlay */}
-      {voiceRecorder.isRecording && (
-        <View style={styles.recordingOverlay}>
-          {/* Slide to cancel indicator */}
-          <View style={[styles.slideIndicator, { left: slideOffset }]}>
-            <MaterialCommunityIcons
-              name={isCancelling ? "close-circle" : "chevron-left"}
-              size={20}
-              color={isCancelling ? "#FF4444" : "#888"}
-            />
-            <Text style={[styles.slideText, isCancelling && styles.cancelText]}>
-              {isCancelling ? "Release to cancel" : "‹ Slide to cancel"}
-            </Text>
-            {/* Animated chevron hint */}
-            {!isCancelling && (
-              <MaterialCommunityIcons
-                name="chevron-left"
-                size={14}
-                color="rgba(136,136,136,0.5)"
-                style={{ marginLeft: -4 }}
-              />
-            )}
-          </View>
-
-          {/* Duration display */}
-          <View style={styles.durationContainer}>
-            <Animated.View
-              style={[
-                styles.recordingDot,
-                { transform: [{ scale: pulseAnim }] },
-              ]}
-            />
-            <Text style={styles.durationText}>
-              {voiceRecorder.durationFormatted}
-            </Text>
-          </View>
-        </View>
-      )}
-
-      {/* Record button */}
+      {recordingOverlay}
       <Animated.View
-        style={[styles.buttonContainer, { transform: [{ scale: scaleAnim }] }]}
+        style={{ transform: [{ scale: scaleAnim }] }}
         {...panResponder.panHandlers}
       >
         <View
           style={[
-            styles.button,
+            styles.micButton,
             {
               width: size,
               height: size,
               backgroundColor: voiceRecorder.isRecording
-                ? "#FF4444"
-                : theme.colors.surfaceVariant,
+                ? theme.colors.error
+                : "transparent",
             },
           ]}
         >
@@ -403,8 +379,10 @@ export const VoiceRecordButton = memo(function VoiceRecordButton({
             name={
               voiceRecorder.isRecording ? "microphone" : "microphone-outline"
             }
-            size={size * 0.6}
-            color={voiceRecorder.isRecording ? "#FFF" : "#888"}
+            size={size * 0.55}
+            color={
+              voiceRecorder.isRecording ? "#FFF" : theme.colors.onSurfaceVariant
+            }
           />
         </View>
       </Animated.View>
@@ -420,61 +398,62 @@ const styles = StyleSheet.create({
   container: {
     position: "relative",
   },
-  buttonContainer: {
-    zIndex: 10,
-  },
-  button: {
+  micButton: {
     borderRadius: 999,
     justifyContent: "center",
     alignItems: "center",
   },
-  recordingOverlay: {
+  overlay: {
     position: "absolute",
-    right: 50,
-    top: 0,
-    bottom: 0,
-    left: -200,
+    right: 40,
+    top: -6,
+    bottom: -6,
+    left: -220,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    backgroundColor: "rgba(0,0,0,0.8)",
     borderRadius: 20,
     paddingHorizontal: 12,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
   },
-  slideIndicator: {
+  overlayLeft: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
+    gap: 8,
   },
-  slideText: {
-    color: "#888",
-    fontSize: 12,
-  },
-  cancelText: {
-    color: "#FF4444",
-  },
-  durationContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  recordingDot: {
+  recordDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: "#FF4444",
+    backgroundColor: "#FF3B30",
   },
   durationText: {
-    color: "#FFF",
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: "600",
     fontVariant: ["tabular-nums"],
   },
-  webCancelButton: {
+  slideHint: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+  },
+  slideLabel: {
+    fontSize: 13,
+    fontWeight: "500",
+  },
+  cancelLabel: {
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  webCancel: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    padding: 8,
+    padding: 6,
   },
 });
 

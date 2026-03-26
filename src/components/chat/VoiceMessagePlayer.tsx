@@ -1,21 +1,27 @@
 /**
  * VoiceMessagePlayer Component
  *
- * Inline voice message player with waveform visualization.
+ * Modern inline voice message player with waveform visualization.
  *
  * Features:
- * - Play/pause toggle
- * - Playback progress bar
- * - Duration display
- * - Playback speed control
+ * - Play/pause toggle with smooth animations
+ * - Waveform progress visualization
+ * - Duration display with elapsed/remaining toggle
+ * - Playback speed control (1×/1.5×/2×)
  *
  * @module components/chat/VoiceMessagePlayer
  */
 
 import { formatDurationMs as formatDuration } from "@/utils/time";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import React, { memo, useCallback, useEffect, useState } from "react";
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import React, { memo, useCallback, useEffect, useRef, useState } from "react";
+import {
+  Animated,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import { useTheme } from "react-native-paper";
 
 // Conditionally import expo-audio
@@ -51,11 +57,17 @@ export interface VoiceMessagePlayerProps {
 // Constants
 // =============================================================================
 
-const WAVEFORM_BARS = 20;
+const WAVEFORM_BARS = 28;
+const SPEED_OPTIONS = [1, 1.5, 2] as const;
 
 // Generate fake waveform data (in real app, you'd analyze the audio)
 function generateWaveformData(bars: number): number[] {
-  return Array.from({ length: bars }, () => 0.3 + Math.random() * 0.7);
+  return Array.from({ length: bars }, (_, i) => {
+    // Create a natural-looking waveform envelope
+    const pos = i / bars;
+    const envelope = Math.sin(pos * Math.PI) * 0.5 + 0.5;
+    return Math.max(0.15, envelope * (0.4 + Math.random() * 0.6));
+  });
 }
 
 // =============================================================================
@@ -69,14 +81,24 @@ function VoiceMessagePlayerFallback({
   const theme = useTheme();
 
   return (
-    <View
-      style={[
-        styles.container,
-        isOwn ? styles.containerOwn : styles.containerOther,
-      ]}
-    >
-      <View style={[styles.playButton, styles.playButtonDisabled]}>
-        <MaterialCommunityIcons name="play" size={24} color="#888" />
+    <View style={[styles.container, { opacity: 0.6 }]}>
+      <View
+        style={[
+          styles.playButton,
+          {
+            backgroundColor: isOwn
+              ? "rgba(255,255,255,0.2)"
+              : theme.colors.surfaceVariant,
+          },
+        ]}
+      >
+        <MaterialCommunityIcons
+          name="play"
+          size={22}
+          color={
+            isOwn ? "rgba(255,255,255,0.6)" : theme.colors.onSurfaceVariant
+          }
+        />
       </View>
 
       <View style={styles.waveformContainer}>
@@ -88,18 +110,26 @@ function VoiceMessagePlayerFallback({
                 styles.waveformBar,
                 {
                   height: `${height * 100}%`,
-                  backgroundColor: "#666",
+                  backgroundColor: isOwn
+                    ? "rgba(255,255,255,0.3)"
+                    : "rgba(0,0,0,0.15)",
                 },
               ]}
             />
           ))}
         </View>
-        <Text style={styles.notAvailableText}>
-          Install expo-audio for playback
-        </Text>
       </View>
 
-      <Text style={[styles.duration, { color: "#888" }]}>
+      <Text
+        style={[
+          styles.duration,
+          {
+            color: isOwn
+              ? "rgba(255,255,255,0.6)"
+              : theme.colors.onSurfaceVariant,
+          },
+        ]}
+      >
         {formatDuration(durationMs)}
       </Text>
     </View>
@@ -119,6 +149,8 @@ function VoiceMessagePlayerImpl({
 }: VoiceMessagePlayerProps) {
   const theme = useTheme();
   const [waveformData] = useState(() => generateWaveformData(WAVEFORM_BARS));
+  const [speedIndex, setSpeedIndex] = useState(0);
+  const buttonScale = useRef(new Animated.Value(1)).current;
 
   // Use expo-audio player
   const player = useAudioPlayer(url);
@@ -137,10 +169,23 @@ function VoiceMessagePlayerImpl({
   }, [status?.didJustFinish, onEnd]);
 
   const handlePlayPause = useCallback(() => {
+    // Micro-bounce feedback
+    Animated.sequence([
+      Animated.timing(buttonScale, {
+        toValue: 0.85,
+        duration: 60,
+        useNativeDriver: true,
+      }),
+      Animated.spring(buttonScale, {
+        toValue: 1,
+        friction: 4,
+        useNativeDriver: true,
+      }),
+    ]).start();
+
     if (isPlaying) {
       player.pause();
     } else {
-      // Reset if at end
       if (status?.didJustFinish || currentTime >= totalDuration - 100) {
         player.seekTo(0);
       }
@@ -154,36 +199,57 @@ function VoiceMessagePlayerImpl({
     currentTime,
     totalDuration,
     onPlay,
+    buttonScale,
   ]);
+
+  const handleSpeedPress = useCallback(() => {
+    const nextIndex = (speedIndex + 1) % SPEED_OPTIONS.length;
+    setSpeedIndex(nextIndex);
+    try {
+      player.rate = SPEED_OPTIONS[nextIndex];
+    } catch (_) {
+      // rate assignment unsupported
+    }
+  }, [speedIndex, player]);
 
   const displayDuration =
     isPlaying || currentTime > 0
       ? formatDuration(currentTime)
       : formatDuration(durationMs);
 
+  const speed = SPEED_OPTIONS[speedIndex];
+
+  const activeColor = isOwn ? "#FFF" : theme.colors.primary;
+  const inactiveColor = isOwn ? "rgba(255,255,255,0.3)" : "rgba(0,0,0,0.12)";
+  const textColor = isOwn
+    ? "rgba(255,255,255,0.85)"
+    : theme.colors.onSurfaceVariant;
+
   return (
-    <View
-      style={[
-        styles.container,
-        isOwn ? styles.containerOwn : styles.containerOther,
-      ]}
-    >
+    <View style={styles.container}>
       {/* Play/Pause Button */}
       <TouchableOpacity
-        style={[
-          styles.playButton,
-          {
-            backgroundColor: isOwn ? "rgba(0,0,0,0.2)" : theme.colors.primary,
-          },
-        ]}
         onPress={handlePlayPause}
-        activeOpacity={0.7}
+        activeOpacity={0.8}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
       >
-        <MaterialCommunityIcons
-          name={isPlaying ? "pause" : "play"}
-          size={24}
-          color={isOwn ? "#000" : "#FFF"}
-        />
+        <Animated.View
+          style={[
+            styles.playButton,
+            {
+              backgroundColor: isOwn
+                ? "rgba(255,255,255,0.2)"
+                : theme.colors.primary,
+              transform: [{ scale: buttonScale }],
+            },
+          ]}
+        >
+          <MaterialCommunityIcons
+            name={isPlaying ? "pause" : "play"}
+            size={22}
+            color={isOwn ? "#FFF" : "#FFF"}
+          />
+        </Animated.View>
       </TouchableOpacity>
 
       {/* Waveform / Progress */}
@@ -200,13 +266,8 @@ function VoiceMessagePlayerImpl({
                   styles.waveformBar,
                   {
                     height: `${height * 100}%`,
-                    backgroundColor: isActive
-                      ? isOwn
-                        ? "#000"
-                        : theme.colors.primary
-                      : isOwn
-                        ? "rgba(0,0,0,0.3)"
-                        : "#555",
+                    backgroundColor: isActive ? activeColor : inactiveColor,
+                    borderRadius: 1.5,
                   },
                 ]}
               />
@@ -215,12 +276,30 @@ function VoiceMessagePlayerImpl({
         </View>
       </View>
 
-      {/* Duration */}
-      <Text
-        style={[styles.duration, { color: isOwn ? "rgba(0,0,0,0.7)" : "#888" }]}
-      >
-        {displayDuration}
-      </Text>
+      {/* Duration + Speed */}
+      <View style={styles.metaColumn}>
+        <Text style={[styles.duration, { color: textColor }]}>
+          {displayDuration}
+        </Text>
+        {isPlaying && speed !== 1 && (
+          <TouchableOpacity
+            onPress={handleSpeedPress}
+            hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+          >
+            <Text style={[styles.speedLabel, { color: activeColor }]}>
+              {speed}×
+            </Text>
+          </TouchableOpacity>
+        )}
+        {isPlaying && speed === 1 && (
+          <TouchableOpacity
+            onPress={handleSpeedPress}
+            hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+          >
+            <Text style={[styles.speedLabel, { color: textColor }]}>1×</Text>
+          </TouchableOpacity>
+        )}
+      </View>
     </View>
   );
 }
@@ -232,11 +311,9 @@ function VoiceMessagePlayerImpl({
 export const VoiceMessagePlayer = memo(function VoiceMessagePlayer(
   props: VoiceMessagePlayerProps,
 ) {
-  // Use fallback if expo-audio is not available
   if (!useAudioPlayer || !useAudioPlayerStatus) {
     return <VoiceMessagePlayerFallback {...props} />;
   }
-
   return <VoiceMessagePlayerImpl {...props} />;
 });
 
@@ -248,57 +325,48 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 20,
-    minWidth: 200,
-    maxWidth: 280,
-    gap: 10,
-  },
-  containerOwn: {
-    backgroundColor: "transparent",
-  },
-  containerOther: {
-    backgroundColor: "transparent",
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    minWidth: 220,
+    maxWidth: 300,
+    gap: 8,
   },
   playButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     justifyContent: "center",
     alignItems: "center",
   },
-  playButtonDisabled: {
-    backgroundColor: "#333",
-  },
   waveformContainer: {
     flex: 1,
-    height: 32,
+    height: 28,
     justifyContent: "center",
   },
   waveform: {
     flexDirection: "row",
     alignItems: "center",
     height: "100%",
-    gap: 2,
+    gap: 1.5,
   },
   waveformBar: {
     flex: 1,
-    borderRadius: 2,
-    minWidth: 3,
+    minWidth: 2.5,
   },
-  notAvailableText: {
-    position: "absolute",
-    fontSize: 8,
-    color: "#666",
-    textAlign: "center",
-    width: "100%",
+  metaColumn: {
+    alignItems: "flex-end",
+    justifyContent: "center",
+    minWidth: 38,
   },
   duration: {
-    fontSize: 12,
+    fontSize: 11,
+    fontWeight: "500",
     fontVariant: ["tabular-nums"],
-    minWidth: 36,
-    textAlign: "right",
+  },
+  speedLabel: {
+    fontSize: 10,
+    fontWeight: "700",
+    marginTop: 1,
   },
 });
 

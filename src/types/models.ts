@@ -487,17 +487,18 @@ export interface LeaderboardEntry {
 export type WeekKey = string;
 
 /**
- * Helper to get current week key
+ * Compute the current week key: "YYYY-Wnn".
+ *
+ * This algorithm must match the backend (firebase-backend helpers.ts).
+ * Week 1 starts on Jan 1 regardless of day-of-week.
  */
 export function getCurrentWeekKey(): WeekKey {
   const now = new Date();
-  const year = now.getFullYear();
-  const oneJan = new Date(year, 0, 1);
-  const days = Math.floor(
-    (now.getTime() - oneJan.getTime()) / (24 * 60 * 60 * 1000),
-  );
-  const weekNum = Math.ceil((days + oneJan.getDay() + 1) / 7);
-  return `${year}-W${String(weekNum).padStart(2, "0")}`;
+  const jan1 = new Date(now.getFullYear(), 0, 1);
+  const dayOfYear =
+    Math.floor((now.getTime() - jan1.getTime()) / 86_400_000) + 1;
+  const weekNum = Math.ceil(dayOfYear / 7);
+  return `${now.getFullYear()}-W${String(weekNum).padStart(2, "0")}`;
 }
 
 // =============================================================================
@@ -827,6 +828,8 @@ export interface Group {
   lastMessageText?: string;
   lastMessageAt?: number;
   lastMessageSenderId?: string;
+  // Capability-based permissions config (Phase 20B)
+  permissionsConfig?: import("@/permissions/groupPermissions").GroupPermissionsConfig;
 }
 
 /**

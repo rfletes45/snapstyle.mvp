@@ -6,6 +6,8 @@ export type AuthStackParamList = {
   Welcome: undefined;
   Login: undefined;
   Signup: undefined;
+  SignupEmail: undefined;
+  SignupPassword: undefined;
   ForgotPassword: undefined;
   ProfileSetup: undefined;
 };
@@ -42,7 +44,6 @@ export type AppTabsParamList = {
   Profile: NavigatorScreenParams<ProfileTabStackParamList> | undefined;
   Messages: NavigatorScreenParams<InboxStackParamList> | undefined;
   Calls: undefined;
-  Shop: undefined;
 };
 
 export type MainStackParamList = {
@@ -63,6 +64,7 @@ export type MainStackParamList = {
   GroupChatCreate: undefined;
   GroupChatInfo: { groupId: string } | undefined;
   ChatSettings: OptionalRouteParams;
+  InboxSettings: undefined;
   SnapViewer: OptionalRouteParams;
   Camera: OptionalRouteParams;
   CameraShare: OptionalRouteParams;
@@ -112,10 +114,15 @@ export type MainStackParamList = {
   LevelRewards: undefined;
   Wallet: undefined;
   GamesHub: undefined;
+  GroupPermissions: { groupId: string };
 };
 
 export type ProfileSetupStackParamList = {
   ProfileSetup: undefined;
+  OnboardingUsername: undefined;
+  OnboardingPhoto: undefined;
+  OnboardingDisplayStyle: undefined;
+  OnboardingComplete: undefined;
 };
 
 export type RootStackParamList = AuthStackParamList &

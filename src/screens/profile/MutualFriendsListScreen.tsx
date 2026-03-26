@@ -22,13 +22,11 @@ import {
 import Animated, { FadeInRight } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import Avatar from "@/components/Avatar";
 import { ProfilePictureWithDecoration } from "@/components/profile/ProfilePicture";
 import { BorderRadius, Spacing } from "@/constants/theme";
 import { getMutualFriends } from "@/services/profileService";
 import { useAuth } from "@/store/AuthContext";
 import type { MutualFriendInfo } from "@/types/userProfile";
-
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("screens/profile/MutualFriendsListScreen");
@@ -67,16 +65,12 @@ function FriendItem({ friend, onPress, index }: FriendItemProps) {
         onPress={onPress}
         activeOpacity={0.7}
       >
-        {friend.profilePictureUrl ? (
-          <ProfilePictureWithDecoration
-            pictureUrl={friend.profilePictureUrl}
-            name={friend.displayName}
-            decorationId={null}
-            size={48}
-          />
-        ) : (
-          <Avatar config={friend.avatarConfig} size={48} />
-        )}
+        <ProfilePictureWithDecoration
+          pictureUrl={friend.profilePictureUrl ?? null}
+          name={friend.displayName}
+          decorationId={null}
+          size={48}
+        />
         <View style={styles.friendInfo}>
           <Text style={[styles.friendName, { color: colors.text }]}>
             {friend.displayName}

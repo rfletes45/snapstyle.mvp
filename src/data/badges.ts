@@ -7,7 +7,26 @@
  * @see src/types/profile.ts for Badge interface
  */
 
+import { ACHIEVEMENT_SECTIONS } from "@/gamesV4/data/achievementDefinitions";
 import type { AchievementTier, Badge, BadgeCategory } from "@/types/profile";
+
+// =============================================================================
+// Section Achievement Badges (auto-generated from achievement section defs)
+// =============================================================================
+
+const SECTION_BADGES: Badge[] = ACHIEVEMENT_SECTIONS.map((section) => ({
+  id: section.sectionBadgeId,
+  name: `${section.name} Complete`,
+  description: `Completed all achievements in ${section.name}`,
+  icon: section.icon,
+  tier: "gold" as AchievementTier,
+  category: "achievement" as BadgeCategory,
+  earnedVia: {
+    type: "achievement" as const,
+    achievementId: section.sectionId,
+  },
+  hidden: false,
+}));
 
 // =============================================================================
 // Badge Definitions
@@ -161,6 +180,11 @@ export const BADGE_DEFINITIONS: Badge[] = [
     hidden: false,
     limitedTime: true,
   },
+
+  // -------------------------
+  // ACHIEVEMENT SECTION BADGES (auto-generated)
+  // -------------------------
+  ...SECTION_BADGES,
 ];
 
 // =============================================================================

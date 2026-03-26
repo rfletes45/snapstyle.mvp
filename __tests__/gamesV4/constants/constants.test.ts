@@ -23,9 +23,9 @@ import {
 
 describe("V4 Constants & Contracts", () => {
   describe("GAME_METADATA", () => {
-    it("contains exactly 23 games", () => {
+    it("contains exactly 26 games", () => {
       const ids = Object.keys(GAME_METADATA);
-      expect(ids.length).toBe(23);
+      expect(ids.length).toBe(26);
     });
 
     it("every entry has required fields", () => {
@@ -47,6 +47,7 @@ describe("V4 Constants & Contracts", () => {
       "word_master",
       "minesweeper",
       "lights_out",
+      "solitaire_klondike",
       "tic_tac_toe",
       "chess",
       "checkers",
@@ -55,6 +56,9 @@ describe("V4 Constants & Contracts", () => {
       "reversi",
       "dots_and_boxes",
       "crazy_eights",
+      "hex",
+      "dead_drop",
+      "metro_magnate",
       "pong_game",
       "battleship",
       "sketch_party_game",
@@ -62,8 +66,7 @@ describe("V4 Constants & Contracts", () => {
       "crossword_puzzle",
       "minigolf_duels",
       "dot_match",
-      "solitaire_klondike",
-      "hex",
+      "knockout_game",
     ];
 
     it("contains all expected game IDs", () => {

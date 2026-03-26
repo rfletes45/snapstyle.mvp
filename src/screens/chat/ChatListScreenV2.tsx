@@ -246,8 +246,10 @@ export default function ChatListScreen() {
           initialData: {
             chatId: conversation.id,
             friendName: conversation.name,
-            friendAvatar: conversation.avatarUrl,
+            friendAvatar:
+              conversation.profilePictureUrl || conversation.avatarUrl,
             friendAvatarConfig: conversation.avatarConfig,
+            friendDecorationId: conversation.decorationId,
           },
         });
       } else {

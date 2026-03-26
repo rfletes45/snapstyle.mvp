@@ -153,6 +153,7 @@ import {
   DEBUG_CHAT_V2,
   GAMES_V4_ENABLED,
 } from "@/constants/featureFlags";
+import type { GroupPermissionsConfig } from "@/permissions/groupPermissions";
 import {
   AttachmentV2,
   LinkPreviewV2,
@@ -167,6 +168,7 @@ import { PinnedInviteBar } from "@/gamesV4/components/PinnedInviteBar";
 import { createGameInvite } from "@/gamesV4/services/gameServiceV4";
 import type { GameId } from "@/gamesV4/types";
 
+import { clearLastOpenChat, saveLastOpenChat } from "@/services/lastOpenChat";
 import { createLogger } from "@/utils/log";
 const logger = createLogger("screens/groups/GroupChatScreen");
 // =============================================================================
@@ -230,8 +232,16 @@ export default function GroupChatScreen({ route, navigation }: Props) {
       if (groupId) {
         setCurrentChatId(groupId, "group");
       }
-      return () => setCurrentChatId(null);
-    }, [groupId, setCurrentChatId]),
+      // Persist this as the last open chat for resume-on-reopen
+      saveLastOpenChat("GroupChat", {
+        groupId,
+        groupName: initialGroupName,
+      });
+      return () => {
+        setCurrentChatId(null);
+        clearLastOpenChat();
+      };
+    }, [groupId, initialGroupName, setCurrentChatId]),
   );
 
   // ==========================================================================
@@ -271,6 +281,9 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   const [userRole, setUserRole] = useState<
     "owner" | "admin" | "moderator" | "member"
   >("member");
+  const [permissionsConfig, setPermissionsConfig] = useState<
+    GroupPermissionsConfig | undefined
+  >(undefined);
 
   // Reactions state (H8)
   const [messageReactions, setMessageReactions] = useState<
@@ -460,6 +473,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
         }
 
         setGroup(groupData);
+        setPermissionsConfig(groupData.permissionsConfig);
         navigation.setOptions({ title: groupData.name });
 
         const members = await getGroupMembers(groupId);
@@ -490,6 +504,12 @@ export default function GroupChatScreen({ route, navigation }: Props) {
         );
 
         setGroupMembers(enrichedMembers);
+
+        // Resolve user role from member list
+        const currentMember = enrichedMembers.find((m) => m.uid === uid);
+        if (currentMember) {
+          setUserRole(currentMember.role);
+        }
       } catch (err: any) {
         logger.error("Error loading group:", err);
         setError(err.message || "Failed to load group");
@@ -1436,7 +1456,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
 
             {/* Reaction pills — anchored below the bubble, aligned to sender */}
             {(messageReactions.get(item.id) || []).length > 0 && (
-              <View style={!isOwnMessage ? { paddingLeft: 45 } : undefined}>
+              <View style={!isOwnMessage ? { paddingLeft: 40 } : undefined}>
                 <ReactionPills
                   reactions={messageReactions.get(item.id) || []}
                   isOwnMessage={isOwnMessage}
@@ -1503,7 +1523,8 @@ export default function GroupChatScreen({ route, navigation }: Props) {
 
   // OPTIMIZATION: Show skeleton instead of full-screen loading
   // Shell (header, composer) renders immediately to prevent flicker
-  const showSkeleton = groupLoading || screen.loading;
+  // Only show skeleton when we truly have no group data yet
+  const showSkeleton = groupLoading && !groupId;
 
   if (error) {
     return (
@@ -1776,6 +1797,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
         message={selectedMessage}
         currentUid={uid || ""}
         userRole={userRole}
+        permissionsConfig={permissionsConfig}
         onClose={() => setActionsSheetVisible(false)}
         onReply={handleReply}
         onEdited={handleMessageEdited}
@@ -1855,7 +1877,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "600",
     marginBottom: 4,
-    marginLeft: 18,
+    marginLeft: 10,
   },
   messageBubble: { padding: 10, borderRadius: 20 },
   ownMessage: { borderBottomRightRadius: 6 },
@@ -1908,6 +1930,6 @@ const styles = StyleSheet.create({
     maxWidth: 260,
   },
   avatarSpacer: {
-    width: 37,
+    width: 32,
   },
 });

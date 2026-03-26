@@ -84,6 +84,7 @@ export abstract class BaseRealtimeRoom extends Room {
   private abandonmentTimer: ReturnType<typeof setTimeout> | null = null;
   private countdownTimer: ReturnType<typeof setTimeout> | null = null;
   private matchDurationTimer: ReturnType<typeof setTimeout> | null = null;
+  private joinGraceTimer: ReturnType<typeof setTimeout> | null = null;
   private tickInterval: ReturnType<typeof setInterval> | null = null;
 
   // ── Template methods (subclass implements) ────────────────────────
@@ -199,6 +200,30 @@ export abstract class BaseRealtimeRoom extends Room {
     // Start runtime mirror
     this.runtimeMirror = new RuntimeMirror(this.sessionId);
     this.runtimeMirror.start(() => this.buildRuntimeSummary(), 15_000);
+
+    // Start join grace timer for full_roster policy
+    if (def.matchStartPolicy === "full_roster" && def.joinGraceMs > 0) {
+      this.joinGraceTimer = setTimeout(() => {
+        this.joinGraceTimer = null;
+        if (this.phase !== "waiting_for_players") return; // already started
+        const connected = this.getConnectedParticipantCount();
+        if (connected < def.minPlayers) {
+          this.log(
+            `Join grace expired with ${connected}/${def.minPlayers} min players — cancelling`,
+          );
+          this.endMatch("cancelled", { partialRoster: true });
+        } else {
+          this.log(
+            `Join grace expired with ${connected} players — starting with partial roster`,
+          );
+          if (def.countdownSec > 0) {
+            this.startCountdown(def.countdownSec);
+          } else {
+            this.beginMatch();
+          }
+        }
+      }, def.joinGraceMs);
+    }
 
     // Start simulation tick if applicable
     if (
@@ -607,6 +632,12 @@ export abstract class BaseRealtimeRoom extends Room {
 
   private beginMatch(): void {
     const def = this.getGameDefinition();
+
+    // Cancel join grace timer since match is starting
+    if (this.joinGraceTimer) {
+      clearTimeout(this.joinGraceTimer);
+      this.joinGraceTimer = null;
+    }
 
     this.setPhase("in_progress");
     this.matchStartedAt = Date.now();
@@ -1035,6 +1066,11 @@ export abstract class BaseRealtimeRoom extends Room {
     this.reconnectTimers.clear();
 
     this.clearAbandonmentTimer();
+
+    if (this.joinGraceTimer) {
+      clearTimeout(this.joinGraceTimer);
+      this.joinGraceTimer = null;
+    }
 
     if (this.countdownTimer) {
       clearTimeout(this.countdownTimer);

@@ -19,7 +19,6 @@ import {
 import { Text } from "react-native-paper";
 import Animated, { FadeInRight } from "react-native-reanimated";
 
-import Avatar from "@/components/Avatar";
 import { ProfilePictureWithDecoration } from "@/components/profile/ProfilePicture";
 import { Spacing } from "@/constants/theme";
 import { useColors } from "@/store/ThemeContext";
@@ -104,16 +103,12 @@ function MutualFriendsSectionBase({
               onPress={() => onFriendPress(friend.userId)}
               activeOpacity={0.7}
             >
-              {friend.profilePictureUrl ? (
-                <ProfilePictureWithDecoration
-                  pictureUrl={friend.profilePictureUrl}
-                  name={friend.displayName}
-                  decorationId={null}
-                  size={56}
-                />
-              ) : (
-                <Avatar config={friend.avatarConfig} size={56} />
-              )}
+              <ProfilePictureWithDecoration
+                pictureUrl={friend.profilePictureUrl ?? null}
+                name={friend.displayName}
+                decorationId={null}
+                size={56}
+              />
               <Text
                 style={[styles.friendName, { color: colors.text }]}
                 numberOfLines={1}

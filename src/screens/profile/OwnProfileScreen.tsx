@@ -14,13 +14,8 @@
  * @module screens/profile/OwnProfileScreen
  */
 
-import React, { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, ScrollView, StyleSheet, View } from "react-native";
-import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-  withSpring,
-} from "react-native-reanimated";
+import React, { useCallback, useEffect, useState } from "react";
+import { RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
@@ -93,15 +88,6 @@ export default function OwnProfileScreen({
   const [pictureEditorVisible, setPictureEditorVisible] = useState(false);
   const [bioEditorVisible, setBioEditorVisible] = useState(false);
 
-  // Pull-to-refresh state
-  const pullDistance = useSharedValue(0);
-  const scrollAtTop = useRef(true);
-  const pullStartY = useRef<number | null>(null);
-
-  const PULL_THRESHOLD = 60;
-  const MAX_PULL = 80;
-  const SPINNER_SIZE = 36;
-
   const colors = useColors();
 
   // Bio and status from full profile data
@@ -144,66 +130,6 @@ export default function OwnProfileScreen({
     await Promise.all([refresh(), refreshPicture(), refreshFullProfile()]);
     setRefreshing(false);
   }, [refresh, refreshPicture, refreshFullProfile]);
-
-  // Reset spinner when refresh completes
-  useEffect(() => {
-    if (!refreshing) {
-      pullDistance.value = withSpring(0, { damping: 15, stiffness: 150 });
-    }
-  }, [refreshing]);
-
-  // Touch-based pull tracking (works with bounces={false})
-  const handleTouchMove = useCallback(
-    (e: any) => {
-      if (refreshing) return;
-      const currentY = e.nativeEvent.pageY;
-      if (scrollAtTop.current) {
-        if (pullStartY.current === null) {
-          pullStartY.current = currentY;
-        }
-        const delta = currentY - pullStartY.current;
-        if (delta > 0) {
-          pullDistance.value = Math.min(delta, MAX_PULL);
-        } else {
-          pullStartY.current = currentY;
-        }
-      } else {
-        // Not at top yet — keep resetting the anchor so pull starts from 0
-        pullStartY.current = currentY;
-        if (pullDistance.value > 0) pullDistance.value = 0;
-      }
-    },
-    [refreshing],
-  );
-
-  const handleTouchEnd = useCallback(() => {
-    if (pullDistance.value >= PULL_THRESHOLD && !refreshing) {
-      handleRefresh();
-    } else if (!refreshing) {
-      pullDistance.value = withSpring(0, { damping: 15, stiffness: 150 });
-    }
-    pullStartY.current = null;
-  }, [handleRefresh, refreshing]);
-
-  const handleScroll = useCallback((e: any) => {
-    const y = e.nativeEvent.contentOffset.y;
-    scrollAtTop.current = y <= 0;
-    if (y > 0 && pullDistance.value > 0) {
-      pullDistance.value = 0;
-      pullStartY.current = null;
-    }
-  }, []);
-
-  const spinnerAnimatedStyle = useAnimatedStyle(() => {
-    const progress = Math.min(pullDistance.value / PULL_THRESHOLD, 1);
-    return {
-      opacity: progress,
-      transform: [
-        { translateY: pullDistance.value * 0.5 - SPINNER_SIZE },
-        { scale: 0.5 + progress * 0.5 },
-      ],
-    };
-  });
 
   const handleEditPicture = useCallback(() => {
     setPictureEditorVisible(true);
@@ -257,46 +183,30 @@ export default function OwnProfileScreen({
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Overflow menu (top-right) */}
-      <View style={[styles.overflowContainer, { top: insets.top + 8 }]}>
+      <View style={[styles.overflowContainer, { top: insets.top + 16 }]}>
         <ProfileOverflowMenu
           onPrivacyPress={() => navigation.navigate("PrivacySettings")}
           onSettingsPress={() => navigation.navigate("Settings")}
         />
       </View>
 
-      {/* Pull-to-refresh spinner overlay */}
-      <Animated.View
-        style={[
-          styles.spinnerContainer,
-          { top: insets.top + 12 },
-          spinnerAnimatedStyle,
-        ]}
-        pointerEvents="none"
-      >
-        <View
-          style={[styles.spinnerBubble, { backgroundColor: colors.surface }]}
-        >
-          <ActivityIndicator
-            size="small"
-            color={colors.primary}
-            animating={refreshing}
-          />
-        </View>
-      </Animated.View>
-
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={[
           styles.content,
-          { paddingBottom: insets.bottom + 32 },
+          {
+            paddingTop: insets.top + Spacing.md,
+            paddingBottom: insets.bottom + 32,
+          },
         ]}
-        bounces={false}
-        overScrollMode="never"
-        scrollEventThrottle={16}
-        onScroll={handleScroll}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-        onTouchCancel={handleTouchEnd}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor={colors.primary}
+          />
+        }
       >
         {/* ============================================================ */}
         {/* A) Showcase Header */}
@@ -434,27 +344,8 @@ const styles = StyleSheet.create({
   },
   overflowContainer: {
     position: "absolute",
-    right: Spacing.md,
+    right: Spacing.lg + 4,
     zIndex: 10,
-  },
-  spinnerContainer: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    alignItems: "center",
-    zIndex: 20,
-  },
-  spinnerBubble: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    justifyContent: "center",
-    alignItems: "center",
-    elevation: 4,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
   },
   cardsSection: {
     marginTop: Spacing.sm,

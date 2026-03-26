@@ -36,10 +36,10 @@ The current V4 game system is not one uniform framework. It is three related run
 
 Current snapshot in this workspace:
 
-- 25 canonical `GameId` values exist in `src/gamesV4/types/common.ts`.
+- 26 canonical `GameId` values exist in `src/gamesV4/types/common.ts`.
 - 17 games are enabled in `IMPLEMENTED_GAME_IDS` in `src/gamesV4/constants.ts`.
-- 17 client adapters are registered in `src/gamesV4/adapters/index.ts`.
-- 17 backend adapters are registered in `firebase-backend/functions/src/gamesV4/adapters.ts`.
+- 18 client adapters are registered in `src/gamesV4/adapters/index.ts` (17 enabled + 1 disabled `minigolf_duels`).
+- 18 backend adapters are registered in `firebase-backend/functions/src/gamesV4/adapters.ts` (same 18).
 - 18 gameplay screens are mapped in `src/gamesV4/screens/GamePlayDispatcherV4.tsx`. That includes disabled `minigolf_duels`.
 - 16 user callables, 2 admin callables, 3 Firestore triggers, and 1 scheduled watchdog job are exported from `firebase-backend/functions/src/gamesV4/index.ts`.
 - 1 standalone realtime server package exists at `colyseus-server/`, and it currently hosts 3 rooms: `sketch_party`, `pong_game`, and `knockout_game`.
@@ -180,25 +180,25 @@ Game-specific or partially standardized:
 
 ### 3.1 Enabled and wired in the current workspace
 
-| GameId               | Runtime in metadata | Architecture                        | Integration state             | Notes                                                                                                                                                                                                                                                                      |
-| -------------------- | ------------------- | ----------------------------------- | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `play_2048`          | `solo`              | Firebase solo                       | Enabled, complete             | Canonical score-based solo implementation.                                                                                                                                                                                                                                 |
-| `brick_breaker`      | `solo`              | Firebase solo                       | Enabled, complete             | Uses shell pause registration and replay-like move payloads.                                                                                                                                                                                                               |
-| `minesweeper`        | `solo`              | Firebase solo                       | Enabled, complete             | Score encoding is game-specific.                                                                                                                                                                                                                                           |
-| `solitaire_klondike` | `solo`              | Firebase solo                       | Enabled, complete             | Uses standard solo lifecycle; persistent mode not enabled.                                                                                                                                                                                                                 |
-| `tic_tac_toe`        | `turnBased`         | Firebase turn-based                 | Enabled, complete             | Smallest reference game.                                                                                                                                                                                                                                                   |
-| `connect_four`       | `turnBased`         | Firebase turn-based                 | Enabled, complete             | Same pipeline as Tic Tac Toe with larger board state.                                                                                                                                                                                                                      |
-| `chess`              | `turnBased`         | Firebase turn-based                 | Enabled, complete             | Has custom engine logic and broader tests.                                                                                                                                                                                                                                 |
-| `reversi`            | `turnBased`         | Firebase turn-based                 | Enabled, complete             | Standard Firebase turn pipeline.                                                                                                                                                                                                                                           |
-| `dots_and_boxes`     | `turnBased`         | Firebase turn-based                 | Enabled, complete             | Backend invite metadata drift was fixed; current runtime expects 2 players.                                                                                                                                                                                                |
-| `crazy_eights`       | `turnBased`         | Firebase turn-based + private state | Enabled, complete             | Hidden-info card game; client optimism is intentionally limited.                                                                                                                                                                                                           |
-| `battleship`         | `turnBased`         | Firebase turn-based + private state | Enabled, complete             | Backend invite metadata drift was fixed; validation remains server-authoritative.                                                                                                                                                                                          |
-| `hex`                | `turnBased`         | Firebase turn-based                 | Enabled, complete             | Standard deterministic board-game pattern.                                                                                                                                                                                                                                 |
-| `sketch_party_game`  | `realtime`          | Hybrid Firebase + Colyseus          | Enabled, custom realtime path | Live gameplay authority sits in Colyseus, not Firestore.                                                                                                                                                                                                                   |
-| `pong_game`          | `realtime`          | Hybrid Firebase + Colyseus          | Enabled, complete             | 1v1 paddle game. Colyseus room with server-authoritative physics and client-side extrapolation.                                                                                                                                                                            |
-| `knockout_game`      | `realtime`          | Hybrid Firebase + Colyseus          | Enabled, complete             | Physics-based multiplayer combat, 2–8 players with spectate support.                                                                                                                                                                                                       |
-| `dead_drop`          | `turnBased`         | Firebase turn-based + private state | Enabled, complete             | Deduction game, 4-player only with hidden team assignments and spymaster key map.                                                                                                                                                                                          |
-| `metro_magnate`      | `turnBased`         | Firebase turn-based                 | Enabled, complete             | Property empire board game, 2–6 players. 36-space loop board with 6 sectors, auctions, improvements, and bankruptcy. 18 achievements. Take 6 hardened: 140 tests, 0 TS errors. Known deferred: multi-creditor debt (pay_each/collect_from_each), bank-bankruptcy auctions. |
+| GameId               | Runtime in metadata | Architecture                        | Integration state             | Notes                                                                                                                                                                                                                                                                                                                     |
+| -------------------- | ------------------- | ----------------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `play_2048`          | `solo`              | Firebase solo                       | Enabled, complete             | Canonical score-based solo implementation.                                                                                                                                                                                                                                                                                |
+| `brick_breaker`      | `solo`              | Firebase solo                       | Enabled, complete             | Uses shell pause registration and replay-like move payloads.                                                                                                                                                                                                                                                              |
+| `minesweeper`        | `solo`              | Firebase solo                       | Enabled, complete             | Score encoding is game-specific.                                                                                                                                                                                                                                                                                          |
+| `solitaire_klondike` | `solo`              | Firebase solo                       | Enabled, complete             | Uses standard solo lifecycle; persistent mode not enabled.                                                                                                                                                                                                                                                                |
+| `tic_tac_toe`        | `turnBased`         | Firebase turn-based                 | Enabled, complete             | Smallest reference game.                                                                                                                                                                                                                                                                                                  |
+| `connect_four`       | `turnBased`         | Firebase turn-based                 | Enabled, complete             | Same pipeline as Tic Tac Toe with larger board state.                                                                                                                                                                                                                                                                     |
+| `chess`              | `turnBased`         | Firebase turn-based                 | Enabled, complete             | Has custom engine logic and broader tests.                                                                                                                                                                                                                                                                                |
+| `reversi`            | `turnBased`         | Firebase turn-based                 | Enabled, complete             | Standard Firebase turn pipeline.                                                                                                                                                                                                                                                                                          |
+| `dots_and_boxes`     | `turnBased`         | Firebase turn-based                 | Enabled, complete             | Backend invite metadata drift was fixed; current runtime expects 2 players.                                                                                                                                                                                                                                               |
+| `crazy_eights`       | `turnBased`         | Firebase turn-based + private state | Enabled, complete             | Hidden-info card game; client optimism is intentionally limited.                                                                                                                                                                                                                                                          |
+| `battleship`         | `turnBased`         | Firebase turn-based + private state | Enabled, complete             | Backend invite metadata drift was fixed; validation remains server-authoritative.                                                                                                                                                                                                                                         |
+| `hex`                | `turnBased`         | Firebase turn-based                 | Enabled, complete             | Standard deterministic board-game pattern.                                                                                                                                                                                                                                                                                |
+| `sketch_party_game`  | `realtime`          | Hybrid Firebase + Colyseus          | Enabled, custom realtime path | Live gameplay authority sits in Colyseus, not Firestore.                                                                                                                                                                                                                                                                  |
+| `pong_game`          | `realtime`          | Hybrid Firebase + Colyseus          | Enabled, complete             | 1v1 paddle game. Colyseus room with server-authoritative physics and client-side extrapolation.                                                                                                                                                                                                                           |
+| `knockout_game`      | `realtime`          | Hybrid Firebase + Colyseus          | Enabled, complete             | Physics-based multiplayer combat, 2–8 players with spectate support.                                                                                                                                                                                                                                                      |
+| `dead_drop`          | `turnBased`         | Firebase turn-based + private state | Enabled, complete             | Deduction game, 4-player only with hidden team assignments and spymaster key map.                                                                                                                                                                                                                                         |
+| `metro_magnate`      | `turnBased`         | Firebase turn-based                 | Enabled, core-complete        | Property empire board game, 2–6 players. 36-space loop board with 6 sectors, auctions, improvements, and bankruptcy. 18 achievements. Take 6 hardened: 140 tests, 0 TS errors. **Known deferred**: multi-creditor debt (`pay_each`/`collect_from_each`), bank-bankruptcy auctions. These are scope limitations, not bugs. |
 
 ### 3.2 Implemented but intentionally disabled
 
@@ -1484,16 +1484,19 @@ Impact:
 - future additions can still drift if only one side is updated
 - invite creation and session start trust backend invite metadata, not client constants
 
-### 13.2 Week-key logic is aligned but duplicated
+### 13.2 Week-key logic is now deduplicated on the client
 
 Files involved:
 
-- `firebase-backend/functions/src/gamesV4/helpers.ts`
-- `src/gamesV4/hooks/useLeaderboardV4.ts`
+- `firebase-backend/functions/src/gamesV4/helpers.ts` — `currentWeekKey()`
+- `src/types/models.ts` — `getCurrentWeekKey()` (canonical client implementation)
+- `src/gamesV4/hooks/useLeaderboardV4.ts` — imports from `models.ts`
 
-Impact:
+The client previously had a **divergent** algorithm in `models.ts` that incorrectly added `oneJan.getDay()` to the day count. This was fixed and deduplicated: `useLeaderboardV4` now imports from `models.ts` instead of defining its own copy.
 
-- if one changes without the other, client reads and backend writes diverge again
+Client and backend now use the identical algorithm: `Math.ceil(dayOfYear / 7)` where `dayOfYear` is 1-based.
+
+Parity tests in `__tests__/gamesV4/constants/alignment.test.ts` verify the week-key format.
 
 ### 13.3 Hidden-info optimism remains intentionally incomplete
 
@@ -1518,15 +1521,23 @@ Impact:
 - pinned invite summaries are not room-authoritative during live play
 - any future realtime feature that expects live Firestore sync will be wrong unless new synchronization is added
 
-### 13.5 Full-roster gating can stall start indefinitely
+### 13.5 Full-roster gating now has a join grace timeout
 
-The room now starts more safely, but it still lacks:
+`BaseRealtimeRoom` now supports a `joinGraceMs` field in `RealtimeGameDefinition`. When `matchStartPolicy` is `"full_roster"` and `joinGraceMs > 0`:
 
-- join grace timeout
-- host override
-- automatic pruning or migration behavior when one rostered player never joins
+- A timer starts when the room enters `waiting_for_players`.
+- If the timer expires before the full roster connects:
+  - If fewer than `minPlayers` have connected → the room is cancelled (`"cancelled"` reason).
+  - If `minPlayers` or more have connected → the match starts with the available players.
+- The timer is cleared if the match starts normally.
 
-This is safer than partial starts but still an operational sharp edge.
+Current values:
+
+- `knockout_game`: 60 seconds
+- `pong_game`: 45 seconds
+- `sketch_party_game`: 60 seconds
+
+This eliminates the indefinite stall condition. Host override and automatic pruning are still deferred.
 
 ### 13.6 `usePinnedInvites()` is incremental now, but conversation changes still rebuild listener state
 

@@ -694,8 +694,7 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
           left={(props) => <List.Icon {...props} icon="message-cog" />}
           right={(props) => <List.Icon {...props} icon="chevron-right" />}
           onPress={() => {
-            const tabNav = navigation.getParent();
-            tabNav?.navigate("Messages", { screen: "InboxSettings" });
+            navigation.navigate("InboxSettings" as any);
           }}
         />
 

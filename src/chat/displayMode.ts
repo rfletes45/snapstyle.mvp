@@ -168,10 +168,10 @@ export interface FeedLayoutTokens {
 export const FEED_LAYOUT: FeedLayoutTokens = {
   screenEdgeInset: 0,
   gutterWidth: 40,
-  gutterGap: 8,
-  contentIndent: 48, // 0 + 40 + 8
+  gutterGap: 12,
+  contentIndent: 52, // 0 + 40 + 12
   avatarSize: 40,
-  groupGap: 10,
+  groupGap: 16,
   withinGroupGap: 2,
   rowPaddingV: 2,
   rowPaddingH: 8,

@@ -356,7 +356,7 @@ const BubbleColorCard = React.memo(function BubbleColorCard({
   const bubbleHex =
     (item.metadata?.bubbleColorValue as string) ??
     CHAT_BUBBLE_COLORS[item.id] ??
-    "#6200EE";
+    "#1976D2";
   // Compute contrast text for the swatch preview
   const textColor = relativeLuminance(bubbleHex) > 0.179 ? "#000" : "#FFF";
 
@@ -1693,23 +1693,40 @@ export default function CustomizationHubScreen({
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
               <MaterialCommunityIcons
-                name="treasure-chest"
+                name={
+                  hub.activeTab === "badge"
+                    ? "shield-star-outline"
+                    : "treasure-chest"
+                }
                 size={48}
                 color={colors.textSecondary}
               />
               <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-                No items owned in this category yet.
+                {hub.activeTab === "badge"
+                  ? "No badges earned yet."
+                  : "No items owned in this category yet."}
               </Text>
-              <Pressable
-                onPress={() => navigation.navigate("CosmeticsShop" as any)}
-                style={[
-                  styles.goToShopButton,
-                  { backgroundColor: colors.primary },
-                ]}
-              >
-                <MaterialCommunityIcons name="store" size={16} color="#fff" />
-                <Text style={styles.goToShopText}>Open Shop</Text>
-              </Pressable>
+              {hub.activeTab === "badge" ? (
+                <Text
+                  style={[
+                    styles.emptyText,
+                    { color: colors.textSecondary, marginTop: 4, fontSize: 13 },
+                  ]}
+                >
+                  Complete all achievements for a game to earn its badge.
+                </Text>
+              ) : (
+                <Pressable
+                  onPress={() => navigation.navigate("CosmeticsShop" as any)}
+                  style={[
+                    styles.goToShopButton,
+                    { backgroundColor: colors.primary },
+                  ]}
+                >
+                  <MaterialCommunityIcons name="store" size={16} color="#fff" />
+                  <Text style={styles.goToShopText}>Open Shop</Text>
+                </Pressable>
+              )}
             </View>
           }
         />
@@ -1764,12 +1781,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 4,
-    paddingVertical: Spacing.sm,
+    paddingVertical: 10,
     borderRadius: BorderRadius.sm,
     borderWidth: 1,
   },
   tabLabel: {
     fontSize: 11,
+    includeFontPadding: false,
   },
   searchRow: {
     paddingHorizontal: Spacing.lg,

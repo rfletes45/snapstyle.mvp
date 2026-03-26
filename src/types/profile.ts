@@ -164,6 +164,7 @@ export type BadgeCategory =
   | "social" // Friend/social achievements
   | "streak" // Streak achievements
   | "collection" // Cosmetic collection
+  | "achievement" // Game achievement section badges
   | "special" // Secret or limited badges
   | "seasonal"; // Seasonal event badges
 

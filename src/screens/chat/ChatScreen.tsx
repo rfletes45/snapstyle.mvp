@@ -119,6 +119,7 @@ import {
 } from "@/utils/messageAdapters";
 import * as Haptics from "expo-haptics";
 
+import { clearLastOpenChat, saveLastOpenChat } from "@/services/lastOpenChat";
 import { createLogger } from "@/utils/log";
 const logger = createLogger("screens/chat/ChatScreen");
 
@@ -152,6 +153,7 @@ interface InitialChatData {
   friendName?: string;
   friendAvatar?: string | null;
   friendAvatarConfig?: any;
+  friendDecorationId?: string | null;
 }
 
 interface ChatScreenParams {
@@ -202,6 +204,10 @@ export default function ChatScreen({
           username: initialData.friendName,
           avatar: initialData.friendAvatar,
           avatarConfig: initialData.friendAvatarConfig,
+          profilePicture: { url: initialData.friendAvatar || null },
+          avatarDecoration: {
+            decorationId: initialData.friendDecorationId || null,
+          },
         }
       : null,
   );
@@ -647,7 +653,12 @@ export default function ChatScreen({
       };
 
       initializeChat();
-      return () => setCurrentChatId(null);
+      // Persist this as the last open chat for resume-on-reopen
+      saveLastOpenChat("ChatDetail", { friendUid, initialData });
+      return () => {
+        setCurrentChatId(null);
+        clearLastOpenChat();
+      };
     }, [uid, friendUid, chatId, friendProfile, setCurrentChatId, navigation]),
   );
 
@@ -1082,8 +1093,9 @@ export default function ChatScreen({
 
   // OPTIMIZATION: Show shell immediately, skeleton only for message area
   // This eliminates UI flicker by always rendering header and composer
+  // Only show full skeleton when we truly have no chatId (first contact)
   const isInitializing = !chatId || !friendProfile;
-  const showSkeleton = screen.loading || isInitializing;
+  const showSkeleton = isInitializing && !initialData?.chatId;
 
   const renderMessageItem = useCallback(
     ({ item, index }: { item: MessageWithProfile; index: number }) => (
@@ -1268,7 +1280,7 @@ export default function ChatScreen({
           onSend={handleSendMessage}
           hasAttachments={attachmentPicker.attachments.length > 0}
           sendDisabled={
-            showSkeleton ||
+            !chatId ||
             (!screen.composer.text.trim() &&
               attachmentPicker.attachments.length === 0) ||
             screen.sending ||

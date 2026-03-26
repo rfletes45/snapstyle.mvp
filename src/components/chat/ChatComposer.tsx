@@ -20,9 +20,10 @@ import { BorderRadius, Spacing } from "@/constants/theme";
 import { VoiceRecording } from "@/hooks/useVoiceRecorder";
 import { useAppTheme } from "@/store/ThemeContext";
 import { ReplyToMetadata } from "@/types/messaging";
-import React, { useCallback, useMemo, useRef } from "react";
+import React, { useCallback, useEffect, useMemo, useRef } from "react";
 import {
   ActivityIndicator,
+  Keyboard,
   Platform,
   Pressable,
   StyleProp,
@@ -247,6 +248,27 @@ export function ChatComposer({
       });
     }
   }, []);
+
+  // Re-measure anchor when keyboard state changes while picker is visible
+  // so the bubble repositions correctly
+  useEffect(() => {
+    if (!animalPickerVisible) return;
+
+    const showEvent =
+      Platform.OS === "ios" ? "keyboardDidShow" : "keyboardDidShow";
+    const hideEvent =
+      Platform.OS === "ios" ? "keyboardDidHide" : "keyboardDidHide";
+
+    // Small delay allows the layout to settle after keyboard animation
+    const remeasure = () => setTimeout(measureAnimalButton, 100);
+
+    const sub1 = Keyboard.addListener(showEvent, remeasure);
+    const sub2 = Keyboard.addListener(hideEvent, remeasure);
+    return () => {
+      sub1.remove();
+      sub2.remove();
+    };
+  }, [animalPickerVisible, measureAnimalButton]);
 
   // Long press handler for animal button
   const handleAnimalLongPress = useCallback(() => {

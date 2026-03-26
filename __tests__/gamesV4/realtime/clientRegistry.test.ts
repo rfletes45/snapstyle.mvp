@@ -42,7 +42,7 @@ describe("RealtimeClientDefinition types", () => {
   it("provides sensible default reconnect config", () => {
     expect(DEFAULT_RECONNECT_CONFIG.enabled).toBe(true);
     expect(DEFAULT_RECONNECT_CONFIG.maxAttempts).toBe(5);
-    expect(DEFAULT_RECONNECT_CONFIG.baseDelayMs).toBe(1000);
+    expect(DEFAULT_RECONNECT_CONFIG.baseDelayMs).toBe(500);
     expect(DEFAULT_RECONNECT_CONFIG.maxDelayMs).toBe(15000);
   });
 });

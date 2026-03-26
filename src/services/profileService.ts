@@ -84,10 +84,7 @@ export async function getFullProfileData(
 
     const raw = userDoc.data();
 
-    return hydrateProfileData(userId, {
-      ...raw,
-      level: { current: 1, xp: 0, xpToNextLevel: 100, totalXp: 0 },
-    } as Partial<UserProfileData>);
+    return hydrateProfileData(userId, raw as Partial<UserProfileData>);
   } catch (error) {
     log.error("Error fetching profile data", error);
     return null;
@@ -109,12 +106,7 @@ export function subscribeToProfile(
     (doc) => {
       if (doc.exists()) {
         const raw = doc.data();
-        callback(
-          hydrateProfileData(userId, {
-            ...raw,
-            level: { current: 1, xp: 0, xpToNextLevel: 100, totalXp: 0 },
-          } as Partial<UserProfileData>),
-        );
+        callback(hydrateProfileData(userId, raw as Partial<UserProfileData>));
       } else {
         callback(null);
       }

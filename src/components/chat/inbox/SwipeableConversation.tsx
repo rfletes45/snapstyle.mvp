@@ -94,7 +94,25 @@ export function SwipeableConversation({
       const isPinned = !!conversation.memberState.pinnedAt;
 
       return (
-        <View style={[styles.leftActions, { backgroundColor: colors.primary }]}>
+        <View style={styles.leftActionsClip}>
+          {/* Colored background that slides in with the drag distance */}
+          <Animated.View
+            style={[
+              StyleSheet.absoluteFill,
+              {
+                backgroundColor: colors.primary,
+                transform: [
+                  {
+                    translateX: dragX.interpolate({
+                      inputRange: [0, LEFT_ACTION_WIDTH],
+                      outputRange: [-LEFT_ACTION_WIDTH, 0],
+                      extrapolate: "clamp",
+                    }),
+                  },
+                ],
+              },
+            ]}
+          />
           <Animated.View style={{ transform: [{ scale }] }}>
             <RectButton
               style={styles.actionButton}
@@ -197,6 +215,13 @@ export function SwipeableConversation({
 // =============================================================================
 
 const styles = StyleSheet.create({
+  leftActionsClip: {
+    justifyContent: "center",
+    alignItems: "flex-start",
+    paddingLeft: Spacing.lg,
+    width: LEFT_ACTION_WIDTH,
+    overflow: "hidden",
+  },
   leftActions: {
     justifyContent: "center",
     alignItems: "flex-start",

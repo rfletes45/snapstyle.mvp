@@ -309,6 +309,19 @@ export interface RealtimeGameDefinition {
   /** Grace window in ms for reconnection. 0 = no grace. */
   reconnectGraceMs: number;
 
+  // ── Join Grace ────────────────────────────────────────────────────────
+  /**
+   * Maximum time (ms) to wait for full roster before aborting or
+   * starting with available players.  Only relevant when
+   * `matchStartPolicy` is `"full_roster"`.
+   *
+   * 0 = wait indefinitely (legacy behaviour).
+   * When the timer expires the room is cancelled as "no-show" if
+   * fewer than `minPlayers` have connected, or started with the
+   * available players otherwise.
+   */
+  joinGraceMs: number;
+
   // ── Timing ───────────────────────────────────────────────────────────
   /** Countdown duration in seconds before match starts. 0 = no countdown. */
   countdownSec: number;

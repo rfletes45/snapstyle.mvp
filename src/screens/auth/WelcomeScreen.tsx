@@ -22,7 +22,7 @@ export default function WelcomeScreen({ navigation }: any) {
   const handleGoogleSignIn = () => {
     // NOTE: Will be implemented when @react-native-google-signin/google-signin is integrated
     // For now, direct users to the email sign-up flow
-    navigation.navigate("Signup");
+    navigation.navigate("SignupEmail");
   };
 
   return (
@@ -63,7 +63,7 @@ export default function WelcomeScreen({ navigation }: any) {
         <View style={styles.ctaSection}>
           <Button
             mode="contained"
-            onPress={() => navigation.navigate("Signup")}
+            onPress={() => navigation.navigate("SignupEmail")}
             style={styles.primaryBtn}
             contentStyle={styles.btnContent}
             labelStyle={styles.btnLabel}

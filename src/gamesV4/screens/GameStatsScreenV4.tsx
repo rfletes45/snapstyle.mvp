@@ -122,6 +122,9 @@ export default function GameStatsScreenV4() {
           </Text>
           {pbs.map((pb) => {
             const meta = GAME_METADATA[pb.gameId as GameId];
+            const totalPlays = pb.totalPlays ?? 0;
+            const totalWins = pb.totalWins ?? 0;
+            const pbValue = pb.pbValue ?? 0;
             return (
               <View key={pb.gameId} style={styles.pbRow}>
                 <View style={styles.pbInfo}>
@@ -129,11 +132,11 @@ export default function GameStatsScreenV4() {
                     {meta?.displayName ?? pb.gameId}
                   </Text>
                   <Text style={[styles.pbSub, { color: subtextColor }]}>
-                    {pb.totalPlays} plays · {pb.totalWins} wins
+                    {totalPlays} plays · {totalWins} wins
                   </Text>
                 </View>
                 <Text style={[styles.pbScore, { color: theme.colors.primary }]}>
-                  {pb.pbValue.toLocaleString()}
+                  {pbValue.toLocaleString()}
                 </Text>
               </View>
             );
@@ -189,15 +192,21 @@ export default function GameStatsScreenV4() {
           {(showAllHistory ? history : history.slice(0, LIST_CAP)).map(
             (result, idx) => {
               const meta = GAME_METADATA[result.gameId as GameId];
-              const opponents = result.scoreboard.filter((e) => e.uid !== uid);
+              const scoreboard = result.scoreboard ?? [];
+              const winnerIds = result.winnerIds ?? [];
+              const opponents = scoreboard.filter((e) => e.uid !== uid);
               const opponentLabel =
                 opponents.length === 0
                   ? null
                   : opponents.length === 1
                     ? opponents[0].displayName || "Opponent"
                     : `${opponents[0].displayName || "Player"} +${opponents.length - 1}`;
-              const won = uid && result.winnerIds.includes(uid);
+              const won = uid && winnerIds.includes(uid);
               const isDraw = result.resolutionType === "draw";
+              const durationSec =
+                typeof result.durationMs === "number"
+                  ? Math.round(result.durationMs / 1000)
+                  : 0;
               return (
                 <View
                   key={`${result.sessionId}-${idx}`}
@@ -209,8 +218,7 @@ export default function GameStatsScreenV4() {
                       {opponentLabel ? ` vs. ${opponentLabel}` : ""}
                     </Text>
                     <Text style={[styles.historySub, { color: subtextColor }]}>
-                      {result.resolutionType} ·{" "}
-                      {Math.round(result.durationMs / 1000)}s
+                      {result.resolutionType ?? "complete"} · {durationSec}s
                     </Text>
                   </View>
                   <Text

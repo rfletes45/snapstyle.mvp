@@ -367,14 +367,31 @@ export default function GamesHubScreenV4() {
           },
         ]}
       >
-        <Text
-          style={[
-            styles.headerTitle,
-            { color: theme.colors.headerText ?? textColor },
-          ]}
-        >
-          Games
-        </Text>
+        <View style={styles.headerLeft}>
+          <TouchableOpacity
+            onPress={() => {
+              if (navigation.canGoBack()) {
+                navigation.goBack();
+              }
+            }}
+            style={styles.backButton}
+            activeOpacity={0.7}
+          >
+            <MaterialCommunityIcons
+              name="arrow-left"
+              size={24}
+              color={theme.colors.headerText ?? textColor}
+            />
+          </TouchableOpacity>
+          <Text
+            style={[
+              styles.headerTitle,
+              { color: theme.colors.headerText ?? textColor },
+            ]}
+          >
+            Games
+          </Text>
+        </View>
         <TouchableOpacity
           onPress={handleMyStats}
           style={[styles.headerButton, { backgroundColor: accentBg }]}
@@ -769,6 +786,14 @@ const styles = StyleSheet.create({
     paddingTop: 56,
     paddingBottom: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  headerLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  backButton: {
+    padding: 4,
   },
   headerTitle: {
     fontSize: 28,

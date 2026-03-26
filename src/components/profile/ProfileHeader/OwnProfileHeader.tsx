@@ -124,8 +124,10 @@ function OwnProfileHeaderBase({
       <View
         style={[
           styles.headerRegion,
-          { borderBottomColor: colors.outline },
-          topInset > 0 && { marginTop: -topInset, paddingTop: 0 },
+          {
+            backgroundColor: colors.surface,
+            borderColor: colors.outline,
+          },
         ]}
       >
         {/* Background Image (fills entire header region, cropped at level bar) */}
@@ -148,12 +150,7 @@ function OwnProfileHeaderBase({
         )}
 
         {/* Foreground content — padded down by the safe-area inset */}
-        <View
-          style={[
-            styles.foregroundContent,
-            topInset > 0 && { paddingTop: 24 + topInset * 2 },
-          ]}
-        >
+        <View style={[styles.foregroundContent]}>
           {/* Profile Picture with Decoration */}
           <View style={styles.pictureSection}>
             <ProfilePictureWithDecoration
@@ -354,12 +351,16 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     minHeight: 220,
     justifyContent: "flex-end",
-    borderBottomWidth: 1,
+    borderRadius: BorderRadius.lg,
+    marginHorizontal: Spacing.lg,
+    borderWidth: 1.5,
   },
   backgroundImage: {
-    ...StyleSheet.absoluteFillObject,
-    width: "100%",
-    height: "100%",
+    position: "absolute",
+    top: -2,
+    left: -2,
+    right: -2,
+    bottom: -2,
   },
   backgroundScrim: {
     ...StyleSheet.absoluteFillObject,

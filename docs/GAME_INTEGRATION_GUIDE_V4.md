@@ -530,7 +530,7 @@ If you skip any of those, you are creating a hole that the Firebase side will no
 > **Framework note**: These decisions are now **declared in the
 > `RealtimeGameDefinition`** contract rather than coded imperatively.
 > Each game specifies `matchStartPolicy`, `disconnectPolicy`,
-> `lateJoinPolicy`, `spectatorMode`, `reconnectGraceMs`, etc.
+> `lateJoinPolicy`, `spectatorMode`, `reconnectGraceMs`, `joinGraceMs`, etc.
 
 Before implementation, define all of these in writing:
 
@@ -538,6 +538,7 @@ Before implementation, define all of these in writing:
 - what constitutes the required starting roster
 - whether spectators exist
 - whether the match can start with a partial roster
+- how long to wait for a full roster before starting or cancelling (`joinGraceMs`)
 - what happens if a player disconnects mid-turn
 - what happens if everyone disconnects
 - what data a reconnecting client receives immediately
@@ -1076,10 +1077,10 @@ First things to verify:
 These are known limitations, not reasons to misdocument the system:
 
 - backend invite metadata is still duplicated
-- week-key logic is still duplicated across client and backend
+- week-key logic is partially consolidated — client imports from `models.ts`, but backend has its own copy in `helpers.ts`. A parity test guards against drift.
 - hidden-info client optimism is intentionally incomplete
 - realtime live progress is not mirrored back into Firestore
-- full-roster realtime gating still has no grace timeout or host override
+- full-roster realtime gating now has `joinGraceMs` timeout, but host override is still missing
 - there is still no socket-level Colyseus integration test suite
 
 ---

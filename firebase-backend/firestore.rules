@@ -1244,11 +1244,16 @@ service cloud.firestore {
       function getMemberRole() {
         return get(/databases/$(database)/documents/Groups/$(groupId)/Members/$(request.auth.uid)).data.role;
       }
+
+      // Helper: Check if the update touches permissionsConfig
+      function touchesPermissionsConfig() {
+        return request.resource.data.diff(resource.data).affectedKeys().hasAny(['permissionsConfig']);
+      }
       
       // Read: Allow authenticated users to read group metadata
       allow read: if isAuth();
       
-      // Create: any authenticated user can create a group
+      // Create: any authenticated user can create a group (with optional permissionsConfig)
       allow create: if isAuth() &&
                       request.resource.data.ownerId == request.auth.uid &&
                       request.auth.uid in request.resource.data.memberIds &&
@@ -1256,8 +1261,10 @@ service cloud.firestore {
                       request.resource.data.memberCount >= 1 &&
                       request.resource.data.memberCount <= 20;
       
-      // Update: Simplified - allow members to update, or non-members adding self.
-      // pinnedGameInviteIds is server-managed (Cloud Functions only).
+      // Update: members can update group fields, with restrictions:
+      // - permissionsConfig can only be changed by the owner
+      // - pinnedGameInviteIds is server-managed
+      // - ownerId changes restricted to owner (for transfer)
       allow update: if isAuth() && (
                       // Case 1: Already a member (use fast check)
                       isGroupMemberFast() ||
@@ -1266,7 +1273,11 @@ service cloud.firestore {
                        request.auth.uid in request.resource.data.memberIds)
                     ) &&
                     // Server-only fields: clients must not change pinnedGameInviteIds
-                    (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['pinnedGameInviteIds']));
+                    (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['pinnedGameInviteIds'])) &&
+                    // permissionsConfig can only be changed by the group owner
+                    (!touchesPermissionsConfig() || isGroupOwner()) &&
+                    // ownerId can only be changed by the current owner (ownership transfer)
+                    (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['ownerId']) || isGroupOwner());
       
       // Delete: only owner can delete group
       allow delete: if isAuth() && isGroupOwner();
@@ -1455,6 +1466,29 @@ service cloud.firestore {
           // No updates - delete and recreate
           allow update: if false;
         }
+      }
+
+      // --------------------------------------------------------
+      // AuditLog subcollection (Phase 20B — Governance Audit Trail)
+      // Path: Groups/{groupId}/AuditLog/{logId}
+      // Write: group members (auto-written by service layer)
+      // Read: owner/admin only
+      // --------------------------------------------------------
+      match /AuditLog/{logId} {
+        // Read: owner/admin can read audit logs
+        allow read: if isAuth() && isGroupMember() && getMemberRole() in ['owner', 'admin'];
+        
+        // Create: any group member can write (auto-written by service calls)
+        // NOTE: isGroupMemberFast() uses resource.data.memberIds which doesn't
+        // exist on subcollection docs — use only isGroupMember() here.
+        allow create: if isAuth() && isGroupMember() &&
+                        request.resource.data.actorUid == request.auth.uid &&
+                        request.resource.data.action is string &&
+                        request.resource.data.timestamp is number;
+        
+        // No updates or deletes - audit logs are immutable
+        allow update: if false;
+        allow delete: if false;
       }
     }
 

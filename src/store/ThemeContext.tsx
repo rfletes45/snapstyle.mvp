@@ -3,12 +3,23 @@
  * Provides theme state and selection functionality throughout the app
  *
  * Supports:
- * - 14 beautiful themes (light, dark, AMOLED, pastel, vibrant)
- * - System preference detection for auto theme
+ * - 30+ beautiful themes (light, dark, AMOLED, pastel, vibrant)
+ * - Theme mode: Light / Dark / Auto (follows device)
  * - Persisted theme preference via AsyncStorage
+ * - Stable theme across auth & onboarding flows
  * - Quick toggle between light/dark variants
  */
 
+import {
+  AppTheme,
+  getAllThemes,
+  getThemeById,
+  getThemesByCategory,
+  THEME_METADATA,
+  ThemeColors,
+  ThemeId,
+  ThemeMeta,
+} from "@/constants/theme";
 import { getAuthInstance } from "@/services/firebase";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, {
@@ -21,33 +32,27 @@ import React, {
   useState,
 } from "react";
 import { useColorScheme } from "react-native";
-import {
-  AppTheme,
-  getAllThemes,
-  getThemeById,
-  getThemesByCategory,
-  THEME_METADATA,
-  ThemeColors,
-  ThemeId,
-  ThemeMeta,
-} from "@/constants/theme";
-
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("store/ThemeContext");
 // Storage key for persisted theme
 const THEME_STORAGE_KEY = "@vibe_theme_id";
 
-// Default themes for system preference
+// Default themes for system preference (Auto mode)
 const DEFAULT_LIGHT_THEME: ThemeId = "catppuccin-latte";
 const DEFAULT_DARK_THEME: ThemeId = "catppuccin-mocha";
+
+/** Theme mode controls how the active theme is determined */
+export type ThemeMode = "light" | "dark" | "auto";
 
 interface ThemeContextValue {
   /** The current theme object with all tokens */
   theme: AppTheme;
   /** Current theme ID */
   themeId: ThemeId;
-  /** Whether to follow system preference */
+  /** Current theme mode (light / dark / auto) */
+  themeMode: ThemeMode;
+  /** Whether to follow system preference (alias for themeMode === 'auto') */
   useSystemTheme: boolean;
   /** Whether dark mode is currently active */
   isDark: boolean;
@@ -57,24 +62,28 @@ interface ThemeContextValue {
   availableThemes: ThemeMeta[];
   /** Set a specific theme by ID */
   setTheme: (themeId: ThemeId) => void;
+  /** Set the theme mode (light / dark / auto) */
+  setThemeMode: (mode: ThemeMode) => void;
   /** Toggle system theme following */
   setUseSystemTheme: (use: boolean) => void;
   /** Quick toggle between light and dark variants */
   toggleDarkMode: () => void;
   /** Get themes filtered by category */
   getThemesByCategory: (category: ThemeMeta["category"]) => ThemeMeta[];
+  /** Signal that the user's profile is ready (enables stored-pref loading) */
+  markProfileReady: () => void;
 }
 
 const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
 
 interface ThemeProviderProps {
   children: ReactNode;
-  /** Initial theme ID, defaults to system preference */
+  /** Initial theme ID, defaults to light theme */
   initialThemeId?: ThemeId;
 }
 
-// Default theme when not logged in (always catppuccin-mocha)
-const DEFAULT_LOGGED_OUT_THEME: ThemeId = "catppuccin-mocha";
+// Default theme for pre-login & onboarding (light for clean first impression)
+const DEFAULT_LOGGED_OUT_THEME: ThemeId = "catppuccin-latte";
 
 export function ThemeProvider({
   children,
@@ -87,8 +96,14 @@ export function ThemeProvider({
   const [useSystemTheme, setUseSystemThemeState] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  // profileReady gates when stored preferences are loaded.
+  // This prevents the theme from flipping mid-onboarding when a fresh
+  // Firebase auth is detected but the user hasn't completed profile setup.
+  const [profileReady, setProfileReady] = useState(false);
+  // Track whether stored prefs have been loaded (gates persistence to avoid overwriting)
+  const [prefsLoaded, setPrefsLoaded] = useState(false);
 
-  // Listen to Firebase auth state to know when to apply user theme
+  // Listen to Firebase auth state
   useEffect(() => {
     try {
       const auth = getAuthInstance();
@@ -97,25 +112,16 @@ export function ThemeProvider({
         const nowAuthenticated = !!user;
         setIsAuthenticated(nowAuthenticated);
 
-        if (nowAuthenticated && !wasAuthenticated) {
-          // User just logged in → load their stored theme preference
-          try {
-            const stored = await AsyncStorage.getItem(THEME_STORAGE_KEY);
-            if (stored) {
-              const parsed = JSON.parse(stored);
-              if (parsed.themeId && THEME_METADATA[parsed.themeId as ThemeId]) {
-                setThemeId(parsed.themeId);
-                setUseSystemThemeState(parsed.useSystemTheme ?? false);
-              }
-            }
-          } catch {
-            // Ignore storage read errors
-          }
-        } else if (!nowAuthenticated && wasAuthenticated) {
-          // User signed out → revert to default
+        if (!nowAuthenticated && wasAuthenticated) {
+          // User signed out → revert to default light theme
           setThemeId(DEFAULT_LOGGED_OUT_THEME);
           setUseSystemThemeState(false);
+          setProfileReady(false);
+          setPrefsLoaded(false);
         }
+        // NOTE: We deliberately do NOT load stored prefs here on login.
+        // Prefs are loaded only once profileReady is set (see effect below).
+        // This prevents a jarring theme switch during onboarding step 3.
       });
       return unsubscribe;
     } catch {
@@ -124,7 +130,7 @@ export function ThemeProvider({
     }
   }, [isAuthenticated]);
 
-  // Load persisted theme on mount — but only apply if user is authenticated
+  // Load persisted theme on mount — only if user already has a profile session
   useEffect(() => {
     const loadTheme = async () => {
       try {
@@ -133,14 +139,18 @@ export function ThemeProvider({
           const parsed = JSON.parse(stored);
           if (parsed.themeId && THEME_METADATA[parsed.themeId as ThemeId]) {
             // Only apply stored theme if user is currently authenticated
+            // AND has a completed profile (returning user). Fresh signups
+            // won't have a stored pref, so this is safe.
             try {
               const auth = getAuthInstance();
               if (auth.currentUser) {
-                setThemeId(parsed.themeId);
-                setUseSystemThemeState(parsed.useSystemTheme ?? false);
+                // We'll apply once profileReady is set — skip for now
+                // unless we can verify the user has a profile.
+                // For a returning user who already had a session,
+                // profileReady will be set by AppGate quickly.
               }
             } catch {
-              // Firebase not ready — skip applying stored theme
+              // Firebase not ready — skip
             }
           }
         }
@@ -153,9 +163,43 @@ export function ThemeProvider({
     loadTheme();
   }, []);
 
-  // Persist theme changes (only when authenticated)
+  // Apply stored prefs when profileReady becomes true (exactly once per session)
   useEffect(() => {
-    if (!isLoading && isAuthenticated) {
+    if (!profileReady || prefsLoaded) return;
+
+    (async () => {
+      try {
+        const stored = await AsyncStorage.getItem(THEME_STORAGE_KEY);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (parsed.themeId && THEME_METADATA[parsed.themeId as ThemeId]) {
+            const isAuto = parsed.useSystemTheme ?? false;
+            if (isAuto) {
+              setUseSystemThemeState(true);
+              const resolved =
+                systemColorScheme === "dark"
+                  ? DEFAULT_DARK_THEME
+                  : DEFAULT_LIGHT_THEME;
+              setThemeId(resolved);
+            } else {
+              setThemeId(parsed.themeId);
+              setUseSystemThemeState(false);
+            }
+          }
+        }
+      } catch {
+        // Ignore storage read errors
+      } finally {
+        // Mark loaded AFTER the async read so the persist effect doesn't
+        // overwrite saved prefs before they're read.
+        setPrefsLoaded(true);
+      }
+    })();
+  }, [profileReady, prefsLoaded, systemColorScheme]);
+
+  // Persist theme changes (only after stored prefs have been loaded)
+  useEffect(() => {
+    if (!isLoading && profileReady && prefsLoaded) {
       AsyncStorage.setItem(
         THEME_STORAGE_KEY,
         JSON.stringify({ themeId, useSystemTheme }),
@@ -163,19 +207,26 @@ export function ThemeProvider({
         logger.warn("Failed to save theme preference:", error),
       );
     }
-  }, [themeId, useSystemTheme, isLoading, isAuthenticated]);
+  }, [themeId, useSystemTheme, isLoading, profileReady, prefsLoaded]);
 
-  // Handle system theme changes (only when authenticated and using system theme)
+  // Handle system theme changes (Auto mode)
   useEffect(() => {
-    if (useSystemTheme && isAuthenticated) {
+    if (useSystemTheme) {
       const newThemeId =
         systemColorScheme === "dark" ? DEFAULT_DARK_THEME : DEFAULT_LIGHT_THEME;
       setThemeId(newThemeId);
     }
-  }, [systemColorScheme, useSystemTheme, isAuthenticated]);
+  }, [systemColorScheme, useSystemTheme]);
 
   // Get the full theme object
   const theme = useMemo(() => getThemeById(themeId), [themeId]);
+
+  // Derive the current theme mode from state
+  const themeMode: ThemeMode = useSystemTheme
+    ? "auto"
+    : theme.isDark
+      ? "dark"
+      : "light";
 
   // Convenience accessors
   const isDark = theme.isDark;
@@ -186,6 +237,27 @@ export function ThemeProvider({
     setThemeId(newThemeId);
     setUseSystemThemeState(false);
   }, []);
+
+  // Set theme mode: light / dark / auto
+  const setThemeMode = useCallback(
+    (mode: ThemeMode) => {
+      if (mode === "auto") {
+        setUseSystemThemeState(true);
+        const resolved =
+          systemColorScheme === "dark"
+            ? DEFAULT_DARK_THEME
+            : DEFAULT_LIGHT_THEME;
+        setThemeId(resolved);
+      } else if (mode === "light") {
+        setUseSystemThemeState(false);
+        setThemeId(DEFAULT_LIGHT_THEME);
+      } else {
+        setUseSystemThemeState(false);
+        setThemeId(DEFAULT_DARK_THEME);
+      }
+    },
+    [systemColorScheme],
+  );
 
   // Toggle system theme following
   const setUseSystemTheme = useCallback(
@@ -231,6 +303,11 @@ export function ThemeProvider({
     });
   }, []);
 
+  // Signal that the user's profile is ready (returning user or after onboarding)
+  const markProfileReady = useCallback(() => {
+    setProfileReady(true);
+  }, []);
+
   // Get all available themes
   const availableThemes = useMemo(() => getAllThemes(), []);
 
@@ -244,26 +321,32 @@ export function ThemeProvider({
     () => ({
       theme,
       themeId,
+      themeMode,
       useSystemTheme,
       isDark,
       colors,
       availableThemes,
       setTheme,
+      setThemeMode,
       setUseSystemTheme,
       toggleDarkMode,
       getThemesByCategory: getThemesByCategoryFn,
+      markProfileReady,
     }),
     [
       theme,
       themeId,
+      themeMode,
       useSystemTheme,
       isDark,
       colors,
       availableThemes,
       setTheme,
+      setThemeMode,
       setUseSystemTheme,
       toggleDarkMode,
       getThemesByCategoryFn,
+      markProfileReady,
     ],
   );
 

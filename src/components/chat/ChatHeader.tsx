@@ -193,13 +193,14 @@ export function ChatHeader({
 const styles = StyleSheet.create({
   header: {
     elevation: 0,
+    height: 52,
   },
   titleTouchable: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
-    marginLeft: 4,
-    gap: 10,
+    marginLeft: 2,
+    gap: 8,
   },
   titleTextContainer: {
     flex: 1,

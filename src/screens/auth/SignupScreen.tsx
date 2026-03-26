@@ -12,7 +12,7 @@
 
 import { BorderRadius, Spacing } from "@/constants/theme";
 import { signUp } from "@/services/auth";
-import { isValidEmail, isValidPassword } from "@/utils/validators";
+import { isValidEmail } from "@/utils/validators";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { useMemo, useState } from "react";
 import {
@@ -47,6 +47,26 @@ interface StrengthResult {
   /** 0-1 fraction for progress bar */
   fraction: number;
 }
+
+/** Minimum accepted strength level — passwords below this cannot proceed. */
+const MIN_STRENGTH: PasswordStrength = "fair";
+const STRENGTH_ORDER: PasswordStrength[] = ["weak", "fair", "good", "strong"];
+
+function meetsMinStrength(level: PasswordStrength): boolean {
+  return STRENGTH_ORDER.indexOf(level) >= STRENGTH_ORDER.indexOf(MIN_STRENGTH);
+}
+
+interface PasswordRule {
+  label: string;
+  test: (pw: string) => boolean;
+}
+
+const PASSWORD_RULES: PasswordRule[] = [
+  { label: "At least 8 characters", test: (pw) => pw.length >= 8 },
+  { label: "An uppercase letter", test: (pw) => /[A-Z]/.test(pw) },
+  { label: "A number", test: (pw) => /[0-9]/.test(pw) },
+  { label: "A special character", test: (pw) => /[^A-Za-z0-9]/.test(pw) },
+];
 
 function evaluatePasswordStrength(pw: string): StrengthResult {
   let score = 0;
@@ -85,11 +105,22 @@ export default function SignupScreen({ navigation }: any) {
     [password],
   );
 
+  const passwordAccepted =
+    !!passwordStrength && meetsMinStrength(passwordStrength.level);
+  const passwordsMatch = password === confirmPassword;
+
+  const canSubmit =
+    !loading &&
+    email.trim().length > 0 &&
+    passwordAccepted &&
+    passwordsMatch &&
+    confirmPassword.length > 0 &&
+    tosAccepted;
+
   const handleSignup = async () => {
     Keyboard.dismiss();
     setError("");
 
-    // Validation
     if (!email.trim() || !password || !confirmPassword) {
       setError("All fields are required");
       return;
@@ -100,12 +131,12 @@ export default function SignupScreen({ navigation }: any) {
       return;
     }
 
-    if (!isValidPassword(password)) {
-      setError("Password must be at least 6 characters");
+    if (!passwordAccepted) {
+      setError("Your password is too weak — see the requirements below");
       return;
     }
 
-    if (password !== confirmPassword) {
+    if (!passwordsMatch) {
       setError("Passwords do not match");
       return;
     }
@@ -257,32 +288,66 @@ export default function SignupScreen({ navigation }: any) {
 
           {/* Password Strength Indicator */}
           {passwordStrength && (
-            <View style={styles.strengthContainer}>
-              <View
-                style={[
-                  styles.strengthBarBg,
-                  { backgroundColor: theme.colors.outlineVariant },
-                ]}
-              >
+            <View style={styles.strengthSection}>
+              <View style={styles.strengthContainer}>
                 <View
                   style={[
-                    styles.strengthBarFill,
-                    {
-                      width: `${passwordStrength.fraction * 100}%`,
-                      backgroundColor: passwordStrength.color,
-                    },
+                    styles.strengthBarBg,
+                    { backgroundColor: theme.colors.outlineVariant },
                   ]}
-                />
+                >
+                  <View
+                    style={[
+                      styles.strengthBarFill,
+                      {
+                        width: `${passwordStrength.fraction * 100}%`,
+                        backgroundColor: passwordStrength.color,
+                      },
+                    ]}
+                  />
+                </View>
+                <Text
+                  variant="labelSmall"
+                  style={[
+                    styles.strengthLabel,
+                    { color: passwordStrength.color },
+                  ]}
+                >
+                  {passwordStrength.label}
+                </Text>
               </View>
-              <Text
-                variant="labelSmall"
-                style={[
-                  styles.strengthLabel,
-                  { color: passwordStrength.color },
-                ]}
-              >
-                {passwordStrength.label}
-              </Text>
+              {/* Inline password rules */}
+              {passwordStrength.level === "weak" && (
+                <View style={styles.rulesContainer}>
+                  {PASSWORD_RULES.map((rule) => {
+                    const passed = rule.test(password);
+                    return (
+                      <View key={rule.label} style={styles.ruleRow}>
+                        <MaterialCommunityIcons
+                          name={passed ? "check-circle" : "circle-outline"}
+                          size={14}
+                          color={
+                            passed ? "#4CAF50" : theme.colors.onSurfaceVariant
+                          }
+                        />
+                        <Text
+                          variant="labelSmall"
+                          style={[
+                            styles.ruleText,
+                            {
+                              color: passed
+                                ? "#4CAF50"
+                                : theme.colors.onSurfaceVariant,
+                            },
+                          ]}
+                        >
+                          {rule.label}
+                        </Text>
+                      </View>
+                    );
+                  })}
+                </View>
+              )}
             </View>
           )}
 
@@ -387,7 +452,7 @@ export default function SignupScreen({ navigation }: any) {
             mode="contained"
             onPress={handleSignup}
             loading={loading}
-            disabled={loading}
+            disabled={!canSubmit}
             style={styles.createBtn}
             contentStyle={styles.btnContent}
           >
@@ -461,12 +526,27 @@ const styles = StyleSheet.create({
   input: {
     marginBottom: Spacing.md,
   },
+  strengthSection: {
+    marginBottom: Spacing.md,
+    marginTop: -Spacing.xs,
+    gap: Spacing.sm,
+  },
   strengthContainer: {
     flexDirection: "row",
     alignItems: "center",
     gap: Spacing.sm,
-    marginBottom: Spacing.md,
-    marginTop: -Spacing.xs,
+  },
+  rulesContainer: {
+    gap: 2,
+    marginLeft: Spacing.xs,
+  },
+  ruleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.xs,
+  },
+  ruleText: {
+    fontSize: 12,
   },
   strengthBarBg: {
     flex: 1,

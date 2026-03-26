@@ -13,10 +13,10 @@
 // =============================================================================
 
 /** Default outgoing bubble background for light mode. */
-export const DEFAULT_CHAT_BUBBLE_COLOR_LIGHT = "#6200EE";
+export const DEFAULT_CHAT_BUBBLE_COLOR_LIGHT = "#1976D2";
 
 /** Default outgoing bubble background for dark mode. */
-export const DEFAULT_CHAT_BUBBLE_COLOR_DARK = "#BB86FC";
+export const DEFAULT_CHAT_BUBBLE_COLOR_DARK = "#64B5F6";
 
 /** Default outgoing bubble text color for light mode. */
 export const DEFAULT_CHAT_BUBBLE_TEXT_COLOR_LIGHT = "#FFFFFF";

@@ -175,7 +175,9 @@ export function AnimalPickerBubble({
   // Stem position relative to bubble
   const stemLeftRelative = anchorCenterX - bubbleLeft - STEM_SIZE;
 
-  // Bubble bottom sits above the anchor — generous gap so it clears the composer
+  // Bubble bottom sits above the anchor — generous gap so it clears the composer.
+  // The parent re-measures anchorLayout when the keyboard state changes,
+  // so this calculation stays correct regardless of keyboard transitions.
   const bubbleBottom = SCREEN_HEIGHT - anchorLayout.y + 12;
 
   const bubbleBg = theme.dark ? theme.colors.elevation.level2 : "#FFFFFF";
