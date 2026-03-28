@@ -43,6 +43,8 @@ export interface FriendsCardProps {
   onFriendPress?: (friendUid: string) => void;
   /** Stagger index for entrance animation */
   enterIndex?: number;
+  /** When true, strip card chrome for widget board embedding */
+  embedded?: boolean;
 }
 
 interface FriendPreview {
@@ -65,6 +67,7 @@ export const FriendsCard = memo(function FriendsCard({
   onPress,
   onFriendPress,
   enterIndex,
+  embedded,
 }: FriendsCardProps) {
   const colors = useColors();
   const [friends, setFriends] = useState<FriendPreview[]>([]);
@@ -140,6 +143,7 @@ export const FriendsCard = memo(function FriendsCard({
         enterIndex={enterIndex}
         onPress={onPress}
         testID="friends-card"
+        embedded={embedded}
       >
         <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
           {isOwnProfile ? "No friends yet" : "No friends to show"}
@@ -157,6 +161,7 @@ export const FriendsCard = memo(function FriendsCard({
       enterIndex={enterIndex}
       onPress={onPress}
       testID="friends-card"
+      embedded={embedded}
     >
       <View style={styles.avatarRow}>
         {friends.map((friend, i) => (

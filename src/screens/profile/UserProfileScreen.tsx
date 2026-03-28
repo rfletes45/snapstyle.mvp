@@ -1,18 +1,15 @@
 /**
  * UserProfileScreen
  *
- * Screen for viewing another user's profile.
- * Shows profile info, stats, badges, and provides actions based on relationship.
+ * Screen for viewing another user's profile using the new widget-based
+ * profile system in read-only / viewer mode.
  *
- * Features:
- * - Profile picture with decoration
- * - Display name, username, bio
- * - Status/mood indicator
- * - Friendship info (streak, duration)
- * - Mutual friends display
- * - Dynamic action buttons (Add Friend, Message, Call, etc.)
- * - Block/Report/Mute options
- * - Profile sharing
+ * Renders the target user's widget board layout with all editing
+ * affordances stripped: no customize mode, no drag/resize/remove,
+ * no owner-only buttons (Settings, Shop, Customize).
+ *
+ * Viewer-appropriate controls (action bar, block/report/mute) are
+ * rendered outside the widget board as overlays and footer sections.
  *
  * @module screens/profile/UserProfileScreen
  */
@@ -31,27 +28,29 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import BlockUserModal from "@/components/BlockUserModal";
 import ReportUserModal from "@/components/ReportUserModal";
-import { MuteOptionsModal, MutualFriendsSection } from "@/components/profile";
+import { MuteOptionsModal } from "@/components/profile";
+import { MoreOptionsMenu } from "@/components/profile/ProfileActions/index";
 import {
-  AchievementsTrophyCaseCard,
-  BadgesCard,
-  FriendsCard,
-} from "@/components/profile/OverviewCards";
-import {
-  MoreOptionsMenu,
-  ProfileActionsBar,
-} from "@/components/profile/ProfileActions/index";
-import { UserProfileHeader } from "@/components/profile/ProfileHeader/index";
-import { SocialProofSection } from "@/components/profile/SocialProof";
+  WidgetBoardContainer,
+  useBoardState,
+} from "@/components/profile/WidgetBoard";
+import type { WidgetInstance } from "@/components/profile/WidgetBoard/types";
+import { SIZE_PRESETS } from "@/components/profile/WidgetBoard/types";
 import { CALL_FEATURES } from "@/constants/featureFlags";
 import { Spacing } from "@/constants/theme";
 import { useStreamCall } from "@/contexts/StreamCallContext";
 import { useBadges } from "@/hooks/useBadges";
+import { useTopStreaks } from "@/hooks/useTopStreaks";
 import { useAuth } from "@/store/AuthContext";
 import { useColors } from "@/store/ThemeContext";
 import * as haptics from "@/utils/haptics";
 
 // Services
+import {
+  fetchAllGamePBs,
+  fetchUserStatsCache,
+} from "@/gamesV4/services/gameServiceV4";
+import { fetchUserActivities } from "@/services/activityFeed";
 import { blockUser, unblockUser } from "@/services/blocking";
 import {
   acceptFriendRequest,
@@ -119,6 +118,12 @@ function UserProfileScreenContent({
   const canInitiateCalls = CALL_FEATURES.CALLS_ENABLED;
 
   // ==========================================================================
+  // Target User's Widget Board Layout (read-only)
+  // ==========================================================================
+
+  const board = useBoardState(userId, { readOnly: true });
+
+  // ==========================================================================
   // State
   // ==========================================================================
 
@@ -144,6 +149,21 @@ function UserProfileScreenContent({
 
   // Badges hook — subscribes to the viewed user's badges
   const { featuredBadges, stats: badgeStats } = useBadges(userId);
+
+  // Streaks hook — subscribes to the viewed user's friend streaks
+  const topStreaks = useTopStreaks(userId);
+
+  // Game stats for the viewed user (loaded on mount)
+  const [gameStats, setGameStats] = useState<{
+    gamesPlayed: number;
+    gamesWon: number;
+    pbs: Array<{ gameId: string; totalPlays?: number; totalWins?: number }>;
+  } | null>(null);
+
+  // Recent activities for the viewed user
+  const [recentActivities, setRecentActivities] = useState<
+    Array<{ id: string; text: string; time: string; icon?: string }>
+  >([]);
 
   // ==========================================================================
   // Load Profile Data
@@ -201,6 +221,97 @@ function UserProfileScreenContent({
   useEffect(() => {
     loadProfileData();
   }, [loadProfileData]);
+
+  // Load game stats for the viewed user (best-effort, non-blocking)
+  useEffect(() => {
+    if (!userId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const [statsData, pbsData] = await Promise.all([
+          fetchUserStatsCache(userId),
+          fetchAllGamePBs(userId),
+        ]);
+        if (!cancelled) {
+          setGameStats({
+            gamesPlayed: statsData?.gamesPlayed ?? 0,
+            gamesWon: statsData?.gamesWon ?? 0,
+            pbs: pbsData ?? [],
+          });
+        }
+      } catch {
+        // Non-critical — profile still works without game stats
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
+
+  // Load recent activities for the viewed user (best-effort, privacy-gated)
+  useEffect(() => {
+    if (!userId || !profile) return;
+    const activityHidden = (() => {
+      const setting = profile.privacy?.showRecentActivity;
+      if (!setting || setting === "everyone") return false;
+      if (setting === "nobody") return true;
+      return relationship?.type !== "friend";
+    })();
+    if (activityHidden) {
+      setRecentActivities([]);
+      return;
+    }
+    let cancelled = false;
+    fetchUserActivities(userId, 5).then((events) => {
+      if (cancelled) return;
+      const now = Date.now();
+      setRecentActivities(
+        events.map((e) => {
+          const ms = now - e.timestamp.getTime();
+          const mins = Math.floor(ms / 60_000);
+          const hrs = Math.floor(ms / 3_600_000);
+          const days = Math.floor(ms / 86_400_000);
+          const time =
+            mins < 1
+              ? "just now"
+              : mins < 60
+                ? `${mins}m ago`
+                : hrs < 24
+                  ? `${hrs}h ago`
+                  : `${days}d ago`;
+
+          let text = "Activity";
+          let icon: string | undefined;
+          if (e.type === "achievement") {
+            text = `Unlocked ${(e.data as any)?.achievementName ?? "achievement"}`;
+            icon = "trophy-outline";
+          } else if (e.type === "streak_milestone") {
+            text = `Hit a ${(e.data as any)?.streakDays ?? ""}-day streak milestone`;
+            icon = "fire";
+          } else if (e.type === "profile_update") {
+            text = "Updated profile";
+            icon = "account-edit-outline";
+          } else if (e.type === "new_friend") {
+            text = "Made a new friend";
+            icon = "account-plus-outline";
+          } else if (e.type === "shop_purchase") {
+            text = "Got something from the shop";
+            icon = "shopping-outline";
+          } else if (e.type === "decoration_equip") {
+            text = "Equipped a new decoration";
+            icon = "star-outline";
+          } else if (e.type === "status_change") {
+            text = "Set a new status";
+            icon = "emoticon-happy-outline";
+          }
+          return { id: e.id, text, time, icon };
+        }),
+      );
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [userId, profile, relationship]);
 
   // ==========================================================================
   // Actions
@@ -608,10 +719,248 @@ function UserProfileScreenContent({
   })();
 
   // ==========================================================================
+  // Derived game data (from target user's stats)
+  // ==========================================================================
+
+  const favoriteGameData = useMemo(() => {
+    if (!gameStats?.pbs || gameStats.pbs.length === 0)
+      return { gameName: "Not set", gamesPlayed: 0, winRate: 0 };
+    const sorted = [...gameStats.pbs].sort(
+      (a, b) => (b.totalPlays ?? 0) - (a.totalPlays ?? 0),
+    );
+    const top = sorted[0];
+    const plays = top.totalPlays ?? 0;
+    const wins = top.totalWins ?? 0;
+    const rate = plays > 0 ? Math.round((wins / plays) * 100) : 0;
+    return {
+      gameName:
+        top.gameId
+          ?.replace(/-/g, " ")
+          .replace(/\b\w/g, (c: string) => c.toUpperCase()) ?? "Unknown",
+      gamesPlayed: plays,
+      winRate: rate,
+    };
+  }, [gameStats]);
+
+  // ==========================================================================
+  // Last active label (derived)
+  // ==========================================================================
+
+  const lastActiveLabel = useMemo(() => {
+    if (
+      !profile ||
+      profile.privacy.showLastActive === "nobody" ||
+      profile.lastActive <= 0
+    )
+      return null;
+    const ms = Date.now() - profile.lastActive;
+    const mins = Math.floor(ms / 60_000);
+    if (mins < 1) return "just now";
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.floor(ms / 3_600_000);
+    if (hrs < 24) return `${hrs}h ago`;
+    const days = Math.floor(ms / 86_400_000);
+    return `${days}d ago`;
+  }, [profile]);
+
+  // ==========================================================================
+  // Widget Data Payloads (viewer-safe — no edit callbacks)
+  // ==========================================================================
+
+  const widgetData = useMemo(
+    () => ({
+      "profile-header": {
+        displayName: profile?.displayName ?? "",
+        username: profile?.username ?? "",
+        pictureUrl: profile?.profilePicture?.url || null,
+        decorationId: profile?.avatarDecoration?.decorationId || null,
+        backgroundId: profile?.equippedBackgroundId ?? null,
+        bio: profile?.bio ?? null,
+        status: profile?.status ?? null,
+        level: profile?.level || {
+          current: 1,
+          xp: 0,
+          xpToNextLevel: 100,
+          totalXp: 0,
+        },
+        // ── NO owner-only callbacks ──
+        // onEditPicturePress: undefined
+        // onEditBioPress: undefined
+        // onEditStatusPress: undefined
+        // onEditNamePress: undefined
+        // onLevelPress: undefined (disables tap-to-rewards)
+        // onCustomizePress: undefined (hides Customize button)
+        // onShopPress: undefined (hides Shop button)
+        // onSettingsPress: undefined (hides Settings button)
+        // unclaimedRewards: undefined (hides rewards pill)
+      },
+      "social-proof": {
+        streaks: streaksPrivacyHidden ? [] : topStreaks.streaks,
+        activeStreakCount: streaksPrivacyHidden
+          ? 0
+          : topStreaks.activeStreakCount,
+        topStreakCount: streaksPrivacyHidden ? 0 : topStreaks.topStreakCount,
+        loading: topStreaks.loading,
+        error: topStreaks.error,
+        isOwnProfile: false,
+        onPress: undefined, // no drill-down for viewers
+      },
+      friends: {
+        userId,
+        isOwnProfile: false,
+        hiddenFromOthers: friendsPrivacyHidden,
+        onPress: !friendsPrivacyHidden
+          ? () =>
+              navigation.navigate("MutualFriendsList", {
+                userId: currentUserId,
+                targetUserId: userId,
+              })
+          : undefined,
+        onFriendPress: (friendUid: string) =>
+          navigation.push("UserProfile", { userId: friendUid }),
+      },
+      badges: {
+        badges: featuredBadges ?? [],
+        totalEarned: badgeStats?.earned,
+        hiddenFromOthers: badgesPrivacyHidden,
+        onPress: !badgesPrivacyHidden
+          ? () =>
+              navigation.navigate("MainTabs", {
+                screen: "Profile",
+                params: {
+                  screen: "BadgeCollection",
+                  params: { userId },
+                },
+              })
+          : undefined,
+      },
+      achievements: {
+        userId,
+        featuredAchievementIds:
+          profile?.featuredAchievements?.achievementIds ?? [],
+        hiddenFromOthers: achievementsPrivacyHidden,
+        onPress: !achievementsPrivacyHidden
+          ? () =>
+              navigation.navigate("ProfileAchievements", {
+                userId,
+                displayName: profile?.displayName,
+                featuredIds:
+                  profile?.featuredAchievements?.achievementIds ?? [],
+              })
+          : undefined,
+      },
+      "mutual-friends": {
+        mutualFriends: mutualFriends.map((f) => ({
+          id: f.userId,
+          name: f.displayName,
+          pictureUrl: f.profilePictureUrl,
+        })),
+        mutualCount: mutualFriends.length,
+      },
+      "favorite-game": favoriteGameData,
+      "profile-stats": {
+        totalGames: gameStats?.gamesPlayed ?? 0,
+        totalWins: gameStats?.gamesWon ?? 0,
+        totalHours: 0,
+        friendCount: 0,
+      },
+      "recent-activity": {
+        activities: activityPrivacyHidden ? [] : recentActivities,
+      },
+      "viewer-actions": {
+        isMuted,
+        friendshipDuration: friendshipDetails?.friendshipDuration ?? null,
+        lastActiveLabel: lastActiveLabel,
+        relationship,
+        actionLoading,
+        loadingAction,
+        onAddFriend: handleAddFriend,
+        onCancelRequest: handleCancelRequest,
+        onAcceptRequest: handleAcceptRequest,
+        onDeclineRequest: handleDeclineRequest,
+        onMessage: handleMessage,
+        onCall: canInitiateCalls ? handleCall : undefined,
+        onRemoveFriend: handleRemoveFriend,
+        onUnblock: handleUnblock,
+        onMoreOptions: handleMoreOptions,
+      },
+    }),
+    [
+      profile,
+      userId,
+      currentUserId,
+      topStreaks,
+      streaksPrivacyHidden,
+      friendsPrivacyHidden,
+      badgesPrivacyHidden,
+      achievementsPrivacyHidden,
+      activityPrivacyHidden,
+      featuredBadges,
+      badgeStats,
+      mutualFriends,
+      favoriteGameData,
+      gameStats,
+      recentActivities,
+      navigation,
+      isMuted,
+      friendshipDetails,
+      lastActiveLabel,
+      relationship,
+      actionLoading,
+      loadingAction,
+      handleAddFriend,
+      handleCancelRequest,
+      handleAcceptRequest,
+      handleDeclineRequest,
+      handleMessage,
+      handleCall,
+      handleRemoveFriend,
+      handleUnblock,
+      handleMoreOptions,
+      canInitiateCalls,
+    ],
+  );
+
+  // ==========================================================================
+  // Synthetic viewer-actions widget (injected at the board bottom)
+  // ==========================================================================
+
+  const augmentedVisibleWidgets = useMemo(() => {
+    const base = board.visibleWidgets;
+    // Find the bottom-most row occupied by existing widgets
+    let maxBottom = 0;
+    for (const w of base) {
+      const span = SIZE_PRESETS[w.size];
+      if (span) {
+        const bottom = w.y + span.h;
+        if (bottom > maxBottom) maxBottom = bottom;
+      }
+    }
+    // Create a synthetic viewer-actions widget placed just below
+    const viewerActionsWidget: WidgetInstance = {
+      instanceId: "__viewer-actions__",
+      widgetType: "viewer-actions",
+      size: "large",
+      x: 0,
+      y: maxBottom,
+      visible: true,
+      pinned: true,
+      config: {},
+      createdAt: "",
+      updatedAt: "",
+    };
+    return [...base, viewerActionsWidget];
+  }, [board.visibleWidgets]);
+
+  // Stub no-op handlers for read-only board
+  const noop = useCallback(() => false as boolean, []);
+  const noopVoid = useCallback(() => {}, []);
+
+  // ==========================================================================
   // Render
   // ==========================================================================
 
-  if (loading) {
+  if (loading || !board.loaded) {
     return (
       <View
         style={[
@@ -747,165 +1096,38 @@ function UserProfileScreenContent({
         </View>
 
         <ScrollView
-          contentContainerStyle={styles.content}
+          contentContainerStyle={[
+            styles.content,
+            {
+              paddingTop: insets.top,
+              paddingBottom: insets.bottom + 32,
+            },
+          ]}
           showsVerticalScrollIndicator={false}
         >
-          {/* Profile Header with Picture, Name, Bio */}
-          <UserProfileHeader
-            displayName={profile.displayName}
-            username={profile.username}
-            pictureUrl={profile.profilePicture?.url || null}
-            decorationId={profile.avatarDecoration?.decorationId || null}
-            backgroundId={profile.equippedBackgroundId ?? null}
-            bio={profile.bio}
-            status={profile.status}
-            level={profile.level}
-            topInset={insets.top}
-            lastActive={
-              profile.privacy.showLastActive !== "nobody"
-                ? profile.lastActive
-                : null
-            }
-            friendshipDetails={
-              relationship?.type === "friend" ? friendshipDetails : null
-            }
+          {/* ── Widget Board (read-only viewer mode) ──────────────── */}
+          <WidgetBoardContainer
+            mode="view"
+            readOnly
+            visibleWidgets={augmentedVisibleWidgets}
+            allWidgets={board.widgets}
+            hiddenWidgets={board.hiddenWidgets}
+            saving={false}
+            widgetData={widgetData}
+            dragActiveId={null}
+            onMoveWidget={noop}
+            onResizeWidget={noop}
+            onHideWidget={noop}
+            onRestoreWidget={noop}
+            onAddWidget={noop}
+            onDragPreview={noopVoid}
+            onResizePreview={noopVoid}
+            onCommitPreview={noopVoid}
+            onClearPreview={noopVoid}
+            onEnterCustomize={noopVoid}
+            onDone={noopVoid}
+            onCancel={noopVoid}
           />
-
-          {/* Muted indicator */}
-          {isMuted && (
-            <View
-              style={[
-                styles.mutedBadge,
-                { backgroundColor: colors.surfaceVariant + "99" },
-              ]}
-            >
-              <MaterialCommunityIcons
-                name="bell-off"
-                size={14}
-                color={colors.textSecondary}
-              />
-              <Text style={[styles.mutedText, { color: colors.textSecondary }]}>
-                Muted
-              </Text>
-            </View>
-          )}
-
-          {/* Social Proof (streak for friendship + activity) */}
-          {relationship?.type === "friend" && friendshipDetails && (
-            <SocialProofSection
-              userId={userId}
-              streakCount={
-                streaksPrivacyHidden ? 0 : (friendshipDetails.streakCount ?? 0)
-              }
-              showRecentActivity={!activityPrivacyHidden}
-              isOwnProfile={false}
-            />
-          )}
-
-          {/* ========================================================== */}
-          {/* Overview Cards */}
-          {/* ========================================================== */}
-          <View style={styles.cardsSection}>
-            {/* Friends Card */}
-            <FriendsCard
-              userId={userId}
-              isOwnProfile={false}
-              privacyHidden={friendsPrivacyHidden}
-              enterIndex={0}
-              onPress={
-                !friendsPrivacyHidden
-                  ? () =>
-                      navigation.navigate("MutualFriendsList", {
-                        userId: currentUserId,
-                        targetUserId: userId,
-                      })
-                  : undefined
-              }
-              onFriendPress={(friendUid) =>
-                navigation.push("UserProfile", { userId: friendUid })
-              }
-            />
-
-            {/* Badges Card */}
-            <BadgesCard
-              badges={featuredBadges}
-              totalEarned={badgeStats.earned}
-              privacyHidden={badgesPrivacyHidden}
-              enterIndex={1}
-              onPress={
-                !badgesPrivacyHidden
-                  ? () =>
-                      navigation.navigate("MainTabs", {
-                        screen: "Profile",
-                        params: {
-                          screen: "BadgeCollection",
-                          params: { userId },
-                        },
-                      })
-                  : undefined
-              }
-            />
-
-            {/* Achievements Trophy Case Card */}
-            <AchievementsTrophyCaseCard
-              userId={userId}
-              featuredAchievementIds={
-                profile.featuredAchievements?.achievementIds ?? []
-              }
-              privacyHidden={achievementsPrivacyHidden}
-              enterIndex={2}
-              onPress={
-                !achievementsPrivacyHidden
-                  ? () =>
-                      navigation.navigate("ProfileAchievements", {
-                        userId,
-                        displayName: profile.displayName,
-                        featuredIds:
-                          profile.featuredAchievements?.achievementIds ?? [],
-                      })
-                  : undefined
-              }
-            />
-
-            {/* Mutual Friends (compact) */}
-            {mutualFriends.length > 0 && profile.privacy.showMutualFriends && (
-              <MutualFriendsSection
-                friends={mutualFriends}
-                onFriendPress={(friendUserId) =>
-                  navigation.push("UserProfile", { userId: friendUserId })
-                }
-                onSeeAllPress={() =>
-                  navigation.navigate("MutualFriendsList", {
-                    userId: currentUserId,
-                    targetUserId: userId,
-                  })
-                }
-                maxDisplay={6}
-                testID="user-profile-mutual-friends"
-              />
-            )}
-          </View>
-
-          {/* Action Buttons */}
-          {relationship && (
-            <ProfileActionsBar
-              relationship={relationship}
-              isLoading={actionLoading}
-              loadingAction={loadingAction}
-              onAddFriend={handleAddFriend}
-              onCancelRequest={handleCancelRequest}
-              onAcceptRequest={handleAcceptRequest}
-              onDeclineRequest={handleDeclineRequest}
-              onMessage={handleMessage}
-              onCall={canInitiateCalls ? handleCall : undefined}
-              onRemoveFriend={handleRemoveFriend}
-              onUnblock={handleUnblock}
-              onMoreOptions={handleMoreOptions}
-            />
-          )}
-
-          {/* Bottom spacing */}
-          <View style={{ height: insets.bottom + 24 }} />
         </ScrollView>
 
         {/* More Options Menu (overflow: block/report/share/mute) */}
@@ -998,26 +1220,6 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
   content: {
-    paddingBottom: Spacing.xxxl,
-  },
-  mutedBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    alignSelf: "center",
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 20,
-    marginBottom: Spacing.md,
-    gap: 6,
-  },
-  mutedText: {
-    fontSize: 12,
-    fontWeight: "600",
-    letterSpacing: 0.3,
-    textTransform: "uppercase",
-  },
-  cardsSection: {
-    marginTop: Spacing.md,
-    paddingHorizontal: 0,
+    flexGrow: 1,
   },
 });

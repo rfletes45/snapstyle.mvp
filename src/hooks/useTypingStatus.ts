@@ -1,13 +1,20 @@
 /**
  * useTypingStatus Hook
  *
- * Subscribes to typing status of other users in a conversation.
+ * Subscribes to typing status of other users in a conversation (DM + Group).
  * Also provides a function to update the current user's typing status.
+ *
+ * For DMs: watches a single member doc for `typingAt`.
+ * For Groups: watches the Members subcollection for `typingExpiresAt`.
+ *
+ * Returns the list of currently-typing user UIDs so the UI can decide
+ * how to render (single "is typing" vs "N people are typing").
  *
  * @module hooks/useTypingStatus
  */
 
 import { subscribeToTyping } from "@/services/chatMembers";
+import { subscribeToGroupTyping } from "@/services/groupMembers";
 import { subscribeToInboxSettings } from "@/services/inboxSettings";
 import { setTypingIndicator } from "@/services/messaging";
 import { resolveFromInboxSettings } from "@/services/messaging/resolveChatSettings";
@@ -17,38 +24,45 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 const log = createLogger("useTypingStatus");
 
-// Debounce typing indicator updates
-const TYPING_DEBOUNCE_MS = 500;
-const TYPING_TIMEOUT_MS = 5000; // Auto-clear after 5 seconds of no typing
+/** Auto-clear after idle (no further typing events) */
+const TYPING_IDLE_TIMEOUT_MS = 5000;
+/** Minimum interval between typing writes to avoid Firestore write flood */
+const TYPING_KEEPALIVE_MS = 3000;
 
-interface UseTypingStatusConfig {
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+export interface UseTypingStatusConfig {
   /** Conversation scope */
   scope: "dm" | "group";
   /** Conversation ID (chatId for DM, groupId for group) */
   conversationId: string;
   /** Current user's UID */
   currentUid: string;
-  /** Other user's UID (for DM only) */
+  /** Other user's UID (for DM only — ignored for groups) */
   otherUid?: string;
   /** Enable debug logging */
   debug?: boolean;
 }
 
-interface UseTypingStatusReturn {
-  /** Whether the other user is currently typing */
+export interface UseTypingStatusReturn {
+  /** Whether anyone else is currently typing (convenience boolean) */
   isOtherUserTyping: boolean;
-  /** Update current user's typing status (call on text input) */
+  /** UIDs of users who are currently typing (excludes self) */
+  typingUserIds: string[];
+  /** Update current user's typing status (call on text input change) */
   setTyping: (isTyping: boolean) => void;
   /** Whether typing indicators are enabled in settings */
   typingIndicatorsEnabled: boolean;
 }
 
 /**
- * Hook to manage typing status in conversations
+ * Hook to manage typing status in conversations (DM + Group).
  *
  * @example
  * ```tsx
- * const { isOtherUserTyping, setTyping, typingIndicatorsEnabled } = useTypingStatus({
+ * const typing = useTypingStatus({
  *   scope: "dm",
  *   conversationId: chatId,
  *   currentUid: user.uid,
@@ -58,13 +72,11 @@ interface UseTypingStatusReturn {
  * // In TextInput onChange
  * const handleTextChange = (text) => {
  *   setText(text);
- *   if (typingIndicatorsEnabled) {
- *     setTyping(text.length > 0);
- *   }
+ *   typing.setTyping(text.length > 0);
  * };
  *
  * // Display typing indicator
- * {isOtherUserTyping && typingIndicatorsEnabled && <TypingIndicator />}
+ * {typing.isOtherUserTyping && <TypingIndicator />}
  * ```
  */
 export function useTypingStatus(
@@ -72,15 +84,17 @@ export function useTypingStatus(
 ): UseTypingStatusReturn {
   const { scope, conversationId, currentUid, otherUid, debug = false } = config;
 
-  // State
-  const [isOtherUserTyping, setIsOtherUserTyping] = useState(false);
+  // ── State ──────────────────────────────────────────────────────────────
+  const [typingUserIds, setTypingUserIds] = useState<string[]>([]);
   const [settings, setSettings] = useState<InboxSettings>(
     DEFAULT_INBOX_SETTINGS,
   );
 
-  // Refs for debouncing
-  const typingTimeoutRef = useRef<number | null>(null);
+  // ── Refs for debounce / keepalive ──────────────────────────────────────
+  const idleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastWriteRef = useRef(0); // timestamp of last Firestore write
   const lastTypingRef = useRef(false);
+  const keepaliveRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Resolve effective settings via the V3 resolver
   const effective = useMemo(
@@ -88,126 +102,161 @@ export function useTypingStatus(
     [settings],
   );
 
-  // Subscribe to user's inbox settings
+  // ── Subscribe to user's inbox settings ─────────────────────────────────
   useEffect(() => {
     if (!currentUid) return;
-
     const unsubscribe = subscribeToInboxSettings(currentUid, (newSettings) => {
       setSettings(newSettings);
     });
-
     return unsubscribe;
   }, [currentUid]);
 
-  // Subscribe to other user's typing status (DM only for now)
+  // ── Subscribe to remote typing state ───────────────────────────────────
   useEffect(() => {
-    if (!conversationId || !otherUid || scope !== "dm") {
+    if (!conversationId || !effective.publishTyping) {
+      setTypingUserIds([]);
       return;
     }
 
-    // Don't subscribe if typing indicators are disabled
-    if (!effective.publishTyping) {
-      setIsOtherUserTyping(false);
-      return;
+    if (scope === "dm") {
+      // DM: watch the other user's member doc
+      if (!otherUid) {
+        setTypingUserIds([]);
+        return;
+      }
+
+      if (debug) {
+        log.debug("Subscribing to DM typing", {
+          operation: "subscribe",
+          data: { conversationId, otherUid },
+        });
+      }
+
+      const unsubscribe = subscribeToTyping(
+        conversationId,
+        otherUid,
+        (typing) => {
+          setTypingUserIds(typing ? [otherUid] : []);
+        },
+      );
+      return unsubscribe;
     }
 
+    // Group: watch the whole Members subcollection
     if (debug) {
-      log.debug("Subscribing to typing status", {
+      log.debug("Subscribing to group typing", {
         operation: "subscribe",
-        data: { conversationId, otherUid },
+        data: { conversationId },
       });
     }
 
-    const unsubscribe = subscribeToTyping(
+    const unsubscribe = subscribeToGroupTyping(
       conversationId,
-      otherUid,
-      (typing) => {
-        if (debug) {
-          log.debug("Typing status update", {
-            operation: "update",
-            data: { conversationId, otherUid, typing },
-          });
-        }
-        setIsOtherUserTyping(typing);
+      currentUid,
+      (uids) => {
+        setTypingUserIds(uids);
       },
     );
-
     return unsubscribe;
-  }, [conversationId, otherUid, scope, effective.publishTyping, debug]);
+  }, [
+    conversationId,
+    otherUid,
+    scope,
+    currentUid,
+    effective.publishTyping,
+    debug,
+  ]);
 
-  // Update current user's typing status with debouncing
-  const setTyping = useCallback(
+  // ── Emit typing state (debounce + keepalive) ──────────────────────────
+  const writeTyping = useCallback(
     (isTyping: boolean) => {
-      // Don't send typing indicators if disabled in settings
-      if (!effective.publishTyping) {
-        return;
-      }
-
-      if (!conversationId || !currentUid) {
-        return;
-      }
-
-      // Clear existing timeout
-      if (typingTimeoutRef.current) {
-        clearTimeout(typingTimeoutRef.current);
-        typingTimeoutRef.current = null;
-      }
-
-      // Only update if status changed
-      if (lastTypingRef.current !== isTyping) {
-        lastTypingRef.current = isTyping;
-
-        if (debug) {
-          log.debug("Setting typing status", {
+      if (!conversationId || !currentUid) return;
+      lastWriteRef.current = Date.now();
+      setTypingIndicator(scope, conversationId, currentUid, isTyping).catch(
+        (error) => {
+          log.error("Failed to set typing indicator", {
             operation: "setTyping",
-            data: { conversationId, isTyping },
+            error,
           });
-        }
-
-        // Fire and forget - don't await
-        setTypingIndicator(scope, conversationId, currentUid, isTyping).catch(
-          (error) => {
-            log.error("Failed to set typing indicator", {
-              operation: "setTyping",
-              error,
-            });
-          },
-        );
-      }
-
-      // Auto-clear typing after timeout (when typing=true)
-      if (isTyping) {
-        typingTimeoutRef.current = setTimeout(() => {
-          if (lastTypingRef.current) {
-            lastTypingRef.current = false;
-            setTypingIndicator(scope, conversationId, currentUid, false).catch(
-              () => {},
-            );
-          }
-        }, TYPING_TIMEOUT_MS) as unknown as number;
-      }
+        },
+      );
     },
-    [conversationId, currentUid, scope, effective.publishTyping, debug],
+    [scope, conversationId, currentUid],
   );
 
-  // Cleanup typing status on unmount
-  useEffect(() => {
-    return () => {
-      if (typingTimeoutRef.current) {
-        clearTimeout(typingTimeoutRef.current);
+  const setTyping = useCallback(
+    (isTyping: boolean) => {
+      if (!effective.publishTyping) return;
+      if (!conversationId || !currentUid) return;
+
+      // ── Clear idle timeout ──
+      if (idleTimeoutRef.current) {
+        clearTimeout(idleTimeoutRef.current);
+        idleTimeoutRef.current = null;
       }
 
-      // Clear typing status when leaving the screen
+      if (isTyping) {
+        // Throttle: only write if enough time has passed since last write
+        const elapsed = Date.now() - lastWriteRef.current;
+        if (!lastTypingRef.current || elapsed >= TYPING_KEEPALIVE_MS) {
+          lastTypingRef.current = true;
+          writeTyping(true);
+        }
+
+        // Start keepalive interval if not running
+        if (!keepaliveRef.current) {
+          keepaliveRef.current = setInterval(() => {
+            if (lastTypingRef.current) {
+              writeTyping(true);
+            }
+          }, TYPING_KEEPALIVE_MS);
+        }
+
+        // Set idle timeout to auto-clear
+        idleTimeoutRef.current = setTimeout(() => {
+          if (lastTypingRef.current) {
+            lastTypingRef.current = false;
+            writeTyping(false);
+          }
+          if (keepaliveRef.current) {
+            clearInterval(keepaliveRef.current);
+            keepaliveRef.current = null;
+          }
+        }, TYPING_IDLE_TIMEOUT_MS);
+      } else {
+        // Explicitly stopped typing (send, blur, clear)
+        if (lastTypingRef.current) {
+          lastTypingRef.current = false;
+          writeTyping(false);
+        }
+        if (keepaliveRef.current) {
+          clearInterval(keepaliveRef.current);
+          keepaliveRef.current = null;
+        }
+      }
+    },
+    [conversationId, currentUid, effective.publishTyping, writeTyping],
+  );
+
+  // ── Cleanup on unmount or conversation switch ──────────────────────────
+  useEffect(() => {
+    return () => {
+      if (idleTimeoutRef.current) clearTimeout(idleTimeoutRef.current);
+      if (keepaliveRef.current) clearInterval(keepaliveRef.current);
+
+      // Clear typing status when leaving
       if (lastTypingRef.current && conversationId && currentUid) {
         setTypingIndicator(scope, conversationId, currentUid, false).catch(
           () => {},
         );
+        lastTypingRef.current = false;
       }
     };
   }, [scope, conversationId, currentUid]);
 
   return {
-    isOtherUserTyping,
+    isOtherUserTyping: typingUserIds.length > 0,
+    typingUserIds,
     setTyping,
     typingIndicatorsEnabled: effective.publishTyping,
   };

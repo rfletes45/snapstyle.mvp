@@ -83,6 +83,7 @@ import {
 
 // Unified hooks
 import { useAttachmentPicker } from "@/hooks/useAttachmentPicker";
+import { useTypingStatus } from "@/hooks/useTypingStatus";
 import { useUnifiedChatScreen } from "@/hooks/useUnifiedChatScreen";
 import { useVoiceRecorder, VoiceRecording } from "@/hooks/useVoiceRecorder";
 
@@ -103,6 +104,8 @@ import {
   ScrollReturnButton,
   SwipeableMessage,
   ThreadIndicator,
+  TypingBar,
+  TypingBubble,
   VoiceMessagePlayer,
   VoiceRecordButton,
 } from "@/components/chat";
@@ -134,8 +137,14 @@ import {
 import { markConversationNotificationsRead } from "@/services/userNotifications";
 
 // Animal feature
+import {
+  buildTimeline,
+  TimelineItem,
+  timelineKeyExtractor,
+} from "@/chat/buildTimeline";
 import { buildMessageViewModel } from "@/chat/displayMode";
 import { AnimalBubble } from "@/components/chat/AnimalBubble";
+import { DateDivider } from "@/components/chat/DateDivider";
 import { GroupStackedMessageRenderer } from "@/components/chat/GroupStackedMessageRenderer";
 import { useAnimalEntitlement } from "@/hooks/useAnimalEntitlement";
 import { playAnimalSound } from "@/services/chat/animalSoundService";
@@ -169,7 +178,14 @@ import { createGameInvite } from "@/gamesV4/services/gameServiceV4";
 import type { GameId } from "@/gamesV4/types";
 
 import { clearLastOpenChat, saveLastOpenChat } from "@/services/lastOpenChat";
+
+// Keyboard-sync (KCSV + KeyboardStickyView)
+import {
+  setChatScrollViewConfig,
+  useRenderChatScrollComponent,
+} from "@/components/chat/ChatKeyboardScrollView";
 import { createLogger } from "@/utils/log";
+import { KeyboardStickyView } from "react-native-keyboard-controller";
 const logger = createLogger("screens/groups/GroupChatScreen");
 // =============================================================================
 // Constants
@@ -378,6 +394,26 @@ export default function GroupChatScreen({ route, navigation }: Props) {
 
   // Warm image cache for recent chat images
   usePrefetchChatImages(messages?.slice(0, 20));
+
+  // ==========================================================================
+  // Typing Indicator
+  // ==========================================================================
+
+  const typing = useTypingStatus({
+    scope: "group",
+    conversationId: groupId || "",
+    currentUid: uid || "",
+    debug: DEBUG_CHAT_V2,
+  });
+
+  /** Resolve typing user UIDs to display names for the indicator */
+  const typingUserNames = useMemo(() => {
+    if (typing.typingUserIds.length === 0) return [];
+    return typing.typingUserIds.map((typerUid) => {
+      const member = groupMembers.find((m) => m.uid === typerUid);
+      return member?.displayName || member?.username || "Someone";
+    });
+  }, [typing.typingUserIds, groupMembers]);
 
   // ==========================================================================
   // Attachment & Voice Hooks
@@ -687,6 +723,36 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     [],
   );
 
+  // ==========================================================================
+  // Message Grouping + Timeline — moved above scrollToMessage for declaration order
+  // ==========================================================================
+
+  const MESSAGE_GROUP_THRESHOLD_MS = 2 * 60 * 1000;
+
+  const areMessagesGrouped = useCallback(
+    (msg1: MessageV2 | null, msg2: MessageV2 | null): boolean => {
+      if (!msg1 || !msg2) return false;
+      if (msg1.kind === "system" || msg2.kind === "system") return false;
+      if (msg1.replyTo || msg2.replyTo) return false;
+      if (msg1.senderId !== msg2.senderId) return false;
+      return (
+        Math.abs(msg1.createdAt - msg2.createdAt) < MESSAGE_GROUP_THRESHOLD_MS
+      );
+    },
+    [],
+  );
+
+  /** Derive timeline items (messages + day dividers) from messages */
+  const timelineData: TimelineItem<MessageV2>[] = useMemo(
+    () =>
+      buildTimeline<MessageV2>(
+        messages,
+        (msg) => msg.createdAt,
+        areMessagesGrouped,
+      ),
+    [messages, areMessagesGrouped],
+  );
+
   const handleMessageLongPress = useCallback((message: MessageV2) => {
     setSelectedMessage(message);
     setActionsSheetVisible(true);
@@ -695,7 +761,9 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   // Enhanced scroll-to-message with highlight animation
   const scrollToMessage = useCallback(
     (messageId: string) => {
-      const targetIndex = messages.findIndex((m) => m.id === messageId);
+      const targetIndex = timelineData.findIndex(
+        (item) => item.type === "message" && item.data.id === messageId,
+      );
       if (targetIndex === -1 || !messageListRef.current) return;
 
       // Clear any existing highlight timeout
@@ -720,7 +788,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
         }, 2100);
       }, 300);
     },
-    [messages],
+    [timelineData],
   );
 
   // Handle return button press
@@ -856,11 +924,22 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   // Send Message (H10)
   // ==========================================================================
 
+  const handleTextChange = useCallback(
+    (text: string) => {
+      screen.composer.setText(text);
+      typing.setTyping(text.length > 0);
+    },
+    [screen.composer, typing],
+  );
+
   const handleSendMessage = useCallback(async () => {
     const hasText = screen.composer.text.trim().length > 0;
     const hasAttachments = attachmentPicker.attachments.length > 0;
 
     if (!uid || (!hasText && !hasAttachments) || screen.sending) return;
+
+    // Clear typing state immediately on send
+    typing.setTyping(false);
 
     const text = screen.composer.text.trim();
     const { mentionUids, mentionSpans } = extractMentionsExact(
@@ -942,6 +1021,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     screen.composer,
     screen.chat,
     screen.sending,
+    typing,
     attachmentPicker,
     mentionableMembers,
   ]);
@@ -983,60 +1063,8 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   );
 
   // ==========================================================================
-  // Message Grouping Logic (for inverted FlatList with MessageV2)
+  // Helpers (formatTime for bubble mode timestamps)
   // ==========================================================================
-
-  const MESSAGE_GROUP_THRESHOLD_MS = 2 * 60 * 1000;
-
-  const areMessagesGrouped = useCallback(
-    (msg1: MessageV2 | null, msg2: MessageV2 | null): boolean => {
-      if (!msg1 || !msg2) return false;
-      if (msg1.kind === "system" || msg2.kind === "system") return false;
-      if (msg1.replyTo || msg2.replyTo) return false;
-      if (msg1.senderId !== msg2.senderId) return false;
-      return (
-        Math.abs(msg1.createdAt - msg2.createdAt) < MESSAGE_GROUP_THRESHOLD_MS
-      );
-    },
-    [],
-  );
-
-  const shouldShowSender = useCallback(
-    (index: number, message: MessageV2) => {
-      if (message.kind === "system") return false;
-      const messageAbove =
-        index < messages.length - 1 ? messages[index + 1] : null;
-      return !areMessagesGrouped(message, messageAbove);
-    },
-    [messages, areMessagesGrouped],
-  );
-
-  const shouldShowTimestamp = useCallback(
-    (index: number, message: MessageV2) => {
-      if (message.kind === "system") return false;
-      const messageBelow = index > 0 ? messages[index - 1] : null;
-      return !areMessagesGrouped(message, messageBelow);
-    },
-    [messages, areMessagesGrouped],
-  );
-
-  const shouldShowAvatar = useCallback(
-    (index: number, message: MessageV2) => {
-      if (message.kind === "system") return false;
-      const messageBelow = index > 0 ? messages[index - 1] : null;
-      return !areMessagesGrouped(message, messageBelow);
-    },
-    [messages, areMessagesGrouped],
-  );
-
-  const isGroupedMessage = useCallback(
-    (index: number, message: MessageV2) => {
-      if (message.kind === "system") return false;
-      const messageBelow = index > 0 ? messages[index - 1] : null;
-      return areMessagesGrouped(message, messageBelow);
-    },
-    [messages, areMessagesGrouped],
-  );
 
   const formatTime = (timestamp: number) => {
     const date = new Date(timestamp);
@@ -1073,21 +1101,31 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   // ==========================================================================
 
   const renderMessage = useCallback(
-    ({ item, index }: { item: MessageV2; index: number }) => {
+    ({
+      item: timelineItem,
+      index,
+    }: {
+      item: TimelineItem<MessageV2>;
+      index: number;
+    }) => {
+      if (timelineItem.type === "date-divider") {
+        return <DateDivider label={timelineItem.label} />;
+      }
+
+      const item = timelineItem.data;
       const isOwnMessage = item.senderId === uid;
-      const showSender = shouldShowSender(index, item);
-      const showTS = shouldShowTimestamp(index, item);
-      const showAvatar = shouldShowAvatar(index, item);
-      const isGrouped = isGroupedMessage(index, item);
+      // Use precomputed grouping from buildTimeline
+      const isGroupedWithPrev = timelineItem.isGroupedWithPrevious;
+      const isGroupedWithNextMsg = timelineItem.isGroupedWithNext;
+      const showSender = !isGroupedWithPrev && item.kind !== "system";
+      const showTS = !isGroupedWithNextMsg && item.kind !== "system";
+      const showAvatar = !isGroupedWithNextMsg && item.kind !== "system";
+      const isGrouped = isGroupedWithPrev;
       const senderDisplayName = getSenderDisplayName(item);
       const senderProfile = getSenderProfileInfo(item.senderId);
 
       // ── Stacked mode branch ─────────────────────────────────────────
       if (displayMode === "stacked" && item.kind !== "system") {
-        const isGroupedWithPrev = isGrouped;
-        const msgBelow = index > 0 ? messages[index - 1] : null;
-        const isGroupedWithNextMsg = areMessagesGrouped(item, msgBelow);
-
         const vm = buildMessageViewModel({
           isMine: isOwnMessage,
           isGroupChat: true,
@@ -1493,10 +1531,6 @@ export default function GroupChatScreen({ route, navigation }: Props) {
       isDark,
       chatStyle,
       showMemberChatStyles,
-      shouldShowSender,
-      shouldShowTimestamp,
-      shouldShowAvatar,
-      isGroupedMessage,
       getSenderDisplayName,
       getSenderProfileInfo,
       linkPreviews,
@@ -1508,8 +1542,6 @@ export default function GroupChatScreen({ route, navigation }: Props) {
       scrollToMessage,
       handleOptimisticReaction,
       displayMode,
-      areMessagesGrouped,
-      messages,
       mentionableMembers,
       highlightedMessageId,
       navigation,
@@ -1550,6 +1582,13 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   // ==========================================================================
   // Main Render
   // ==========================================================================
+
+  // Keyboard-sync: configure KCSV and get stable renderScrollComponent
+  setChatScrollViewConfig({
+    offset: 60 + insets.bottom,
+    keyboardLiftBehavior: "whenAtEnd",
+  });
+  const renderScrollComponent = useRenderChatScrollComponent();
 
   return (
     <>
@@ -1645,11 +1684,11 @@ export default function GroupChatScreen({ route, navigation }: Props) {
         ) : (
           <ChatMessageList
             ref={messageListRef}
-            data={messages}
+            data={timelineData}
             renderItem={renderMessage}
-            keyExtractor={(item) => item.id}
-            listBottomInset={screen.keyboard.listBottomInset}
-            staticBottomInset={60 + insets.bottom + 16}
+            keyExtractor={(item) => timelineKeyExtractor(item, (msg) => msg.id)}
+            renderScrollComponent={renderScrollComponent}
+            pillBottomOffset={60 + insets.bottom + 16}
             isKeyboardOpen={screen.keyboard.isKeyboardOpen}
             ListHeaderComponent={
               screen.chat.pagination.isLoadingOlder ? (
@@ -1684,95 +1723,111 @@ export default function GroupChatScreen({ route, navigation }: Props) {
           />
         )}
 
-        <ChatComposer
-          scope="group"
-          value={screen.composer.text}
-          onChangeText={screen.composer.setText}
-          onCursorChange={screen.composer.setCursorPosition}
-          onSend={handleSendMessage}
-          hasAttachments={attachmentPicker.attachments.length > 0}
-          sendDisabled={
-            showSkeleton ||
-            (!screen.composer.text.trim() &&
-              attachmentPicker.attachments.length === 0) ||
-            screen.sending ||
-            attachmentPicker.isUploading
-          }
-          isSending={screen.sending || attachmentPicker.isUploading}
-          placeholder="Message..."
-          leftAccessory={
-            <CameraLongPressButton
-              onShortPress={handleCaptureFromCamera}
-              onLongPress={handleAddAttachment}
-              disabled={screen.sending || attachmentPicker.isMaxReached}
-              size={40}
+        {/* Keyboard-sticky footer: typing indicator + composer */}
+        <KeyboardStickyView offset={{ closed: insets.bottom }}>
+          {/* Typing Indicator — display-mode aware */}
+          {displayMode === "stacked" ? (
+            <TypingBar
+              userName={typingUserNames}
+              visible={
+                typing.isOtherUserTyping && typing.typingIndicatorsEnabled
+              }
             />
-          }
-          headerContent={
-            attachmentPicker.attachments.length > 0 ? (
-              <AttachmentTray
-                attachments={attachmentPicker.attachments}
-                uploadProgress={attachmentPicker.uploadProgress}
-                onRemove={attachmentPicker.removeAttachment}
-                onAdd={handleAddAttachment}
-                maxAttachments={10}
-              />
-            ) : null
-          }
-          mentionAutocomplete={
-            <MentionAutocomplete
-              visible={screen.composer.mentions?.isVisible || false}
-              suggestions={screen.composer.mentions?.suggestions || []}
-              query={screen.composer.mentions?.query || ""}
-              onSelect={(member) => screen.composer.insertMention(member)}
-              onDismiss={() => screen.composer.mentions?.onDismiss()}
-              bottomOffset={8}
+          ) : (
+            <TypingBubble
+              userName={typingUserNames}
+              visible={
+                typing.isOtherUserTyping && typing.typingIndicatorsEnabled
+              }
             />
-          }
-          voiceButtonComponent={
-            voiceRecorder.isAvailable &&
-            !screen.composer.text.trim() &&
-            attachmentPicker.attachments.length === 0 ? (
-              <VoiceRecordButton
-                onRecordingComplete={handleVoiceRecordingComplete}
-                onRecordingCancelled={NOOP}
-                disabled={screen.sending}
-                size={32}
-                maxDuration={60000}
+          )}
+
+          <ChatComposer
+            scope="group"
+            value={screen.composer.text}
+            onChangeText={handleTextChange}
+            onCursorChange={screen.composer.setCursorPosition}
+            onSend={handleSendMessage}
+            hasAttachments={attachmentPicker.attachments.length > 0}
+            sendDisabled={
+              showSkeleton ||
+              (!screen.composer.text.trim() &&
+                attachmentPicker.attachments.length === 0) ||
+              screen.sending ||
+              attachmentPicker.isUploading
+            }
+            isSending={screen.sending || attachmentPicker.isUploading}
+            placeholder="Message..."
+            leftAccessory={
+              <CameraLongPressButton
+                onShortPress={handleCaptureFromCamera}
+                onLongPress={handleAddAttachment}
+                disabled={screen.sending || attachmentPicker.isMaxReached}
+                size={40}
               />
-            ) : undefined
-          }
-          additionalRightAccessory={
-            screen.composer.text.trim() ? (
-              <IconButton
-                icon="clock-outline"
-                size={22}
-                onPress={() => setScheduleModalVisible(true)}
-                disabled={screen.sending || attachmentPicker.isUploading}
-                style={styles.scheduleButton}
+            }
+            headerContent={
+              attachmentPicker.attachments.length > 0 ? (
+                <AttachmentTray
+                  attachments={attachmentPicker.attachments}
+                  uploadProgress={attachmentPicker.uploadProgress}
+                  onRemove={attachmentPicker.removeAttachment}
+                  onAdd={handleAddAttachment}
+                  maxAttachments={10}
+                />
+              ) : null
+            }
+            mentionAutocomplete={
+              <MentionAutocomplete
+                visible={screen.composer.mentions?.isVisible || false}
+                suggestions={screen.composer.mentions?.suggestions || []}
+                query={screen.composer.mentions?.query || ""}
+                onSelect={(member) => screen.composer.insertMention(member)}
+                onDismiss={() => screen.composer.mentions?.onDismiss()}
+                bottomOffset={8}
               />
-            ) : null
-          }
-          replyTo={screen.chat.replyTo}
-          onCancelReply={handleCancelReply}
-          currentUid={uid}
-          onGamePress={
-            GAMES_V4_ENABLED ? () => setGamePickerVisible(true) : undefined
-          }
-          onAnimalPress={handleAnimalPress}
-          animalThemeId={animalEntitlement.equippedAnimalId}
-          animalLocked={!animalEntitlement.canSend}
-          animalPickerVisible={animalPickerVisible}
-          onAnimalLongPress={() => setAnimalPickerVisible(true)}
-          onAnimalPickerClose={() => setAnimalPickerVisible(false)}
-          currentUserId={uid}
-          onAnimalEquipped={handleAnimalEquipped}
-          keyboardHeight={screen.keyboard.keyboardHeight}
-          keyboardProgress={screen.keyboard.keyboardProgress}
-          safeAreaBottom={insets.bottom}
-          textInputRef={textInputRef}
-          absolutePosition={true}
-        />
+            }
+            voiceButtonComponent={
+              voiceRecorder.isAvailable &&
+              !screen.composer.text.trim() &&
+              attachmentPicker.attachments.length === 0 ? (
+                <VoiceRecordButton
+                  onRecordingComplete={handleVoiceRecordingComplete}
+                  onRecordingCancelled={NOOP}
+                  disabled={screen.sending}
+                  size={32}
+                  maxDuration={60000}
+                />
+              ) : undefined
+            }
+            additionalRightAccessory={
+              screen.composer.text.trim() ? (
+                <IconButton
+                  icon="clock-outline"
+                  size={22}
+                  onPress={() => setScheduleModalVisible(true)}
+                  disabled={screen.sending || attachmentPicker.isUploading}
+                  style={styles.scheduleButton}
+                />
+              ) : null
+            }
+            replyTo={screen.chat.replyTo}
+            onCancelReply={handleCancelReply}
+            currentUid={uid}
+            onGamePress={
+              GAMES_V4_ENABLED ? () => setGamePickerVisible(true) : undefined
+            }
+            onAnimalPress={handleAnimalPress}
+            animalThemeId={animalEntitlement.equippedAnimalId}
+            animalLocked={!animalEntitlement.canSend}
+            animalPickerVisible={animalPickerVisible}
+            onAnimalLongPress={() => setAnimalPickerVisible(true)}
+            onAnimalPickerClose={() => setAnimalPickerVisible(false)}
+            currentUserId={uid}
+            onAnimalEquipped={handleAnimalEquipped}
+            textInputRef={textInputRef}
+          />
+        </KeyboardStickyView>
 
         {/* Jump-back button for reply navigation */}
         <ScrollReturnButton

@@ -15,6 +15,7 @@ import { clearLastOpenChat, getLastOpenChat } from "@/services/lastOpenChat";
 import { navigationRef } from "@/services/navigationRef";
 import { useInAppNotifications } from "@/store/InAppNotificationsContext";
 import { useAppTheme } from "@/store/ThemeContext";
+import { useUser } from "@/store/UserContext";
 import type {
   AppTabsParamList,
   AuthStackParamList,
@@ -673,15 +674,30 @@ interface RootNavigatorProps {
  * Signals the ThemeContext that the user's profile is loaded. This enables
  * loading the stored theme preference for returning users, while keeping the
  * onboarding flow on a stable default theme.
+ * Also syncs the Firestore-stored theme to ensure cross-device consistency.
  */
 function ProfileReadySignal({
   markProfileReady,
+  syncProfileTheme,
 }: {
   markProfileReady: () => void;
+  syncProfileTheme: (
+    profile: { themeId?: string; useSystemTheme?: boolean } | null,
+  ) => void;
 }) {
+  const { profile } = useUser();
+
   useEffect(() => {
     markProfileReady();
   }, [markProfileReady]);
+
+  // When profile loads, sync the Firestore theme (authoritative remote source)
+  useEffect(() => {
+    if (profile) {
+      syncProfileTheme(profile as any);
+    }
+  }, [profile, syncProfileTheme]);
+
   return null;
 }
 
@@ -693,7 +709,7 @@ function ProfileReadySignal({
 export default function RootNavigator({
   navigationRef: externalRef,
 }: RootNavigatorProps) {
-  const { theme, markProfileReady } = useAppTheme();
+  const { theme, markProfileReady, syncProfileTheme } = useAppTheme();
   const { setCurrentScreen } = useInAppNotifications();
 
   const navRef = externalRef || navigationRef;
@@ -771,7 +787,10 @@ export default function RootNavigator({
         >
           {hydrationState === "ready" ? (
             <>
-              <ProfileReadySignal markProfileReady={markProfileReady} />
+              <ProfileReadySignal
+                markProfileReady={markProfileReady}
+                syncProfileTheme={syncProfileTheme}
+              />
               <MainStack />
               <WarningModal />
             </>

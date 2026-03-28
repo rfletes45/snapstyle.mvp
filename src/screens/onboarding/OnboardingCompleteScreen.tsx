@@ -12,7 +12,7 @@
 
 import { Spacing } from "@/constants/theme";
 import { uploadProfilePicture } from "@/services/profileService";
-import { setupNewUser } from "@/services/users";
+import { getUserProfile, setupNewUser } from "@/services/users";
 import { useAuth } from "@/store/AuthContext";
 import { useConversationDisplayMode } from "@/store/ConversationDisplayModeContext";
 import { useOnboarding } from "@/store/OnboardingContext";
@@ -54,6 +54,32 @@ export default function OnboardingCompleteScreen({ navigation }: any) {
       try {
         if (!currentFirebaseUser) {
           throw new Error("Not authenticated — please restart the app");
+        }
+
+        // ── CRITICAL SAFETY: Check if user already has a complete profile ──
+        // If an existing user was incorrectly routed here (e.g. due to a
+        // transient profile fetch failure), we MUST NOT overwrite their data.
+        // Instead, just refresh and let AppGate route them to the main app.
+        setStatusText("Verifying account…");
+        const existingProfile = await getUserProfile(currentFirebaseUser.uid);
+        if (existingProfile && existingProfile.username) {
+          logger.error(
+            "[ACCOUNT SAFETY] OnboardingCompleteScreen mounted for user who " +
+              "already has a profile! Username: " +
+              existingProfile.username +
+              ". Skipping onboarding writes and routing to main app.",
+          );
+          // Skip all writes — just refresh profile and let AppGate handle it
+          await refreshProfile();
+          setPhase("done");
+          setStatusText("Welcome back!");
+          Animated.spring(checkScale, {
+            toValue: 1,
+            friction: 5,
+            useNativeDriver: true,
+          }).start();
+          reset();
+          return;
         }
 
         // 1. Create user profile + reserve username

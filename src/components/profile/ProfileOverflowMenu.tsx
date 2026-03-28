@@ -32,6 +32,10 @@ export interface ProfileOverflowMenuProps {
   onSettingsPress?: () => void;
   /** Callback when Share Profile is pressed */
   onSharePress?: () => void;
+  /** Callback when Shop is pressed */
+  onShopPress?: () => void;
+  /** Callback when Customize is pressed */
+  onCustomizePress?: () => void;
 }
 
 interface MenuItem {
@@ -49,6 +53,8 @@ export const ProfileOverflowMenu = memo(function ProfileOverflowMenu({
   onPrivacyPress,
   onSettingsPress,
   onSharePress,
+  onShopPress,
+  onCustomizePress,
 }: ProfileOverflowMenuProps) {
   const colors = useColors();
   const [visible, setVisible] = useState(false);
@@ -65,6 +71,26 @@ export const ProfileOverflowMenu = memo(function ProfileOverflowMenu({
   }, []);
 
   const items: MenuItem[] = [
+    ...(onShopPress
+      ? [
+          {
+            id: "shop",
+            label: "Shop",
+            icon: "shopping-outline",
+            onPress: onShopPress,
+          },
+        ]
+      : []),
+    ...(onCustomizePress
+      ? [
+          {
+            id: "customize",
+            label: "Customize",
+            icon: "palette-outline",
+            onPress: onCustomizePress,
+          },
+        ]
+      : []),
     ...(onSharePress
       ? [
           {

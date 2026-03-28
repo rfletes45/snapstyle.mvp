@@ -127,7 +127,12 @@ export type { ReturnToBottomPillProps } from "./ReturnToBottomPill";
 
 // Typing Indicator
 // Typing Indicator
-export { TypingIndicator } from "./TypingIndicator";
+export {
+  TypingBar,
+  TypingBubble,
+  TypingIndicator,
+  TypingPreview,
+} from "./TypingIndicator";
 
 // Network Banner (offline/online status)
 export { NetworkBanner } from "./NetworkBanner";

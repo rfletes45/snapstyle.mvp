@@ -40,6 +40,8 @@ export interface BadgesCardProps {
   maxPreview?: number;
   /** Stagger index for entrance animation */
   enterIndex?: number;
+  /** When true, strip card chrome for widget board embedding */
+  embedded?: boolean;
 }
 
 // =============================================================================
@@ -55,6 +57,7 @@ export const BadgesCard = memo(function BadgesCard({
   onBadgePress,
   maxPreview = 5,
   enterIndex,
+  embedded,
 }: BadgesCardProps) {
   const colors = useColors();
 
@@ -71,6 +74,7 @@ export const BadgesCard = memo(function BadgesCard({
         enterIndex={enterIndex}
         onPress={onPress}
         testID="badges-card"
+        embedded={embedded}
       >
         <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
           No badges earned yet
@@ -88,6 +92,7 @@ export const BadgesCard = memo(function BadgesCard({
       enterIndex={enterIndex}
       onPress={onPress}
       testID="badges-card"
+      embedded={embedded}
     >
       <View style={styles.badgeRow}>
         {displayBadges.map((badge) => {

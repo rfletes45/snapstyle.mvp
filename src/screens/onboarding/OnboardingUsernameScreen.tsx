@@ -8,8 +8,10 @@
 
 import OnboardingProgress from "@/components/onboarding/OnboardingProgress";
 import { BorderRadius, Spacing } from "@/constants/theme";
-import { checkUsernameAvailable } from "@/services/users";
+import { checkUsernameAvailable, getUserProfile } from "@/services/users";
+import { useAuth } from "@/store/AuthContext";
 import { useOnboarding } from "@/store/OnboardingContext";
+import { useUser } from "@/store/UserContext";
 import { isValidDisplayName, isValidUsername } from "@/utils/validators";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -38,6 +40,8 @@ const DEBOUNCE_MS = 400;
 export default function OnboardingUsernameScreen({ navigation }: any) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  const { currentFirebaseUser } = useAuth();
+  const { refreshProfile } = useUser();
 
   const {
     username,
@@ -50,9 +54,46 @@ export default function OnboardingUsernameScreen({ navigation }: any) {
 
   const [checking, setChecking] = useState(false);
   const [localError, setLocalError] = useState("");
+  const [safetyChecking, setSafetyChecking] = useState(true);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const displayNameRef = useRef<any>(null);
+
+  // ── CRITICAL SAFETY CHECK: Verify user is genuinely new ──────────────
+  // If an existing user was incorrectly routed here, detect and bail out.
+  // This is the last-resort defense layer.
+  useEffect(() => {
+    if (!currentFirebaseUser) {
+      setSafetyChecking(false);
+      return;
+    }
+
+    (async () => {
+      try {
+        const existing = await getUserProfile(currentFirebaseUser.uid);
+        if (existing && existing.username) {
+          logger.error(
+            "[ACCOUNT SAFETY] OnboardingUsernameScreen mounted for existing user! " +
+              "Username: " +
+              existing.username +
+              ". Forcing refresh and exit.",
+          );
+          // Force profile refresh — AppGate should transition to "ready"
+          await refreshProfile();
+          // If we're still mounted, the refreshProfile() above should cause
+          // AppGate to switch us away from the onboarding stack.
+        }
+      } catch (err) {
+        logger.warn(
+          "[ACCOUNT SAFETY] Failed to verify user status on onboarding entry. " +
+            "Proceeding cautiously.",
+          err,
+        );
+      } finally {
+        setSafetyChecking(false);
+      }
+    })();
+  }, [currentFirebaseUser, refreshProfile]);
 
   // ── Debounced availability check ──────────────────────────────────────
   const checkAvailability = useCallback(
@@ -139,6 +180,30 @@ export default function OnboardingUsernameScreen({ navigation }: any) {
     }
     return null;
   };
+
+  // Show loading while safety check runs
+  if (safetyChecking) {
+    return (
+      <View
+        style={[
+          styles.container,
+          {
+            backgroundColor: theme.colors.background,
+            justifyContent: "center",
+            alignItems: "center",
+          },
+        ]}
+      >
+        <ActivityIndicator size="large" color={theme.colors.primary} />
+        <Text
+          variant="bodyMedium"
+          style={{ color: theme.colors.onSurfaceVariant, marginTop: 16 }}
+        >
+          Verifying account…
+        </Text>
+      </View>
+    );
+  }
 
   return (
     <KeyboardAvoidingView

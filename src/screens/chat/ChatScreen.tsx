@@ -59,20 +59,26 @@ import {
   subscribeToMultipleMessageReactions,
   toggleReaction,
 } from "@/services/reactions";
-import { updateStreakAfterMessage } from "@/services/streakCosmetics";
 
 // Chat components
+import {
+  buildTimeline,
+  TimelineItem,
+  timelineKeyExtractor,
+} from "@/chat/buildTimeline";
 import {
   AttachmentTray,
   ChatComposer,
   ChatMessageList,
   MediaViewerModal,
   MessageActionsSheet,
-  TypingIndicator,
+  TypingBar,
+  TypingBubble,
 } from "@/components/chat";
 import { CameraLongPressButton } from "@/components/chat/CameraLongPressButton";
 import type { ChatMessageListRef } from "@/components/chat/ChatMessageList";
 import { ChatSkeleton } from "@/components/chat/ChatSkeleton";
+import { DateDivider } from "@/components/chat/DateDivider";
 import { NetworkBanner } from "@/components/chat/NetworkBanner";
 import { ScrollReturnButton } from "@/components/chat/ScrollReturnButton";
 import { VoiceRecordButton } from "@/components/chat/VoiceRecordButton";
@@ -89,6 +95,13 @@ import { PinnedInviteBar } from "@/gamesV4/components/PinnedInviteBar";
 import { createGameInvite } from "@/gamesV4/services/gameServiceV4";
 import type { GameId } from "@/gamesV4/types";
 import { useConversationDisplayMode } from "@/store/ConversationDisplayModeContext";
+
+// Keyboard-sync (KCSV + KeyboardStickyView)
+import {
+  setChatScrollViewConfig,
+  useRenderChatScrollComponent,
+} from "@/components/chat/ChatKeyboardScrollView";
+import { KeyboardStickyView } from "react-native-keyboard-controller";
 
 // Services
 import { blockUser } from "@/services/blocking";
@@ -299,20 +312,6 @@ export default function ChatScreen({
   // Camera & attachment actions are handled through unified chat screen hooks.
   // ==========================================================================
 
-  /** Streak milestone messages for DM photo celebrations */
-  const MILESTONE_MESSAGES: Record<number, string> = useMemo(
-    () => ({
-      3: "🔥 3-day streak! You're on fire!\n\nUnlocked: Flame Cap 🔥",
-      7: "🔥 1 week streak! Amazing!\n\nUnlocked: Cool Shades 😎",
-      14: "🔥 2 week streak! Incredible!\n\nUnlocked: Gradient Glow ✨",
-      30: "🔥 30-day streak! One month!\n\nUnlocked: Golden Crown 👑",
-      50: "🔥 50-day streak! Legendary!\n\nUnlocked: Star Glasses 🤩",
-      100: "💯 100-day streak! Champion!\n\nUnlocked: Rainbow Burst 🌈",
-      365: "🏆 365-day streak! One year!\n\nUnlocked: Legendary Halo 😇",
-    }),
-    [],
-  );
-
   // Send an in-app camera capture directly as a media message (skip tray).
   const handleDirectCameraSend = useCallback(
     async (imageUri: string) => {
@@ -330,28 +329,12 @@ export default function ChatScreen({
             },
           ],
         });
-
-        // Update DM streak after successful camera send
-        try {
-          const { newCount, milestoneReached } = await updateStreakAfterMessage(
-            uid,
-            friendUid,
-          );
-          if (milestoneReached) {
-            const message =
-              MILESTONE_MESSAGES[milestoneReached] ||
-              `🎉 ${milestoneReached}-day streak milestone!`;
-            Alert.alert("Streak Milestone! 🎉", message);
-          }
-        } catch (streakErr) {
-          logger.error("❌ [ChatScreen] Streak update failed:", streakErr);
-        }
       } catch (error: any) {
         logger.error("❌ [ChatScreen] Camera send error:", error);
         Alert.alert("Error", error.message || "Failed to send photo");
       }
     },
-    [uid, chatId, friendUid, screen.chat, screen.sending, MILESTONE_MESSAGES],
+    [uid, chatId, screen.chat, screen.sending],
   );
 
   // Send gallery-selected images directly as media messages (skip tray).
@@ -370,24 +353,8 @@ export default function ChatScreen({
           Alert.alert("Error", error.message || "Failed to send photo");
         }
       }
-
-      // Update DM streak once after all images sent
-      try {
-        const { milestoneReached } = await updateStreakAfterMessage(
-          uid,
-          friendUid,
-        );
-        if (milestoneReached) {
-          const message =
-            MILESTONE_MESSAGES[milestoneReached] ||
-            `🎉 ${milestoneReached}-day streak milestone!`;
-          Alert.alert("Streak Milestone! 🎉", message);
-        }
-      } catch (streakErr) {
-        logger.error("❌ [ChatScreen] Streak update failed:", streakErr);
-      }
     },
-    [uid, chatId, friendUid, screen.chat, screen.sending, MILESTONE_MESSAGES],
+    [uid, chatId, screen.chat, screen.sending],
   );
 
   const attachmentPicker = useAttachmentPicker({
@@ -453,6 +420,49 @@ export default function ChatScreen({
           })
         : [],
     [chatId, screen.messages, friendUid, friendProfile, uid, readReceipts],
+  );
+
+  // ==========================================================================
+  // Message Grouping Logic (for inverted FlatList)
+  // ==========================================================================
+
+  const areMessagesGrouped = useCallback(
+    (
+      msg1: MessageWithProfile | null,
+      msg2: MessageWithProfile | null,
+    ): boolean => {
+      if (!msg1 || !msg2) return false;
+      if (msg1.replyTo || msg2.replyTo) return false;
+      if (msg1.sender !== msg2.sender) return false;
+      const time1 =
+        msg1.createdAt instanceof Date
+          ? msg1.createdAt.getTime()
+          : msg1.createdAt;
+      const time2 =
+        msg2.createdAt instanceof Date
+          ? msg2.createdAt.getTime()
+          : msg2.createdAt;
+      return Math.abs(time1 - time2) < MESSAGE_GROUP_THRESHOLD_MS;
+    },
+    [],
+  );
+
+  // ==========================================================================
+  // Timeline with Date Dividers
+  // ==========================================================================
+
+  /** Derive timeline items (messages + day dividers) from displayMessages */
+  const timelineData: TimelineItem<MessageWithProfile>[] = useMemo(
+    () =>
+      buildTimeline<MessageWithProfile>(
+        displayMessages,
+        (msg) =>
+          msg.createdAt instanceof Date
+            ? msg.createdAt.getTime()
+            : (msg.createdAt as unknown as number),
+        areMessagesGrouped,
+      ),
+    [displayMessages, areMessagesGrouped],
   );
 
   const selectedMessageAsV2 = useMemo(
@@ -554,54 +564,9 @@ export default function ChatScreen({
   // Message Grouping Logic (for inverted FlatList)
   // ==========================================================================
 
-  const areMessagesGrouped = useCallback(
-    (
-      msg1: MessageWithProfile | null,
-      msg2: MessageWithProfile | null,
-    ): boolean => {
-      if (!msg1 || !msg2) return false;
-      if (msg1.replyTo || msg2.replyTo) return false;
-      if (msg1.sender !== msg2.sender) return false;
-      const time1 =
-        msg1.createdAt instanceof Date
-          ? msg1.createdAt.getTime()
-          : msg1.createdAt;
-      const time2 =
-        msg2.createdAt instanceof Date
-          ? msg2.createdAt.getTime()
-          : msg2.createdAt;
-      return Math.abs(time1 - time2) < MESSAGE_GROUP_THRESHOLD_MS;
-    },
-    [],
-  );
-
-  /** In an inverted list, index 0 = newest (bottom). The message "below" visually is index - 1. */
-  const shouldShowTimestamp = useCallback(
-    (index: number, message: MessageWithProfile): boolean => {
-      // Always show timestamp on the last message in a group (visually bottom-most)
-      const messageBelow = index > 0 ? displayMessages[index - 1] : null;
-      return !areMessagesGrouped(message, messageBelow);
-    },
-    [displayMessages, areMessagesGrouped],
-  );
-
-  const isGroupedMessage = useCallback(
-    (index: number, message: MessageWithProfile): boolean => {
-      const messageAbove =
-        index < displayMessages.length - 1 ? displayMessages[index + 1] : null;
-      return areMessagesGrouped(message, messageAbove);
-    },
-    [displayMessages, areMessagesGrouped],
-  );
-
-  /** Is this message grouped with the one visually below it? (inverted: index - 1) */
-  const isGroupedWithNext = useCallback(
-    (index: number, message: MessageWithProfile): boolean => {
-      const messageBelow = index > 0 ? displayMessages[index - 1] : null;
-      return areMessagesGrouped(message, messageBelow);
-    },
-    [displayMessages, areMessagesGrouped],
-  );
+  // NOTE: areMessagesGrouped is now defined above with timeline building.
+  // shouldShowTimestamp, isGroupedMessage, isGroupedWithNext are precomputed
+  // inside buildTimeline and stored on each TimelineMessageItem.
 
   // ==========================================================================
   // Initialization
@@ -906,7 +871,9 @@ export default function ChatScreen({
   // Enhanced scroll-to-message with highlight animation
   const scrollToMessage = useCallback(
     (messageId: string) => {
-      const targetIndex = displayMessages.findIndex((m) => m.id === messageId);
+      const targetIndex = timelineData.findIndex(
+        (item) => item.type === "message" && item.data.id === messageId,
+      );
       if (targetIndex === -1 || !messageListRef.current) return;
 
       // Clear any existing highlight timeout
@@ -932,7 +899,7 @@ export default function ChatScreen({
         }, 2100); // Match animation duration
       }, 300); // Wait for scroll to settle
     },
-    [displayMessages],
+    [timelineData],
   );
 
   // Handle return button press
@@ -1097,34 +1064,40 @@ export default function ChatScreen({
   const isInitializing = !chatId || !friendProfile;
   const showSkeleton = isInitializing && !initialData?.chatId;
 
-  const renderMessageItem = useCallback(
-    ({ item, index }: { item: MessageWithProfile; index: number }) => (
-      <ChatMessageRenderer
-        message={item}
-        currentUid={uid}
-        chatId={chatId}
-        friendProfile={friendProfile}
-        chatAppearance={chatAppearance}
-        onReply={handleReply}
-        onLongPress={handleMessageLongPress}
-        onScrollToMessage={scrollToMessage}
-        onRetry={handleRetryMessage}
-        onImagePress={handleOpenMediaViewer}
-        isHighlighted={item.id === highlightedMessageId}
-        reactions={messageReactions.get(item.id) || []}
-        onOptimisticReaction={handleOptimisticReaction}
-        displayMode={displayMode}
-        isGroupChat={false}
-        isGroupedWithPrevious={isGroupedMessage(index, item)}
-        isGroupedWithNext={isGroupedWithNext(index, item)}
-        currentUserDisplayName={
-          profile?.displayName ||
-          profile?.username ||
-          currentFirebaseUser?.displayName ||
-          "User"
-        }
-      />
-    ),
+  const renderTimelineItem = useCallback(
+    ({ item }: { item: TimelineItem<MessageWithProfile>; index: number }) => {
+      if (item.type === "date-divider") {
+        return <DateDivider label={item.label} />;
+      }
+      const msg = item.data;
+      return (
+        <ChatMessageRenderer
+          message={msg}
+          currentUid={uid}
+          chatId={chatId}
+          friendProfile={friendProfile}
+          chatAppearance={chatAppearance}
+          onReply={handleReply}
+          onLongPress={handleMessageLongPress}
+          onScrollToMessage={scrollToMessage}
+          onRetry={handleRetryMessage}
+          onImagePress={handleOpenMediaViewer}
+          isHighlighted={msg.id === highlightedMessageId}
+          reactions={messageReactions.get(msg.id) || []}
+          onOptimisticReaction={handleOptimisticReaction}
+          displayMode={displayMode}
+          isGroupChat={false}
+          isGroupedWithPrevious={item.isGroupedWithPrevious}
+          isGroupedWithNext={item.isGroupedWithNext}
+          currentUserDisplayName={
+            profile?.displayName ||
+            profile?.username ||
+            currentFirebaseUser?.displayName ||
+            "User"
+          }
+        />
+      );
+    },
     [
       uid,
       chatId,
@@ -1136,8 +1109,6 @@ export default function ChatScreen({
       handleRetryMessage,
       handleOpenMediaViewer,
       highlightedMessageId,
-      isGroupedMessage,
-      isGroupedWithNext,
       messageReactions,
       handleOptimisticReaction,
       displayMode,
@@ -1165,6 +1136,13 @@ export default function ChatScreen({
       style={styles.scheduleButton}
     />
   ) : null;
+
+  // Keyboard-sync: configure KCSV and get stable renderScrollComponent
+  setChatScrollViewConfig({
+    offset: 60 + insets.bottom,
+    keyboardLiftBehavior: "whenAtEnd",
+  });
+  const renderScrollComponent = useRenderChatScrollComponent();
 
   return (
     <>
@@ -1209,11 +1187,11 @@ export default function ChatScreen({
         ) : (
           <ChatMessageList
             ref={messageListRef}
-            data={displayMessages}
-            renderItem={renderMessageItem}
-            keyExtractor={(item) => item.id}
-            listBottomInset={screen.keyboard.listBottomInset}
-            staticBottomInset={60 + insets.bottom + 16}
+            data={timelineData}
+            renderItem={renderTimelineItem}
+            keyExtractor={(item) => timelineKeyExtractor(item, (msg) => msg.id)}
+            renderScrollComponent={renderScrollComponent}
+            pillBottomOffset={60 + insets.bottom + 16}
             isKeyboardOpen={screen.keyboard.isKeyboardOpen}
             ListHeaderComponent={
               screen.chat.pagination.isLoadingOlder ? (
@@ -1259,11 +1237,82 @@ export default function ChatScreen({
           statusText={networkStatus.statusText}
         />
 
-        {/* Typing Indicator */}
-        <TypingIndicator
-          userName={friendProfile?.username}
-          visible={typing.isOtherUserTyping && typing.typingIndicatorsEnabled}
-        />
+        {/* Keyboard-sticky footer: typing indicator + composer */}
+        <KeyboardStickyView offset={{ closed: insets.bottom }}>
+          {/* Typing Indicator — display-mode aware */}
+          {displayMode === "stacked" ? (
+            <TypingBar
+              userName={friendProfile?.username}
+              visible={
+                typing.isOtherUserTyping && typing.typingIndicatorsEnabled
+              }
+            />
+          ) : (
+            <TypingBubble
+              userName={friendProfile?.username}
+              visible={
+                typing.isOtherUserTyping && typing.typingIndicatorsEnabled
+              }
+            />
+          )}
+
+          <ChatComposer
+            scope="dm"
+            value={screen.composer.text}
+            onChangeText={handleTextChange}
+            onSend={handleSendMessage}
+            hasAttachments={attachmentPicker.attachments.length > 0}
+            sendDisabled={
+              !chatId ||
+              (!screen.composer.text.trim() &&
+                attachmentPicker.attachments.length === 0) ||
+              screen.sending ||
+              attachmentPicker.isUploading
+            }
+            isSending={screen.sending || attachmentPicker.isUploading}
+            placeholder="Message..."
+            leftAccessory={cameraButton}
+            additionalRightAccessory={scheduleButton}
+            headerContent={
+              attachmentPicker.attachments.length > 0 ? (
+                <AttachmentTray
+                  attachments={attachmentPicker.attachments}
+                  uploadProgress={attachmentPicker.uploadProgress}
+                  onRemove={attachmentPicker.removeAttachment}
+                  onAdd={handleAddAttachment}
+                  maxAttachments={10}
+                />
+              ) : null
+            }
+            replyTo={screen.chat.replyTo}
+            onCancelReply={handleCancelReply}
+            currentUid={uid}
+            onGamePress={
+              GAMES_V4_ENABLED ? () => setGamePickerVisible(true) : undefined
+            }
+            onAnimalPress={handleAnimalPress}
+            animalThemeId={animalEntitlement.equippedAnimalId}
+            animalLocked={!animalEntitlement.canSend}
+            animalPickerVisible={animalPickerVisible}
+            onAnimalLongPress={() => setAnimalPickerVisible(true)}
+            onAnimalPickerClose={() => setAnimalPickerVisible(false)}
+            currentUserId={uid}
+            onAnimalEquipped={handleAnimalEquipped}
+            voiceButtonComponent={
+              voiceRecorder.isAvailable &&
+              !screen.composer.text.trim() &&
+              attachmentPicker.attachments.length === 0 ? (
+                <VoiceRecordButton
+                  onRecordingComplete={handleVoiceRecordingComplete}
+                  onRecordingCancelled={NOOP}
+                  disabled={screen.sending}
+                  size={32}
+                  maxDuration={60000}
+                />
+              ) : undefined
+            }
+          />
+        </KeyboardStickyView>
 
         {/* Jump-back button for reply navigation */}
         <ScrollReturnButton
@@ -1271,67 +1320,6 @@ export default function ChatScreen({
           onPress={handleReturnToReply}
           onAutoHide={handleReturnButtonAutoHide}
           autoHideDelay={5000}
-        />
-
-        <ChatComposer
-          scope="dm"
-          value={screen.composer.text}
-          onChangeText={handleTextChange}
-          onSend={handleSendMessage}
-          hasAttachments={attachmentPicker.attachments.length > 0}
-          sendDisabled={
-            !chatId ||
-            (!screen.composer.text.trim() &&
-              attachmentPicker.attachments.length === 0) ||
-            screen.sending ||
-            attachmentPicker.isUploading
-          }
-          isSending={screen.sending || attachmentPicker.isUploading}
-          placeholder="Message..."
-          leftAccessory={cameraButton}
-          additionalRightAccessory={scheduleButton}
-          headerContent={
-            attachmentPicker.attachments.length > 0 ? (
-              <AttachmentTray
-                attachments={attachmentPicker.attachments}
-                uploadProgress={attachmentPicker.uploadProgress}
-                onRemove={attachmentPicker.removeAttachment}
-                onAdd={handleAddAttachment}
-                maxAttachments={10}
-              />
-            ) : null
-          }
-          replyTo={screen.chat.replyTo}
-          onCancelReply={handleCancelReply}
-          currentUid={uid}
-          onGamePress={
-            GAMES_V4_ENABLED ? () => setGamePickerVisible(true) : undefined
-          }
-          onAnimalPress={handleAnimalPress}
-          animalThemeId={animalEntitlement.equippedAnimalId}
-          animalLocked={!animalEntitlement.canSend}
-          animalPickerVisible={animalPickerVisible}
-          onAnimalLongPress={() => setAnimalPickerVisible(true)}
-          onAnimalPickerClose={() => setAnimalPickerVisible(false)}
-          currentUserId={uid}
-          onAnimalEquipped={handleAnimalEquipped}
-          voiceButtonComponent={
-            voiceRecorder.isAvailable &&
-            !screen.composer.text.trim() &&
-            attachmentPicker.attachments.length === 0 ? (
-              <VoiceRecordButton
-                onRecordingComplete={handleVoiceRecordingComplete}
-                onRecordingCancelled={NOOP}
-                disabled={screen.sending}
-                size={32}
-                maxDuration={60000}
-              />
-            ) : undefined
-          }
-          keyboardHeight={screen.keyboard.keyboardHeight}
-          keyboardProgress={screen.keyboard.keyboardProgress}
-          safeAreaBottom={insets.bottom}
-          absolutePosition={true}
         />
       </View>
 

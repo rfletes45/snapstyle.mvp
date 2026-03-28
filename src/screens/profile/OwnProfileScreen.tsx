@@ -3,38 +3,37 @@
  *
  * The current user's profile screen — polished, minimal, and cohesive.
  *
- * Layout (top → bottom):
- * 1. Showcase Header (background + PFP + decoration + level/XP)
- * 2. Identity row (name, handle, level/tokens chips)
- * 3. Primary actions (Customize / Shop) — max 2-3 buttons
- * 4. Social proof (streak summary + recent activity)
- * 5. Overview cards (Friends / Badges / Achievements / Best Scores)
- * 6. Overflow menu (•••) → Privacy / Settings
+ * Layout is managed by the WidgetBoard system which renders profile
+ * sections as reorderable, resizable widgets in a controlled grid.
+ *
+ * Two modes:
+ * - View mode: normal scrollable profile (default)
+ * - Customize mode: drag/drop reorder, resize, add/remove widgets
  *
  * @module screens/profile/OwnProfileScreen
  */
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import {
-  AchievementsTrophyCaseCard,
-  BadgesCard,
-  FriendsCard,
-} from "@/components/profile/OverviewCards";
 import { ProfileBioEditor } from "@/components/profile/ProfileBio/index";
-import { OwnProfileHeader } from "@/components/profile/ProfileHeader/index";
-import { ProfileOverflowMenu } from "@/components/profile/ProfileOverflowMenu";
 import { ProfilePictureEditor } from "@/components/profile/ProfilePicture";
-import { SocialProofSection } from "@/components/profile/SocialProof";
+import {
+  WidgetBoardContainer,
+  useBoardState,
+} from "@/components/profile/WidgetBoard";
 import { LoadingState } from "@/components/ui";
 import { Spacing } from "@/constants/theme";
 import { prefetchCriticalProfileAssets } from "@/services/cosmeticsAssetCache";
 
+import { useGameStatsV4 } from "@/gamesV4/hooks/useGameStatsV4";
 import { useFullProfileData } from "@/hooks/useFullProfileData";
+import { usePendingRewards } from "@/hooks/usePendingRewards";
 import { useProfileData } from "@/hooks/useProfileData";
 import { useProfilePicture } from "@/hooks/useProfilePicture";
+import { useTopStreaks } from "@/hooks/useTopStreaks";
+import { fetchUserActivities } from "@/services/activityFeed";
 
 import { useAuth } from "@/store/AuthContext";
 import { useColors } from "@/store/ThemeContext";
@@ -97,6 +96,11 @@ export default function OwnProfileScreen({
   // Privacy settings
   const privacy = fullProfile?.privacy;
 
+  // ── Widget Board State ──────────────────────────────────────────────
+
+  const board = useBoardState(currentFirebaseUser?.uid);
+  const isCustomizing = board.mode === "customize";
+
   // Prefetch equipped cosmetic assets so profile renders instantly
   useEffect(() => {
     const bgId = profile?.equippedBackgroundId;
@@ -118,8 +122,103 @@ export default function OwnProfileScreen({
   const streaksHidden = privacy?.showStreaks === "nobody";
   const activityHidden = privacy?.showRecentActivity === "nobody";
 
-  // Streak from stats
-  const streakCount = profile?.stats?.currentStreak ?? 0;
+  // ── Streak data (canonical, from Friends collection) ─────────────
+
+  const topStreaks = useTopStreaks(currentFirebaseUser?.uid);
+
+  // ── Game Stats & Pending Rewards ────────────────────────────────────
+
+  const {
+    globalStats,
+    pbs,
+    loading: gameStatsLoading,
+    refresh: refreshGameStats,
+  } = useGameStatsV4();
+
+  const pendingRewards = usePendingRewards();
+
+  // ── Recent Activity (for widget) ────────────────────────────────────
+
+  const [recentActivities, setRecentActivities] = useState<
+    Array<{ id: string; text: string; time: string; icon?: string }>
+  >([]);
+
+  useEffect(() => {
+    const uid = currentFirebaseUser?.uid;
+    if (!uid || activityHidden) return;
+
+    fetchUserActivities(uid, 5).then((events) => {
+      const now = Date.now();
+      setRecentActivities(
+        events.map((e) => {
+          const ms = now - e.timestamp.getTime();
+          const mins = Math.floor(ms / 60_000);
+          const hrs = Math.floor(ms / 3_600_000);
+          const days = Math.floor(ms / 86_400_000);
+          const time =
+            mins < 1
+              ? "just now"
+              : mins < 60
+                ? `${mins}m ago`
+                : hrs < 24
+                  ? `${hrs}h ago`
+                  : `${days}d ago`;
+
+          let text = "Activity";
+          let icon: string | undefined;
+          if (e.type === "achievement") {
+            text = `Unlocked ${(e.data as any)?.achievementName ?? "achievement"}`;
+            icon = "trophy-outline";
+          } else if (e.type === "streak_milestone") {
+            text = `Hit a ${(e.data as any)?.streakDays ?? ""}-day streak milestone`;
+            icon = "fire";
+          } else if (e.type === "profile_update") {
+            text = "Updated profile";
+            icon = "account-edit-outline";
+          } else if (e.type === "new_friend") {
+            text = "Made a new friend";
+            icon = "account-plus-outline";
+          } else if (e.type === "shop_purchase") {
+            text = "Got something from the shop";
+            icon = "shopping-outline";
+          } else if (e.type === "decoration_equip") {
+            text = "Equipped a new decoration";
+            icon = "star-outline";
+          } else if (e.type === "status_change") {
+            text = "Set a new status";
+            icon = "emoticon-happy-outline";
+          }
+
+          return { id: e.id, text, time, icon };
+        }),
+      );
+    });
+  }, [currentFirebaseUser?.uid, activityHidden]);
+
+  // ── Favorite Game (derived from PBs) ────────────────────────────────
+
+  const favoriteGameData = useMemo(() => {
+    if (!pbs || pbs.length === 0)
+      return { gameName: "Not set", gamesPlayed: 0, winRate: 0 };
+
+    // Find the game with the most plays
+    const sorted = [...pbs].sort(
+      (a, b) => (b.totalPlays ?? 0) - (a.totalPlays ?? 0),
+    );
+    const top = sorted[0];
+    const plays = top.totalPlays ?? 0;
+    const wins = top.totalWins ?? 0;
+    const rate = plays > 0 ? Math.round((wins / plays) * 100) : 0;
+
+    return {
+      gameName:
+        top.gameId
+          ?.replace(/-/g, " ")
+          .replace(/\b\w/g, (c) => c.toUpperCase()) ?? "Unknown",
+      gamesPlayed: plays,
+      winRate: rate,
+    };
+  }, [pbs]);
 
   // ==========================================================================
   // Handlers
@@ -127,9 +226,14 @@ export default function OwnProfileScreen({
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
-    await Promise.all([refresh(), refreshPicture(), refreshFullProfile()]);
+    await Promise.all([
+      refresh(),
+      refreshPicture(),
+      refreshFullProfile(),
+      refreshGameStats(),
+    ]);
     setRefreshing(false);
-  }, [refresh, refreshPicture, refreshFullProfile]);
+  }, [refresh, refreshPicture, refreshFullProfile, refreshGameStats]);
 
   const handleEditPicture = useCallback(() => {
     setPictureEditorVisible(true);
@@ -167,12 +271,124 @@ export default function OwnProfileScreen({
     setBioEditorVisible(false);
   }, []);
 
+  // ── Customize Mode Entry ────────────────────────────────────────────
+  // Edit mode is now entered by long-pressing any widget (RNGH long-press
+  // in WidgetWrapper). No board-level Pressable needed.
+
+  // ==========================================================================
+  // Widget Data Payloads
+  // ==========================================================================
+
+  const widgetData = useMemo(
+    () => ({
+      "profile-header": {
+        displayName: baseProfile?.displayName ?? "",
+        username: baseProfile?.username ?? "",
+        pictureUrl,
+        decorationId,
+        backgroundId: profile?.equippedBackgroundId ?? null,
+        bio: userBio,
+        status: userStatus,
+        level: profile?.level || {
+          current: 1,
+          xp: 0,
+          xpToNextLevel: 100,
+          totalXp: 0,
+        },
+        onEditPicturePress: handleEditPicture,
+        onEditBioPress: handleEditBio,
+        onEditStatusPress: handleEditStatus,
+        onEditNamePress: handleEditName,
+        onLevelPress: () => navigation.navigate("LevelRewards"),
+        onCustomizePress: () => navigation.navigate("Customization"),
+        onShopPress: () => navigation.navigate("Shop"),
+        onSettingsPress: () => navigation.navigate("Settings"),
+        unclaimedRewards: pendingRewards.unclaimedLevelRewardCount,
+      },
+      "social-proof": {
+        streaks: streaksHidden ? [] : topStreaks.streaks,
+        activeStreakCount: streaksHidden ? 0 : topStreaks.activeStreakCount,
+        topStreakCount: streaksHidden ? 0 : topStreaks.topStreakCount,
+        loading: topStreaks.loading,
+        error: topStreaks.error,
+        isOwnProfile: true,
+        onPress: () => navigation.navigate("Friends"),
+      },
+      friends: {
+        userId: currentFirebaseUser?.uid || "",
+        isOwnProfile: true,
+        hiddenFromOthers: friendsHidden,
+        onPress: () => navigation.navigate("Friends"),
+        onFriendPress: (friendUid: string) =>
+          navigation.navigate("UserProfile", { userId: friendUid }),
+      },
+      badges: {
+        badges: profile?.featuredBadges ?? [],
+        totalEarned: profile?.stats?.totalBadges,
+        hiddenFromOthers: badgesHidden,
+        onPress: () => navigation.navigate("BadgeCollection"),
+      },
+      achievements: {
+        userId: currentFirebaseUser?.uid || "",
+        featuredAchievementIds:
+          fullProfile?.featuredAchievements?.achievementIds ?? [],
+        hiddenFromOthers: achievementsHidden,
+        onPress: () =>
+          navigation.navigate("ProfileAchievements", {
+            userId: currentFirebaseUser?.uid || "",
+            featuredIds:
+              fullProfile?.featuredAchievements?.achievementIds ?? [],
+          }),
+      },
+      "mutual-friends": {
+        mutualFriends: [],
+        mutualCount: 0,
+      },
+      "favorite-game": favoriteGameData,
+      "profile-stats": {
+        totalGames: globalStats?.gamesPlayed ?? 0,
+        totalWins: globalStats?.gamesWon ?? 0,
+        totalHours: 0,
+        friendCount: profile?.stats?.friendCount ?? 0,
+      },
+      "recent-activity": {
+        activities: recentActivities,
+      },
+    }),
+    [
+      baseProfile,
+      pictureUrl,
+      decorationId,
+      profile,
+      userBio,
+      userStatus,
+      currentFirebaseUser?.uid,
+      fullProfile,
+      friendsHidden,
+      badgesHidden,
+      achievementsHidden,
+      streaksHidden,
+      activityHidden,
+      topStreaks,
+      pendingRewards.unclaimedLevelRewardCount,
+      globalStats,
+      favoriteGameData,
+      recentActivities,
+      navigation,
+      handleEditPicture,
+      handleEditBio,
+      handleEditStatus,
+      handleEditName,
+      board.actions,
+    ],
+  );
+
   // ==========================================================================
   // Render
   // ==========================================================================
 
   // Loading state
-  if (!baseProfile || profileDataLoading) {
+  if (!baseProfile || profileDataLoading || !board.loaded) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         <LoadingState message="Loading profile..." />
@@ -182,115 +398,48 @@ export default function OwnProfileScreen({
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Overflow menu (top-right) */}
-      <View style={[styles.overflowContainer, { top: insets.top + 16 }]}>
-        <ProfileOverflowMenu
-          onPrivacyPress={() => navigation.navigate("PrivacySettings")}
-          onSettingsPress={() => navigation.navigate("Settings")}
-        />
-      </View>
-
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={[
           styles.content,
           {
-            paddingTop: insets.top + Spacing.md,
+            paddingTop: isCustomizing ? insets.top + Spacing.xs : insets.top,
             paddingBottom: insets.bottom + 32,
           },
         ]}
         showsVerticalScrollIndicator={false}
+        scrollEnabled={true}
         refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={handleRefresh}
-            tintColor={colors.primary}
-          />
+          !isCustomizing ? (
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              tintColor={colors.primary}
+            />
+          ) : undefined
         }
       >
-        {/* ============================================================ */}
-        {/* A) Showcase Header */}
-        {/* ============================================================ */}
-        <OwnProfileHeader
-          displayName={baseProfile.displayName}
-          username={baseProfile.username}
-          pictureUrl={pictureUrl}
-          decorationId={decorationId}
-          backgroundId={profile?.equippedBackgroundId ?? null}
-          bio={userBio}
-          status={userStatus}
-          topInset={insets.top}
-          level={
-            profile?.level || {
-              current: 1,
-              xp: 0,
-              xpToNextLevel: 100,
-              totalXp: 0,
-            }
-          }
-          onEditPicturePress={handleEditPicture}
-          onEditBioPress={handleEditBio}
-          onEditStatusPress={handleEditStatus}
-          onEditNamePress={handleEditName}
-          onLevelPress={() => navigation.navigate("LevelRewards")}
-          onCustomizePress={() => navigation.navigate("Customization")}
-          onShopPress={() => navigation.navigate("Shop")}
+        <WidgetBoardContainer
+          mode={board.mode}
+          visibleWidgets={board.visibleWidgets}
+          allWidgets={board.widgets}
+          hiddenWidgets={board.hiddenWidgets}
+          saving={board.saving}
+          widgetData={widgetData}
+          dragActiveId={board.dragActiveId}
+          onMoveWidget={board.actions.moveWidget}
+          onResizeWidget={board.actions.resizeWidget}
+          onHideWidget={board.actions.hideWidget}
+          onRestoreWidget={board.actions.restoreWidget}
+          onAddWidget={board.actions.addWidget}
+          onDragPreview={board.actions.updateDragPreview}
+          onResizePreview={board.actions.updateResizePreview}
+          onCommitPreview={board.actions.commitPreview}
+          onClearPreview={board.actions.clearPreview}
+          onEnterCustomize={board.actions.enterCustomize}
+          onDone={board.actions.exitCustomize}
+          onCancel={board.actions.cancelCustomize}
         />
-
-        {/* ============================================================ */}
-        {/* B) Social Proof (streak + recent activity) */}
-        {/* ============================================================ */}
-        <SocialProofSection
-          userId={currentFirebaseUser?.uid || ""}
-          streakCount={streaksHidden ? 0 : streakCount}
-          showRecentActivity={!activityHidden}
-          isOwnProfile={true}
-          onStreakPress={() => navigation.navigate("Tasks", { tab: "daily" })}
-          onActivityPress={() => navigation.navigate("ActivityFeed")}
-        />
-
-        {/* ============================================================ */}
-        {/* C) Overview Cards */}
-        {/* ============================================================ */}
-        <View style={styles.cardsSection}>
-          {/* Friends Card */}
-          <FriendsCard
-            userId={currentFirebaseUser?.uid || ""}
-            isOwnProfile={true}
-            hiddenFromOthers={friendsHidden}
-            enterIndex={0}
-            onPress={() => navigation.navigate("Friends")}
-            onFriendPress={(friendUid) =>
-              navigation.navigate("UserProfile", { userId: friendUid })
-            }
-          />
-
-          {/* Badges Card */}
-          <BadgesCard
-            badges={profile?.featuredBadges ?? []}
-            totalEarned={profile?.stats?.totalBadges}
-            hiddenFromOthers={badgesHidden}
-            enterIndex={1}
-            onPress={() => navigation.navigate("BadgeCollection")}
-          />
-
-          {/* Achievements Trophy Case Card */}
-          <AchievementsTrophyCaseCard
-            userId={currentFirebaseUser?.uid || ""}
-            featuredAchievementIds={
-              fullProfile?.featuredAchievements?.achievementIds ?? []
-            }
-            hiddenFromOthers={achievementsHidden}
-            enterIndex={2}
-            onPress={() =>
-              navigation.navigate("ProfileAchievements", {
-                userId: currentFirebaseUser?.uid || "",
-                featuredIds:
-                  fullProfile?.featuredAchievements?.achievementIds ?? [],
-              })
-            }
-          />
-        </View>
       </ScrollView>
 
       {/* Profile Picture Editor Modal */}
@@ -341,13 +490,5 @@ const styles = StyleSheet.create({
   },
   content: {
     flexGrow: 1,
-  },
-  overflowContainer: {
-    position: "absolute",
-    right: Spacing.lg + 4,
-    zIndex: 10,
-  },
-  cardsSection: {
-    marginTop: Spacing.sm,
   },
 });

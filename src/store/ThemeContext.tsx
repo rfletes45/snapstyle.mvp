@@ -20,8 +20,9 @@ import {
   ThemeId,
   ThemeMeta,
 } from "@/constants/theme";
-import { getAuthInstance } from "@/services/firebase";
+import { getAuthInstance, getFirestoreInstance } from "@/services/firebase";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { doc, updateDoc } from "firebase/firestore";
 import React, {
   createContext,
   ReactNode,
@@ -29,14 +30,15 @@ import React, {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { useColorScheme } from "react-native";
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("store/ThemeContext");
-// Storage key for persisted theme
-const THEME_STORAGE_KEY = "@vibe_theme_id";
+// Storage key prefix — suffixed with UID for per-account isolation
+const THEME_STORAGE_PREFIX = "@vibe_theme_id_";
 
 // Default themes for system preference (Auto mode)
 const DEFAULT_LIGHT_THEME: ThemeId = "catppuccin-latte";
@@ -72,6 +74,10 @@ interface ThemeContextValue {
   getThemesByCategory: (category: ThemeMeta["category"]) => ThemeMeta[];
   /** Signal that the user's profile is ready (enables stored-pref loading) */
   markProfileReady: () => void;
+  /** Sync theme from Firestore profile data (authoritative remote source) */
+  syncProfileTheme: (
+    profile: { themeId?: string; useSystemTheme?: boolean } | null,
+  ) => void;
 }
 
 const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
@@ -96,12 +102,29 @@ export function ThemeProvider({
   const [useSystemTheme, setUseSystemThemeState] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  // Track the current user's UID for scoping theme storage
+  const [currentUid, setCurrentUid] = useState<string | null>(null);
   // profileReady gates when stored preferences are loaded.
   // This prevents the theme from flipping mid-onboarding when a fresh
   // Firebase auth is detected but the user hasn't completed profile setup.
   const [profileReady, setProfileReady] = useState(false);
   // Track whether stored prefs have been loaded (gates persistence to avoid overwriting)
   const [prefsLoaded, setPrefsLoaded] = useState(false);
+
+  // Helper: get the per-user storage key
+  const getStorageKey = useCallback(
+    (uid?: string | null) => {
+      const id = uid ?? currentUid;
+      return id ? `${THEME_STORAGE_PREFIX}${id}` : null;
+    },
+    [currentUid],
+  );
+
+  // Ref to track current UID for the persist effect without stale closures
+  const currentUidRef = useRef<string | null>(null);
+  useEffect(() => {
+    currentUidRef.current = currentUid;
+  }, [currentUid]);
 
   // Listen to Firebase auth state
   useEffect(() => {
@@ -114,9 +137,16 @@ export function ThemeProvider({
 
         if (!nowAuthenticated && wasAuthenticated) {
           // User signed out → revert to default light theme
+          setCurrentUid(null);
           setThemeId(DEFAULT_LOGGED_OUT_THEME);
           setUseSystemThemeState(false);
           setProfileReady(false);
+          setPrefsLoaded(false);
+        } else if (nowAuthenticated) {
+          // User signed in — store UID and reset prefs-loaded flag so the
+          // correct user's prefs will be read once profileReady is set.
+          const uid = user.uid;
+          setCurrentUid(uid);
           setPrefsLoaded(false);
         }
         // NOTE: We deliberately do NOT load stored prefs here on login.
@@ -130,46 +160,19 @@ export function ThemeProvider({
     }
   }, [isAuthenticated]);
 
-  // Load persisted theme on mount — only if user already has a profile session
+  // Initial loading flag — resolved quickly on mount
   useEffect(() => {
-    const loadTheme = async () => {
-      try {
-        const stored = await AsyncStorage.getItem(THEME_STORAGE_KEY);
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          if (parsed.themeId && THEME_METADATA[parsed.themeId as ThemeId]) {
-            // Only apply stored theme if user is currently authenticated
-            // AND has a completed profile (returning user). Fresh signups
-            // won't have a stored pref, so this is safe.
-            try {
-              const auth = getAuthInstance();
-              if (auth.currentUser) {
-                // We'll apply once profileReady is set — skip for now
-                // unless we can verify the user has a profile.
-                // For a returning user who already had a session,
-                // profileReady will be set by AppGate quickly.
-              }
-            } catch {
-              // Firebase not ready — skip
-            }
-          }
-        }
-      } catch (error) {
-        logger.warn("Failed to load theme preference:", error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    loadTheme();
+    setIsLoading(false);
   }, []);
 
   // Apply stored prefs when profileReady becomes true (exactly once per session)
   useEffect(() => {
-    if (!profileReady || prefsLoaded) return;
+    if (!profileReady || prefsLoaded || !currentUid) return;
 
     (async () => {
       try {
-        const stored = await AsyncStorage.getItem(THEME_STORAGE_KEY);
+        const key = `${THEME_STORAGE_PREFIX}${currentUid}`;
+        const stored = await AsyncStorage.getItem(key);
         if (stored) {
           const parsed = JSON.parse(stored);
           if (parsed.themeId && THEME_METADATA[parsed.themeId as ThemeId]) {
@@ -195,17 +198,30 @@ export function ThemeProvider({
         setPrefsLoaded(true);
       }
     })();
-  }, [profileReady, prefsLoaded, systemColorScheme]);
+  }, [profileReady, prefsLoaded, currentUid, systemColorScheme]);
 
   // Persist theme changes (only after stored prefs have been loaded)
   useEffect(() => {
-    if (!isLoading && profileReady && prefsLoaded) {
-      AsyncStorage.setItem(
-        THEME_STORAGE_KEY,
-        JSON.stringify({ themeId, useSystemTheme }),
-      ).catch((error) =>
+    const uid = currentUidRef.current;
+    if (!isLoading && profileReady && prefsLoaded && uid) {
+      const key = `${THEME_STORAGE_PREFIX}${uid}`;
+      const payload = JSON.stringify({ themeId, useSystemTheme });
+
+      // Write to per-user AsyncStorage (instant)
+      AsyncStorage.setItem(key, payload).catch((error) =>
         logger.warn("Failed to save theme preference:", error),
       );
+
+      // Write to Firestore for cross-device sync (background)
+      try {
+        const db = getFirestoreInstance();
+        updateDoc(doc(db, "Users", uid), {
+          themeId,
+          useSystemTheme,
+        }).catch((e) => logger.warn("Failed to sync theme to Firestore:", e));
+      } catch {
+        // Firestore not ready — skip
+      }
     }
   }, [themeId, useSystemTheme, isLoading, profileReady, prefsLoaded]);
 
@@ -308,6 +324,42 @@ export function ThemeProvider({
     setProfileReady(true);
   }, []);
 
+  // Sync theme from Firestore profile data (authoritative remote source).
+  // Called by ProfileReadySignal when profile loads. If the profile has a
+  // saved themeId, it overrides the local cache (same pattern as displayMode).
+  const syncProfileTheme = useCallback(
+    (profile: { themeId?: string; useSystemTheme?: boolean } | null) => {
+      if (!profile) return;
+      const remoteThemeId = profile.themeId as ThemeId | undefined;
+      if (remoteThemeId && THEME_METADATA[remoteThemeId]) {
+        const remoteUseSystem = profile.useSystemTheme ?? false;
+        if (remoteUseSystem) {
+          setUseSystemThemeState(true);
+          const resolved =
+            systemColorScheme === "dark"
+              ? DEFAULT_DARK_THEME
+              : DEFAULT_LIGHT_THEME;
+          setThemeId(resolved);
+        } else {
+          setThemeId(remoteThemeId);
+          setUseSystemThemeState(false);
+        }
+        // Keep local cache in sync with remote authoritative value
+        const uid = currentUidRef.current;
+        if (uid) {
+          AsyncStorage.setItem(
+            `${THEME_STORAGE_PREFIX}${uid}`,
+            JSON.stringify({
+              themeId: remoteThemeId,
+              useSystemTheme: remoteUseSystem,
+            }),
+          ).catch(() => {});
+        }
+      }
+    },
+    [systemColorScheme],
+  );
+
   // Get all available themes
   const availableThemes = useMemo(() => getAllThemes(), []);
 
@@ -332,6 +384,7 @@ export function ThemeProvider({
       toggleDarkMode,
       getThemesByCategory: getThemesByCategoryFn,
       markProfileReady,
+      syncProfileTheme,
     }),
     [
       theme,
@@ -347,6 +400,7 @@ export function ThemeProvider({
       toggleDarkMode,
       getThemesByCategoryFn,
       markProfileReady,
+      syncProfileTheme,
     ],
   );
 

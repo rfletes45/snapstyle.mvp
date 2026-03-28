@@ -41,6 +41,8 @@ export interface OverviewCardProps {
   children?: React.ReactNode;
   /** Test ID */
   testID?: string;
+  /** When true, strip outer card chrome (margin, shadow, border, bg) for embedding inside widget board */
+  embedded?: boolean;
 }
 
 // =============================================================================
@@ -60,30 +62,12 @@ export const OverviewCard = memo(function OverviewCard({
   onPress,
   children,
   testID,
+  embedded,
 }: OverviewCardProps) {
   const colors = useColors();
 
-  return (
-    <AnimatedTouchable
-      entering={FadeInUp.duration(280).delay(80 + enterIndex * 60)}
-      style={[
-        styles.card,
-        {
-          backgroundColor: colors.surface,
-          borderColor: colors.surfaceVariant + "30",
-        },
-        accentColor && {
-          borderLeftColor: accentColor + "60",
-          borderLeftWidth: 3,
-        },
-      ]}
-      onPress={onPress}
-      activeOpacity={onPress ? 0.7 : 1}
-      disabled={!onPress}
-      testID={testID}
-      accessibilityRole="button"
-      accessibilityLabel={`${title}${count != null ? `, ${count}` : ""}`}
-    >
+  const cardContent = (
+    <>
       {/* Header row */}
       <View style={styles.header}>
         <View style={styles.titleRow}>
@@ -149,6 +133,48 @@ export const OverviewCard = memo(function OverviewCard({
       ) : (
         <View style={styles.content}>{children}</View>
       )}
+    </>
+  );
+
+  // Embedded mode: transparent wrapper, no card chrome
+  if (embedded) {
+    return (
+      <TouchableOpacity
+        style={styles.embeddedCard}
+        onPress={onPress}
+        activeOpacity={onPress ? 0.7 : 1}
+        disabled={!onPress}
+        testID={testID}
+        accessibilityRole="button"
+        accessibilityLabel={`${title}${count != null ? `, ${count}` : ""}`}
+      >
+        {cardContent}
+      </TouchableOpacity>
+    );
+  }
+
+  return (
+    <AnimatedTouchable
+      entering={FadeInUp.duration(280).delay(80 + enterIndex * 60)}
+      style={[
+        styles.card,
+        {
+          backgroundColor: colors.surface,
+          borderColor: colors.surfaceVariant + "30",
+        },
+        accentColor && {
+          borderLeftColor: accentColor + "60",
+          borderLeftWidth: 3,
+        },
+      ]}
+      onPress={onPress}
+      activeOpacity={onPress ? 0.7 : 1}
+      disabled={!onPress}
+      testID={testID}
+      accessibilityRole="button"
+      accessibilityLabel={`${title}${count != null ? `, ${count}` : ""}`}
+    >
+      {cardContent}
     </AnimatedTouchable>
   );
 });
@@ -171,6 +197,11 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.04,
     shadowRadius: 3,
     elevation: 1,
+  },
+  embeddedCard: {
+    flex: 1,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
   },
   header: {
     flexDirection: "row",

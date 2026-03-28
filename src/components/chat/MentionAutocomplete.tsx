@@ -317,6 +317,8 @@ export interface MentionTextProps {
   currentUid?: string;
   onMentionPress?: (uid: string) => void;
   textStyle?: any;
+  /** Override border radius for mention token (default: 12) */
+  mentionRadius?: number;
 }
 
 export const MentionText = memo(function MentionText({
@@ -326,6 +328,7 @@ export const MentionText = memo(function MentionText({
   currentUid,
   onMentionPress,
   textStyle,
+  mentionRadius,
 }: MentionTextProps) {
   const { colors } = useAppTheme();
 
@@ -338,9 +341,18 @@ export const MentionText = memo(function MentionText({
   const bg = isSelf ? `${colors.primary}88` : `${colors.primary}66`;
   const fg = "#FFFFFF";
 
+  const radiusStyle =
+    mentionRadius != null ? { borderRadius: mentionRadius } : undefined;
+
   // borderRadius doesn't work on <Text> in React Native, so we wrap in a View.
   return (
-    <View style={[styles.mentionTokenContainer, { backgroundColor: bg }]}>
+    <View
+      style={[
+        styles.mentionTokenContainer,
+        { backgroundColor: bg },
+        radiusStyle,
+      ]}
+    >
       <Text
         style={[textStyle, styles.mentionTokenText, { color: fg }]}
         onPress={uid && onMentionPress ? () => onMentionPress(uid) : undefined}
@@ -362,6 +374,8 @@ export interface RenderMessageWithMentionsProps {
   currentUid?: string;
   onMentionPress?: (uid: string) => void;
   textStyle?: any;
+  /** Override border radius for mention tokens */
+  mentionRadius?: number;
 }
 
 export const MessageWithMentions = memo(function MessageWithMentions({
@@ -370,6 +384,7 @@ export const MessageWithMentions = memo(function MessageWithMentions({
   currentUid,
   onMentionPress,
   textStyle,
+  mentionRadius,
 }: RenderMessageWithMentionsProps) {
   const segments = segmentTextWithMentions(text, mentionSpans);
 
@@ -388,6 +403,7 @@ export const MessageWithMentions = memo(function MessageWithMentions({
               currentUid={currentUid}
               onMentionPress={onMentionPress}
               textStyle={textStyle}
+              mentionRadius={mentionRadius}
             />
           );
         }

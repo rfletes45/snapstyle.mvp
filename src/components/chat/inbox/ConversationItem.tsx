@@ -12,6 +12,7 @@
  */
 
 import AppImage from "@/components/AppImage";
+import { TypingPreview } from "@/components/chat/TypingIndicator";
 import { ProfilePictureWithDecoration } from "@/components/profile/ProfilePicture";
 import { Spacing } from "@/constants/theme";
 import { useAppTheme } from "@/store/ThemeContext";
@@ -38,7 +39,11 @@ import { formatUnreadBadge } from "./unreadBadge";
 function highlightMatchingText(
   text: string,
   searchTerm: string | undefined,
-  colors: { primary: string },
+  colors: {
+    primary: string;
+    highlightBackground?: string;
+    highlightText?: string;
+  },
 ): React.ReactNode {
   if (!searchTerm?.trim()) {
     return text;
@@ -60,7 +65,11 @@ function highlightMatchingText(
     <>
       {before}
       <Text
-        style={{ backgroundColor: colors.primary + "30", fontWeight: "600" }}
+        style={{
+          backgroundColor: colors.highlightBackground ?? colors.primary + "30",
+          color: colors.highlightText,
+          fontWeight: "600",
+        }}
       >
         {match}
       </Text>
@@ -76,6 +85,8 @@ function highlightMatchingText(
 export interface ConversationItemProps {
   /** The conversation to display */
   conversation: InboxConversation;
+  /** Whether someone is typing in this conversation */
+  isTyping?: boolean;
   /** Callback when the row is pressed */
   onPress: () => void;
   /** Callback when avatar is pressed (opens profile preview for DMs) */
@@ -94,6 +105,7 @@ export { formatUnreadBadge } from "./unreadBadge";
 
 export const ConversationItem = memo(function ConversationItem({
   conversation,
+  isTyping = false,
   onPress,
   onAvatarPress,
   onLongPress,
@@ -268,19 +280,23 @@ export const ConversationItem = memo(function ConversationItem({
 
         {/* Bottom row: Preview + Badge */}
         <View style={styles.bottomRow}>
-          <Text
-            style={[
-              styles.preview,
-              { color: colors.textSecondary },
-              isUnread && styles.previewUnread,
-              isUnread && { color: colors.text },
-            ]}
-            numberOfLines={1}
-          >
-            {highlightText
-              ? highlightMatchingText(previewText, highlightText, colors)
-              : previewText}
-          </Text>
+          {isTyping ? (
+            <TypingPreview visible />
+          ) : (
+            <Text
+              style={[
+                styles.preview,
+                { color: colors.textSecondary },
+                isUnread && styles.previewUnread,
+                isUnread && { color: colors.text },
+              ]}
+              numberOfLines={1}
+            >
+              {highlightText
+                ? highlightMatchingText(previewText, highlightText, colors)
+                : previewText}
+            </Text>
+          )}
 
           {unreadBadgeText && (
             <Badge
@@ -312,8 +328,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 10,
-    paddingVertical: 5,
-    minHeight: 66,
+    paddingVertical: 3,
+    minHeight: 62,
   },
   avatarContainer: {
     position: "relative",

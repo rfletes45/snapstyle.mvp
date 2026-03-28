@@ -3,5 +3,5 @@ export {
   cleanupExpiredSnaps,
   cleanupExpiredStories,
   cleanupOldScheduledMessages,
-  streakReminder,
 } from "./legacy";
+export { streakReminder } from "./streaks";

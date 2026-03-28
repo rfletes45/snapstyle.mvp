@@ -52,9 +52,11 @@ export interface Friend {
   users: [string, string];
   createdAt: number;
   streakCount: number;
-  streakUpdatedDay: string; // YYYY-MM-DD
+  streakBestCount?: number;
+  streakUpdatedDay: string; // YYYY-MM-DD (UTC)
   lastSentDay_uid1?: string;
   lastSentDay_uid2?: string;
+  streakGraceUsedAt?: string; // YYYY-MM-DD (UTC)
   blockedBy?: string | null;
 }
 

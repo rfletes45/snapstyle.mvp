@@ -1301,6 +1301,10 @@ export interface ThemeColors {
   mentionHighlight?: string;
   mentionHighlightText?: string;
 
+  // Highlight / emphasis (search results, selected items, chips)
+  highlightBackground?: string;
+  highlightText?: string;
+
   // Utility
   dividerSubtle?: string;
 }
@@ -3077,6 +3081,11 @@ function resolveSemanticTokens(
     mentionChipText: colors.mentionChipText ?? colors.primary,
     mentionHighlight: colors.mentionHighlight ?? colors.primaryContainer,
     mentionHighlightText: colors.mentionHighlightText ?? colors.primary,
+    // Highlight / emphasis — darker highlight on light themes, lighter on dark
+    highlightBackground:
+      colors.highlightBackground ??
+      (isDark ? colors.primary + "30" : colors.primary + "25"),
+    highlightText: colors.highlightText ?? (isDark ? "#FFFFFF" : "#000000"),
     // Utility
     dividerSubtle:
       colors.dividerSubtle ??

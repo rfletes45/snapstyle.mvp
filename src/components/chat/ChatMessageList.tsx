@@ -4,9 +4,14 @@
  * Keyboard-aware inverted FlatList for chat messages.
  * Handles:
  * - Inverted list rendering (newest at bottom)
- * - Dynamic content inset based on keyboard/composer (60fps via Reanimated)
+ * - Keyboard-synchronised content repositioning (via KeyboardChatScrollView)
  * - "At bottom" detection for smart scroll
  * - Performance optimizations
+ *
+ * Keyboard layout is driven entirely on the UI thread by
+ * KeyboardChatScrollView (from react-native-keyboard-controller).
+ * It uses contentInset (not content spacers), so
+ * maintainVisibleContentPosition never fights the keyboard motion.
  *
  * @module components/chat/ChatMessageList
  */
@@ -28,13 +33,12 @@ import {
   ListRenderItemInfo,
   NativeScrollEvent,
   NativeSyntheticEvent,
+  ScrollViewProps,
   StyleProp,
   StyleSheet,
   View,
   ViewStyle,
 } from "react-native";
-import type { SharedValue } from "react-native-reanimated";
-import Animated, { useAnimatedStyle } from "react-native-reanimated";
 import { ReturnToBottomPill } from "./ReturnToBottomPill";
 
 const log = createLogger("ChatMessageList");
@@ -50,11 +54,15 @@ export interface ChatMessageListProps<T> {
   renderItem: (info: ListRenderItemInfo<T>) => React.ReactElement | null;
   /** Key extractor */
   keyExtractor: (item: T, index: number) => string;
-  /** List bottom inset shared value (from useChatKeyboard) */
-  listBottomInset?: SharedValue<number>;
-  /** Static bottom inset (used when not using animated values) */
-  staticBottomInset?: number;
-  /** Whether keyboard is open */
+  /**
+   * Scroll component factory — screens pass a memoised callback that returns
+   * a KeyboardChatScrollView configured with the correct offset / lift
+   * behaviour for the current conversation.
+   */
+  renderScrollComponent: (
+    props: ScrollViewProps,
+  ) => React.ReactElement<ScrollViewProps>;
+  /** Whether keyboard is open (for auto-scroll rules) */
   isKeyboardOpen?: boolean;
   /** Header component (load more button) */
   ListHeaderComponent?: React.ComponentType<any> | React.ReactElement | null;
@@ -62,6 +70,11 @@ export interface ChatMessageListProps<T> {
   ListEmptyComponent?: React.ComponentType<any> | React.ReactElement | null;
   /** Called when scroll position changes significantly */
   onAtBottomChange?: (isAtBottom: boolean) => void;
+  /**
+   * Bottom offset for the "return to bottom" pill (px above screen bottom).
+   * Typically composerHeight + safeAreaBottom + small padding.
+   */
+  pillBottomOffset?: number;
   /** Enable debug logging */
   debug?: boolean;
   /** Custom container style */
@@ -93,12 +106,12 @@ function ChatMessageListInner<T>(
     data,
     renderItem,
     keyExtractor,
-    listBottomInset,
-    staticBottomInset = 80,
+    renderScrollComponent,
     isKeyboardOpen = false,
     ListHeaderComponent,
     ListEmptyComponent,
     onAtBottomChange,
+    pillBottomOffset = 96,
     debug = false,
     style,
     contentContainerStyle,
@@ -106,15 +119,6 @@ function ChatMessageListInner<T>(
   } = props;
 
   const flatListRef = useRef<FlatList<T>>(null);
-
-  // Animated spacer style for smooth 60fps keyboard tracking
-  // In an inverted list, ListHeaderComponent appears at the bottom,
-  // so we use it as an animated spacer
-  const animatedSpacerStyle = useAnimatedStyle(() => {
-    "worklet";
-    const height = listBottomInset?.value ?? staticBottomInset;
-    return { height };
-  }, [listBottomInset, staticBottomInset]);
 
   // At bottom detection
   const atBottom = useAtBottom({
@@ -147,30 +151,6 @@ function ChatMessageListInner<T>(
     () => [styles.contentContainer, contentContainerStyle],
     [contentContainerStyle],
   );
-
-  // Animated spacer component that appears at the bottom of inverted list
-  // This creates smooth 60fps keyboard-following padding
-  const AnimatedSpacer = useCallback(
-    () => <Animated.View style={animatedSpacerStyle} />,
-    [animatedSpacerStyle],
-  );
-
-  // Combine user's ListHeaderComponent with our animated spacer
-  const combinedListHeader = useMemo(() => {
-    if (ListHeaderComponent) {
-      return (
-        <>
-          {typeof ListHeaderComponent === "function" ? (
-            <ListHeaderComponent />
-          ) : (
-            ListHeaderComponent
-          )}
-          <AnimatedSpacer />
-        </>
-      );
-    }
-    return <AnimatedSpacer />;
-  }, [ListHeaderComponent, AnimatedSpacer]);
 
   // Scroll to bottom (for inverted list, this is offset 0)
   const scrollToBottom = useCallback((animated = true) => {
@@ -251,7 +231,8 @@ function ChatMessageListInner<T>(
     keyExtractor,
     // Inverted list: newest messages at bottom (visually), but at index 0
     inverted: true,
-    // Keyboard handling
+    // Keyboard handling — interactive dismiss is handled by KCSV on the
+    // native side so this prop stays for the swipe gesture integration.
     keyboardDismissMode: "interactive" as const,
     keyboardShouldPersistTaps: "handled" as const,
     // Scroll events
@@ -259,12 +240,12 @@ function ChatMessageListInner<T>(
     onScrollEndDrag: handleScrollEndDrag,
     onMomentumScrollEnd: handleMomentumScrollEnd,
     scrollEventThrottle: 16,
-    // Content - use combined header with animated spacer for smooth 60fps keyboard tracking
-    ListHeaderComponent: combinedListHeader,
+    // Content
+    ListHeaderComponent,
     ListEmptyComponent,
     // Performance
     ...LIST_PERFORMANCE_PROPS,
-    // Maintain scroll position when content changes
+    // Maintain scroll position when content changes (new messages / pagination)
     maintainVisibleContentPosition: {
       minIndexForVisible: 1,
       autoscrollToTopThreshold: 100,
@@ -274,6 +255,8 @@ function ChatMessageListInner<T>(
     // Styles
     style: styles.list,
     showsVerticalScrollIndicator: false,
+    // Keyboard-synchronised scroll component
+    renderScrollComponent,
     // Extra props
     ...flatListProps,
   };
@@ -286,13 +269,12 @@ function ChatMessageListInner<T>(
         contentContainerStyle={dynamicContentStyle}
       />
 
-      {/* Return to bottom pill - positioned above the composer
-          Uses staticBottomInset as base; the pill handles its own animation */}
+      {/* Return to bottom pill - positioned above the composer */}
       <ReturnToBottomPill
         visible={autoscroll.showReturnPill}
         unreadCount={autoscroll.unreadCount}
         onPress={autoscroll.scrollToBottom}
-        bottomOffset={staticBottomInset + 16}
+        bottomOffset={pillBottomOffset}
       />
     </View>
   );

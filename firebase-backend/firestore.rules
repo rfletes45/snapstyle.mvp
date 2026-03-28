@@ -205,6 +205,9 @@ service cloud.firestore {
       allow update: if isAuth() && isOwner(uid) &&
                       // Prevent changing uid
                       request.resource.data.uid == resource.data.uid &&
+                      // Prevent changing createdAt (protects against destructive
+                      // setDoc overwrites from onboarding — must be immutable)
+                      request.resource.data.createdAt == resource.data.createdAt &&
                       // Validate updated fields if present
                       (!request.resource.data.keys().hasAll(['username']) || 
                        validStringLength(request.resource.data.username, 3, 20)) &&
@@ -252,6 +255,25 @@ service cloud.firestore {
                         request.resource.data.blockedUserId == blockedUid &&
                         request.resource.data.blockedAt is number;
         allow update: if false; // Immutable
+        allow delete: if isAuth() && isOwner(uid);
+      }
+
+      // --------------------------------------------------------
+      // ProfileLayout subcollection (Widget Board System)
+      // Stores the user's profile widget board layout
+      // Users/{uid}/ProfileLayout/{docId}
+      // --------------------------------------------------------
+      match /ProfileLayout/{docId} {
+        // Any authenticated user can read a board layout (viewer profile)
+        allow read: if isAuth();
+
+        // User can create/update their own board layout
+        allow create, update: if isAuth() && isOwner(uid) &&
+          request.resource.data.schemaVersion is number &&
+          request.resource.data.widgets is list &&
+          request.resource.data.updatedAt is string;
+
+        // User can delete their own board layout (reset)
         allow delete: if isAuth() && isOwner(uid);
       }
 
@@ -730,14 +752,17 @@ service cloud.firestore {
                       request.resource.data.streakCount == 0 &&
                       request.resource.data.createdAt is number;
       
-      // Update: only members can update, protect core fields
+      // Update: only members can update, protect core fields.
+      // Streak fields are managed exclusively by Cloud Functions (Admin SDK)
+      // and bypass these rules. Clients may only update non-streak fields
+      // (e.g. blockedBy) while keeping streak fields unchanged.
       allow update: if isAuth() && 
                       request.auth.uid in resource.data.users &&
                       // Cannot change users array
                       request.resource.data.users == resource.data.users &&
-                      // Cannot decrease streakCount arbitrarily (backend handles resets)
-                      (request.resource.data.streakCount >= resource.data.streakCount ||
-                       request.resource.data.streakCount == 0);
+                      // Streak fields must stay unchanged from client writes
+                      request.resource.data.streakCount == resource.data.streakCount &&
+                      request.resource.data.streakUpdatedDay == resource.data.streakUpdatedDay;
       
       // Delete: either member can unfriend
       allow delete: if isAuth() && request.auth.uid in resource.data.users;

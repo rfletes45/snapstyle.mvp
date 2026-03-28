@@ -109,9 +109,14 @@ export async function getUserProfile(uid: string): Promise<User | null> {
 }
 
 /**
- * Create a new user profile in Firestore
- * Note: After calling this, call grantStarterItems(uid) from cosmetics service
- * to give the user their starter items
+ * Create a new user profile in Firestore.
+ *
+ * SAFETY: This function REFUSES to overwrite an existing profile document.
+ * If a document already exists for this UID, it throws an error instead of
+ * silently clobbering the user's data. This is the primary defense against
+ * the catastrophic bug where an existing user gets mis-routed into onboarding
+ * and has their identity fields (username, displayName, pfp) destroyed.
+ *
  * @param uid User ID
  * @param username Username
  * @param displayName Display name
@@ -126,6 +131,41 @@ async function createUserProfile(
 ): Promise<User> {
   const db = getFirestoreInstance();
   const userDocRef = doc(db, "Users", uid);
+
+  // ── CRITICAL GUARD: Check if profile already exists ──────────────
+  // This prevents the onboarding flow from ever overwriting an existing
+  // user's profile data, even if the routing logic somehow fails.
+  try {
+    const existingDoc = await getDoc(userDocRef);
+    if (existingDoc.exists()) {
+      const existingData = existingDoc.data();
+      logger.error(
+        "[ACCOUNT SAFETY] createUserProfile() called for UID that ALREADY has a profile! " +
+          "Existing username: " +
+          existingData?.username +
+          ". Refusing to overwrite. This indicates a routing bug.",
+      );
+      throw new Error(
+        "ACCOUNT_ALREADY_EXISTS: Cannot create profile — user already has an account. " +
+          "This action was blocked to protect your existing data.",
+      );
+    }
+  } catch (checkErr: any) {
+    // If the error is our own safety error, re-throw it
+    if (checkErr?.message?.startsWith("ACCOUNT_ALREADY_EXISTS")) {
+      throw checkErr;
+    }
+    // If the existence check itself fails (network error), we must NOT
+    // proceed — we cannot confirm the doc doesn't exist.
+    logger.error(
+      "[ACCOUNT SAFETY] Could not verify profile non-existence before create. " +
+        "Refusing to proceed to protect potential existing data.",
+      checkErr,
+    );
+    throw new Error(
+      "CANNOT_VERIFY_ACCOUNT: Unable to verify account status. Please try again.",
+    );
+  }
 
   const now = Date.now();
   const user: User = {
@@ -175,8 +215,14 @@ export async function updateProfile(
 }
 
 /**
- * Create a new user and set up their profile
- * Call this after Firebase signUp() succeeds
+ * Create a new user and set up their profile.
+ * Call this after Firebase signUp() succeeds.
+ *
+ * SAFETY: This function includes an early-exit guard — if the user already
+ * has a complete profile (with a username), it returns the existing profile
+ * instead of overwriting it. This is the outer defense ring against the
+ * onboarding-misroute bug.
+ *
  * @param uid User ID
  * @param email User email
  * @param username Username
@@ -192,6 +238,24 @@ export async function setupNewUser(
   baseColor?: string,
 ): Promise<User | null> {
   try {
+    // ── CRITICAL SAFETY: Check if user already has a profile ─────────
+    // If an existing user somehow reaches onboarding (routing bug, stale
+    // state, etc.), this guard prevents their data from being overwritten.
+    const existingProfile = await getUserProfile(uid);
+    if (existingProfile && existingProfile.username) {
+      logger.error(
+        "[ACCOUNT SAFETY] setupNewUser() called for user who already has a " +
+          "complete profile! UID: " +
+          uid +
+          ", existing username: " +
+          existingProfile.username +
+          ". Returning existing profile WITHOUT overwriting.",
+      );
+      // Return existing profile — the caller (OnboardingCompleteScreen)
+      // will proceed to refreshProfile() and AppGate will route to "ready".
+      return existingProfile;
+    }
+
     // First check if username is available
     const available = await checkUsernameAvailable(username);
     if (!available) {

@@ -65,6 +65,7 @@ async function checkStreak(username1, username2) {
     console.log(`✅ Friendship ID: ${friendship.id}\n`);
     console.log("📊 Streak Data:");
     console.log(`  Streak Count: ${friendship.streakCount || 0}`);
+    console.log(`  Best Streak:  ${friendship.streakBestCount || 0}`);
     console.log(
       `  Streak Updated Day: ${friendship.streakUpdatedDay || "never"}`,
     );
@@ -74,6 +75,7 @@ async function checkStreak(username1, username2) {
     console.log(
       `  Last Sent Day (${users[1].username}): ${friendship.lastSentDay_uid2 || "never"}`,
     );
+    console.log(`  Grace Used At: ${friendship.streakGraceUsedAt || "never"}`);
     console.log(`\n  Users array: [${friendship.users.join(", ")}]`);
 
     const today = new Date().toISOString().split("T")[0];

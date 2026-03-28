@@ -12,6 +12,8 @@
  * @module components/chat/inbox/PinnedSection
  */
 
+import { Spacing } from "@/constants/theme";
+import type { ConversationTypingInfo } from "@/hooks/useInboxTyping";
 import { useAppTheme } from "@/store/ThemeContext";
 import type { InboxConversation } from "@/types/messaging";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -23,7 +25,6 @@ import {
   View,
 } from "react-native";
 import { Divider, Text } from "react-native-paper";
-import { Spacing } from "@/constants/theme";
 import { ConversationItem } from "./ConversationItem";
 
 // =============================================================================
@@ -33,6 +34,8 @@ import { ConversationItem } from "./ConversationItem";
 export interface PinnedSectionProps {
   /** List of pinned conversations */
   conversations: InboxConversation[];
+  /** Per-conversation typing state map */
+  typingMap?: Map<string, ConversationTypingInfo>;
   /** Called when a conversation is pressed */
   onConversationPress: (conversation: InboxConversation) => void;
   /** Called when avatar is pressed */
@@ -50,6 +53,7 @@ export interface PinnedSectionProps {
 
 export const PinnedSection = memo(function PinnedSection({
   conversations,
+  typingMap,
   onConversationPress,
   onAvatarPress,
   onLongPress,
@@ -104,6 +108,7 @@ export const PinnedSection = memo(function PinnedSection({
             <ConversationItem
               key={`${conversation.type}-${conversation.id}`}
               conversation={conversation}
+              isTyping={typingMap?.get(conversation.id)?.isTyping || false}
               onPress={() => onConversationPress(conversation)}
               onAvatarPress={() => onAvatarPress(conversation)}
               onLongPress={(event) => onLongPress?.(conversation, event)}

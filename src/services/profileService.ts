@@ -516,7 +516,7 @@ export async function setStatus(
       text: normalizedStatus.text,
       mood: normalizedStatus.mood,
       setAt: Date.now(),
-      expiresAt: expiresIn ? Date.now() + expiresIn : undefined,
+      ...(expiresIn ? { expiresAt: Date.now() + expiresIn } : {}),
     };
 
     await updateDoc(userRef, {

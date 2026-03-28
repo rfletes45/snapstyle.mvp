@@ -35,8 +35,6 @@ import {
   ViewStyle,
 } from "react-native";
 import { IconButton, Text, useTheme } from "react-native-paper";
-import type { SharedValue } from "react-native-reanimated";
-import Animated, { useAnimatedStyle } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AnimalIcon } from "./AnimalIcon";
 import { AnimalPickerBubble } from "./AnimalPickerBubble";
@@ -117,21 +115,6 @@ export interface ChatComposerProps {
   onCursorChange?: (position: number) => void;
   /** Mention autocomplete component (groups only) */
   mentionAutocomplete?: React.ReactNode;
-  /** Keyboard height shared value (from useChatKeyboard) */
-  keyboardHeight?: SharedValue<number>;
-  /** Keyboard animation progress 0→1 shared value (from useChatKeyboard) */
-  keyboardProgress?: SharedValue<number>;
-  /** Safe area bottom inset */
-  safeAreaBottom?: number;
-  /** Whether to use animated positioning */
-  animated?: boolean;
-  /**
-   * Whether to use absolute positioning at the bottom of the screen.
-   * When true, the composer will be fixed at the bottom and slide in
-   * with the screen transition, covering other UI elements if needed.
-   * This prevents the composer from jumping when the tab bar disappears.
-   */
-  absolutePosition?: boolean;
   /** Custom container style */
   style?: StyleProp<ViewStyle>;
   /** TextInput props passthrough */
@@ -189,11 +172,6 @@ export function ChatComposer({
   uploadProgress,
   onCursorChange,
   mentionAutocomplete,
-  keyboardHeight,
-  keyboardProgress,
-  safeAreaBottom: customSafeAreaBottom,
-  animated = true,
-  absolutePosition = false,
   style,
   textInputProps,
   textInputRef,
@@ -201,7 +179,7 @@ export function ChatComposer({
   const theme = useTheme();
   const { colors, isDark } = useAppTheme();
   const insets = useSafeAreaInsets();
-  const safeAreaBottom = customSafeAreaBottom ?? insets.bottom;
+  const safeAreaBottom = insets.bottom;
 
   // Internal ref for TextInput - use provided ref or create our own
   const internalTextInputRef = useRef<TextInput | null>(null);
@@ -306,54 +284,6 @@ export function ChatComposer({
     }
   }, [onSend, inputRef]);
 
-  // Animated style for smooth 60fps keyboard tracking
-  // Uses transform: translateY for buttery smooth animations that work with
-  // interactive keyboard dismiss (when user drags to close keyboard)
-  // The keyboardHeight from useChatKeyboard is NEGATIVE when keyboard is open (e.g., -318)
-  const animatedKeyboardStyle = useAnimatedStyle(() => {
-    "worklet";
-    // If no keyboard tracking or not animated, return static values
-    if (!keyboardHeight || !animated) {
-      return {
-        transform: [{ translateY: 0 }],
-        paddingBottom: safeAreaBottom,
-      };
-    }
-
-    // keyboardHeight.value is negative when keyboard is open (e.g., -318)
-    // We use translateY to move the composer up with the keyboard
-    // This works smoothly with interactive dismiss because transform
-    // animates on the UI thread without layout recalculation
-    const translateY = Platform.OS === "ios" ? keyboardHeight.value : 0;
-
-    // Smoothly interpolate safe area padding using keyboard progress
-    // instead of a hard if/else on translateY which caused a visual jump
-    // (safeAreaBottom→0 instantly when translateY went from 0 to -1)
-    const progress = keyboardProgress?.value ?? (translateY < 0 ? 1 : 0);
-    const safeAreaPadding = safeAreaBottom * (1 - progress);
-
-    return {
-      transform: [{ translateY }],
-      paddingBottom: safeAreaPadding,
-    };
-  }, [keyboardHeight, keyboardProgress, safeAreaBottom, animated]);
-
-  // Keyboard backdrop: opaque black view behind the iOS translucent keyboard
-  // so chat content/images are not visible through the keyboard blur.
-  // Positioned absolutely at the bottom; height tracks keyboard height on UI thread.
-  const keyboardBackdropColor = colors.keyboardSurface ?? colors.background;
-  const backdropAnimatedStyle = useAnimatedStyle(() => {
-    "worklet";
-    if (!keyboardHeight) {
-      return { height: 0, opacity: 0 };
-    }
-    const kbHeight = -keyboardHeight.value;
-    return {
-      height: Math.max(kbHeight, 0),
-      opacity: kbHeight > 0 ? 1 : 0,
-    };
-  }, [keyboardHeight]);
-
   // Determine if send button should be visible vs other actions
   const hasText = value.trim().length > 0;
   const hasContent = hasText || hasAttachments;
@@ -380,32 +310,15 @@ export function ChatComposer({
   const borderColor = colors.composerBorder ?? colors.divider;
   const placeholderColor = colors.inputPlaceholder ?? colors.textMuted;
 
-  // Static container style (non-animated properties)
-  // When absolutePosition is true, position at bottom of screen to prevent jumping
-  const staticContainerStyle = useMemo(
-    () => [
-      styles.container,
-      { backgroundColor: containerBg },
-      absolutePosition && styles.absoluteContainer,
-      style,
-    ],
-    [containerBg, absolutePosition, style],
+  // Container style — positioning is now handled by KeyboardStickyView
+  const containerStyle = useMemo(
+    () => [styles.container, { backgroundColor: containerBg }, style],
+    [containerBg, style],
   );
 
   return (
     <>
-      {/* Keyboard backdrop: opaque layer behind the iOS translucent keyboard */}
-      {Platform.OS === "ios" && keyboardHeight && animated && (
-        <Animated.View
-          style={[
-            styles.keyboardBackdrop,
-            { backgroundColor: keyboardBackdropColor },
-            backdropAnimatedStyle,
-          ]}
-          pointerEvents="none"
-        />
-      )}
-      <Animated.View style={[staticContainerStyle, animatedKeyboardStyle]}>
+      <View style={containerStyle}>
         {/* Mention autocomplete (groups only) - shown above everything */}
         {scope === "group" && normalizedMentionAutocomplete}
 
@@ -560,7 +473,7 @@ export function ChatComposer({
             </View>
           )}
         </View>
-      </Animated.View>
+      </View>
 
       {/* Animal picker bubble overlay — always mounted for pre-loading */}
       {onAnimalPress &&
@@ -589,23 +502,6 @@ export function ChatComposer({
 const styles = StyleSheet.create({
   container: {
     // Background and padding set dynamically
-    overflow: "visible" as const,
-  },
-  keyboardBackdrop: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 0,
-    zIndex: 99,
-  },
-  // Absolute positioning for the composer to prevent jumping during screen transitions
-  // This ensures the composer slides in at the exact correct position
-  absoluteContainer: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    zIndex: 100,
     overflow: "visible" as const,
   },
   inputRow: {

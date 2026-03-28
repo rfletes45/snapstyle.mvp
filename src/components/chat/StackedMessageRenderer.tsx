@@ -260,7 +260,17 @@ export const StackedMessageRenderer: React.FC<StackedMessageRendererProps> =
 
         if (message.type === "voice") {
           return (
-            <View style={s.voiceContainer}>
+            <View
+              style={[
+                s.voiceContainer,
+                {
+                  backgroundColor: isSentByMe
+                    ? theme.colors.primaryContainer + "40"
+                    : theme.colors.surfaceVariant + "80",
+                  borderColor: theme.colors.outline + "20",
+                },
+              ]}
+            >
               <VoiceMessagePlayer
                 url={message.voiceUrl || message.content}
                 durationMs={message.voiceDurationMs || 0}
@@ -592,6 +602,9 @@ const s = StyleSheet.create({
   },
   voiceContainer: {
     maxWidth: 260,
+    borderRadius: 12,
+    borderWidth: 1,
+    overflow: "hidden",
   },
   linkPreviewContainer: {
     marginTop: 4,

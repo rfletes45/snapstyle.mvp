@@ -185,7 +185,17 @@ export const GroupStackedMessageRenderer: React.FC<GroupStackedMessageRendererPr
 
         if (item.kind === "voice" && voiceAttachment) {
           return (
-            <View style={gs.voiceContainer}>
+            <View
+              style={[
+                gs.voiceContainer,
+                {
+                  backgroundColor: isOwnMessage
+                    ? theme.colors.primaryContainer + "40"
+                    : theme.colors.surfaceVariant + "80",
+                  borderColor: theme.colors.outline + "20",
+                },
+              ]}
+            >
               <VoiceMessagePlayer
                 url={voiceAttachment.url}
                 durationMs={voiceAttachment.durationMs || 0}
@@ -215,6 +225,7 @@ export const GroupStackedMessageRenderer: React.FC<GroupStackedMessageRendererPr
                   ...(bubbleFontFamily ? { fontFamily: bubbleFontFamily } : {}),
                 },
               ]}
+              mentionRadius={6}
             />
             {hasUrls(item.text || "") && linkPreview && (
               <View style={gs.linkPreviewContainer}>
@@ -442,6 +453,9 @@ const gs = StyleSheet.create({
   },
   voiceContainer: {
     maxWidth: 260,
+    borderRadius: 12,
+    borderWidth: 1,
+    overflow: "hidden",
   },
   linkPreviewContainer: {
     marginTop: 4,

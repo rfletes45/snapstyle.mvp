@@ -17,6 +17,7 @@ import {
 } from "@/hooks/useConversationActions";
 import type { FriendRequestWithUser } from "@/hooks/useFriendRequests";
 import { useInboxData } from "@/hooks/useInboxData";
+import { useInboxTyping } from "@/hooks/useInboxTyping";
 import { useUnifiedInboxRequests } from "@/hooks/useUnifiedInboxRequests";
 import { markNotificationsReadByTypes } from "@/services/userNotifications";
 import { useAuth } from "@/store/AuthContext";
@@ -120,6 +121,16 @@ export default function ChatListScreen() {
         }) as { avatarUrl?: string | null; profilePictureUrl?: string | null },
     ),
   );
+
+  // Per-conversation typing indicators for inbox rows
+  const inboxConvSpecs = useMemo(
+    () =>
+      [...(pinnedConversations || []), ...(regularConversations || [])].map(
+        (c) => ({ id: c.id, type: c.type }),
+      ),
+    [pinnedConversations, regularConversations],
+  );
+  const inboxTyping = useInboxTyping(uid, inboxConvSpecs);
 
   // Actions from useConversationActions hook
   // Pass refresh callback to trigger UI update after actions
@@ -543,6 +554,7 @@ export default function ChatListScreen() {
       >
         <ConversationItem
           conversation={item}
+          isTyping={inboxTyping.get(item.id)?.isTyping || false}
           onPress={() => handleConversationPress(item)}
           onAvatarPress={() => handleAvatarPress(item)}
           onLongPress={(event?: { pageX: number; pageY: number }) =>
@@ -553,6 +565,7 @@ export default function ChatListScreen() {
     ),
     [
       actions,
+      inboxTyping,
       handleConversationPress,
       handleAvatarPress,
       handleLongPress,
@@ -567,6 +580,7 @@ export default function ChatListScreen() {
     return (
       <PinnedSection
         conversations={pinnedConversations}
+        typingMap={inboxTyping}
         onConversationPress={handleConversationPress}
         onAvatarPress={handleAvatarPress}
         onLongPress={handleLongPress}
@@ -574,6 +588,7 @@ export default function ChatListScreen() {
     );
   }, [
     pinnedConversations,
+    inboxTyping,
     handleConversationPress,
     handleAvatarPress,
     handleLongPress,

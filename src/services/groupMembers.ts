@@ -262,6 +262,58 @@ export async function updateGroupTypingIndicator(
 }
 
 /**
+ * Subscribe to typing status of all members in a group.
+ *
+ * Watches the Members subcollection and emits an array of UIDs
+ * whose `typingExpiresAt` is still in the future.
+ * The current user is always excluded.
+ *
+ * @param groupId - Group document ID
+ * @param currentUid - Current user's UID (filtered out)
+ * @param callback - Called with array of typing user UIDs
+ * @returns Unsubscribe function
+ */
+export function subscribeToGroupTyping(
+  groupId: string,
+  currentUid: string,
+  callback: (typingUids: string[]) => void,
+): () => void {
+  const colRef = getMembersCollection(groupId);
+
+  return onSnapshot(
+    colRef,
+    (snapshot) => {
+      const now = Date.now();
+      const typingUids: string[] = [];
+
+      snapshot.docs.forEach((docSnap) => {
+        const data = docSnap.data();
+        const uid = data.uid || docSnap.id;
+
+        // Skip current user
+        if (uid === currentUid) return;
+
+        // Check typingExpiresAt (group format)
+        const expiresAt =
+          typeof data.typingExpiresAt === "number" ? data.typingExpiresAt : 0;
+        if (expiresAt > now) {
+          typingUids.push(uid);
+        }
+      });
+
+      callback(typingUids);
+    },
+    (error) => {
+      log.error("Group typing subscription error", {
+        operation: "subscribeToGroupTyping",
+        data: { groupId, error },
+      });
+      callback([]);
+    },
+  );
+}
+
+/**
  * Set muted state for a group
  */
 export async function setGroupMuted(

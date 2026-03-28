@@ -1,21 +1,27 @@
-# Profile System
+# Profile System — Cosmetics, Ownership & Equip Flows
 
-Last verified: 2026-02-24
+> **⚠️ SCOPE NOTICE (2026-03-27):** This document covers **cosmetic ownership, equip flows, and rendering**. It does NOT cover the Widget Board, profile hero card size variants, or social widgets. For the full Profile system documentation, start at **[docs/profile/PROFILE_SYSTEM_OVERVIEW.md](profile/PROFILE_SYSTEM_OVERVIEW.md)**.
 
-This is the canonical source of truth for SnapStyle profile architecture, cosmetic ownership, equip flows, and profile/chat rendering.
+Last verified: 2026-03-27 (scope narrowed; cosmetics/equip content confirmed current)
 
 ## 1) Overview
 
-The Profile system includes:
+This document covers the cosmetic and ownership layer of the Profile system:
 
 - profile identity and visuals (PFP, decoration, profile background, theme)
 - featured badges/master badges
 - chat appearance (bubble color, font, animal)
 - tokens/wallet and cosmetic ownership plumbing
-- **overview cards** (Friends, Badges, Achievements Trophy Case)
-- **profile achievements trophy case** (select up to 2 featured achievements)
-- **social proof section** (streak milestones + recent activity feed)
-- **granular privacy controls** (23 fields across visibility and boolean toggles)
+- granular privacy controls (23 fields across visibility and boolean toggles)
+
+For these topics, see the new canonical profile docs at `docs/profile/`:
+
+- **Widget board architecture** → [WIDGET_BOARD_ARCHITECTURE.md](profile/WIDGET_BOARD_ARCHITECTURE.md)
+- **Profile hero card & size variants** → [PROFILE_HERO_CARD.md](profile/PROFILE_HERO_CARD.md)
+- **Widget inventory & reference** → [PROFILE_WIDGETS_REFERENCE.md](profile/PROFILE_WIDGETS_REFERENCE.md)
+- **Edit/customize mode & interactions** → [INTERACTIONS_AND_EDIT_MODE.md](profile/INTERACTIONS_AND_EDIT_MODE.md)
+- **Widget data sources & persistence** → [DATA_AND_PERSISTENCE.md](profile/DATA_AND_PERSISTENCE.md)
+- **Social & streak widgets** → [SOCIAL_WIDGETS_AND_STREAKS.md](profile/SOCIAL_WIDGETS_AND_STREAKS.md)
 
 Separation of concerns (non-negotiable):
 
@@ -24,15 +30,14 @@ Separation of concerns (non-negotiable):
 
 ## 2) Architecture
 
-Primary client files:
+Primary client files (cosmetics/ownership scope):
 
 - Navigation: `src/navigation/RootNavigator.tsx`, `src/types/navigation/root.ts`
 - Profile screens: `src/screens/profile/OwnProfileScreen.tsx`, `src/screens/profile/UserProfileScreen.tsx`
 - Profile sub-screens: `src/screens/profile/BadgeCollectionScreen.tsx`, `src/screens/profile/ProfileAchievementsScreen.tsx`
 - Overview cards: `src/components/profile/OverviewCards/` (OverviewCard, FriendsCard, BadgesCard, AchievementsTrophyCaseCard)
 - Profile achievements service: `src/services/profileAchievementsService.ts`
-- Social proof: `src/components/profile/SocialProof/SocialProofSection.tsx`
-- Profile overflow menu: `src/components/profile/ProfileOverflowMenu.tsx`
+- Social proof (UserProfileScreen only): `src/components/profile/SocialProof/SocialProofSection.tsx`
 - Privacy settings: `src/screens/settings/PrivacySettingsScreen.tsx`
 - Privacy contract: `src/services/profile/profileContract.ts` (validation + hydration)
 - Privacy types: `src/types/userProfile.ts` (`ProfilePrivacySettings`)
@@ -42,6 +47,8 @@ Primary client files:
 - Ownership reads: `src/services/entitlements.ts`
 - Hydration/contract checks: `src/services/profile/profileContract.ts`
 - Catalog/assets: `src/cosmetics/catalog.ts`, `src/cosmetics/assetRegistry.ts`, `src/cosmetics/chatCatalog.ts`, `src/cosmetics/themeRegistry.ts`
+
+> **Widget Board files** are documented separately in [docs/profile/WIDGET_BOARD_ARCHITECTURE.md](profile/WIDGET_BOARD_ARCHITECTURE.md). Key directory: `src/components/profile/WidgetBoard/`.
 
 Primary backend files:
 
@@ -211,52 +218,11 @@ Equip field writes:
 
 ### 7.1 Layout Structure
 
-Both `OwnProfileScreen` and `UserProfileScreen` follow a unified layout:
+## 7) Profile Overview UI
 
-1. **Decorative header** — PFP, decoration, background (extends behind status bar / dynamic island via `topInset` prop)
-2. **Identity chips** — status
-3. **Primary actions** — Customize + Shop (own profile) or relationship actions (other user)
-4. **Social proof section** — Streak row + recent activity row
-5. **Overview cards** — Friends, Badges, Achievements Trophy Case
+> **⚠️ NOTE:** The own-profile screen now uses a **Widget Board** system. Overview cards (Friends, Badges, Achievements) and the Social Proof streak widget are now rendered as board widgets, not as a fixed layout. See [PROFILE_SYSTEM_OVERVIEW.md](profile/PROFILE_SYSTEM_OVERVIEW.md) for the current architecture. The UserProfileScreen still uses a traditional card layout.
 
-### 7.2 Overview Cards
-
-Shared wrapper: `OverviewCard` — provides card shell, title, count badge, privacy lock, "Hidden" indicator, chevron, accent color border, and staggered `FadeInUp` entrance animation via Reanimated.
-
-Child cards:
-
-- `FriendsCard` — avatars from friends list, tap → Connections / MutualFriendsList
-- `BadgesCard` — badge icons from `featuredBadges`, tap → BadgeCollection
-- `AchievementsTrophyCaseCard` — featured + recent achievements, tap → ProfileAchievements trophy case screen
-
-Props pattern:
-
-- Own profile: `hiddenFromOthers={boolean}` shows eye-off badge when privacy hides data from others
-- Other user: `privacyHidden={boolean}` shows lock icon + hidden message
-- All cards accept `enterIndex` for staggered animation delay
-
-### 7.3 Social Proof Section
-
-File: `src/components/profile/SocialProof/SocialProofSection.tsx`
-
-Two compact rows:
-
-1. **Streak row** — 🔥 emoji + day count + milestone tier badge (Warming Up / On Fire / Blazing / Unstoppable / Legendary)
-2. **Activity row** — contextual icon + one-line summary + relative timestamp ("2h ago")
-
-Streak tiers (threshold → label → emoji → color):
-
-- 7d → Warming Up → ✨ → amber
-- 14d → On Fire → 🔥 → red
-- 30d → Blazing → 🌟 → orange
-- 60d → Unstoppable → ⚡ → yellow
-- 100d → Legendary → 💎 → purple
-
-Rows use `FadeInDown` Reanimated entrance with staggered delay. Activity row icon is contextual per event type.
-
-Privacy: respects `showStreaks` and `showRecentActivity` privacy settings. Own profile shows rows with "Hidden" indicator; other users see rows hidden entirely.
-
-### 7.4 Privacy Model
+### 7.1 Privacy Model
 
 `ProfilePrivacySettings` (16 fields total):
 
@@ -380,22 +346,9 @@ Deep-link behaviors fixed:
 - verify static `require(...)` mapping in `assetRegistry.ts`
 - verify source image actually exists in assets path
 
-### Overview card not showing data
+### Widget board issues
 
-- verify the parent screen passes the correct props (e.g. `badges`)
-- privacy: check `privacyHidden` / `hiddenFromOthers` derivation
-- verify `enterIndex` is passed for stagger animation
-
-### Streak tier badge not appearing
-
-- streak must be ≥ 7 days to show any tier badge
-- verify `streakCount` prop is passed to `SocialProofSection`
-
-### Activity row missing
-
-- verify `showRecentActivity` privacy setting is not `"nobody"`
-- verify `fetchUserActivities` returns at least one event
-- check `showRecentActivity` prop is `true` on `SocialProofSection`
+See [INTERACTIONS_AND_EDIT_MODE.md](profile/INTERACTIONS_AND_EDIT_MODE.md#troubleshooting--gotchas) for widget board troubleshooting.
 
 ## 12) Validation Commands
 

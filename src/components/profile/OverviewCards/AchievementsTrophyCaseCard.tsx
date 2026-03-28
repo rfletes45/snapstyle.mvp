@@ -51,6 +51,8 @@ export interface AchievementsTrophyCaseCardProps {
   maxPreview?: number;
   /** Stagger index for entrance animation */
   enterIndex?: number;
+  /** When true, strip card chrome for widget board embedding */
+  embedded?: boolean;
 }
 
 // =============================================================================
@@ -66,6 +68,7 @@ export const AchievementsTrophyCaseCard = memo(
     onPress,
     maxPreview = 4,
     enterIndex,
+    embedded,
   }: AchievementsTrophyCaseCardProps) {
     const colors = useColors();
 
@@ -119,6 +122,7 @@ export const AchievementsTrophyCaseCard = memo(
           enterIndex={enterIndex}
           onPress={onPress}
           testID="achievements-trophy-card"
+          embedded={embedded}
         >
           <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
             Play games to earn achievements!
@@ -136,6 +140,7 @@ export const AchievementsTrophyCaseCard = memo(
         enterIndex={enterIndex}
         onPress={onPress}
         testID="achievements-trophy-card"
+        embedded={embedded}
       >
         {/* Summary line */}
         <Text style={[styles.summaryText, { color: colors.textSecondary }]}>

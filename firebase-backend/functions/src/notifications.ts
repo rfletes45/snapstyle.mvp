@@ -1,6 +1,7 @@
 import * as admin from "firebase-admin";
 import * as functions from "firebase-functions";
 import { notifyUser } from "./notificationCenter";
+import { updateStreakOnMessage } from "./streaks";
 
 const db = admin.firestore();
 
@@ -170,6 +171,16 @@ export const onNewMessage = functions.firestore
     if (!recipientUid) return null;
 
     const notifyLevel = await getDmNotifyLevel(chatId, recipientUid);
+
+    // Always update streak tracking regardless of notification preferences.
+    // Streak logic runs in its own try/catch so notification failures don't
+    // block streak updates and vice-versa.
+    try {
+      await updateStreakOnMessage(senderId, recipientUid);
+    } catch (streakErr) {
+      console.error("[onNewMessage] Streak update failed:", streakErr);
+    }
+
     if (notifyLevel === "none") {
       return null;
     }

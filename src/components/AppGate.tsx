@@ -3,11 +3,18 @@
  *
  * Prevents navigating until:
  * - Auth state is resolved (not loading)
- * - Profile is loaded or determined missing
- * - ProfileSetup only shows when actually incomplete
+ * - Profile is loaded or **confirmed** missing (not just failed to load)
+ * - ProfileSetup only shows for genuinely new accounts
  * - Ban status is checked
  *
- * This component ensures no screen flickers due to async state changes.
+ * CRITICAL SAFETY RULE:
+ * If the profile fetch fails (network error, timeout, etc.), the user MUST
+ * stay on a loading/retry screen. We NEVER route an authenticated user to
+ * the onboarding/signup flow unless the profile document is **confirmed**
+ * to not exist in Firestore (profileFetchStatus === "not_found").
+ *
+ * This prevents the catastrophic bug where an existing user's profile data
+ * gets overwritten by the onboarding flow after a transient fetch failure.
  */
 
 import LoadingScreen from "@/components/LoadingScreen";
@@ -18,6 +25,9 @@ import { useUser } from "@/store/UserContext";
 import type { Ban } from "@/types/models";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
+import { createLogger } from "@/utils/log";
+const logger = createLogger("components/AppGate");
+
 /** Maximum time (ms) to wait for hydration before force-proceeding */
 const HYDRATION_TIMEOUT_MS = 15_000;
 
@@ -27,8 +37,9 @@ const HYDRATION_TIMEOUT_MS = 15_000;
 export type HydrationState =
   | "loading" // Still determining auth/profile state
   | "unauthenticated" // No user logged in
-  | "needs_profile" // Logged in but profile incomplete
+  | "needs_profile" // Logged in, profile doc CONFIRMED not to exist (true new user only)
   | "banned" // User is banned
+  | "fetch_error" // Profile fetch failed — stay on safe loading/retry screen
   | "ready"; // Fully authenticated with complete profile
 
 export interface AppGateState {
@@ -59,14 +70,20 @@ export function AppGate({
     loading: authLoading,
     isHydrated: authHydrated,
   } = useAuth();
-  const { profile, isHydrated: profileHydrated } = useUser();
+  const {
+    profile,
+    isHydrated: profileHydrated,
+    profileFetchStatus,
+  } = useUser();
 
   // Ban state
   const [ban, setBan] = useState<Ban | null>(null);
   const [banChecked, setBanChecked] = useState(false);
 
   // Hydration timeout — if auth/profile/ban takes too long, force-proceed
-  // so the user doesn't stare at a loading screen forever.
+  // SAFETY: On timeout, we force-proceed but ONLY to "ready" (if profile is
+  // cached/loaded) or "fetch_error" (if profile is unknown). We NEVER
+  // fallthrough to "needs_profile" on timeout.
   const [timedOut, setTimedOut] = useState(false);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -145,11 +162,53 @@ export function AppGate({
     // IMPORTANT: Once profileHydrated is true we do NOT fall back to
     // "loading" on a subsequent refreshProfile() call — that would unmount
     // the entire navigation tree and reset the user to the Inbox tab.
-    // If timed out, skip waiting and proceed to the app.
+    // If timed out, skip waiting and proceed — but SAFELY (see below).
     if ((!profileHydrated || !banChecked) && !timedOut) {
       return {
         hydrationState: "loading",
         isHydrated: false,
+        isAuthenticated: true,
+        hasCompleteProfile: false,
+        isBanned: false,
+        ban: null,
+      };
+    }
+
+    // ── CRITICAL SAFETY: Profile fetch error handling ──────────────
+    // If profile fetch failed (network error, timeout, etc.), we MUST NOT
+    // route to "needs_profile". That would send an existing user into
+    // onboarding and potentially overwrite their profile data.
+    //
+    // Instead, we show a safe error/retry state.
+    if (profileFetchStatus === "error") {
+      logger.warn(
+        "[AppGate] Profile fetch failed — showing safe error state, NOT routing to onboarding",
+      );
+      return {
+        hydrationState: "fetch_error",
+        isHydrated: true,
+        isAuthenticated: true,
+        hasCompleteProfile: false,
+        isBanned: false,
+        ban: null,
+      };
+    }
+
+    // ── SAFETY: If timed out but profile status is not definitively
+    // "found" or "not_found", treat as error — do NOT guess.
+    if (
+      timedOut &&
+      profileFetchStatus !== "found" &&
+      profileFetchStatus !== "not_found"
+    ) {
+      logger.warn(
+        "[AppGate] Hydration timed out with uncertain profile status (" +
+          profileFetchStatus +
+          ") — showing safe error state",
+      );
+      return {
+        hydrationState: "fetch_error",
+        isHydrated: true,
         isAuthenticated: true,
         hasCompleteProfile: false,
         isBanned: false,
@@ -176,9 +235,40 @@ export function AppGate({
     // Profile loaded - check if complete (has username)
     const hasCompleteProfile = !!profile?.username;
 
+    // CRITICAL: Only route to "needs_profile" if the profile document is
+    // CONFIRMED to not exist (profileFetchStatus === "not_found") OR
+    // the profile exists but is genuinely incomplete (no username).
+    //
+    // This is the ONLY path to onboarding for authenticated users.
     if (!hasCompleteProfile) {
+      if (profileFetchStatus === "not_found") {
+        // True new user — profile doc does not exist in Firestore
+        return {
+          hydrationState: "needs_profile",
+          isHydrated: true,
+          isAuthenticated: true,
+          hasCompleteProfile: false,
+          isBanned: false,
+          ban: null,
+        };
+      }
+
+      if (profileFetchStatus === "found" && !profile?.username) {
+        // Edge case: profile doc exists but has no username
+        // (partially created account — safe to send to onboarding)
+        return {
+          hydrationState: "needs_profile",
+          isHydrated: true,
+          isAuthenticated: true,
+          hasCompleteProfile: false,
+          isBanned: false,
+          ban: null,
+        };
+      }
+
+      // Any other status (error, loading, idle) — DO NOT route to onboarding
       return {
-        hydrationState: "needs_profile",
+        hydrationState: "fetch_error",
         isHydrated: true,
         isAuthenticated: true,
         hasCompleteProfile: false,
@@ -202,6 +292,7 @@ export function AppGate({
     currentFirebaseUser,
     profileHydrated,
     profile,
+    profileFetchStatus,
     ban,
     banChecked,
     timedOut,
@@ -215,6 +306,14 @@ export function AppGate({
   // Show banned screen if user is banned
   if (state.isBanned && state.ban) {
     return <BannedScreen ban={state.ban} />;
+  }
+
+  // Show safe loading/retry screen if profile fetch failed
+  // CRITICAL: Do NOT pass this through to children as "needs_profile"
+  if (state.hydrationState === "fetch_error") {
+    return (
+      <LoadingScreen message="Having trouble loading your profile. Retrying…" />
+    );
   }
 
   // Render children with state

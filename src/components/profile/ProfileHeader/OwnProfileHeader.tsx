@@ -49,6 +49,8 @@ export interface OwnProfileHeaderProps {
   level: LevelInfo;
   /** Top safe-area inset so the background image extends behind the status bar / dynamic island */
   topInset?: number;
+  /** When true, strips own border/margin/radius so the parent card shell provides them. */
+  embedded?: boolean;
   /** Handler for picture/decoration edit */
   onEditPicturePress: () => void;
   /** Handler for bio edit */
@@ -89,8 +91,12 @@ function OwnProfileHeaderBase({
   onCustomizePress,
   onShopPress,
   style,
+  embedded = false,
 }: OwnProfileHeaderProps) {
   const colors = useColors();
+
+  // When embedded inside a widget card, use a smaller avatar and tighter spacing
+  const avatarSize = embedded ? 80 : 120;
 
   // Resolve the background image source from the asset registry
   const backgroundSource: CosmeticImageSource | null = useMemo(() => {
@@ -117,16 +123,22 @@ function OwnProfileHeaderBase({
     : {};
 
   return (
-    <View style={[styles.outerWrapper, style]}>
+    <View
+      style={[
+        embedded ? styles.outerWrapperEmbedded : styles.outerWrapper,
+        style,
+      ]}
+    >
+      {" "}
       {/* Header region with overflow hidden for background crop.
        * Negative top margin + extra padding pull the bg behind the status bar
        * while keeping foreground content below the safe area. */}
       <View
         style={[
-          styles.headerRegion,
+          embedded ? styles.headerRegionEmbedded : styles.headerRegion,
           {
             backgroundColor: colors.surface,
-            borderColor: colors.outline,
+            borderColor: embedded ? "transparent" : colors.outline,
           },
         ]}
       >
@@ -150,16 +162,26 @@ function OwnProfileHeaderBase({
         )}
 
         {/* Foreground content — padded down by the safe-area inset */}
-        <View style={[styles.foregroundContent]}>
+        <View
+          style={[
+            embedded
+              ? styles.foregroundContentEmbedded
+              : styles.foregroundContent,
+          ]}
+        >
           {/* Profile Picture with Decoration */}
-          <View style={styles.pictureSection}>
+          <View
+            style={
+              embedded ? styles.pictureSectionEmbedded : styles.pictureSection
+            }
+          >
             <ProfilePictureWithDecoration
               pictureUrl={pictureUrl}
               name={displayName}
               decorationId={decorationId}
-              size={120}
+              size={avatarSize}
               onPress={onEditPicturePress}
-              showEditIndicator
+              showEditIndicator={!embedded}
             />
           </View>
 
@@ -292,47 +314,56 @@ function OwnProfileHeaderBase({
             <LevelProgress level={level} compact={!!backgroundSource} />
           </TouchableOpacity>
 
-          {/* Primary Actions (Customize / Shop) */}
-          <View style={styles.primaryActions}>
-            {onCustomizePress && (
-              <TouchableOpacity
-                style={[styles.primaryBtn, { backgroundColor: colors.primary }]}
-                onPress={onCustomizePress}
-                accessibilityLabel="Customize profile"
-              >
-                <MaterialCommunityIcons name="palette" size={18} color="#fff" />
-                <Text style={styles.primaryBtnText}>Customize</Text>
-              </TouchableOpacity>
-            )}
-            {onShopPress && (
-              <TouchableOpacity
-                style={[
-                  styles.primaryBtn,
-                  {
-                    backgroundColor: backgroundSource
-                      ? "rgba(255,255,255,0.2)"
-                      : colors.surfaceVariant,
-                  },
-                ]}
-                onPress={onShopPress}
-                accessibilityLabel="Open shop"
-              >
-                <MaterialCommunityIcons
-                  name="shopping-outline"
-                  size={18}
-                  color={backgroundSource ? "#fff" : colors.text}
-                />
-                <Text
+          {/* Primary Actions (Customize / Shop) — hidden when embedded in widget card */}
+          {!embedded && (
+            <View style={styles.primaryActions}>
+              {onCustomizePress && (
+                <TouchableOpacity
                   style={[
-                    styles.primaryBtnText,
-                    { color: backgroundSource ? "#fff" : colors.text },
+                    styles.primaryBtn,
+                    { backgroundColor: colors.primary },
                   ]}
+                  onPress={onCustomizePress}
+                  accessibilityLabel="Customize profile"
                 >
-                  Shop
-                </Text>
-              </TouchableOpacity>
-            )}
-          </View>
+                  <MaterialCommunityIcons
+                    name="palette"
+                    size={18}
+                    color="#fff"
+                  />
+                  <Text style={styles.primaryBtnText}>Customize</Text>
+                </TouchableOpacity>
+              )}
+              {onShopPress && (
+                <TouchableOpacity
+                  style={[
+                    styles.primaryBtn,
+                    {
+                      backgroundColor: backgroundSource
+                        ? "rgba(255,255,255,0.2)"
+                        : colors.surfaceVariant + "90",
+                    },
+                  ]}
+                  onPress={onShopPress}
+                  accessibilityLabel="Open shop"
+                >
+                  <MaterialCommunityIcons
+                    name="shopping-outline"
+                    size={18}
+                    color={backgroundSource ? "#fff" : colors.text}
+                  />
+                  <Text
+                    style={[
+                      styles.primaryBtnText,
+                      { color: backgroundSource ? "#fff" : colors.text },
+                    ]}
+                  >
+                    Shop
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
         </View>
       </View>
     </View>
@@ -347,6 +378,9 @@ const styles = StyleSheet.create({
   outerWrapper: {
     width: "100%",
   },
+  outerWrapperEmbedded: {
+    flex: 1,
+  },
   headerRegion: {
     overflow: "hidden",
     minHeight: 220,
@@ -354,6 +388,14 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.lg,
     marginHorizontal: Spacing.lg,
     borderWidth: 1.5,
+  },
+  headerRegionEmbedded: {
+    overflow: "hidden",
+    flex: 1,
+    justifyContent: "flex-end",
+    borderRadius: 0,
+    marginHorizontal: 0,
+    borderWidth: 0,
   },
   backgroundImage: {
     position: "absolute",
@@ -379,8 +421,17 @@ const styles = StyleSheet.create({
     paddingTop: 24,
     paddingBottom: 24,
   },
+  foregroundContentEmbedded: {
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingTop: 14,
+    paddingBottom: 14,
+  },
   pictureSection: {
     marginBottom: 16,
+  },
+  pictureSectionEmbedded: {
+    marginBottom: 10,
   },
   nameSection: {
     alignItems: "center",

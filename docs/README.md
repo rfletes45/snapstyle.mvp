@@ -1,6 +1,6 @@
 # SnapStyle Documentation
 
-Last verified: 2026-03-18
+Last verified: 2026-03-27
 
 This is the documentation map for how the app currently works in code.
 For messaging and notification work, prefer the canonical docs below over the older migration checkpoint docs.
@@ -13,6 +13,8 @@ If you are new to the repo, read in this order:
 2. `docs/operations/runbook.md`
 3. `docs/operations/testing.md`
 4. Feature/backend docs for the subsystem you are changing
+
+For the **Profile system** specifically, start at `docs/profile/PROFILE_SYSTEM_OVERVIEW.md`.
 
 ## Documentation Map
 
@@ -38,8 +40,30 @@ If you are new to the repo, read in this order:
   - Historical checkpoint log. Not canonical.
 - `docs/features/profile-economy.md`
   - Profile data/privacy contracts, relationship/moderation flows, wallet/tasks/shop behavior.
+
+### Profile System (Canonical)
+
+- `docs/profile/PROFILE_SYSTEM_OVERVIEW.md`
+  - **Start here.** Canonical entry point for the full profile system: widget board concept, terminology, documentation map.
+- `docs/profile/WIDGET_BOARD_ARCHITECTURE.md`
+  - Grid model, layout engine, drag/reflow, dwell timing, resize, animation, persistence model.
+- `docs/profile/PROFILE_HERO_CARD.md`
+  - Profile hero card size variants (wide/large/hero), content per size, settings placement, level bar.
+- `docs/profile/PROFILE_WIDGETS_REFERENCE.md`
+  - Every widget type: purpose, sizes, data source, interactions, states, removability.
+- `docs/profile/INTERACTIONS_AND_EDIT_MODE.md`
+  - View mode vs customize mode, drag/dwell, resize, sheets/modals, gestures, gotchas.
+- `docs/profile/DATA_AND_PERSISTENCE.md`
+  - Firestore layout storage, data sources per widget, source-of-truth rules, hooks.
+- `docs/profile/SOCIAL_WIDGETS_AND_STREAKS.md`
+  - Streak system integration, social widgets, friend streaks, activity feed, canonical vs derived data.
+- `docs/profile/MIGRATION_NOTES.md`
+  - What changed from the old profile system, deprecated components, how to interpret old references.
 - `docs/PROFILE_SYSTEM.md`
-  - Canonical profile cosmetics architecture: data model, entitlements, equip and rendering flow.
+  - Cosmetic ownership, entitlements, equip flows, rendering pipeline. (Scope narrowed; see profile/ docs for widget board.)
+
+### Other Subsystems
+
 - `docs/operations/runbook.md`
   - Local setup, startup sequence, health checks, deploy commands.
 - `docs/operations/testing.md`

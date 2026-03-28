@@ -17,17 +17,10 @@ import {
   useKeyboardHandler,
   useReanimatedKeyboardAnimation,
 } from "react-native-keyboard-controller";
-import { runOnJS, SharedValue, useDerivedValue } from "react-native-reanimated";
+import { runOnJS, SharedValue } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const log = createLogger("useChatKeyboard");
-
-// =============================================================================
-// Constants
-// =============================================================================
-
-/** Base height of the chat composer input area */
-const COMPOSER_BASE_HEIGHT = 60;
 
 // =============================================================================
 // Types
@@ -36,8 +29,6 @@ const COMPOSER_BASE_HEIGHT = 60;
 export interface ChatKeyboardConfig {
   /** Enable debug logging */
   debug?: boolean;
-  /** Base composer height for list inset calculation (default: 60) */
-  composerHeight?: number;
 }
 
 export interface ChatKeyboardState {
@@ -45,8 +36,7 @@ export interface ChatKeyboardState {
   keyboardHeight: SharedValue<number>;
   /** Reanimated shared value: keyboard animation progress 0→1 */
   keyboardProgress: SharedValue<number>;
-  /** Reanimated shared value: bottom inset for message list (composer + keyboard) */
-  listBottomInset: SharedValue<number>;
+
   /** JS boolean: whether keyboard is currently open */
   isKeyboardOpen: boolean;
   /** JS number: final keyboard height (positive, after animation completes) */
@@ -62,7 +52,7 @@ export interface ChatKeyboardState {
 export function useChatKeyboard(
   config: ChatKeyboardConfig = {},
 ): ChatKeyboardState {
-  const { debug = false, composerHeight = COMPOSER_BASE_HEIGHT } = config;
+  const { debug = false } = config;
 
   const insets = useSafeAreaInsets();
   const safeAreaBottom = insets.bottom;
@@ -75,18 +65,6 @@ export function useChatKeyboard(
   // Note: height is NEGATIVE when keyboard is open (e.g., -318)
   const { height: keyboardHeight, progress: keyboardProgress } =
     useReanimatedKeyboardAnimation();
-
-  // Derived value: list bottom inset (composer height + keyboard or safe area)
-  // This value animates smoothly with the keyboard for the message list padding.
-  // Uses Math.max to avoid a discontinuity at the keyboard open/close boundary:
-  // when keyboard is closed (kbHeight=0) we still need safeAreaBottom worth of space,
-  // and as the keyboard opens the height smoothly exceeds safeAreaBottom.
-  const listBottomInset = useDerivedValue(() => {
-    "worklet";
-    // -keyboardHeight.value gives positive value when keyboard is open
-    const kbHeight = Math.max(-keyboardHeight.value, safeAreaBottom);
-    return kbHeight + composerHeight;
-  }, [keyboardHeight, composerHeight, safeAreaBottom]);
 
   // Callback to update JS state from worklet
   const updateKeyboardState = useCallback(
@@ -141,7 +119,6 @@ export function useChatKeyboard(
     () => ({
       keyboardHeight,
       keyboardProgress,
-      listBottomInset,
       isKeyboardOpen,
       finalKeyboardHeight,
       safeAreaBottom,
@@ -149,7 +126,6 @@ export function useChatKeyboard(
     [
       keyboardHeight,
       keyboardProgress,
-      listBottomInset,
       isKeyboardOpen,
       finalKeyboardHeight,
       safeAreaBottom,
