@@ -7,12 +7,14 @@
  */
 
 // Reply-to components (H6) & Swipeable Wrapper (ARCH-C01)
-// ReplyBubble is the enhanced version with polished design
+// ReplyBubble is the enhanced version with polished design (bubble mode)
 export { ReplyBubble, default as ReplyBubbleDefault } from "./ReplyBubbleNew";
+// StackedReplyReference is the Discord-style inline reference (stacked mode)
 export {
   ReplyPreviewBar,
   default as ReplyPreviewBarDefault,
 } from "./ReplyPreviewBar";
+export { StackedReplyReference } from "./StackedReplyReference";
 // SwipeableMessage is the unified swipe-to-reply component for both DM and Group
 export {
   SwipeableMessage,

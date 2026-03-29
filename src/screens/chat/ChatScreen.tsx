@@ -17,7 +17,7 @@
  * - Jump-back button after scrolling to a reply target
  */
 
-import { usePrefetchChatImages } from "@/utils/imagePrefetch";
+import { usePrefetch, usePrefetchChatImages } from "@/utils/imagePrefetch";
 import { useFocusEffect } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import React, {
@@ -55,6 +55,7 @@ import { useVoiceRecorder, VoiceRecording } from "@/hooks/useVoiceRecorder";
 // Services
 import {
   applyOptimisticReaction,
+  parseReactionsFromMessage,
   ReactionSummary,
   subscribeToMultipleMessageReactions,
   toggleReaction,
@@ -79,6 +80,7 @@ import { CameraLongPressButton } from "@/components/chat/CameraLongPressButton";
 import type { ChatMessageListRef } from "@/components/chat/ChatMessageList";
 import { ChatSkeleton } from "@/components/chat/ChatSkeleton";
 import { DateDivider } from "@/components/chat/DateDivider";
+import { FullEmojiPicker } from "@/components/chat/FullEmojiPicker";
 import { NetworkBanner } from "@/components/chat/NetworkBanner";
 import { ScrollReturnButton } from "@/components/chat/ScrollReturnButton";
 import { VoiceRecordButton } from "@/components/chat/VoiceRecordButton";
@@ -96,12 +98,15 @@ import { createGameInvite } from "@/gamesV4/services/gameServiceV4";
 import type { GameId } from "@/gamesV4/types";
 import { useConversationDisplayMode } from "@/store/ConversationDisplayModeContext";
 
-// Keyboard-sync (KCSV + KeyboardStickyView)
+// Keyboard-sync (KCSV + KeyboardAvoidingView fallback)
 import {
+  ChatFooterWrapper,
+  isKCSVAvailable,
+  KeyboardSafeAreaSpacer,
   setChatScrollViewConfig,
   useRenderChatScrollComponent,
 } from "@/components/chat/ChatKeyboardScrollView";
-import { KeyboardStickyView } from "react-native-keyboard-controller";
+import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 
 // Services
 import { blockUser } from "@/services/blocking";
@@ -172,6 +177,7 @@ interface InitialChatData {
 interface ChatScreenParams {
   friendUid: string;
   initialData?: InitialChatData;
+  targetMessageId?: string;
 }
 
 // ==========================================================================
@@ -201,7 +207,8 @@ export default function ChatScreen({
   );
 
   // OPTIMIZATION: Extract initial data passed from inbox for instant display
-  const { friendUid, initialData } = route.params as ChatScreenParams;
+  const { friendUid, initialData, targetMessageId } =
+    route.params as ChatScreenParams;
 
   // ==========================================================================
   // Screen State
@@ -240,6 +247,7 @@ export default function ChatScreen({
   const [actionsSheetVisible, setActionsSheetVisible] = useState(false);
   const [selectedMessage, setSelectedMessage] =
     useState<MessageWithProfile | null>(null);
+  const [fullEmojiPickerOpen, setFullEmojiPickerOpen] = useState(false);
 
   // Media viewer state
   const [mediaViewerVisible, setMediaViewerVisible] = useState(false);
@@ -294,7 +302,11 @@ export default function ChatScreen({
     conversationId: chatId || "",
     currentUid: uid || "",
     currentUserName:
-      currentFirebaseUser?.displayName || currentFirebaseUser?.email || "User",
+      profile?.displayName ||
+      profile?.username ||
+      currentFirebaseUser?.displayName ||
+      currentFirebaseUser?.email ||
+      "User",
     enableVoice: true,
     enableAttachments: true,
     enableMentions: false,
@@ -307,6 +319,17 @@ export default function ChatScreen({
 
   // Warm image cache for recent chat images
   usePrefetchChatImages(screen.messages?.slice(0, 20));
+
+  // Prefetch friend's avatar for instant display
+  const friendAvatarUrls = useMemo(() => {
+    const url =
+      friendProfile?.profilePicture?.url ||
+      friendProfile?.profilePictureUrl ||
+      friendProfile?.avatar ||
+      initialData?.friendAvatar;
+    return url ? [url] : undefined;
+  }, [friendProfile, initialData?.friendAvatar]);
+  usePrefetch(friendAvatarUrls);
 
   // ==========================================================================
   // Camera & attachment actions are handled through unified chat screen hooks.
@@ -481,6 +504,38 @@ export default function ChatScreen({
   // Track message IDs that have been optimistically reacted to (for subscriptions)
   const optimisticIds = React.useRef<Set<string>>(new Set());
 
+  // Seed reactions from denormalized reactionsSummary for instant first render.
+  // The real-time subscription will reconcile with full data (hasReacted, userIds).
+  const seededIdsRef = React.useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!uid || displayMessages.length === 0) return;
+    const seedMap = new Map<string, ReactionSummary[]>();
+    let hasNew = false;
+    for (const m of displayMessages) {
+      if (
+        m.reactionsSummary &&
+        Object.keys(m.reactionsSummary).length > 0 &&
+        !seededIdsRef.current.has(m.id)
+      ) {
+        seededIdsRef.current.add(m.id);
+        seedMap.set(m.id, parseReactionsFromMessage(m.reactionsSummary, uid));
+        hasNew = true;
+      }
+    }
+    if (hasNew) {
+      setMessageReactions((prev) => {
+        const next = new Map(prev);
+        seedMap.forEach((reactions, id) => {
+          // Only seed if not already populated by subscription or optimistic toggle
+          if (!next.has(id) || next.get(id)!.length === 0) {
+            next.set(id, reactions);
+          }
+        });
+        return next;
+      });
+    }
+  }, [uid, displayMessages]);
+
   /**
    * Optimistic reaction toggle — mutates local state immediately.
    * Called from ReactionPills (pill tap) and MessageActionsSheet (quick reaction).
@@ -529,6 +584,33 @@ export default function ChatScreen({
     [selectedMessage, chatId, uid, handleOptimisticReaction],
   );
 
+  // Open full emoji picker (from "+" in action sheet)
+  const handleExpandReactions = useCallback(() => {
+    setFullEmojiPickerOpen(true);
+  }, []);
+
+  // Handle emoji from full picker — same reaction flow as handleSheetReaction
+  const handleFullEmojiReaction = useCallback(
+    (emoji: string) => {
+      setFullEmojiPickerOpen(false);
+      if (!selectedMessage || !chatId || !uid) return;
+      const messageId = selectedMessage.id;
+      handleOptimisticReaction(messageId, emoji);
+      toggleReaction({
+        scope: "dm",
+        conversationId: chatId,
+        messageId,
+        emoji,
+        uid,
+      })
+        .then((result) => {
+          if (!result.success) handleOptimisticReaction(messageId, emoji);
+        })
+        .catch(() => handleOptimisticReaction(messageId, emoji));
+    },
+    [selectedMessage, chatId, uid, handleOptimisticReaction],
+  );
+
   useEffect(() => {
     if (!chatId || !uid || displayMessages.length === 0) return;
 
@@ -552,6 +634,7 @@ export default function ChatScreen({
       "dm",
       chatId,
       Array.from(idsWithReactions),
+      uid,
       (reactionsMap) => setMessageReactions(reactionsMap),
     );
 
@@ -911,6 +994,46 @@ export default function ChatScreen({
     returnIndexRef.current = null;
   }, []);
 
+  // Auto-scroll to targetMessageId from search navigation (deep jump)
+  const hasScrolledToTargetRef = useRef(false);
+  const deepJumpAttemptsRef = useRef(0);
+  const MAX_DEEP_JUMP_ATTEMPTS = 8;
+
+  useEffect(() => {
+    if (
+      !targetMessageId ||
+      hasScrolledToTargetRef.current ||
+      timelineData.length === 0
+    ) {
+      return;
+    }
+
+    const targetIndex = timelineData.findIndex(
+      (item) => item.type === "message" && item.data.id === targetMessageId,
+    );
+    if (targetIndex !== -1) {
+      hasScrolledToTargetRef.current = true;
+      deepJumpAttemptsRef.current = 0;
+      // Delay to let list render
+      setTimeout(() => {
+        scrollToMessage(targetMessageId);
+      }, 500);
+    } else if (
+      deepJumpAttemptsRef.current < MAX_DEEP_JUMP_ATTEMPTS &&
+      screen.chat.pagination.hasMoreOlder
+    ) {
+      // Message not in current timeline — load older messages and retry
+      deepJumpAttemptsRef.current += 1;
+      screen.loadOlder?.();
+    }
+  }, [
+    targetMessageId,
+    timelineData,
+    scrollToMessage,
+    screen.loadOlder,
+    screen.chat.pagination.hasMoreOlder,
+  ]);
+
   // Auto-hide return button callback
   const handleReturnButtonAutoHide = useCallback(() => {
     setShowReturnButton(false);
@@ -1093,7 +1216,7 @@ export default function ChatScreen({
             profile?.displayName ||
             profile?.username ||
             currentFirebaseUser?.displayName ||
-            "User"
+            "Me"
           }
         />
       );
@@ -1146,8 +1269,10 @@ export default function ChatScreen({
 
   return (
     <>
-      <View
+      <KeyboardAvoidingView
         style={[styles.container, { backgroundColor: theme.colors.background }]}
+        behavior="padding"
+        enabled={!isKCSVAvailable}
       >
         {/* Unified custom header — matches group chat style */}
         <ChatHeader
@@ -1226,6 +1351,8 @@ export default function ChatScreen({
             flatListProps={{
               onEndReached: screen.loadOlder,
               onEndReachedThreshold: 0.3,
+              initialNumToRender: 15,
+              maxToRenderPerBatch: 8,
             }}
           />
         )}
@@ -1237,8 +1364,8 @@ export default function ChatScreen({
           statusText={networkStatus.statusText}
         />
 
-        {/* Keyboard-sticky footer: typing indicator + composer */}
-        <KeyboardStickyView offset={{ closed: insets.bottom }}>
+        {/* Keyboard-aware footer: typing indicator + composer */}
+        <ChatFooterWrapper>
           {/* Typing Indicator — display-mode aware */}
           {displayMode === "stacked" ? (
             <TypingBar
@@ -1312,7 +1439,8 @@ export default function ChatScreen({
               ) : undefined
             }
           />
-        </KeyboardStickyView>
+          <KeyboardSafeAreaSpacer backgroundColor={theme.colors.background} />
+        </ChatFooterWrapper>
 
         {/* Jump-back button for reply navigation */}
         <ScrollReturnButton
@@ -1321,7 +1449,7 @@ export default function ChatScreen({
           onAutoHide={handleReturnButtonAutoHide}
           autoHideDelay={5000}
         />
-      </View>
+      </KeyboardAvoidingView>
 
       <BlockUserModal
         visible={blockModalVisible}
@@ -1353,6 +1481,13 @@ export default function ChatScreen({
         onEdited={NOOP}
         onDeleted={NOOP}
         onReactionAdded={handleSheetReaction}
+        onExpandReactions={handleExpandReactions}
+      />
+
+      <FullEmojiPicker
+        open={fullEmojiPickerOpen}
+        onClose={() => setFullEmojiPickerOpen(false)}
+        onEmojiSelected={handleFullEmojiReaction}
       />
 
       <MediaViewerModal

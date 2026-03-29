@@ -29,10 +29,11 @@ import Animated, {
 import type { MessageViewModel } from "@/chat/displayMode";
 import { FEED_LAYOUT } from "@/chat/displayMode";
 import AppImage from "@/components/AppImage";
-import { ReplyBubble, SwipeableMessage } from "@/components/chat";
+import { SwipeableMessage } from "@/components/chat";
 import { AnimalBubble } from "@/components/chat/AnimalBubble";
 import { LinkPreviewCard } from "@/components/chat/LinkPreviewCard";
 import { ReactionPills } from "@/components/chat/ReactionBar";
+import { StackedReplyReference } from "@/components/chat/StackedReplyReference";
 import { ThreadIndicator } from "@/components/chat/ThreadIndicator";
 import { VoiceMessagePlayer } from "@/components/chat/VoiceMessagePlayer";
 import type { MessageWithProfile } from "@/components/DMMessageItem";
@@ -439,18 +440,15 @@ export const StackedMessageRenderer: React.FC<StackedMessageRendererProps> =
                     </View>
                   )}
 
-                  {/* Reply preview */}
+                  {/* Reply preview — stacked-mode inline reference */}
                   {message.replyTo && (
-                    <View style={s.replyContainer}>
-                      <ReplyBubble
-                        replyTo={message.replyTo}
-                        isSentByMe={isSentByMe}
-                        isReplyToMe={message.replyTo.senderId === currentUid}
-                        onPress={() =>
-                          onScrollToMessage(message.replyTo!.messageId)
-                        }
-                      />
-                    </View>
+                    <StackedReplyReference
+                      replyTo={message.replyTo}
+                      isReplyToMe={message.replyTo.senderId === currentUid}
+                      onPress={() =>
+                        onScrollToMessage(message.replyTo!.messageId)
+                      }
+                    />
                   )}
 
                   {/* Message content — no bubble wrapper */}
@@ -478,22 +476,8 @@ export const StackedMessageRenderer: React.FC<StackedMessageRendererProps> =
                     </View>
                   )}
 
-                  {/* Timestamp + status (group-end only, when no header showed it) */}
-                  {vm.showTimestamp && !vm.isGroupStart && (
-                    <View style={s.metaRow}>
-                      {renderStatus()}
-                      <Text
-                        style={[
-                          s.metaText,
-                          { color: theme.colors.onSurfaceVariant },
-                        ]}
-                      >
-                        {formattedTime}
-                      </Text>
-                    </View>
-                  )}
-                  {/* Status only for group-start messages that already show time in header */}
-                  {vm.showTimestamp && vm.isGroupStart && isSentByMe && (
+                  {/* Delivery status at group-end (time already shown in group header) */}
+                  {vm.showTimestamp && isSentByMe && (
                     <View style={s.metaRow}>{renderStatus()}</View>
                   )}
                 </View>
@@ -609,11 +593,6 @@ const s = StyleSheet.create({
   linkPreviewContainer: {
     marginTop: 4,
     maxWidth: 320,
-  },
-
-  // ── Reply preview ───────────────────────────────────────────────────
-  replyContainer: {
-    marginBottom: F.replyPreviewGap,
   },
 
   // ── Reactions (always left-aligned) ─────────────────────────────────

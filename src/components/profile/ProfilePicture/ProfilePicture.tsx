@@ -95,6 +95,7 @@ export function ProfilePicture({
         onLoad={handleLoad}
         onError={handleError}
         contentFit="cover"
+        transition={0}
         debugLabel="ProfilePicture"
         priority="high"
       />

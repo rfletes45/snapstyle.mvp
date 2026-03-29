@@ -20,13 +20,13 @@ import {
   LinkPreviewCard,
   MessageWithMentions,
   ReactionPills,
-  ReplyBubble,
   SwipeableMessage,
   ThreadIndicator,
   VoiceMessagePlayer,
 } from "@/components/chat";
 import { AnimalBubble } from "@/components/chat/AnimalBubble";
 import { MessageHighlightOverlay } from "@/components/chat/MessageHighlightOverlay";
+import { StackedReplyReference } from "@/components/chat/StackedReplyReference";
 import { ProfilePictureWithDecoration } from "@/components/profile/ProfilePicture";
 import { hasUrls } from "@/services/linkPreview";
 import type { MentionableMember } from "@/services/mentionParser";
@@ -314,18 +314,13 @@ export const GroupStackedMessageRenderer: React.FC<GroupStackedMessageRendererPr
                     </View>
                   )}
 
-                  {/* Reply preview */}
+                  {/* Reply preview — stacked-mode inline reference */}
                   {item.replyTo && (
-                    <View style={gs.replyContainer}>
-                      <ReplyBubble
-                        replyTo={item.replyTo}
-                        isSentByMe={isOwnMessage}
-                        isReplyToMe={item.replyTo.senderId === uid}
-                        onPress={() =>
-                          onScrollToMessage(item.replyTo!.messageId)
-                        }
-                      />
-                    </View>
+                    <StackedReplyReference
+                      replyTo={item.replyTo}
+                      isReplyToMe={item.replyTo.senderId === uid}
+                      onPress={() => onScrollToMessage(item.replyTo!.messageId)}
+                    />
                   )}
 
                   {/* Message content — no bubble wrapper */}
@@ -460,11 +455,6 @@ const gs = StyleSheet.create({
   linkPreviewContainer: {
     marginTop: 4,
     maxWidth: 320,
-  },
-
-  // Reply preview
-  replyContainer: {
-    marginBottom: F.replyPreviewGap,
   },
 
   // Reactions (always left-aligned)

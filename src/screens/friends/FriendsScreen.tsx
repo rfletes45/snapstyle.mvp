@@ -1,13 +1,22 @@
 /**
- * FriendsScreen — Redesigned Friends Experience
+ * FriendsScreen — Clean alphabetical friends list with letter dividers.
  *
- * Unified friends list with inline requests, integrated search,
- * and modern gamified social styling.
+ * Two-stage architecture:
+ * - Stage 1 (this screen): Alphabetical friends list, pending requests,
+ *   search bar, "Add Friends" header button.
+ * - Stage 2 (AddFriendsSheet): 3-tile bottom sheet (Share Invite, QR Code,
+ *   Quick Add) opened via header button.
  *
  * @module screens/friends/FriendsScreen
  */
 
 import BlockUserModal from "@/components/BlockUserModal";
+import {
+  QRCodeSheet,
+  QuickAddSheet,
+  SectionHeader,
+} from "@/components/friends";
+import AddFriendsSheet from "@/components/friends/AddFriendsSheet";
 import { ProfilePictureWithDecoration } from "@/components/profile/ProfilePicture";
 import ReportUserModal from "@/components/ReportUserModal";
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui";
@@ -24,9 +33,9 @@ import {
   removeFriend,
   sendFriendRequest,
 } from "@/services/friends";
+import { shareInviteLink, shareProfileLink } from "@/services/invites";
 import { submitReport } from "@/services/reporting";
 import { markNotificationsReadByTypes } from "@/services/userNotifications";
-import { searchUsers, type UserSearchResult } from "@/services/users";
 import { useAuth } from "@/store/AuthContext";
 import { useInAppNotifications } from "@/store/InAppNotificationsContext";
 import {
@@ -36,6 +45,7 @@ import {
   ReportReason,
 } from "@/types/models";
 import * as haptics from "@/utils/haptics";
+import { createLogger } from "@/utils/log";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useFocusEffect, useRoute } from "@react-navigation/native";
 import {
@@ -55,12 +65,10 @@ import React, {
 import {
   ActivityIndicator,
   Alert,
-  FlatList,
-  KeyboardAvoidingView,
   LayoutAnimation,
-  Modal,
   Platform,
   RefreshControl,
+  SectionList,
   StyleSheet,
   TouchableOpacity,
   UIManager,
@@ -69,7 +77,6 @@ import {
 import {
   Appbar,
   Button,
-  Chip,
   Divider,
   IconButton,
   Menu,
@@ -78,9 +85,9 @@ import {
   Text,
   useTheme,
 } from "react-native-paper";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { createLogger } from "@/utils/log";
+import { shareInviteToContact } from "@/services/invites";
+
 const logger = createLogger("screens/friends/FriendsScreen");
 
 // Enable LayoutAnimation on Android
@@ -111,13 +118,15 @@ interface FriendWithProfile extends Friend {
   otherUserProfile?: UserProfile;
 }
 
-type FriendsTab = "all" | "requests";
+interface AlphaSection {
+  title: string;
+  data: FriendWithProfile[];
+}
 
 // =============================================================================
 // Helpers
 // =============================================================================
 
-/** Normalize profile data from various shapes into a consistent UserProfile */
 function extractProfile(profile: any): UserProfile | undefined {
   if (!profile) return undefined;
   return {
@@ -131,11 +140,33 @@ function extractProfile(profile: any): UserProfile | undefined {
   };
 }
 
+/** Group friends alphabetically by first letter of username. */
+function groupAlphabetically(
+  friends: FriendWithProfile[],
+  uid?: string,
+): AlphaSection[] {
+  const sorted = [...friends].sort((a, b) => {
+    const aName = (a.otherUserProfile?.username || "").toLowerCase();
+    const bName = (b.otherUserProfile?.username || "").toLowerCase();
+    return aName.localeCompare(bName);
+  });
+
+  const map = new Map<string, FriendWithProfile[]>();
+  for (const friend of sorted) {
+    const firstChar = (friend.otherUserProfile?.username ||
+      "?")[0].toUpperCase();
+    const letter = /[A-Z]/.test(firstChar) ? firstChar : "#";
+    if (!map.has(letter)) map.set(letter, []);
+    map.get(letter)!.push(friend);
+  }
+
+  return Array.from(map.entries()).map(([title, data]) => ({ title, data }));
+}
+
 // =============================================================================
-// Subcomponents
+// Subcomponents — Request Card
 // =============================================================================
 
-/** Inline friend request card with accept/decline */
 const RequestCard = React.memo(function RequestCard({
   request,
   type,
@@ -161,94 +192,102 @@ const RequestCard = React.memo(function RequestCard({
   const profile = request.otherUserProfile;
 
   return (
-    <TouchableOpacity
-      style={[styles.friendRow, { backgroundColor: colors.surface }]}
-      onPress={() => onNavigateProfile(otherUid)}
-      activeOpacity={0.7}
-      accessibilityLabel={`${profile?.username || "User"}, ${type === "received" ? "wants to be your friend" : "request sent"}`}
-    >
-      <ProfilePictureWithDecoration
-        pictureUrl={profile?.profilePictureUrl}
-        name={profile?.displayName || "?"}
-        decorationId={profile?.decorationId}
-        size={48}
-      />
-      <View style={styles.friendInfo}>
-        <Text
-          style={[styles.friendName, { color: colors.onSurface }]}
-          numberOfLines={1}
-        >
-          {profile?.username || "Loading..."}
-        </Text>
-        <Text
-          style={[styles.friendSubtitle, { color: colors.onSurfaceVariant }]}
-          numberOfLines={1}
-        >
-          {type === "received" ? "Wants to be your friend" : "Request sent"}
-        </Text>
-      </View>
-      <View style={styles.friendActions}>
-        {type === "received" ? (
-          <>
-            <TouchableOpacity
-              style={[
-                styles.actionBtn,
-                {
-                  backgroundColor: isActionInProgress
-                    ? colors.surfaceVariant
-                    : colors.primary,
-                },
-              ]}
-              onPress={() => onAccept(request.id)}
-              disabled={isActionInProgress}
-              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-              accessibilityLabel="Accept friend request"
-              accessibilityRole="button"
-            >
-              {isActionInProgress ? (
-                <ActivityIndicator size={14} color={colors.onSurfaceVariant} />
-              ) : (
-                <MaterialCommunityIcons name="check" size={18} color="#fff" />
-              )}
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[
-                styles.actionBtn,
-                styles.declineBtn,
-                { backgroundColor: colors.surfaceVariant },
-              ]}
-              onPress={() => onDecline(request.id)}
-              disabled={isActionInProgress}
-              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-              accessibilityLabel="Decline friend request"
-              accessibilityRole="button"
-            >
-              <MaterialCommunityIcons
-                name="close"
-                size={18}
-                color={colors.onSurfaceVariant}
-              />
-            </TouchableOpacity>
-          </>
-        ) : (
-          <Button
-            mode="text"
-            onPress={() => onCancel(request.id)}
-            compact
-            disabled={isActionInProgress}
-            loading={isActionInProgress}
-            textColor={colors.onSurfaceVariant}
-            labelStyle={{ fontSize: 13 }}
+    <View style={styles.cardWrapper}>
+      <TouchableOpacity
+        style={[styles.friendCard, { backgroundColor: colors.surface }]}
+        onPress={() => onNavigateProfile(otherUid)}
+        activeOpacity={0.7}
+        accessibilityLabel={`${profile?.username || "User"}, ${type === "received" ? "wants to be your friend" : "request sent"}`}
+      >
+        <ProfilePictureWithDecoration
+          pictureUrl={profile?.profilePictureUrl}
+          name={profile?.displayName || "?"}
+          decorationId={profile?.decorationId}
+          size={48}
+        />
+        <View style={styles.friendInfo}>
+          <Text
+            style={[styles.friendName, { color: colors.onSurface }]}
+            numberOfLines={1}
           >
-            Cancel
-          </Button>
-        )}
-      </View>
-    </TouchableOpacity>
+            {profile?.username || "Loading..."}
+          </Text>
+          <Text
+            style={[styles.friendSubtitle, { color: colors.onSurfaceVariant }]}
+            numberOfLines={1}
+          >
+            {type === "received" ? "Wants to be your friend" : "Request sent"}
+          </Text>
+        </View>
+        <View style={styles.friendActions}>
+          {type === "received" ? (
+            <>
+              <TouchableOpacity
+                style={[
+                  styles.actionBtn,
+                  {
+                    backgroundColor: isActionInProgress
+                      ? colors.surfaceVariant
+                      : colors.primary,
+                  },
+                ]}
+                onPress={() => onAccept(request.id)}
+                disabled={isActionInProgress}
+                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                accessibilityLabel="Accept friend request"
+                accessibilityRole="button"
+              >
+                {isActionInProgress ? (
+                  <ActivityIndicator
+                    size={14}
+                    color={colors.onSurfaceVariant}
+                  />
+                ) : (
+                  <MaterialCommunityIcons name="check" size={18} color="#fff" />
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.actionBtn,
+                  styles.declineBtn,
+                  { backgroundColor: colors.surfaceVariant },
+                ]}
+                onPress={() => onDecline(request.id)}
+                disabled={isActionInProgress}
+                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                accessibilityLabel="Decline friend request"
+                accessibilityRole="button"
+              >
+                <MaterialCommunityIcons
+                  name="close"
+                  size={18}
+                  color={colors.onSurfaceVariant}
+                />
+              </TouchableOpacity>
+            </>
+          ) : (
+            <Button
+              mode="text"
+              onPress={() => onCancel(request.id)}
+              compact
+              disabled={isActionInProgress}
+              loading={isActionInProgress}
+              textColor={colors.onSurfaceVariant}
+              labelStyle={{ fontSize: 13 }}
+            >
+              Cancel
+            </Button>
+          )}
+        </View>
+      </TouchableOpacity>
+    </View>
   );
 });
 
-/** Friend row with message action, streak badge, and overflow menu */
+// =============================================================================
+// Subcomponents — Friend Row
+// =============================================================================
+
 const FriendRow = React.memo(function FriendRow({
   friend,
   friendUid,
@@ -278,117 +317,171 @@ const FriendRow = React.memo(function FriendRow({
   const profile = friend.otherUserProfile;
 
   return (
-    <TouchableOpacity
-      style={[styles.friendRow, { backgroundColor: colors.surface }]}
-      onPress={onNavigateProfile}
-      activeOpacity={0.7}
-      accessibilityLabel={`${profile?.username || "Friend"}${streakCount > 0 ? `, ${streakCount} day streak` : ""}`}
-    >
-      <ProfilePictureWithDecoration
-        pictureUrl={profile?.profilePictureUrl}
-        name={profile?.displayName || "?"}
-        decorationId={profile?.decorationId}
-        size={48}
-      />
-      <View style={styles.friendInfo}>
-        <View style={styles.nameRow}>
-          <Text
-            style={[styles.friendName, { color: colors.onSurface }]}
-            numberOfLines={1}
-          >
-            {profile?.username || "Loading..."}
-          </Text>
-          {streakCount > 0 && (
-            <View
-              style={[
-                styles.streakBadge,
-                { backgroundColor: colors.tertiaryContainer || "#FF6B35" },
-              ]}
+    <View style={styles.cardWrapper}>
+      <TouchableOpacity
+        style={[styles.friendCard, { backgroundColor: colors.surface }]}
+        onPress={onNavigateProfile}
+        activeOpacity={0.7}
+        accessibilityLabel={`${profile?.username || "Friend"}${streakCount > 0 ? `, ${streakCount} day streak` : ""}`}
+      >
+        <ProfilePictureWithDecoration
+          pictureUrl={profile?.profilePictureUrl}
+          name={profile?.displayName || "?"}
+          decorationId={profile?.decorationId}
+          size={48}
+        />
+        <View style={styles.friendInfo}>
+          <View style={styles.nameRow}>
+            <Text
+              style={[styles.friendName, { color: colors.onSurface }]}
+              numberOfLines={1}
             >
-              <MaterialCommunityIcons
-                name="fire"
-                size={11}
-                color={colors.onTertiaryContainer || "#fff"}
-              />
-              <Text
+              {profile?.username || "Loading..."}
+            </Text>
+            {streakCount > 0 && (
+              <View
                 style={[
-                  styles.streakText,
-                  { color: colors.onTertiaryContainer || "#fff" },
+                  styles.streakBadge,
+                  { backgroundColor: colors.tertiaryContainer || "#FF6B35" },
                 ]}
               >
-                {streakCount}
-              </Text>
-            </View>
+                <MaterialCommunityIcons
+                  name="fire"
+                  size={11}
+                  color={colors.onTertiaryContainer || "#fff"}
+                />
+                <Text
+                  style={[
+                    styles.streakText,
+                    { color: colors.onTertiaryContainer || "#fff" },
+                  ]}
+                >
+                  {streakCount}
+                </Text>
+              </View>
+            )}
+          </View>
+          {profile?.displayName && profile.displayName !== profile.username && (
+            <Text
+              style={[
+                styles.friendSubtitle,
+                { color: colors.onSurfaceVariant },
+              ]}
+              numberOfLines={1}
+            >
+              {profile.displayName}
+            </Text>
           )}
         </View>
-        {profile?.displayName && profile.displayName !== profile.username && (
-          <Text
-            style={[styles.friendSubtitle, { color: colors.onSurfaceVariant }]}
-            numberOfLines={1}
+        <View style={styles.friendActions}>
+          <TouchableOpacity
+            style={[
+              styles.messageBtn,
+              { backgroundColor: colors.primaryContainer },
+            ]}
+            onPress={onMessage}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            accessibilityLabel={`Message ${profile?.username || "friend"}`}
+            accessibilityRole="button"
           >
-            {profile.displayName}
-          </Text>
-        )}
-      </View>
-      <View style={styles.friendActions}>
-        <TouchableOpacity
-          style={[
-            styles.messageBtn,
-            { backgroundColor: colors.primaryContainer },
-          ]}
-          onPress={onMessage}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          accessibilityLabel={`Message ${profile?.username || "friend"}`}
-          accessibilityRole="button"
-        >
-          <MaterialCommunityIcons
-            name="message-text-outline"
-            size={18}
-            color={colors.onPrimaryContainer}
-          />
-        </TouchableOpacity>
-        <Menu
-          visible={menuVisible}
-          onDismiss={onCloseMenu}
-          anchor={
-            <IconButton
-              icon="dots-vertical"
-              size={20}
-              onPress={onOpenMenu}
-              style={{ margin: 0 }}
+            <MaterialCommunityIcons
+              name="message-text-outline"
+              size={18}
+              color={colors.onPrimaryContainer}
             />
-          }
-          contentStyle={{ backgroundColor: colors.surface }}
-        >
-          <Menu.Item
-            onPress={() => {
-              onCloseMenu();
-              onRemove();
-            }}
-            title="Remove Friend"
-            leadingIcon="account-remove-outline"
-          />
-          <Menu.Item
-            onPress={() => {
-              onCloseMenu();
-              onBlock();
-            }}
-            title="Block"
-            leadingIcon="block-helper"
-            titleStyle={{ color: colors.error }}
-          />
-          <Menu.Item
-            onPress={() => {
-              onCloseMenu();
-              onReport();
-            }}
-            title="Report"
-            leadingIcon="flag-outline"
-            titleStyle={{ color: colors.error }}
-          />
-        </Menu>
-      </View>
-    </TouchableOpacity>
+          </TouchableOpacity>
+          <Menu
+            visible={menuVisible}
+            onDismiss={onCloseMenu}
+            anchor={
+              <IconButton
+                icon="dots-vertical"
+                size={20}
+                onPress={onOpenMenu}
+                style={{ margin: 0 }}
+              />
+            }
+            contentStyle={{ backgroundColor: colors.surface }}
+          >
+            <Menu.Item
+              onPress={() => {
+                onCloseMenu();
+                onRemove();
+              }}
+              title="Remove Friend"
+              leadingIcon="account-remove-outline"
+            />
+            <Menu.Item
+              onPress={() => {
+                onCloseMenu();
+                onBlock();
+              }}
+              title="Block"
+              leadingIcon="block-helper"
+              titleStyle={{ color: colors.error }}
+            />
+            <Menu.Item
+              onPress={() => {
+                onCloseMenu();
+                onReport();
+              }}
+              title="Report"
+              leadingIcon="flag-outline"
+              titleStyle={{ color: colors.error }}
+            />
+          </Menu>
+        </View>
+      </TouchableOpacity>
+    </View>
+  );
+});
+
+// =============================================================================
+// Main Screen
+// =============================================================================
+
+// =============================================================================
+// Subcomponents — Alphabet Rail
+// =============================================================================
+
+const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ#".split("");
+
+const AlphabetRail = React.memo(function AlphabetRail({
+  availableLetters,
+  onSelect,
+  colors,
+}: {
+  availableLetters: Set<string>;
+  onSelect: (letter: string) => void;
+  colors: any;
+}) {
+  return (
+    <View style={styles.railContainer} pointerEvents="box-none">
+      {ALPHABET.map((letter) => {
+        const exists = availableLetters.has(letter);
+        return (
+          <TouchableOpacity
+            key={letter}
+            onPress={() => exists && onSelect(letter)}
+            hitSlop={{ left: 8, right: 8 }}
+            style={styles.railLetter}
+            activeOpacity={exists ? 0.5 : 1}
+          >
+            <Text
+              style={[
+                styles.railLetterText,
+                {
+                  color: exists ? colors.primary : colors.outlineVariant,
+                  fontWeight: exists ? "700" : "400",
+                },
+              ]}
+            >
+              {letter}
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
   );
 });
 
@@ -400,10 +493,10 @@ export default function FriendsScreen({ navigation }: any) {
   const { currentFirebaseUser } = useAuth();
   const { setCurrentScreen } = useInAppNotifications();
   const route = useRoute<any>();
-  const insets = useSafeAreaInsets();
   const uid = currentFirebaseUser?.uid;
   const theme = useTheme();
   const { colors } = theme;
+  const sectionListRef = useRef<SectionList>(null);
 
   // Suppress friend-related notifications while on this screen
   useFocusEffect(
@@ -422,24 +515,11 @@ export default function FriendsScreen({ navigation }: any) {
   const [searchQuery, setSearchQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
-  const [activeTab, setActiveTab] = useState<FriendsTab>(
-    route.params?.tab === "requests" ? "requests" : "all",
-  );
 
-  // Add Friend modal
-  const [addFriendModalVisible, setAddFriendModalVisible] = useState(false);
-  const [addFriendQuery, setAddFriendQuery] = useState("");
-  const [addFriendResults, setAddFriendResults] = useState<UserSearchResult[]>(
-    [],
-  );
-  const [addFriendSearching, setAddFriendSearching] = useState(false);
-  const [addFriendSending, setAddFriendSending] = useState<string | null>(null);
-  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Tracks which request ID is currently being acted on (accept/decline/cancel)
+  // Request action in progress
   const [actionInProgress, setActionInProgress] = useState<string | null>(null);
 
-  // Snackbar (replaces Alert.alert for transient success/error)
+  // Snackbar
   const [snackbar, setSnackbar] = useState<{
     visible: boolean;
     message: string;
@@ -453,10 +533,20 @@ export default function FriendsScreen({ navigation }: any) {
     [],
   );
 
-  // Inline requests expanded state on "All" tab
+  // Section collapse
   const [requestsExpanded, setRequestsExpanded] = useState(true);
 
-  // Block/Report state
+  // Add Friends sheet
+  const [addFriendsOpen, setAddFriendsOpen] = useState(false);
+
+  // QR modal
+  const [qrModalVisible, setQrModalVisible] = useState(false);
+  const [qrMode, setQrMode] = useState<"myCode" | "scan">("myCode");
+
+  // Quick Add
+  const [quickAddVisible, setQuickAddVisible] = useState(false);
+
+  // Block/Report
   const [menuVisible, setMenuVisible] = useState<string | null>(null);
   const [blockModalVisible, setBlockModalVisible] = useState(false);
   const [reportModalVisible, setReportModalVisible] = useState(false);
@@ -468,27 +558,22 @@ export default function FriendsScreen({ navigation }: any) {
   // ── Tab routing from nav params ────────────────────────────────
   useEffect(() => {
     if (route.params?.tab === "requests") {
-      if (activeTab !== "requests") setActiveTab("requests");
-      navigation.setParams({ tab: undefined });
-    } else if (route.params?.tab === "all") {
-      if (activeTab !== "all") setActiveTab("all");
+      setRequestsExpanded(true);
       navigation.setParams({ tab: undefined });
     }
-  }, [route.params?.tab, activeTab, navigation]);
+  }, [route.params?.tab, navigation]);
 
   // ── Mark notifications read ────────────────────────────────────
   useFocusEffect(
     useCallback(() => {
       if (!uid) return;
-      const types =
-        activeTab === "requests"
-          ? (["friend_request", "friend_request_accepted"] as const)
-          : (["friend_request_accepted"] as const);
-
-      markNotificationsReadByTypes(uid, [...types]).catch((err) => {
+      markNotificationsReadByTypes(uid, [
+        "friend_request",
+        "friend_request_accepted",
+      ]).catch((err) => {
         logger.warn("Failed to mark social notifications read", err);
       });
-    }, [uid, activeTab]),
+    }, [uid]),
   );
 
   // ── Data Loading ───────────────────────────────────────────────
@@ -504,7 +589,6 @@ export default function FriendsScreen({ navigation }: any) {
         getPendingRequests(uid),
       ]);
 
-      // Fetch profiles for all requests
       const requestsWithProfiles: RequestWithProfile[] = await Promise.all(
         requestsData.map(async (request) => {
           const otherUserId = request.from === uid ? request.to : request.from;
@@ -513,7 +597,6 @@ export default function FriendsScreen({ navigation }: any) {
         }),
       );
 
-      // Fetch profiles for all friends
       const friendsWithProfiles: FriendWithProfile[] = await Promise.all(
         friendsData.map(async (friend) => {
           const friendUid = friend.users.find((u) => u !== uid);
@@ -542,7 +625,7 @@ export default function FriendsScreen({ navigation }: any) {
 
     const db = getFirestoreInstance();
 
-    // Friends listener — always fetches full profile (fixes PFP bug)
+    // Friends listener
     const friendsQ = query(
       collection(db, "Friends"),
       where("users", "array-contains", uid),
@@ -562,8 +645,6 @@ export default function FriendsScreen({ navigation }: any) {
           if (otherUid && !blockedIds.has(otherUid)) data.push(friend);
         });
 
-        data.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-
         const withProfiles: FriendWithProfile[] = await Promise.all(
           data.map(async (friend) => {
             const fUid = friend.users.find((u) => u !== uid);
@@ -578,7 +659,7 @@ export default function FriendsScreen({ navigation }: any) {
       (err) => logger.error("Friends listener error:", err),
     );
 
-    // Requests listeners — shared refresh function
+    // Requests listeners
     const refreshRequests = async () => {
       const data = await getPendingRequests(uid);
       const withProfiles: RequestWithProfile[] = await Promise.all(
@@ -628,86 +709,22 @@ export default function FriendsScreen({ navigation }: any) {
     setRefreshing(false);
   }, [loadData]);
 
-  // ── Add Friend Search ──────────────────────────────────────────
+  // ── Friend Request Actions ─────────────────────────────────────
 
-  const handleAddFriendQueryChange = useCallback(
-    (text: string) => {
-      setAddFriendQuery(text);
-      if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
-
-      if (!text.trim()) {
-        setAddFriendResults([]);
-        setAddFriendSearching(false);
-        return;
-      }
-
-      setAddFriendSearching(true);
-      searchTimerRef.current = setTimeout(async () => {
-        if (!uid) return;
-        try {
-          const results = await searchUsers(text, uid);
-          setAddFriendResults(results);
-        } catch {
-          setAddFriendResults([]);
-        } finally {
-          setAddFriendSearching(false);
-        }
-      }, 250);
-    },
-    [uid],
-  );
-
-  useEffect(() => {
-    return () => {
-      if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
-    };
-  }, []);
-
-  const getFriendStatus = useCallback(
-    (targetUid: string): "friends" | "requested" | "incoming" | "none" => {
-      if (friends.some((f) => f.users.includes(targetUid))) return "friends";
-      if (
-        pendingRequests.find(
-          (r) => r.from === uid && r.to === targetUid && r.status === "pending",
-        )
-      )
-        return "requested";
-      if (
-        pendingRequests.find(
-          (r) => r.to === uid && r.from === targetUid && r.status === "pending",
-        )
-      )
-        return "incoming";
-      return "none";
-    },
-    [friends, pendingRequests, uid],
-  );
-
-  const handleSendRequestFromSearch = useCallback(
-    async (targetUsername: string, targetUid: string) => {
+  const handleSendRequest = useCallback(
+    async (targetUsername: string, targetUid?: string) => {
       if (!uid) return;
       try {
-        setAddFriendSending(targetUid);
         await sendFriendRequest(uid, targetUsername);
+        haptics.buttonPress();
         showSnackbar("Friend request sent!");
         await loadData();
       } catch (error: any) {
         showSnackbar(error.message || "Failed to send request", "error");
-      } finally {
-        setAddFriendSending(null);
       }
     },
     [uid, loadData, showSnackbar],
   );
-
-  const handleCloseAddFriendModal = useCallback(() => {
-    setAddFriendModalVisible(false);
-    setAddFriendQuery("");
-    setAddFriendResults([]);
-    setAddFriendSearching(false);
-  }, []);
-
-  // ── Friend Request Actions ─────────────────────────────────────
 
   const handleAcceptRequest = useCallback(
     async (requestId: string) => {
@@ -716,7 +733,7 @@ export default function FriendsScreen({ navigation }: any) {
       haptics.buttonPress();
       try {
         await acceptFriendRequest(requestId);
-        showSnackbar("Friend added! 🎉");
+        showSnackbar("Friend added!");
       } catch {
         showSnackbar("Failed to accept request", "error");
       } finally {
@@ -847,6 +864,82 @@ export default function FriendsScreen({ navigation }: any) {
     [uid, selectedUser, showSnackbar, handleReportComplete],
   );
 
+  // ── Add Friends Sheet Actions ──────────────────────────────────
+
+  const currentUsername = currentFirebaseUser?.displayName || "user";
+
+  const handleShareInvite = useCallback(async () => {
+    if (!uid) return;
+    setAddFriendsOpen(false);
+    const result = await shareInviteLink(uid, currentUsername);
+    if (result === "shared") showSnackbar("Invite shared!");
+    else if (result === "error") showSnackbar("Failed to share", "error");
+  }, [uid, currentUsername, showSnackbar]);
+
+  const handleOpenQR = useCallback(() => {
+    setAddFriendsOpen(false);
+    setQrMode("myCode");
+    setQrModalVisible(true);
+  }, []);
+
+  const handleOpenQuickAdd = useCallback(() => {
+    setAddFriendsOpen(false);
+    setQuickAddVisible(true);
+  }, []);
+
+  // ── QR Actions ─────────────────────────────────────────────────
+
+  const handleQrScan = useCallback(
+    (data: string) => {
+      const profileMatch = data.match(/\/u\/([^/?\s]+)/);
+      const inviteMatch = data.match(/\/invite\/([^/?\s]+)/);
+
+      if (profileMatch) {
+        const username = profileMatch[1];
+        setQrModalVisible(false);
+        handleSendRequest(username);
+        showSnackbar(`Found user: @${username}`);
+      } else if (inviteMatch) {
+        setQrModalVisible(false);
+        showSnackbar("Invite code scanned!");
+      } else {
+        showSnackbar("Unrecognized QR code", "error");
+      }
+    },
+    [handleSendRequest, showSnackbar],
+  );
+
+  const handleQrShare = useCallback(async () => {
+    if (!currentUsername) return;
+    await shareProfileLink(currentUsername);
+  }, [currentUsername]);
+
+  // ── Quick Add Actions ──────────────────────────────────────────
+
+  const handleQuickAddUser = useCallback(
+    (targetUid: string, username: string) => {
+      setQuickAddVisible(false);
+      handleSendRequest(username, targetUid);
+    },
+    [handleSendRequest],
+  );
+
+  const handleQuickAddInvite = useCallback(
+    async (contactInfo: string) => {
+      if (!uid) return;
+      await shareInviteToContact(uid, contactInfo);
+    },
+    [uid],
+  );
+
+  const handleQuickAddSearchUsername = useCallback(
+    (usernameQuery: string) => {
+      setQuickAddVisible(false);
+      handleSendRequest(usernameQuery);
+    },
+    [handleSendRequest],
+  );
+
   // ── Derived State ──────────────────────────────────────────────
 
   const receivedRequests = useMemo(
@@ -874,27 +967,32 @@ export default function FriendsScreen({ navigation }: any) {
     });
   }, [friends, normalizedQuery]);
 
-  const filteredReceived = useMemo(() => {
-    if (!normalizedQuery) return receivedRequests;
-    return receivedRequests.filter((r) => {
-      const name = r.otherUserProfile?.username?.toLowerCase() || "";
-      const display = r.otherUserProfile?.displayName?.toLowerCase() || "";
-      return (
-        name.includes(normalizedQuery) || display.includes(normalizedQuery)
-      );
-    });
-  }, [receivedRequests, normalizedQuery]);
+  const alphaSections = useMemo(
+    () => groupAlphabetically(filteredFriends, uid),
+    [filteredFriends, uid],
+  );
 
-  const filteredSent = useMemo(() => {
-    if (!normalizedQuery) return sentRequests;
-    return sentRequests.filter((r) => {
-      const name = r.otherUserProfile?.username?.toLowerCase() || "";
-      return name.includes(normalizedQuery);
-    });
-  }, [sentRequests, normalizedQuery]);
+  const availableLetters = useMemo(
+    () => new Set(alphaSections.map((s) => s.title)),
+    [alphaSections],
+  );
 
-  const receivedCount = filteredReceived.length;
-  const totalRequestCount = receivedCount + filteredSent.length;
+  const scrollToSection = useCallback(
+    (letter: string) => {
+      const idx = alphaSections.findIndex((s) => s.title === letter);
+      if (idx < 0 || !sectionListRef.current) return;
+      sectionListRef.current.scrollToLocation({
+        sectionIndex: idx,
+        itemIndex: 0,
+        viewOffset: 0,
+        animated: true,
+      });
+    },
+    [alphaSections],
+  );
+
+  const receivedCount = receivedRequests.length;
+  const totalRequestCount = receivedCount + sentRequests.length;
 
   // ── Navigation ─────────────────────────────────────────────────
 
@@ -908,12 +1006,17 @@ export default function FriendsScreen({ navigation }: any) {
     [navigation],
   );
 
-  // ── Toggle inline requests ─────────────────────────────────────
+  // ── Toggle sections ────────────────────────────────────────────
 
   const toggleRequests = useCallback(() => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setRequestsExpanded((prev) => !prev);
   }, []);
+
+  // ── Get current user's profile for QR ──────────────────────────
+
+  const myUsername = currentFirebaseUser?.displayName || "user";
+  const myDisplayName = currentFirebaseUser?.displayName || "";
 
   // =========================================================================
   // Render
@@ -922,9 +1025,9 @@ export default function FriendsScreen({ navigation }: any) {
   if (loading) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <Appbar.Header style={{ backgroundColor: colors.surface }} elevated>
+        <Appbar.Header style={{ backgroundColor: colors.surface }}>
           <Appbar.BackAction onPress={() => navigation.goBack()} />
-          <Appbar.Content title="Friends" />
+          <Appbar.Content title="Friends" titleStyle={{ fontWeight: "700" }} />
         </Appbar.Header>
         <LoadingState message="Loading your friends..." />
       </View>
@@ -934,9 +1037,9 @@ export default function FriendsScreen({ navigation }: any) {
   if (error) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <Appbar.Header style={{ backgroundColor: colors.surface }} elevated>
+        <Appbar.Header style={{ backgroundColor: colors.surface }}>
           <Appbar.BackAction onPress={() => navigation.goBack()} />
-          <Appbar.Content title="Friends" />
+          <Appbar.Content title="Friends" titleStyle={{ fontWeight: "700" }} />
         </Appbar.Header>
         <ErrorState
           title="Something went wrong"
@@ -947,13 +1050,74 @@ export default function FriendsScreen({ navigation }: any) {
     );
   }
 
+  // ---------- Requests header rendered in SectionList ----------
+
+  const renderRequestsHeader = () => {
+    if (totalRequestCount === 0) return null;
+    return (
+      <>
+        <SectionHeader
+          title="Pending Requests"
+          icon="account-clock-outline"
+          count={receivedCount}
+          collapsed={!requestsExpanded}
+          onToggle={toggleRequests}
+        />
+        {requestsExpanded && (
+          <>
+            {receivedRequests.map((request) => (
+              <RequestCard
+                key={request.id}
+                request={request}
+                type="received"
+                uid={uid || ""}
+                onAccept={handleAcceptRequest}
+                onDecline={handleDeclineRequest}
+                onCancel={handleCancelRequest}
+                onNavigateProfile={navigateToProfile}
+                colors={colors}
+                isActionInProgress={actionInProgress === request.id}
+              />
+            ))}
+            {sentRequests.length > 0 && (
+              <View style={styles.sentLabel}>
+                <Text
+                  variant="labelSmall"
+                  style={{ color: colors.onSurfaceVariant }}
+                >
+                  Sent ({sentRequests.length})
+                </Text>
+              </View>
+            )}
+            {sentRequests.map((request) => (
+              <RequestCard
+                key={request.id}
+                request={request}
+                type="sent"
+                uid={uid || ""}
+                onAccept={handleAcceptRequest}
+                onDecline={handleDeclineRequest}
+                onCancel={handleCancelRequest}
+                onNavigateProfile={navigateToProfile}
+                colors={colors}
+                isActionInProgress={actionInProgress === request.id}
+              />
+            ))}
+            <Divider style={{ marginTop: Spacing.sm }} />
+          </>
+        )}
+      </>
+    );
+  };
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* ── Header ──────────────────────────────────────────────── */}
-      <Appbar.Header style={{ backgroundColor: colors.surface }} elevated>
+      <Appbar.Header style={{ backgroundColor: colors.surface }}>
         <Appbar.BackAction onPress={() => navigation.goBack()} />
         <Appbar.Content
           title="Friends"
+          titleStyle={{ fontWeight: "700" }}
           subtitle={
             friends.length > 0
               ? `${friends.length} friend${friends.length !== 1 ? "s" : ""}`
@@ -962,8 +1126,8 @@ export default function FriendsScreen({ navigation }: any) {
         />
         <Appbar.Action
           icon="account-plus-outline"
-          onPress={() => setAddFriendModalVisible(true)}
-          accessibilityLabel="Add friend"
+          onPress={() => setAddFriendsOpen(true)}
+          accessibilityLabel="Add friends"
         />
       </Appbar.Header>
 
@@ -975,168 +1139,66 @@ export default function FriendsScreen({ navigation }: any) {
           placeholder="Search friends..."
           onChangeText={setSearchQuery}
           value={searchQuery}
-          style={[styles.searchbar, { backgroundColor: colors.surfaceVariant }]}
+          style={[
+            styles.searchbar,
+            {
+              backgroundColor: colors.surfaceVariant,
+              borderRadius: BorderRadius.full,
+            },
+          ]}
           inputStyle={{ fontSize: 14, alignSelf: "center", paddingVertical: 0 }}
           elevation={0}
           accessibilityLabel="Search friends"
         />
       </View>
 
-      {/* ── Tabs ────────────────────────────────────────────────── */}
-      <View
-        style={[
-          styles.tabBar,
-          {
-            backgroundColor: colors.surface,
-            borderBottomColor: colors.outlineVariant,
-          },
-        ]}
-      >
-        <TouchableOpacity
-          style={[
-            styles.tab,
-            activeTab === "all" && {
-              borderBottomColor: colors.primary,
-              borderBottomWidth: 2,
-            },
-          ]}
-          onPress={() => {
-            haptics.tabChange();
-            setActiveTab("all");
-          }}
-          accessibilityRole="tab"
-          accessibilityState={{ selected: activeTab === "all" }}
-          accessibilityLabel={`My Friends, ${filteredFriends.length}`}
-        >
-          <Text
-            style={[
-              styles.tabText,
-              {
-                color:
-                  activeTab === "all"
-                    ? colors.primary
-                    : colors.onSurfaceVariant,
-              },
-            ]}
-          >
-            My Friends ({filteredFriends.length})
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[
-            styles.tab,
-            activeTab === "requests" && {
-              borderBottomColor: colors.primary,
-              borderBottomWidth: 2,
-            },
-          ]}
-          onPress={() => {
-            haptics.tabChange();
-            setActiveTab("requests");
-          }}
-          accessibilityRole="tab"
-          accessibilityState={{ selected: activeTab === "requests" }}
-          accessibilityLabel={`Requests${receivedCount > 0 ? `, ${receivedCount} new` : ""}`}
-        >
-          <View style={styles.tabWithBadge}>
-            <Text
-              style={[
-                styles.tabText,
-                {
-                  color:
-                    activeTab === "requests"
-                      ? colors.primary
-                      : colors.onSurfaceVariant,
-                },
-              ]}
-            >
-              Requests
-            </Text>
-            {receivedCount > 0 && (
-              <View style={[styles.badge, { backgroundColor: colors.error }]}>
-                <Text style={styles.badgeText}>{receivedCount}</Text>
-              </View>
-            )}
-          </View>
-        </TouchableOpacity>
-      </View>
-
-      {/* ── Content: My Friends ─────────────────────────────────── */}
-      {activeTab === "all" && (
-        <FlatList
-          data={filteredFriends}
+      {/* ── Main Content — Alphabetical SectionList ─────────────── */}
+      <View style={{ flex: 1 }}>
+        <SectionList
+          ref={sectionListRef}
+          sections={alphaSections}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.listContent}
+          stickySectionHeadersEnabled
+          onScrollToIndexFailed={() => {}}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
           }
-          ListHeaderComponent={
-            receivedCount > 0 ? (
-              <View style={styles.requestsSectionHeader}>
-                <TouchableOpacity
-                  style={[
-                    styles.requestsBanner,
-                    { backgroundColor: colors.primaryContainer },
-                  ]}
-                  onPress={toggleRequests}
-                  activeOpacity={0.7}
-                >
-                  <View style={styles.requestsBannerLeft}>
-                    <MaterialCommunityIcons
-                      name="account-clock-outline"
-                      size={20}
-                      color={colors.onPrimaryContainer}
-                    />
-                    <Text
-                      style={[
-                        styles.requestsBannerText,
-                        { color: colors.onPrimaryContainer },
-                      ]}
-                    >
-                      {receivedCount} friend request
-                      {receivedCount !== 1 ? "s" : ""}
-                    </Text>
-                  </View>
-                  <MaterialCommunityIcons
-                    name={requestsExpanded ? "chevron-up" : "chevron-down"}
-                    size={20}
-                    color={colors.onPrimaryContainer}
-                  />
-                </TouchableOpacity>
-
-                {requestsExpanded &&
-                  filteredReceived.map((request) => (
-                    <RequestCard
-                      key={request.id}
-                      request={request}
-                      type="received"
-                      uid={uid || ""}
-                      onAccept={handleAcceptRequest}
-                      onDecline={handleDeclineRequest}
-                      onCancel={handleCancelRequest}
-                      onNavigateProfile={navigateToProfile}
-                      colors={colors}
-                      isActionInProgress={actionInProgress === request.id}
-                    />
-                  ))}
-
-                {requestsExpanded && receivedCount > 0 && (
-                  <Divider style={{ marginTop: 4 }} />
-                )}
-              </View>
+          ListHeaderComponent={normalizedQuery ? null : renderRequestsHeader}
+          ListEmptyComponent={
+            normalizedQuery ? (
+              <EmptyState
+                icon="account-search-outline"
+                title="No matches"
+                subtitle={`No friends matching "${searchQuery.trim()}"`}
+              />
+            ) : friends.length === 0 ? (
+              <EmptyState
+                icon="account-heart-outline"
+                title="No friends yet"
+                subtitle="Tap + to find people to play games and chat with!"
+                actionLabel="Add Friends"
+                onAction={() => setAddFriendsOpen(true)}
+              />
             ) : null
           }
-          ListEmptyComponent={
-            <EmptyState
-              icon="account-heart-outline"
-              title="No friends yet"
-              subtitle="Find people to play games and chat with!"
-              actionLabel="Find Friends"
-              onAction={() => setAddFriendModalVisible(true)}
-            />
-          }
+          renderSectionHeader={({ section: { title } }) => (
+            <View
+              style={[
+                styles.sectionHeader,
+                { backgroundColor: colors.background },
+              ]}
+            >
+              <Text
+                variant="labelLarge"
+                style={[styles.sectionLetter, { color: colors.primary }]}
+              >
+                {title}
+              </Text>
+            </View>
+          )}
           renderItem={({ item: friend }) => {
-            const friendUid = friend.users.find((u) => u !== uid) || "";
+            const friendUid = friend.users.find((u: string) => u !== uid) || "";
             return (
               <FriendRow
                 friend={friend}
@@ -1163,303 +1225,54 @@ export default function FriendsScreen({ navigation }: any) {
               />
             );
           }}
-          ItemSeparatorComponent={() => <Divider style={{ marginLeft: 72 }} />}
         />
-      )}
+        {alphaSections.length > 1 && (
+          <AlphabetRail
+            availableLetters={availableLetters}
+            onSelect={scrollToSection}
+            colors={colors}
+          />
+        )}
+      </View>
 
-      {/* ── Content: Requests ──────────────────────────────────── */}
-      {activeTab === "requests" && (
-        <FlatList
-          data={[
-            ...filteredReceived.map((r) => ({
-              ...r,
-              _type: "received" as const,
-            })),
-            ...filteredSent.map((r) => ({
-              ...r,
-              _type: "sent" as const,
-            })),
-          ]}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.listContent}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-          }
-          ListHeaderComponent={
-            filteredReceived.length > 0 ? (
-              <View style={styles.sectionLabelWrap}>
-                <Text
-                  style={[
-                    styles.sectionLabel,
-                    { color: colors.onSurfaceVariant },
-                  ]}
-                >
-                  Received ({filteredReceived.length})
-                </Text>
-              </View>
-            ) : null
-          }
-          ListEmptyComponent={
-            <EmptyState
-              icon="email-open-outline"
-              title="No requests"
-              subtitle="When someone sends you a friend request, it'll show up here."
-            />
-          }
-          renderItem={({ item, index }) => {
-            const isFirstSent =
-              item._type === "sent" && index === filteredReceived.length;
+      {/* ── Add Friends Sheet ──────────────────────────────────── */}
+      <AddFriendsSheet
+        open={addFriendsOpen}
+        onClose={() => setAddFriendsOpen(false)}
+        onShareInvite={handleShareInvite}
+        onQRCode={handleOpenQR}
+        onQuickAdd={handleOpenQuickAdd}
+        onSendRequest={(username, targetUid) => {
+          setAddFriendsOpen(false);
+          handleSendRequest(username, targetUid);
+        }}
+        onNavigateProfile={(userId) => {
+          setAddFriendsOpen(false);
+          navigateToProfile(userId);
+        }}
+      />
 
-            return (
-              <>
-                {isFirstSent && (
-                  <View style={styles.sectionLabelWrap}>
-                    <Text
-                      style={[
-                        styles.sectionLabel,
-                        { color: colors.onSurfaceVariant },
-                      ]}
-                    >
-                      Sent ({filteredSent.length})
-                    </Text>
-                  </View>
-                )}
-                <RequestCard
-                  request={item}
-                  type={item._type}
-                  uid={uid || ""}
-                  onAccept={handleAcceptRequest}
-                  onDecline={handleDeclineRequest}
-                  onCancel={handleCancelRequest}
-                  onNavigateProfile={navigateToProfile}
-                  colors={colors}
-                  isActionInProgress={actionInProgress === item.id}
-                />
-              </>
-            );
-          }}
-          ItemSeparatorComponent={() => <Divider style={{ marginLeft: 72 }} />}
-        />
-      )}
+      {/* ── QR Code Modal ──────────────────────────────────────── */}
+      <QRCodeSheet
+        visible={qrModalVisible}
+        mode={qrMode}
+        username={myUsername}
+        displayName={myDisplayName}
+        onShare={handleQrShare}
+        onScan={handleQrScan}
+        onClose={() => setQrModalVisible(false)}
+        onSwitchMode={setQrMode}
+      />
 
-      {/* ── Add Friend Modal ───────────────────────────────────── */}
-      <Modal
-        visible={addFriendModalVisible}
-        onRequestClose={handleCloseAddFriendModal}
-        transparent
-        animationType="fade"
-      >
-        <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
-          style={styles.modalOverlay}
-        >
-          <View
-            style={[
-              styles.modalContent,
-              {
-                backgroundColor: colors.surface,
-                paddingBottom: Math.max(insets.bottom, Spacing.lg),
-              },
-            ]}
-          >
-            {/* Drag handle */}
-            <View style={styles.dragHandle}>
-              <View
-                style={[
-                  styles.dragHandleBar,
-                  { backgroundColor: colors.outlineVariant },
-                ]}
-              />
-            </View>
-            {/* Header */}
-            <View style={styles.modalHeaderRow}>
-              <Text
-                variant="headlineSmall"
-                style={[styles.modalTitle, { color: colors.onSurface }]}
-              >
-                Add Friend
-              </Text>
-              <IconButton
-                icon="close"
-                size={22}
-                onPress={handleCloseAddFriendModal}
-                accessibilityLabel="Close"
-              />
-            </View>
-
-            {/* Search */}
-            <Searchbar
-              placeholder="Search by username…"
-              value={addFriendQuery}
-              onChangeText={handleAddFriendQueryChange}
-              style={[
-                styles.modalSearchbar,
-                { backgroundColor: colors.surfaceVariant },
-              ]}
-              elevation={0}
-              autoFocus
-            />
-
-            {/* Results */}
-            <View style={styles.modalResultsContainer}>
-              {addFriendSearching && addFriendResults.length === 0 && (
-                <View style={styles.modalLoadingContainer}>
-                  <ActivityIndicator size="small" color={colors.primary} />
-                  <Text
-                    variant="bodySmall"
-                    style={{ color: colors.onSurfaceVariant, marginLeft: 8 }}
-                  >
-                    Searching…
-                  </Text>
-                </View>
-              )}
-
-              {!addFriendSearching &&
-                addFriendQuery.trim().length > 0 &&
-                addFriendResults.length === 0 && (
-                  <View style={styles.modalEmptyContainer}>
-                    <MaterialCommunityIcons
-                      name="account-search-outline"
-                      size={40}
-                      color={colors.onSurfaceVariant}
-                      style={{ marginBottom: 8 }}
-                    />
-                    <Text
-                      variant="bodyMedium"
-                      style={{
-                        color: colors.onSurfaceVariant,
-                        textAlign: "center",
-                      }}
-                    >
-                      No users found for "{addFriendQuery.trim()}"
-                    </Text>
-                  </View>
-                )}
-
-              {addFriendQuery.trim().length === 0 && (
-                <View style={styles.modalEmptyContainer}>
-                  <MaterialCommunityIcons
-                    name="account-search-outline"
-                    size={40}
-                    color={colors.onSurfaceVariant}
-                    style={{ marginBottom: 8 }}
-                  />
-                  <Text
-                    variant="bodyMedium"
-                    style={{
-                      color: colors.onSurfaceVariant,
-                      textAlign: "center",
-                    }}
-                  >
-                    Type a username to find people
-                  </Text>
-                </View>
-              )}
-
-              <FlatList
-                data={addFriendResults}
-                keyExtractor={(item) => item.uid}
-                keyboardShouldPersistTaps="handled"
-                renderItem={({ item }) => {
-                  const status = getFriendStatus(item.uid);
-                  const isSending = addFriendSending === item.uid;
-                  return (
-                    <View
-                      style={[
-                        styles.searchResultRow,
-                        { borderBottomColor: colors.outlineVariant },
-                      ]}
-                    >
-                      <ProfilePictureWithDecoration
-                        pictureUrl={item.profilePictureUrl}
-                        name={item.displayName || item.username}
-                        decorationId={item.decorationId}
-                        size={40}
-                      />
-                      <View style={styles.searchResultInfo}>
-                        <Text
-                          variant="bodyMedium"
-                          style={[
-                            styles.searchResultName,
-                            { color: colors.onSurface },
-                          ]}
-                          numberOfLines={1}
-                        >
-                          {item.displayName || item.username}
-                        </Text>
-                        <Text
-                          variant="bodySmall"
-                          style={{ color: colors.onSurfaceVariant }}
-                          numberOfLines={1}
-                        >
-                          @{item.username}
-                        </Text>
-                      </View>
-                      <View style={styles.searchResultAction}>
-                        {isSending ? (
-                          <ActivityIndicator
-                            size="small"
-                            color={colors.primary}
-                          />
-                        ) : status === "friends" ? (
-                          <Chip
-                            compact
-                            style={{
-                              backgroundColor: colors.secondaryContainer,
-                            }}
-                            textStyle={{ fontSize: 11 }}
-                          >
-                            Friends
-                          </Chip>
-                        ) : status === "requested" ? (
-                          <Chip
-                            compact
-                            style={{ backgroundColor: colors.surfaceVariant }}
-                            textStyle={{ fontSize: 11 }}
-                          >
-                            Sent
-                          </Chip>
-                        ) : status === "incoming" ? (
-                          <Button
-                            mode="contained"
-                            compact
-                            labelStyle={{ fontSize: 11 }}
-                            onPress={() => {
-                              const req = pendingRequests.find(
-                                (r) =>
-                                  r.from === item.uid &&
-                                  r.to === uid &&
-                                  r.status === "pending",
-                              );
-                              if (req) handleAcceptRequest(req.id);
-                            }}
-                          >
-                            Accept
-                          </Button>
-                        ) : (
-                          <Button
-                            mode="contained"
-                            compact
-                            labelStyle={{ fontSize: 11 }}
-                            onPress={() =>
-                              handleSendRequestFromSearch(
-                                item.username,
-                                item.uid,
-                              )
-                            }
-                          >
-                            Add
-                          </Button>
-                        )}
-                      </View>
-                    </View>
-                  );
-                }}
-              />
-            </View>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
+      {/* ── Quick Add Modal ────────────────────────────────────── */}
+      <QuickAddSheet
+        visible={quickAddVisible}
+        currentUid={uid || ""}
+        onClose={() => setQuickAddVisible(false)}
+        onAddUser={handleQuickAddUser}
+        onInviteContact={handleQuickAddInvite}
+        onSearchUsername={handleQuickAddSearchUsername}
+      />
 
       {/* ── Block/Report Modals ────────────────────────────────── */}
       <BlockUserModal
@@ -1522,58 +1335,71 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.xs,
   },
   searchbar: {
-    borderRadius: BorderRadius.md,
+    borderRadius: BorderRadius.full,
     minHeight: 42,
     justifyContent: "center",
-  },
-
-  /* Tab bar */
-  tabBar: {
-    flexDirection: "row",
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  tab: {
-    flex: 1,
-    alignItems: "center",
-    paddingVertical: 12,
-    borderBottomWidth: 2,
-    borderBottomColor: "transparent",
-  },
-  tabText: {
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  tabWithBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  badge: {
-    minWidth: 18,
-    height: 18,
-    borderRadius: 9,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 5,
-  },
-  badgeText: {
-    color: "#fff",
-    fontSize: 11,
-    fontWeight: "700",
   },
 
   /* List */
   listContent: {
     flexGrow: 1,
     paddingBottom: 32,
+    paddingRight: 20,
   },
 
-  /* Friend row (shared between FriendRow + RequestCard) */
-  friendRow: {
+  /* Section header (letter divider) */
+  sectionHeader: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 6,
+  },
+  sectionLetter: {
+    fontWeight: "700",
+    fontSize: 14,
+  },
+
+  /* Friend card */
+  cardWrapper: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 3,
+  },
+  friendCard: {
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: Spacing.md,
     paddingVertical: 12,
+    borderRadius: BorderRadius.lg,
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000",
+        shadowOpacity: 0.06,
+        shadowRadius: 4,
+        shadowOffset: { width: 0, height: 1 },
+      },
+      android: {
+        elevation: 1,
+      },
+    }),
+  },
+
+  /* Alphabet rail */
+  railContainer: {
+    position: "absolute",
+    right: 2,
+    top: 0,
+    bottom: 0,
+    width: 20,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingVertical: Spacing.sm,
+  },
+  railLetter: {
+    paddingVertical: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  railLetterText: {
+    fontSize: 10,
+    lineHeight: 14,
   },
   friendInfo: {
     flex: 1,
@@ -1628,115 +1454,10 @@ const styles = StyleSheet.create({
     marginLeft: 6,
   },
 
-  /* Inline requests section on All tab */
-  requestsSectionHeader: {
-    paddingBottom: 4,
-  },
-  requestsBanner: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginHorizontal: Spacing.md,
-    marginTop: Spacing.sm,
-    marginBottom: 4,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: BorderRadius.md,
-  },
-  requestsBannerLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  requestsBannerText: {
-    fontSize: 14,
-    fontWeight: "600",
-  },
-
-  /* Section labels for request tab */
-  sectionLabelWrap: {
+  /* Sent label in requests */
+  sentLabel: {
     paddingHorizontal: Spacing.md,
-    paddingTop: Spacing.md,
-    paddingBottom: 4,
-  },
-  sectionLabel: {
-    fontSize: 12,
-    fontWeight: "700",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-
-  /* Modal */
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.5)",
-    justifyContent: "flex-end",
-  },
-  modalContent: {
-    borderTopLeftRadius: BorderRadius.lg,
-    borderTopRightRadius: BorderRadius.lg,
-    maxHeight: "85%",
-    minHeight: 340,
-  },
-  dragHandle: {
-    alignItems: "center",
     paddingTop: Spacing.sm,
-    paddingBottom: Spacing.xs,
-  },
-  dragHandleBar: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-  },
-  modalHeaderRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.md,
-  },
-  modalTitle: {
-    fontWeight: "600",
-  },
-  modalSearchbar: {
-    marginHorizontal: Spacing.md,
-    marginTop: Spacing.sm,
-    marginBottom: Spacing.sm,
-    borderRadius: BorderRadius.md,
-    elevation: 0,
-  },
-  modalResultsContainer: {
-    flex: 1,
-    minHeight: 180,
-  },
-  modalLoadingContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: Spacing.lg,
-  },
-  modalEmptyContainer: {
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: Spacing.xl,
-  },
-  searchResultRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.sm,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  searchResultInfo: {
-    flex: 1,
-    marginLeft: Spacing.md,
-  },
-  searchResultName: {
-    fontWeight: "500",
-  },
-  searchResultAction: {
-    marginLeft: Spacing.sm,
-    minWidth: 80,
-    alignItems: "flex-end",
+    paddingBottom: 2,
   },
 });

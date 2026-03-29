@@ -126,7 +126,23 @@ export async function registerForPushNotifications(): Promise<string | null> {
 
 async function setupAndroidChannel(): Promise<void> {
   await Notifications.setNotificationChannelAsync("default", {
-    name: "Vibe",
+    name: "General",
+    importance: Notifications.AndroidImportance.HIGH,
+    vibrationPattern: [0, 250, 250, 250],
+    lightColor: LightColors.primary,
+    sound: "default",
+  });
+
+  await Notifications.setNotificationChannelAsync("messages", {
+    name: "Messages",
+    importance: Notifications.AndroidImportance.HIGH,
+    vibrationPattern: [0, 250, 250, 250],
+    lightColor: LightColors.primary,
+    sound: "default",
+  });
+
+  await Notifications.setNotificationChannelAsync("social", {
+    name: "Social",
     importance: Notifications.AndroidImportance.HIGH,
     vibrationPattern: [0, 250, 250, 250],
     lightColor: LightColors.primary,
@@ -134,8 +150,16 @@ async function setupAndroidChannel(): Promise<void> {
   });
 
   await Notifications.setNotificationChannelAsync("game-invites", {
-    name: "Game Invites",
+    name: "Games",
     importance: Notifications.AndroidImportance.HIGH,
+    vibrationPattern: [0, 250, 250, 250],
+    lightColor: LightColors.primary,
+    sound: "default",
+  });
+
+  await Notifications.setNotificationChannelAsync("achievements", {
+    name: "Achievements & Streaks",
+    importance: Notifications.AndroidImportance.DEFAULT,
     vibrationPattern: [0, 250, 250, 250],
     lightColor: LightColors.primary,
     sound: "default",

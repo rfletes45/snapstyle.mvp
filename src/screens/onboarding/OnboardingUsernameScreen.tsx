@@ -13,11 +13,13 @@ import { useAuth } from "@/store/AuthContext";
 import { useOnboarding } from "@/store/OnboardingContext";
 import { useUser } from "@/store/UserContext";
 import { isValidDisplayName, isValidUsername } from "@/utils/validators";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Keyboard,
   KeyboardAvoidingView,
   Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   View,
@@ -210,9 +212,23 @@ export default function OnboardingUsernameScreen({ navigation }: any) {
       style={[styles.container, { backgroundColor: theme.colors.background }]}
       behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
-      {/* Top bar — no back in onboarding step 1 (username is first post-auth screen) */}
+      {/* Top bar */}
       <View style={[styles.topBar, { paddingTop: insets.top + 8 }]}>
-        <View style={{ width: 48 }} />
+        {navigation.canGoBack() ? (
+          <Pressable
+            onPress={() => navigation.goBack()}
+            hitSlop={12}
+            style={styles.backBtn}
+          >
+            <MaterialCommunityIcons
+              name="arrow-left"
+              size={24}
+              color={theme.colors.onBackground}
+            />
+          </Pressable>
+        ) : (
+          <View style={{ width: 48 }} />
+        )}
       </View>
 
       <OnboardingProgress
@@ -337,6 +353,9 @@ const styles = StyleSheet.create({
   topBar: {
     paddingHorizontal: Spacing.xs,
     alignItems: "flex-start",
+  },
+  backBtn: {
+    padding: 12,
   },
   scrollContent: {
     flexGrow: 1,

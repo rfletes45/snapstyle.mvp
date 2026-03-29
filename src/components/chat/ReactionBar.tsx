@@ -21,7 +21,7 @@ import {
   toggleReaction,
 } from "@/services/reactions";
 import * as Haptics from "expo-haptics";
-import React, { memo, useCallback, useState } from "react";
+import React, { memo, useCallback } from "react";
 import {
   Platform,
   Pressable,
@@ -40,8 +40,6 @@ import Animated, {
   withSequence,
   withSpring,
 } from "react-native-reanimated";
-import type { EmojiType } from "rn-emoji-keyboard";
-import EmojiPicker from "rn-emoji-keyboard";
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("ReactionBar");
@@ -74,6 +72,8 @@ interface QuickReactionBarProps {
   onSelect: (emoji: string) => void;
   /** Whether a reaction toggle call is in-flight */
   loading?: boolean;
+  /** Called when user taps "+" to expand the full emoji picker */
+  onRequestExpand?: () => void;
 }
 
 // =============================================================================
@@ -247,9 +247,9 @@ export const ReactionPills = memo(function ReactionPills({
 export const QuickReactionBar = memo(function QuickReactionBar({
   onSelect,
   loading = false,
+  onRequestExpand,
 }: QuickReactionBarProps) {
   const theme = useTheme();
-  const [fullPickerOpen, setFullPickerOpen] = useState(false);
 
   const handleQuick = useCallback(
     (emoji: string) => {
@@ -258,14 +258,6 @@ export const QuickReactionBar = memo(function QuickReactionBar({
       onSelect(emoji);
     },
     [onSelect, loading],
-  );
-
-  const handleFullSelect = useCallback(
-    (emojiObject: EmojiType) => {
-      setFullPickerOpen(false);
-      onSelect(emojiObject.emoji);
-    },
-    [onSelect],
   );
 
   return (
@@ -296,7 +288,7 @@ export const QuickReactionBar = memo(function QuickReactionBar({
           styles.quickExpandBtn,
           { borderColor: theme.colors.outline },
         ]}
-        onPress={() => setFullPickerOpen(true)}
+        onPress={() => onRequestExpand?.()}
         activeOpacity={0.6}
         disabled={loading}
       >
@@ -309,35 +301,6 @@ export const QuickReactionBar = memo(function QuickReactionBar({
           +
         </Text>
       </TouchableOpacity>
-
-      {/* Full emoji picker (rn-emoji-keyboard) */}
-      <EmojiPicker
-        onEmojiSelected={handleFullSelect}
-        open={fullPickerOpen}
-        onClose={() => setFullPickerOpen(false)}
-        enableSearchBar
-        enableRecentlyUsed
-        categoryPosition="bottom"
-        disabledCategories={["search"]}
-        theme={{
-          backdrop: theme.dark ? "#00000099" : "#00000066",
-          knob: theme.colors.outline,
-          container: theme.colors.surface,
-          header: theme.colors.onSurface,
-          category: {
-            icon: theme.colors.onSurfaceVariant,
-            iconActive: theme.colors.primary,
-            container: theme.colors.surface,
-            containerActive: theme.colors.primaryContainer,
-          },
-          search: {
-            text: theme.colors.onSurface,
-            placeholder: theme.colors.onSurfaceVariant,
-            icon: theme.colors.onSurfaceVariant,
-            background: theme.colors.surfaceVariant,
-          },
-        }}
-      />
     </View>
   );
 });

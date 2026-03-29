@@ -114,19 +114,47 @@ const ProfileHeaderWide = memo(function ProfileHeaderWide({
           />
         </TouchableOpacity>
       </View>
-      {data.onSettingsPress && (
-        <TouchableOpacity
-          onPress={data.onSettingsPress}
-          activeOpacity={0.7}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-        >
-          <MaterialCommunityIcons
-            name="cog-outline"
-            size={20}
-            color={colors.textSecondary}
-          />
-        </TouchableOpacity>
-      )}
+      <View style={headerStyles.wideActions}>
+        {data.onShopPress && (
+          <TouchableOpacity
+            onPress={data.onShopPress}
+            activeOpacity={0.7}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <MaterialCommunityIcons
+              name="shopping-outline"
+              size={20}
+              color={colors.textSecondary}
+            />
+          </TouchableOpacity>
+        )}
+        {data.onCustomizePress && (
+          <TouchableOpacity
+            onPress={data.onCustomizePress}
+            activeOpacity={0.7}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <MaterialCommunityIcons
+              name="palette-outline"
+              size={20}
+              color={colors.textSecondary}
+            />
+          </TouchableOpacity>
+        )}
+        {data.onSettingsPress && (
+          <TouchableOpacity
+            onPress={data.onSettingsPress}
+            activeOpacity={0.7}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <MaterialCommunityIcons
+              name="cog-outline"
+              size={20}
+              color={colors.textSecondary}
+            />
+          </TouchableOpacity>
+        )}
+      </View>
     </View>
   );
 });
@@ -1863,6 +1891,11 @@ const headerStyles = StyleSheet.create({
   wideLevel: {
     fontSize: 12,
     fontWeight: "600",
+  },
+  wideActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
   },
   wideStatusChip: {
     flexDirection: "row",

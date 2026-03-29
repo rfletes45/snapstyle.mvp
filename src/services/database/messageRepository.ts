@@ -7,11 +7,8 @@
  * @file src/services/database/messageRepository.ts
  */
 
-import {
-  AttachmentRow,
-  MessageRow,
-  parseJsonColumn,
-} from "@/types/database";
+import { normalizeMessageFromLocalRow } from "@/services/chat/normalizeMessage";
+import { AttachmentRow, MessageRow, parseJsonColumn } from "@/types/database";
 import {
   AttachmentV2,
   LocalAttachment,
@@ -19,7 +16,6 @@ import {
   ReplyToMetadata,
 } from "@/types/messaging";
 import * as Crypto from "expo-crypto";
-import { normalizeMessageFromLocalRow } from "@/services/chat/normalizeMessage";
 import { getDatabase } from "./index";
 
 import { createLogger } from "@/utils/log";
@@ -27,6 +23,46 @@ const logger = createLogger("services/database/messageRepository");
 
 /** Max retry attempts before a message is considered permanently failed */
 export const MAX_MESSAGE_RETRIES = 10;
+
+// =============================================================================
+// FTS5 Helpers
+// =============================================================================
+
+/**
+ * Sync a message into the FTS5 index.
+ * Uses INSERT OR REPLACE semantics via FTS5 delete + insert.
+ * Should only be called within an existing transaction or after a write.
+ */
+function syncFtsIndex(
+  db: ReturnType<typeof getDatabase>,
+  messageId: string,
+  text: string | null,
+  senderName: string | null,
+): void {
+  if (!text) return;
+  try {
+    // Get the rowid of the message (FTS5 content sync uses rowid)
+    const row = db.getFirstSync<{ rowid: number }>(
+      "SELECT rowid FROM messages WHERE id = ?",
+      [messageId],
+    );
+    if (!row) return;
+
+    // Delete old entry (if any), then insert new
+    db.runSync(
+      "INSERT INTO messages_fts(messages_fts, rowid, text, sender_name) VALUES('delete', ?, ?, ?)",
+      [row.rowid, text, senderName || ""],
+    );
+    db.runSync(
+      "INSERT INTO messages_fts(rowid, text, sender_name) VALUES(?, ?, ?)",
+      [row.rowid, text, senderName || ""],
+    );
+  } catch (e) {
+    // FTS sync is non-critical; log but don't throw
+    logger.warn("[MessageRepository] FTS sync failed:", e);
+  }
+}
+
 // =============================================================================
 // Types
 // =============================================================================
@@ -135,6 +171,9 @@ export function insertMessage(params: InsertMessageParams): MessageRow {
         row.retry_count,
       ],
     );
+
+    // Sync to FTS5 index for full-text search
+    syncFtsIndex(db, row.id, row.text, row.sender_name);
 
     // Insert attachments if present (already uploaded)
     if (params.attachments && params.attachments.length > 0) {
@@ -270,6 +309,15 @@ export function upsertMessageFromServer(message: MessageV2): void {
           message.id,
         ],
       );
+
+      // Sync FTS index after update
+      const updatedText =
+        message.kind === "animal"
+          ? message.animalId || message.text || null
+          : (message.text ?? null);
+      if (!deletedForAll) {
+        syncFtsIndex(db, message.id, updatedText, message.senderName || null);
+      }
     } else {
       // Insert new from server
       // Ensure required fields have valid values (prevent undefined causing SQLite errors)
@@ -326,6 +374,15 @@ export function upsertMessageFromServer(message: MessageV2): void {
           message.senderStyle ? JSON.stringify(message.senderStyle) : null,
         ],
       );
+
+      // Sync FTS index after insert
+      const insertedText =
+        kind === "animal"
+          ? message.animalId || message.text || null
+          : message.text || null;
+      if (!deletedForAll) {
+        syncFtsIndex(db, id, insertedText, message.senderName || null);
+      }
 
       // Insert attachments
       if (message.attachments) {

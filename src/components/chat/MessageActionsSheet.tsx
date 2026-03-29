@@ -26,12 +26,10 @@ import React, { useCallback, useState } from "react";
 import {
   Alert,
   Clipboard,
-  Modal,
   Platform,
   StyleSheet,
   TextInput,
   TouchableOpacity,
-  TouchableWithoutFeedback,
   View,
 } from "react-native";
 import {
@@ -41,6 +39,7 @@ import {
   Text,
   useTheme,
 } from "react-native-paper";
+import { DraggableBottomSheet } from "./DraggableBottomSheet";
 import { QuickReactionBar } from "./ReactionBar";
 
 import { createLogger } from "@/utils/log";
@@ -72,6 +71,8 @@ interface MessageActionsSheetProps {
   onDeleted?: (messageId: string, forAll: boolean) => void;
   /** Called after reaction is added (H8) */
   onReactionAdded?: (emoji: string) => void;
+  /** Called when user taps "+" to expand full emoji picker */
+  onExpandReactions?: () => void;
 }
 
 // =============================================================================
@@ -89,6 +90,7 @@ export function MessageActionsSheet({
   onEdited,
   onDeleted,
   onReactionAdded,
+  onExpandReactions,
 }: MessageActionsSheetProps) {
   const theme = useTheme();
 
@@ -98,7 +100,7 @@ export function MessageActionsSheet({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [reactionLoading, setReactionLoading] = useState(false);
 
-  // Reset state when sheet closes
+  // Reset state when sheet closes or opens
   React.useEffect(() => {
     if (!visible) {
       setIsEditing(false);
@@ -124,6 +126,12 @@ export function MessageActionsSheet({
     },
     [message, onReactionAdded, onClose],
   );
+
+  // Handle "+" expand — close sheet, open full picker at parent level
+  const handleExpandReactions = useCallback(() => {
+    onClose();
+    onExpandReactions?.();
+  }, [onClose, onExpandReactions]);
 
   // Permission checks
   const editPermission = message
@@ -299,20 +307,14 @@ export function MessageActionsSheet({
   // Edit mode UI
   if (isEditing) {
     return (
-      <Modal
-        visible={visible}
-        transparent
-        animationType="fade"
-        onRequestClose={onClose}
+      <DraggableBottomSheet
+        open={visible}
+        onClose={onClose}
+        snapPoints={[0.4]}
+        initialSnapIndex={0}
       >
-        <TouchableWithoutFeedback onPress={onClose}>
-          <View style={styles.overlay} />
-        </TouchableWithoutFeedback>
         <View
-          style={[
-            styles.editContainer,
-            { backgroundColor: theme.colors.surface },
-          ]}
+          style={[styles.editInner, { backgroundColor: theme.colors.surface }]}
         >
           <View style={styles.editHeader}>
             <Text variant="titleMedium">Edit Message</Text>
@@ -348,110 +350,98 @@ export function MessageActionsSheet({
             </Button>
           </View>
         </View>
-      </Modal>
+      </DraggableBottomSheet>
     );
   }
 
   // Action sheet UI
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="fade"
-      onRequestClose={onClose}
+    <DraggableBottomSheet
+      open={visible}
+      onClose={onClose}
+      snapPoints={[0.45]}
+      initialSnapIndex={0}
     >
-      <TouchableWithoutFeedback onPress={onClose}>
-        <View style={styles.overlay} />
-      </TouchableWithoutFeedback>
-      <View style={[styles.sheet, { backgroundColor: theme.colors.surface }]}>
-        {/* Handle bar */}
-        <View
-          style={[
-            styles.handleBar,
-            { backgroundColor: theme.colors.outlineVariant },
-          ]}
+      {/* H8: Quick Reaction Bar */}
+      <View style={styles.quickReactionContainer}>
+        <QuickReactionBar
+          onSelect={handleQuickReaction}
+          loading={reactionLoading}
+          onRequestExpand={handleExpandReactions}
+        />
+      </View>
+
+      {/* Message preview */}
+      <View style={styles.previewContainer}>
+        <Text
+          variant="bodySmall"
+          style={{ color: theme.colors.onSurfaceVariant }}
+          numberOfLines={2}
+        >
+          {message.text || "[Media message]"}
+        </Text>
+      </View>
+
+      {/* Actions */}
+      <View style={styles.actions}>
+        {/* Reply */}
+        <ActionButton
+          icon="reply"
+          label="Reply"
+          onPress={handleReply}
+          theme={theme}
         />
 
-        {/* H8: Quick Reaction Bar */}
-        <View style={styles.quickReactionContainer}>
-          <QuickReactionBar
-            onSelect={handleQuickReaction}
-            loading={reactionLoading}
-          />
-        </View>
-
-        {/* Message preview */}
-        <View style={styles.previewContainer}>
-          <Text
-            variant="bodySmall"
-            style={{ color: theme.colors.onSurfaceVariant }}
-            numberOfLines={2}
-          >
-            {message.text || "[Media message]"}
-          </Text>
-        </View>
-
-        {/* Actions */}
-        <View style={styles.actions}>
-          {/* Reply */}
+        {/* Copy (text messages only) */}
+        {message.kind === "text" && message.text && (
           <ActionButton
-            icon="reply"
-            label="Reply"
-            onPress={handleReply}
+            icon="content-copy"
+            label="Copy"
+            onPress={handleCopyText}
             theme={theme}
           />
+        )}
 
-          {/* Copy (text messages only) */}
-          {message.kind === "text" && message.text && (
-            <ActionButton
-              icon="content-copy"
-              label="Copy"
-              onPress={handleCopyText}
-              theme={theme}
-            />
-          )}
+        {/* Edit (own messages within window) */}
+        {editPermission.canEdit && (
+          <ActionButton
+            icon="pencil"
+            label="Edit"
+            onPress={handleStartEdit}
+            theme={theme}
+          />
+        )}
 
-          {/* Edit (own messages within window) */}
-          {editPermission.canEdit && (
-            <ActionButton
-              icon="pencil"
-              label="Edit"
-              onPress={handleStartEdit}
-              theme={theme}
-            />
-          )}
+        {/* Delete for me */}
+        {deleteMePermission.canDelete && (
+          <ActionButton
+            icon="eye-off"
+            label="Delete for me"
+            onPress={handleDeleteForMe}
+            theme={theme}
+            destructive
+          />
+        )}
 
-          {/* Delete for me */}
-          {deleteMePermission.canDelete && (
-            <ActionButton
-              icon="eye-off"
-              label="Delete for me"
-              onPress={handleDeleteForMe}
-              theme={theme}
-              destructive
-            />
-          )}
-
-          {/* Delete for everyone */}
-          {deleteAllPermission.canDelete && (
-            <ActionButton
-              icon="delete"
-              label="Delete for everyone"
-              onPress={handleDeleteForAll}
-              theme={theme}
-              destructive
-            />
-          )}
-        </View>
-
-        {/* Loading overlay */}
-        {isSubmitting && (
-          <View style={styles.loadingOverlay}>
-            <ActivityIndicator size="large" />
-          </View>
+        {/* Delete for everyone */}
+        {deleteAllPermission.canDelete && (
+          <ActionButton
+            icon="delete"
+            label="Delete for everyone"
+            onPress={handleDeleteForAll}
+            theme={theme}
+            destructive
+          />
         )}
       </View>
-    </Modal>
+
+      {/* Loading overlay */}
+      {isSubmitting && (
+        <View style={styles.loadingOverlay}>
+          <ActivityIndicator size="large" />
+        </View>
+      )}
+    </DraggableBottomSheet>
   );
 }
 
@@ -508,32 +498,6 @@ function ActionButton({
 // =============================================================================
 
 const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.4)",
-  },
-  sheet: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    borderTopLeftRadius: BorderRadius.xl,
-    borderTopRightRadius: BorderRadius.xl,
-    paddingBottom: Spacing.xl + 20, // Safe area
-    elevation: 8,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-  },
-  handleBar: {
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    alignSelf: "center",
-    marginTop: Spacing.sm,
-    marginBottom: Spacing.md,
-  },
   quickReactionContainer: {
     flexDirection: "row",
     alignItems: "center",
@@ -563,15 +527,8 @@ const styles = StyleSheet.create({
     margin: 0,
     marginRight: Spacing.sm,
   },
-  editContainer: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    borderTopLeftRadius: BorderRadius.xl,
-    borderTopRightRadius: BorderRadius.xl,
-    paddingBottom: Spacing.xl + 20,
-    elevation: 8,
+  editInner: {
+    flex: 1,
   },
   editHeader: {
     flexDirection: "row",

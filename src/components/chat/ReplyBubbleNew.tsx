@@ -112,7 +112,7 @@ export function ReplyBubble({
   const theme = useTheme();
 
   const previewText = getPreviewText(replyTo, 60);
-  const senderLabel = isReplyToMe ? "You" : replyTo.senderName || "User";
+  const senderLabel = isReplyToMe ? "You" : replyTo.senderName || "Friend";
   const showMediaIcon = replyTo.kind !== "text" && !replyTo.textSnippet;
 
   // Accent color - primary for own messages, muted for others

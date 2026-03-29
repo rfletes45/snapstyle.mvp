@@ -24,7 +24,7 @@
  */
 
 import AppImage from "@/components/AppImage";
-import { usePrefetchChatImages } from "@/utils/imagePrefetch";
+import { usePrefetch, usePrefetchChatImages } from "@/utils/imagePrefetch";
 
 const IMAGE_MAX_WIDTH = 240;
 const IMAGE_MAX_HEIGHT = 320;
@@ -111,6 +111,7 @@ import {
 } from "@/components/chat";
 import type { ChatMessageListRef } from "@/components/chat/ChatMessageList";
 import { ChatSkeleton } from "@/components/chat/ChatSkeleton";
+import { FullEmojiPicker } from "@/components/chat/FullEmojiPicker";
 import { ProfilePictureWithDecoration } from "@/components/profile/ProfilePicture";
 import ScheduleMessageModal from "@/components/ScheduleMessageModal";
 import { ErrorState } from "@/components/ui";
@@ -126,6 +127,7 @@ import {
 } from "@/services/mentionParser";
 import {
   applyOptimisticReaction,
+  parseReactionsFromMessage,
   ReactionSummary,
   subscribeToMultipleMessageReactions,
   toggleReaction,
@@ -179,13 +181,16 @@ import type { GameId } from "@/gamesV4/types";
 
 import { clearLastOpenChat, saveLastOpenChat } from "@/services/lastOpenChat";
 
-// Keyboard-sync (KCSV + KeyboardStickyView)
+// Keyboard-sync (KCSV + KeyboardAvoidingView fallback)
 import {
+  ChatFooterWrapper,
+  isKCSVAvailable,
+  KeyboardSafeAreaSpacer,
   setChatScrollViewConfig,
   useRenderChatScrollComponent,
 } from "@/components/chat/ChatKeyboardScrollView";
 import { createLogger } from "@/utils/log";
-import { KeyboardStickyView } from "react-native-keyboard-controller";
+import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 const logger = createLogger("screens/groups/GroupChatScreen");
 // =============================================================================
 // Constants
@@ -205,7 +210,11 @@ interface Props {
 // =============================================================================
 
 export default function GroupChatScreen({ route, navigation }: Props) {
-  const { groupId, groupName: initialGroupName } = route.params;
+  const {
+    groupId,
+    groupName: initialGroupName,
+    targetMessageId,
+  } = route.params;
   const { colors, isDark } = useAppTheme();
   const insets = useSafeAreaInsets();
   const { currentFirebaseUser } = useAuth();
@@ -294,6 +303,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   const [selectedMessage, setSelectedMessage] = useState<MessageV2 | null>(
     null,
   );
+  const [fullEmojiPickerOpen, setFullEmojiPickerOpen] = useState(false);
   const [userRole, setUserRole] = useState<
     "owner" | "admin" | "moderator" | "member"
   >("member");
@@ -306,6 +316,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     Map<string, ReactionSummary[]>
   >(new Map());
   const optimisticIds = useRef<Set<string>>(new Set());
+  const seededIdsRef = useRef<Set<string>>(new Set());
 
   // Scheduled messages state (UNI-09)
   const [scheduleModalVisible, setScheduleModalVisible] = useState(false);
@@ -377,7 +388,11 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     scope: "group",
     conversationId: groupId || "",
     currentUid: uid || "",
-    currentUserName: currentFirebaseUser?.displayName || "User",
+    currentUserName:
+      profile?.displayName ||
+      profile?.username ||
+      currentFirebaseUser?.displayName ||
+      "User",
     enableVoice: true,
     enableAttachments: true,
     enableMentions: true,
@@ -394,6 +409,46 @@ export default function GroupChatScreen({ route, navigation }: Props) {
 
   // Warm image cache for recent chat images
   usePrefetchChatImages(messages?.slice(0, 20));
+
+  // Prefetch group member avatars for instant display
+  const memberAvatarUrls = useMemo(
+    () =>
+      groupMembers
+        .map((m) => m.profilePictureUrl)
+        .filter((url): url is string => !!url),
+    [groupMembers],
+  );
+  usePrefetch(memberAvatarUrls.length > 0 ? memberAvatarUrls : undefined);
+
+  // Seed reactions from denormalized reactionsSummary for instant first render.
+  // The real-time subscription will reconcile with full data (hasReacted, userIds).
+  useEffect(() => {
+    if (!uid || messages.length === 0) return;
+    const seedMap = new Map<string, ReactionSummary[]>();
+    let hasNew = false;
+    for (const m of messages) {
+      if (
+        m.reactionsSummary &&
+        Object.keys(m.reactionsSummary).length > 0 &&
+        !seededIdsRef.current.has(m.id)
+      ) {
+        seededIdsRef.current.add(m.id);
+        seedMap.set(m.id, parseReactionsFromMessage(m.reactionsSummary, uid));
+        hasNew = true;
+      }
+    }
+    if (hasNew) {
+      setMessageReactions((prev) => {
+        const next = new Map(prev);
+        seedMap.forEach((reactions, id) => {
+          if (!next.has(id) || next.get(id)!.length === 0) {
+            next.set(id, reactions);
+          }
+        });
+        return next;
+      });
+    }
+  }, [uid, messages]);
 
   // ==========================================================================
   // Typing Indicator
@@ -650,6 +705,33 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     [selectedMessage, groupId, uid, handleOptimisticReaction],
   );
 
+  // Open full emoji picker (from "+" in action sheet)
+  const handleExpandReactions = useCallback(() => {
+    setFullEmojiPickerOpen(true);
+  }, []);
+
+  // Handle emoji from full picker
+  const handleFullEmojiReaction = useCallback(
+    (emoji: string) => {
+      setFullEmojiPickerOpen(false);
+      if (!selectedMessage || !groupId || !uid) return;
+      const messageId = selectedMessage.id;
+      handleOptimisticReaction(messageId, emoji);
+      toggleReaction({
+        scope: "group",
+        conversationId: groupId,
+        messageId,
+        emoji,
+        uid,
+      })
+        .then((result) => {
+          if (!result.success) handleOptimisticReaction(messageId, emoji);
+        })
+        .catch(() => handleOptimisticReaction(messageId, emoji));
+    },
+    [selectedMessage, groupId, uid, handleOptimisticReaction],
+  );
+
   useEffect(() => {
     if (!groupId || !uid || messages.length === 0) return;
 
@@ -799,6 +881,46 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     setShowReturnButton(false);
     returnIndexRef.current = null;
   }, []);
+
+  // Auto-scroll to targetMessageId from search navigation (deep jump)
+  const hasScrolledToTargetRef = useRef(false);
+  const deepJumpAttemptsRef = useRef(0);
+  const MAX_DEEP_JUMP_ATTEMPTS = 8;
+
+  useEffect(() => {
+    if (
+      !targetMessageId ||
+      hasScrolledToTargetRef.current ||
+      timelineData.length === 0
+    ) {
+      return;
+    }
+
+    const targetIndex = timelineData.findIndex(
+      (item) => item.type === "message" && item.data.id === targetMessageId,
+    );
+    if (targetIndex !== -1) {
+      hasScrolledToTargetRef.current = true;
+      deepJumpAttemptsRef.current = 0;
+      // Delay to let list render
+      setTimeout(() => {
+        scrollToMessage(targetMessageId);
+      }, 500);
+    } else if (
+      deepJumpAttemptsRef.current < MAX_DEEP_JUMP_ATTEMPTS &&
+      screen.chat.pagination.hasMoreOlder
+    ) {
+      // Message not in current timeline — load older messages and retry
+      deepJumpAttemptsRef.current += 1;
+      screen.chat.loadOlder?.();
+    }
+  }, [
+    targetMessageId,
+    timelineData,
+    scrollToMessage,
+    screen.chat.loadOlder,
+    screen.chat.pagination.hasMoreOlder,
+  ]);
 
   // Auto-hide return button callback
   const handleReturnButtonAutoHide = useCallback(() => {
@@ -1592,7 +1714,11 @@ export default function GroupChatScreen({ route, navigation }: Props) {
 
   return (
     <>
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <KeyboardAvoidingView
+        style={[styles.container, { backgroundColor: colors.background }]}
+        behavior="padding"
+        enabled={!isKCSVAvailable}
+      >
         <Appbar.Header
           style={[styles.header, { backgroundColor: colors.background }]}
         >
@@ -1719,12 +1845,14 @@ export default function GroupChatScreen({ route, navigation }: Props) {
             flatListProps={{
               onEndReached: screen.chat.loadOlder,
               onEndReachedThreshold: 0.3,
+              initialNumToRender: 15,
+              maxToRenderPerBatch: 8,
             }}
           />
         )}
 
-        {/* Keyboard-sticky footer: typing indicator + composer */}
-        <KeyboardStickyView offset={{ closed: insets.bottom }}>
+        {/* Keyboard-aware footer: typing indicator + composer */}
+        <ChatFooterWrapper>
           {/* Typing Indicator — display-mode aware */}
           {displayMode === "stacked" ? (
             <TypingBar
@@ -1827,7 +1955,8 @@ export default function GroupChatScreen({ route, navigation }: Props) {
             onAnimalEquipped={handleAnimalEquipped}
             textInputRef={textInputRef}
           />
-        </KeyboardStickyView>
+          <KeyboardSafeAreaSpacer backgroundColor={colors.background} />
+        </ChatFooterWrapper>
 
         {/* Jump-back button for reply navigation */}
         <ScrollReturnButton
@@ -1836,7 +1965,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
           onAutoHide={handleReturnButtonAutoHide}
           autoHideDelay={5000}
         />
-      </View>
+      </KeyboardAvoidingView>
 
       <MediaViewerModal
         visible={mediaViewerVisible}
@@ -1858,6 +1987,13 @@ export default function GroupChatScreen({ route, navigation }: Props) {
         onEdited={handleMessageEdited}
         onDeleted={handleMessageDeleted}
         onReactionAdded={handleSheetReaction}
+        onExpandReactions={handleExpandReactions}
+      />
+
+      <FullEmojiPicker
+        open={fullEmojiPickerOpen}
+        onClose={() => setFullEmojiPickerOpen(false)}
+        onEmojiSelected={handleFullEmojiReaction}
       />
 
       <Snackbar

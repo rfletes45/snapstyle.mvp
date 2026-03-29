@@ -16,7 +16,11 @@
  * @module components/chat/AnimalPickerBubble
  */
 
-import { getAnimalImage, getAnimalThemeIds } from "@/cosmetics/animalAssets";
+import {
+  DEFAULT_ANIMAL_THEME_ID,
+  getAnimalImage,
+  getAnimalThemeIds,
+} from "@/cosmetics/animalAssets";
 import { getCosmeticById } from "@/cosmetics/catalog";
 import { hasEntitlement } from "@/services/entitlements";
 import { equipChatAnimalTheme } from "@/services/profileService";
@@ -127,9 +131,10 @@ export function AnimalPickerBubble({
 
       if (!cancelled) {
         // Sort: equipped first, then alphabetical
+        const effectiveEquipped = equippedAnimalId ?? DEFAULT_ANIMAL_THEME_ID;
         owned.sort((a, b) => {
-          if (a === equippedAnimalId) return -1;
-          if (b === equippedAnimalId) return 1;
+          if (a === effectiveEquipped) return -1;
+          if (b === effectiveEquipped) return 1;
           return a.localeCompare(b);
         });
         setOwnedAnimals(owned);
@@ -144,9 +149,12 @@ export function AnimalPickerBubble({
   }, [uid, equippedAnimalId]);
 
   // Handle equip
+  // Resolve null (default) → duck for equipped state checks
+  const effectiveEquippedId = equippedAnimalId ?? DEFAULT_ANIMAL_THEME_ID;
+
   const handleSelect = useCallback(
     async (animalId: string) => {
-      if (animalId === equippedAnimalId || equipping) return;
+      if (animalId === effectiveEquippedId || equipping) return;
       try {
         setEquipping(animalId);
         await equipChatAnimalTheme(uid, animalId);
@@ -157,7 +165,7 @@ export function AnimalPickerBubble({
         setEquipping(null);
       }
     },
-    [uid, equippedAnimalId, equipping, onEquipped],
+    [uid, effectiveEquippedId, equipping, onEquipped],
   );
 
   if (!visible || !anchorLayout) return null;
@@ -249,7 +257,7 @@ export function AnimalPickerBubble({
             >
               <View style={styles.gridRow}>
                 {ownedAnimals.map((animalId) => {
-                  const isEquipped = animalId === equippedAnimalId;
+                  const isEquipped = animalId === effectiveEquippedId;
                   const isEquipping = equipping === animalId;
                   const imageSource = getAnimalImage(animalId);
 

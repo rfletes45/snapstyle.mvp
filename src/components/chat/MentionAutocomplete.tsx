@@ -338,7 +338,7 @@ export const MentionText = memo(function MentionText({
 
   const isSelf = uid === currentUid;
   // Darker backgrounds with light text for strong contrast and polish
-  const bg = isSelf ? `${colors.primary}88` : `${colors.primary}66`;
+  const bg = isSelf ? `${colors.primary}BB` : `${colors.primary}99`;
   const fg = "#FFFFFF";
 
   const radiusStyle =

@@ -39,7 +39,9 @@ export function ReplyPreviewBar({
   const theme = useTheme();
 
   const previewText = getPreviewText(replyTo);
-  const senderLabel = isOwnMessage ? "yourself" : replyTo.senderName || "User";
+  const senderLabel = isOwnMessage
+    ? "yourself"
+    : replyTo.senderName || "Friend";
 
   return (
     <View

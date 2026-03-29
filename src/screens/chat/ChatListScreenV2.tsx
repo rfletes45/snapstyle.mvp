@@ -52,6 +52,7 @@ import {
   PinnedSection,
   SwipeableConversation,
 } from "@/components/chat/inbox";
+import { SearchSheet } from "@/components/chat/search";
 import { ErrorState, LoadingState } from "@/components/ui";
 import {
   getUnifiedRequestsCount,
@@ -153,6 +154,9 @@ export default function ChatListScreen() {
   const [deleteTargetConversation, setDeleteTargetConversation] =
     useState<InboxConversation | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
+
+  // Search sheet state
+  const [searchSheetVisible, setSearchSheetVisible] = useState(false);
 
   // Unified inbox requests (friend requests + group invites + message requests)
   const {
@@ -317,8 +321,12 @@ export default function ChatListScreen() {
   }, []);
 
   const handleSearchPress = useCallback(() => {
-    navigation.navigate("InboxSearch");
-  }, [navigation]);
+    setSearchSheetVisible(true);
+  }, []);
+
+  const handleSearchDismiss = useCallback(() => {
+    setSearchSheetVisible(false);
+  }, []);
 
   // =============================================================================
   // Friend Request Handlers
@@ -796,6 +804,12 @@ export default function ChatListScreen() {
         conversationName={deleteTargetConversation?.name ?? ""}
         isGroup={deleteTargetConversation?.type === "group"}
         loading={deleteLoading}
+      />
+
+      {/* Search Sheet */}
+      <SearchSheet
+        visible={searchSheetVisible}
+        onDismiss={handleSearchDismiss}
       />
     </View>
   );

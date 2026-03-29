@@ -10,7 +10,11 @@ export type CanonicalNotificationType =
   | "game_resolved"
   | "achievement_unlocked"
   | "gift_received"
-  | "gift_opened";
+  | "gift_opened"
+  | "streak_milestone"
+  | "streak_at_risk"
+  | "cosmetic_unlock"
+  | "story_viewed";
 
 export interface CanonicalNotificationRoute {
   screen: string;
@@ -260,6 +264,53 @@ export function normalizeNotificationPayload(
         routeFromPayload ??
         ({
           screen: "PurchaseHistory",
+        } satisfies CanonicalNotificationRoute),
+    };
+  }
+
+  if (
+    rawType === "streak_milestone" ||
+    rawType === "streak_at_risk" ||
+    rawType === "streak_reminder"
+  ) {
+    const friendshipId = asString(payload.friendshipId);
+    return {
+      type: rawType === "streak_reminder" ? "streak_at_risk" : rawType,
+      notificationId,
+      dedupeKey: buildDedupeKey(
+        payload,
+        `${rawType}:${friendshipId ?? "streak"}`,
+      ),
+      route:
+        routeFromPayload ??
+        ({
+          screen: "Friends",
+        } satisfies CanonicalNotificationRoute),
+    };
+  }
+
+  if (rawType === "cosmetic_unlock") {
+    return {
+      type: "cosmetic_unlock",
+      notificationId,
+      dedupeKey: buildDedupeKey(payload, "cosmetic_unlock"),
+      route:
+        routeFromPayload ??
+        ({
+          screen: "Friends",
+        } satisfies CanonicalNotificationRoute),
+    };
+  }
+
+  if (rawType === "story_view" || rawType === "story_viewed") {
+    return {
+      type: "story_viewed",
+      notificationId,
+      dedupeKey: buildDedupeKey(payload, "story_viewed"),
+      route:
+        routeFromPayload ??
+        ({
+          screen: "MainTabs",
         } satisfies CanonicalNotificationRoute),
     };
   }

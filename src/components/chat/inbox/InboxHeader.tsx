@@ -83,7 +83,7 @@ export function InboxHeader({ onSearchPress }: InboxHeaderProps) {
 
   const safeTop = Math.max(insets.top, 0);
   const headerContentHeight = 50;
-  const iconBtnBg = isDark ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.08)";
+  const iconBtnBg = isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.05)";
 
   return (
     <View

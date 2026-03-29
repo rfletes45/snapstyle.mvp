@@ -84,7 +84,6 @@ import GroupPermissionsScreen from "@/screens/groups/GroupPermissionsScreen";
 
 import ChatSettingsScreen from "@/screens/chat/ChatSettingsScreen";
 
-import InboxSearchScreen from "@/screens/chat/InboxSearchScreen";
 import InboxSettingsScreen from "@/screens/chat/InboxSettingsScreen";
 
 import AdminReportsQueueScreen from "@/screens/admin/AdminReportsQueueScreen";
@@ -208,11 +207,6 @@ function InboxStack() {
       <InboxStack_Nav.Screen
         name="InboxSettings"
         component={InboxSettingsScreen}
-        options={{ headerShown: false }}
-      />
-      <InboxStack_Nav.Screen
-        name="InboxSearch"
-        component={InboxSearchScreen}
         options={{ headerShown: false }}
       />
     </InboxStack_Nav.Navigator>

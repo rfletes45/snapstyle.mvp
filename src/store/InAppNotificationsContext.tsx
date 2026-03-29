@@ -1,23 +1,23 @@
-import { normalizeNotificationPayload } from "@/services/notifications/normalizeNotification";
+import type { GameRuntimeType } from "@/gamesV4/types/common";
+import {
+  subscribeToInboxSettings,
+  updateInboxSettings,
+} from "@/services/inboxSettings";
 import {
   clearNotificationSession,
   getNotificationDeviceId,
   setBadgeCount,
   syncNotificationSession,
 } from "@/services/notifications";
+import { normalizeNotificationPayload } from "@/services/notifications/normalizeNotification";
 import {
-  UserNotificationRecord,
   markUserNotificationPresented,
   markUserNotificationRead,
   subscribeToUnreadBadgeCount,
   subscribeToUserNotifications,
+  UserNotificationRecord,
 } from "@/services/userNotifications";
-import {
-  subscribeToInboxSettings,
-  updateInboxSettings,
-} from "@/services/inboxSettings";
 import { createLogger } from "@/utils/log";
-import type { GameRuntimeType } from "@/gamesV4/types/common";
 import React, {
   createContext,
   ReactNode,
@@ -51,7 +51,11 @@ export type NotificationType =
   | "game_resolved"
   | "achievement_unlocked"
   | "gift_received"
-  | "gift_opened";
+  | "gift_opened"
+  | "streak_milestone"
+  | "streak_at_risk"
+  | "cosmetic_unlock"
+  | "story_viewed";
 
 export interface InAppNotification {
   id: string;
@@ -95,10 +99,7 @@ interface InAppNotificationsContextType {
     scope: "dm" | "group" | null;
   } | null;
   registerNotificationPressHandler: (
-    handler: (
-      conversationId: string,
-      scope: "dm" | "group" | null,
-    ) => void,
+    handler: (conversationId: string, scope: "dm" | "group" | null) => void,
   ) => () => void;
   onMessageNotificationPressed: (
     conversationId: string,
@@ -161,9 +162,7 @@ function buildToast(
   };
 }
 
-export function InAppNotificationsProvider({
-  children,
-}: ProviderProps) {
+export function InAppNotificationsProvider({ children }: ProviderProps) {
   const { currentFirebaseUser } = useAuth();
   const uid = currentFirebaseUser?.uid;
 
@@ -196,12 +195,7 @@ export function InAppNotificationsProvider({
     new Map(),
   );
   const notificationPressHandlers = useRef<
-    Set<
-      (
-        conversationId: string,
-        scope: "dm" | "group" | null,
-      ) => void
-    >
+    Set<(conversationId: string, scope: "dm" | "group" | null) => void>
   >(new Set());
   const seenNotificationIds = useRef<Set<string>>(new Set());
   const hasHydratedFeed = useRef(false);
@@ -210,7 +204,9 @@ export function InAppNotificationsProvider({
   useEffect(() => {
     getNotificationDeviceId()
       .then(setDeviceId)
-      .catch((error) => log.warn("Failed to resolve notification device id", error));
+      .catch((error) =>
+        log.warn("Failed to resolve notification device id", error),
+      );
   }, []);
 
   useEffect(() => {
@@ -271,7 +267,9 @@ export function InAppNotificationsProvider({
 
   const scheduleAutoDismiss = useCallback((id: string) => {
     const timer = setTimeout(() => {
-      setNotifications((prev) => prev.filter((notification) => notification.id !== id));
+      setNotifications((prev) =>
+        prev.filter((notification) => notification.id !== id),
+      );
       dismissTimers.current.delete(id);
     }, AUTO_DISMISS_MS);
 
@@ -283,7 +281,9 @@ export function InAppNotificationsProvider({
       if (!enabled) return;
       if (!shouldShowNotification(toast.dedupeKey)) return;
 
-      setNotifications((prev) => [toast, ...prev].slice(0, MAX_VISIBLE_NOTIFICATIONS));
+      setNotifications((prev) =>
+        [toast, ...prev].slice(0, MAX_VISIBLE_NOTIFICATIONS),
+      );
       scheduleAutoDismiss(toast.id);
     },
     [enabled, scheduleAutoDismiss, shouldShowNotification],
@@ -295,7 +295,9 @@ export function InAppNotificationsProvider({
       clearTimeout(timer);
       dismissTimers.current.delete(id);
     }
-    setNotifications((prev) => prev.filter((notification) => notification.id !== id));
+    setNotifications((prev) =>
+      prev.filter((notification) => notification.id !== id),
+    );
   }, []);
 
   const clearAll = useCallback(() => {
@@ -340,10 +342,7 @@ export function InAppNotificationsProvider({
 
   const registerNotificationPressHandler = useCallback(
     (
-      handler: (
-        conversationId: string,
-        scope: "dm" | "group" | null,
-      ) => void,
+      handler: (conversationId: string, scope: "dm" | "group" | null) => void,
     ) => {
       notificationPressHandlers.current.add(handler);
       return () => {
@@ -355,13 +354,13 @@ export function InAppNotificationsProvider({
 
   const onMessageNotificationPressed = useCallback(
     (conversationId: string, scope: "dm" | "group" | null) => {
-    notificationPressHandlers.current.forEach((handler) => {
-      try {
+      notificationPressHandlers.current.forEach((handler) => {
+        try {
           handler(conversationId, scope);
-      } catch (error) {
-        log.error("Notification press handler failed", error);
-      }
-    });
+        } catch (error) {
+          log.error("Notification press handler failed", error);
+        }
+      });
     },
     [],
   );

@@ -157,6 +157,14 @@ function ToastItem({
       case "gift_received":
       case "gift_opened":
         return "gift";
+      case "streak_milestone":
+        return "fire";
+      case "streak_at_risk":
+        return "alert-circle";
+      case "cosmetic_unlock":
+        return "star-circle";
+      case "story_viewed":
+        return "eye";
       default:
         return "bell";
     }
@@ -177,10 +185,17 @@ function ToastItem({
       case "game_turn":
         return colors.warning ?? colors.primary;
       case "achievement_unlocked":
+      case "cosmetic_unlock":
         return colors.success ?? colors.secondary;
       case "gift_received":
       case "gift_opened":
         return colors.info;
+      case "streak_milestone":
+        return colors.warning ?? colors.primary;
+      case "streak_at_risk":
+        return colors.error ?? colors.primary;
+      case "story_viewed":
+        return colors.secondary;
       default:
         return colors.info;
     }

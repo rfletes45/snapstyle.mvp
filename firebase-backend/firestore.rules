@@ -426,6 +426,16 @@ service cloud.firestore {
       }
 
       // --------------------------------------------------------
+      // Invite event logging (Friends screen expansion)
+      // Users/{uid}/inviteEvents/{eventId}
+      // --------------------------------------------------------
+      match /inviteEvents/{eventId} {
+        allow read: if isAuth() && isOwner(uid);
+        allow create: if isAuth() && isOwner(uid);
+        allow update, delete: if false;
+      }
+
+      // --------------------------------------------------------
       // Notifications feed (server-authored)
       // Users/{uid}/Notifications/{notificationId}
       // --------------------------------------------------------
@@ -766,6 +776,17 @@ service cloud.firestore {
       
       // Delete: either member can unfriend
       allow delete: if isAuth() && request.auth.uid in resource.data.users;
+    }
+
+    // ============================================================
+    // SUGGESTION DISMISSALS (Friends screen expansion)
+    // SuggestionDismissals/{uid}/dismissed/{targetUid}
+    // ============================================================
+
+    match /SuggestionDismissals/{uid}/dismissed/{targetUid} {
+      allow read: if isAuth() && request.auth.uid == uid;
+      allow create: if isAuth() && request.auth.uid == uid;
+      allow update, delete: if false;
     }
 
     // ============================================================

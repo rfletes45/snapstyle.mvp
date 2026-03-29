@@ -165,16 +165,12 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
     // Resolve incoming sender style from the message's senderStyle snapshot
     const incomingStyle = React.useMemo(() => {
       if (isSentByMe) return null;
-      const resolved = resolveIncomingBubbleStyle({
+      return resolveIncomingBubbleStyle({
         senderStyle: message.senderStyle ?? null,
         appearanceMode: theme.dark ? "dark" : "light",
         defaultBgColor: theme.colors.surfaceVariant,
         defaultTextColor: theme.colors.onSurface,
       });
-      console.log(
-        `[DM_RENDER_STYLE] id=${message.id} sender=${message.sender} senderStyle=${JSON.stringify(message.senderStyle ?? null)} resolvedBg=${resolved.bubbleBgColor}`,
-      );
-      return resolved;
     }, [
       isSentByMe,
       message.senderStyle,

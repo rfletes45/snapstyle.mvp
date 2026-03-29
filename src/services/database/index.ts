@@ -17,7 +17,7 @@ const logger = createLogger("services/database/index");
 // =============================================================================
 
 const DATABASE_NAME = "snapstyle.db";
-const DATABASE_VERSION = 3;
+const DATABASE_VERSION = 4;
 
 /**
  * Check if SQLite is available on this platform
@@ -122,6 +122,37 @@ function initializeSchema(database: SQLiteDatabase): void {
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       if (!msg.includes("duplicate column")) {
+        throw e;
+      }
+    }
+  }
+
+  // ---- Migration from v3 → v4: add FTS5 full-text search virtual table ----
+  if (currentVersion === 3) {
+    try {
+      database.execSync(`
+        CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
+          text,
+          sender_name,
+          content='messages',
+          content_rowid='rowid',
+          tokenize='unicode61 remove_diacritics 2'
+        );
+      `);
+      // Backfill existing messages into FTS index
+      database.execSync(`
+        INSERT INTO messages_fts(rowid, text, sender_name)
+        SELECT rowid, COALESCE(text, ''), COALESCE(sender_name, '')
+        FROM messages
+        WHERE deleted_for_all = 0 AND text IS NOT NULL AND text != '';
+      `);
+      logger.info(
+        "[Database] Migrated v3 → v4: created messages_fts FTS5 table + backfill",
+      );
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (!msg.includes("already exists")) {
+        logger.error("[Database] FTS5 migration failed:", msg);
         throw e;
       }
     }
@@ -235,10 +266,20 @@ function initializeSchema(database: SQLiteDatabase): void {
         ON attachments(download_status) WHERE download_status != 'downloaded';
       CREATE INDEX IF NOT EXISTS idx_conversations_updated 
         ON conversations(updated_at DESC);
-
-      -- Update version
-      PRAGMA user_version = ${DATABASE_VERSION};
     `);
+
+    // FTS5 virtual table (CREATE VIRTUAL TABLE cannot run inside execSync batch)
+    database.execSync(`
+      CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
+        text,
+        sender_name,
+        content='messages',
+        content_rowid='rowid',
+        tokenize='unicode61 remove_diacritics 2'
+      );
+    `);
+
+    database.execSync(`PRAGMA user_version = ${DATABASE_VERSION}`);
 
     logger.info(`[Database] Schema initialized to version ${DATABASE_VERSION}`);
   }

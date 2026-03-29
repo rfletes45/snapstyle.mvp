@@ -547,15 +547,16 @@ const styles = StyleSheet.create({
   },
   filterChip: {
     paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingVertical: 8,
     borderRadius: 16,
     alignItems: "center",
     justifyContent: "center",
+    minHeight: 36,
   },
   filterChipText: {
     fontSize: 13,
     fontWeight: "600",
-    includeFontPadding: false,
+    lineHeight: 18,
   },
   list: { paddingHorizontal: 16, paddingBottom: 32, gap: 12 },
   sectionCard: {

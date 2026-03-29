@@ -268,3 +268,6 @@ export {
   updateLobbySettingsV4,
   watchdogGamesV4,
 };
+
+// ─── Contacts Matching ─────────────────────────────────────────────────────
+export { matchContacts } from "./contacts";

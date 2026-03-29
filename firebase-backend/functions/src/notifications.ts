@@ -103,8 +103,8 @@ function buildDmCopy(params: {
   const { senderName, previewText, previewMode } = params;
   if (previewMode === "generic") {
     return {
-      title: "New message",
-      body: "Open Vibe to view it",
+      title: "Vibe",
+      body: "You have a new message",
     };
   }
   if (previewMode === "sender_only") {
@@ -130,14 +130,14 @@ function buildGroupCopy(params: {
 
   if (previewMode === "generic") {
     return {
-      title: mentioned ? `${groupName}` : groupName,
-      body: mentioned ? "You were mentioned in a message" : "New message",
+      title: groupName,
+      body: mentioned ? "You were mentioned" : "New message",
     };
   }
 
   if (previewMode === "sender_only") {
     return {
-      title: mentioned ? `${groupName}` : groupName,
+      title: groupName,
       body: mentioned
         ? `${senderName} mentioned you`
         : `${senderName} sent a message`,
@@ -145,8 +145,10 @@ function buildGroupCopy(params: {
   }
 
   return {
-    title: mentioned ? `${groupName} - mentioned you` : groupName,
-    body: previewText,
+    title: groupName,
+    body: mentioned
+      ? `${senderName} mentioned you: ${previewText}`
+      : `${senderName}: ${previewText}`,
   };
 }
 
@@ -333,12 +335,11 @@ export const onMessageRequestCreatedNotification = functions.firestore
       category: "message",
       dedupeKey: `message_request:${recipientUid}:${chatId}`,
       collapseKey: `message_request:${recipientUid}`,
-      title: "New message request",
+      title: "Message Request",
       body:
-        typeof data.messagePreview === "string" &&
-        data.messagePreview.length > 0
-          ? data.messagePreview
-          : `${data.requesterName || "Someone"} wants to message you`,
+        typeof data.requesterName === "string" && data.requesterName.length > 0
+          ? `${data.requesterName} wants to message you`
+          : "Someone wants to send you a message",
       actorUid:
         typeof data.requesterId === "string" ? data.requesterId : undefined,
       actorName:

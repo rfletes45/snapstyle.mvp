@@ -40,7 +40,10 @@ import { AnimalIcon } from "@/components/chat/AnimalIcon";
 import { CosmeticImage } from "@/components/CosmeticImage";
 import { ProfileHeaderVisual } from "@/components/profile/ProfileHeaderVisual";
 import { BorderRadius, Spacing, THEME_METADATA } from "@/constants/theme";
-import { getAnimalImage } from "@/cosmetics/animalAssets";
+import {
+  DEFAULT_ANIMAL_THEME_ID,
+  getAnimalImage,
+} from "@/cosmetics/animalAssets";
 import { getCosmeticAsset, hasCosmeticAsset } from "@/cosmetics/assetRegistry";
 import {
   relativeLuminance,
@@ -699,7 +702,7 @@ function ChatPreview({ chatAppearance, isDark }: ChatPreviewProps) {
               style={[
                 styles.chatPreviewText,
                 {
-                  color: style.bubbleTextColor,
+                  color: style.fontColorHex ?? style.bubbleTextColor,
                   ...(style.fontFamily ? { fontFamily: style.fontFamily } : {}),
                 },
               ]}
@@ -954,7 +957,9 @@ export default function CustomizationHubScreen({
       case "chat_font_color":
         return currentFontColorId === selectedItem.id;
       case "chat_animal_theme":
-        return currentAnimalThemeId === selectedItem.id;
+        return (
+          (currentAnimalThemeId ?? DEFAULT_ANIMAL_THEME_ID) === selectedItem.id
+        );
       default:
         return false;
     }
@@ -991,7 +996,9 @@ export default function CustomizationHubScreen({
           case "chat_font_color":
             return currentFontColorId === item.id;
           case "chat_animal_theme":
-            return currentAnimalThemeId === item.id;
+            return (
+              (currentAnimalThemeId ?? DEFAULT_ANIMAL_THEME_ID) === item.id
+            );
           default:
             return false;
         }
@@ -1024,7 +1031,9 @@ export default function CustomizationHubScreen({
     ({ item }: { item: CosmeticDefinition }) => (
       <AnimalThemeCard
         item={item}
-        isEquipped={currentAnimalThemeId === item.id}
+        isEquipped={
+          (currentAnimalThemeId ?? DEFAULT_ANIMAL_THEME_ID) === item.id
+        }
         onPress={handleChatDirectEquip}
       />
     ),

@@ -19,6 +19,7 @@
 import { MAX_REWARD_LEVEL } from "@/data/levelRewards";
 import {
   GAME_METADATA,
+  HIDDEN_GAME_IDS,
   IMPLEMENTED_GAME_IDS,
   isPersistentSoloGame,
   type GameMetadata,
@@ -27,6 +28,7 @@ import type { LevelRewardDocV4 } from "@/gamesV4/services/gameServiceV4";
 import {
   archiveSoloSession,
   resumeOrCreateSoloSession,
+  subscribeToAchievementSections,
   subscribeToActiveSoloSessions,
   subscribeToLevelRewards,
   subscribeToMyActiveInvites,
@@ -86,6 +88,10 @@ export default function GamesHubScreenV4() {
   const [activeSoloSessions, setActiveSoloSessions] = useState<
     Record<string, string>
   >({});
+  /** Set of gameIds whose achievement section badge has been claimed (mastered). */
+  const [masteredGameIds, setMasteredGameIds] = useState<Set<string>>(
+    new Set(),
+  );
 
   // ── Level/XP data ──────────────────────────────────────────────────────
   const { levelInfo: profileLevel } = useProfileData(uid);
@@ -148,9 +154,33 @@ export default function GamesHubScreenV4() {
     return unsub;
   }, [uid]);
 
+  // ── Subscribe to achievement section badges (mastery detection) ────────
+  useEffect(() => {
+    if (!uid) return;
+    const unsub = subscribeToAchievementSections(
+      uid,
+      (sections) => {
+        const claimed = new Set<string>();
+        for (const s of sections) {
+          if (s.claimed) claimed.add(s.sectionId);
+        }
+        setMasteredGameIds(claimed);
+      },
+      (err) => {
+        console.warn(
+          "[GamesHub] AchievementSections subscription error:",
+          err.message,
+        );
+      },
+    );
+    return unsub;
+  }, [uid]);
+
   // ── Game sections ──────────────────────────────────────────────────────
   const sections = useMemo<GameSection[]>(() => {
-    const all = Object.values(GAME_METADATA);
+    const all = Object.values(GAME_METADATA).filter(
+      (g) => !HIDDEN_GAME_IDS.has(g.gameId),
+    );
     const solo = all.filter((g) => g.runtimeType === "solo");
     const turnBased = all.filter((g) => g.runtimeType === "turnBased");
     const realtime = all.filter((g) => g.runtimeType === "realtime");
@@ -667,6 +697,7 @@ export default function GamesHubScreenV4() {
                 const isSolo = game.runtimeType === "solo";
                 const hasActiveSession = !!activeSoloSessions[game.gameId];
                 const isPersistent = isPersistentSoloGame(game.gameId);
+                const isMastered = masteredGameIds.has(game.gameId);
                 return (
                   <TouchableOpacity
                     key={game.gameId}
@@ -674,6 +705,10 @@ export default function GamesHubScreenV4() {
                       styles.catalogCard,
                       { backgroundColor: cardBg, borderColor },
                       !isImplemented && { opacity: 0.5 },
+                      isMastered && {
+                        borderColor: "#DAA520",
+                        borderWidth: 2,
+                      },
                     ]}
                     onPress={() => handleGameTap(game.gameId)}
                     onLongPress={

@@ -586,24 +586,29 @@ export const onStoryViewed = functions.firestore
         ? viewerDoc.data()?.displayName || "Someone"
         : "Someone";
 
-      // Get author's push token
-      const pushToken = await getUserPushToken(authorId);
+      const { notifyUser: notifyUserCenter } =
+        await import("./notificationCenter");
+      await notifyUserCenter({
+        recipientUid: authorId,
+        type: "story_viewed",
+        category: "social",
+        dedupeKey: `story_viewed:${storyId}:${viewerId}`,
+        collapseKey: `story_viewed:${authorId}`,
+        title: `${viewerName} viewed your story`,
+        body: "Tap to see who's watching",
+        actorUid: viewerId,
+        actorName: viewerName,
+        route: {
+          screen: "MainTabs",
+        },
+        data: {
+          storyId,
+          viewerId,
+        },
+        badgeEligible: false,
+      });
 
-      if (pushToken) {
-        await sendExpoPushNotification({
-          to: pushToken,
-          title: "Story Viewed! 👀",
-          body: `${viewerName} viewed your story`,
-          data: {
-            type: "story_view",
-            storyId,
-            viewerId,
-          },
-          sound: "default",
-        });
-
-        console.log(`✅ Sent story view notification to ${authorId}`);
-      }
+      console.log(`✅ Sent story view notification to ${authorId}`);
     } catch (error) {
       console.error("❌ Error in onStoryViewed:", error);
     }

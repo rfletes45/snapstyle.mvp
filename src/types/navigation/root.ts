@@ -21,7 +21,6 @@ export type InboxStackParamList = {
   ScheduledMessages: undefined;
   GroupInvites: undefined;
   InboxSettings: undefined;
-  InboxSearch: undefined;
 };
 
 export type ProfileTabStackParamList = {
@@ -53,9 +52,17 @@ export type MainStackParamList = {
         friendUid: string;
         friendName?: string;
         initialData?: Record<string, unknown>;
+        targetMessageId?: string;
       }
     | undefined;
-  GroupChat: { groupId: string; groupName?: string } | undefined;
+  GroupChat:
+    | {
+        groupId: string;
+        groupName?: string;
+        targetMessageId?: string;
+        initialGroupData?: Record<string, unknown>;
+      }
+    | undefined;
   ThreadView: {
     conversationId: string;
     scope: "dm" | "group";

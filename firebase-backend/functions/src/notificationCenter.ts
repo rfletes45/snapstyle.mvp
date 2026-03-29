@@ -27,7 +27,11 @@ export type NotificationEventType =
   | "game_resolved"
   | "achievement_unlocked"
   | "gift_received"
-  | "gift_opened";
+  | "gift_opened"
+  | "streak_milestone"
+  | "streak_at_risk"
+  | "cosmetic_unlock"
+  | "story_viewed";
 
 export interface NotificationRoute {
   screen: string;
@@ -41,6 +45,7 @@ export interface NotificationRequest {
   dedupeKey: string;
   collapseKey?: string;
   title: string;
+  subtitle?: string;
   body: string;
   actorUid?: string | null;
   actorName?: string | null;
@@ -52,10 +57,17 @@ export interface NotificationRequest {
   gameId?: string | null;
   sectionId?: string | null;
   giftId?: string | null;
+  friendshipId?: string | null;
   route: NotificationRoute;
   data?: Record<string, unknown>;
   badgeEligible?: boolean;
   respectConversationMute?: boolean;
+  /** Android notification channel override (defaults based on category). */
+  androidChannelId?: string;
+  /** iOS thread identifier for notification grouping. */
+  iosThreadId?: string;
+  /** iOS category identifier for actionable notifications. */
+  iosCategoryId?: string;
 }
 
 interface NotificationPreferenceSnapshot {
@@ -275,10 +287,16 @@ function categoryEnabledForEvent(
     case "game_resolved":
       return prefs.gameNotificationsEnabled;
     case "achievement_unlocked":
+    case "cosmetic_unlock":
       return prefs.achievementNotificationsEnabled;
     case "gift_received":
     case "gift_opened":
       return prefs.giftNotificationsEnabled;
+    case "streak_milestone":
+    case "streak_at_risk":
+      return prefs.streakNotificationsEnabled;
+    case "story_viewed":
+      return prefs.storyNotificationsEnabled;
     default:
       return true;
   }
@@ -484,6 +502,7 @@ function buildNotificationDoc(
     gameId: request.gameId ?? null,
     sectionId: request.sectionId ?? null,
     giftId: request.giftId ?? null,
+    friendshipId: request.friendshipId ?? null,
     route: removeUndefined(request.route),
     ...request.data,
   });
@@ -495,6 +514,7 @@ function buildNotificationDoc(
     dedupeKey: request.dedupeKey,
     collapseKey: request.collapseKey ?? request.dedupeKey,
     title: request.title,
+    subtitle: request.subtitle ?? null,
     body: request.body,
     actorUid: request.actorUid ?? null,
     actorName: request.actorName ?? null,
@@ -506,6 +526,7 @@ function buildNotificationDoc(
     gameId: request.gameId ?? null,
     sectionId: request.sectionId ?? null,
     giftId: request.giftId ?? null,
+    friendshipId: request.friendshipId ?? null,
     route: removeUndefined(request.route),
     data: payloadData,
     channel: decision.channel,
@@ -588,6 +609,59 @@ async function getUnreadBadgeCount(uid: string): Promise<number> {
   return unreadSnap.size;
 }
 
+function resolveAndroidChannelId(request: NotificationRequest): string {
+  if (request.androidChannelId) return request.androidChannelId;
+  switch (request.type) {
+    case "dm_message":
+    case "group_message":
+    case "message_request":
+      return "messages";
+    case "friend_request":
+    case "friend_request_accepted":
+    case "story_viewed":
+      return "social";
+    case "game_invite":
+    case "game_lobby_ready":
+    case "game_turn":
+    case "game_resolved":
+      return "game-invites";
+    case "achievement_unlocked":
+    case "cosmetic_unlock":
+    case "streak_milestone":
+    case "streak_at_risk":
+      return "achievements";
+    case "gift_received":
+    case "gift_opened":
+      return "social";
+    default:
+      return "default";
+  }
+}
+
+function resolveIosThreadId(request: NotificationRequest): string | null {
+  if (request.iosThreadId) return request.iosThreadId;
+  if (request.conversationId) {
+    return `${request.conversationScope ?? "chat"}-${request.conversationId}`;
+  }
+  if (request.sessionId) return `game-${request.sessionId}`;
+  if (request.inviteId) return `invite-${request.inviteId}`;
+  switch (request.type) {
+    case "friend_request":
+    case "friend_request_accepted":
+      return "social";
+    case "achievement_unlocked":
+    case "cosmetic_unlock":
+    case "streak_milestone":
+    case "streak_at_risk":
+      return "achievements";
+    case "gift_received":
+    case "gift_opened":
+      return "gifts";
+    default:
+      return null;
+  }
+}
+
 async function sendPushNotifications(
   request: NotificationRequest,
   notificationId: string,
@@ -598,10 +672,14 @@ async function sendPushNotifications(
     ? await getUnreadBadgeCount(request.recipientUid)
     : undefined;
 
+  const channelId = resolveAndroidChannelId(request);
+  const threadId = resolveIosThreadId(request);
+
   const messages = pushDevices.map((device) =>
     removeUndefined({
       to: device.expoPushToken,
       title: request.title,
+      subtitle: request.subtitle ?? undefined,
       body: request.body,
       sound: "default",
       badge: badgeCount,
@@ -620,11 +698,15 @@ async function sendPushNotifications(
         gameId: request.gameId ?? null,
         sectionId: request.sectionId ?? null,
         giftId: request.giftId ?? null,
+        friendshipId: request.friendshipId ?? null,
         route: removeUndefined(request.route),
         ...request.data,
       }),
-      channelId: request.category === "games" ? "game-invites" : "default",
+      channelId,
+      categoryId: request.iosCategoryId ?? undefined,
+      _contentAvailable: true,
       collapseId: request.collapseKey ?? request.dedupeKey,
+      ...(threadId ? { threadId } : {}),
     }),
   );
 

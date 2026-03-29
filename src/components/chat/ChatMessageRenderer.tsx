@@ -117,9 +117,11 @@ export const ChatMessageRenderer: React.FC<ChatMessageRendererProps> =
       // Resolve the sender name for display
       const senderDisplayName = React.useMemo(() => {
         if (isSentByMe) {
-          return currentUserDisplayName || friendProfile?.displayName || "User";
+          return currentUserDisplayName || "You";
         }
-        return friendProfile?.displayName || friendProfile?.username || "User";
+        return (
+          friendProfile?.displayName || friendProfile?.username || "Friend"
+        );
       }, [isSentByMe, friendProfile, currentUserDisplayName]);
 
       // ── Bubble mode → existing DMMessageItem ──────────────────────────

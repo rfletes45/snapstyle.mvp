@@ -99,7 +99,7 @@ export function createReplyMetadataFromMessage(
   const senderName =
     message.sender === currentUid
       ? "You"
-      : friendProfile?.displayName || friendProfile?.username || "User";
+      : friendProfile?.displayName || friendProfile?.username || "Friend";
 
   return {
     messageId: message.id,
@@ -152,7 +152,7 @@ export function messageWithProfileToV2(
     senderName:
       message.sender === currentUid
         ? "You"
-        : friendProfile?.displayName || "User",
+        : friendProfile?.displayName || "Friend",
     kind:
       message.type === "image"
         ? "media"

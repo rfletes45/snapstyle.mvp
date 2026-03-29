@@ -87,6 +87,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     backgroundColor: "#ffffff",
   },
   plugins: [
+    "@react-native-community/datetimepicker",
     [
       "expo-build-properties",
       {
@@ -101,7 +102,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       },
     ],
     "expo-audio",
-    "expo-sqlite",
+    ["expo-sqlite", { enableFTS: true }],
     [
       "expo-notifications",
       {

@@ -1,6 +1,6 @@
 # Widget Board Architecture
 
-Last verified: 2026-03-27
+Last verified: 2026-03-29
 
 ← Back to [Profile System Overview](PROFILE_SYSTEM_OVERVIEW.md)
 
@@ -32,6 +32,41 @@ The widget board is a 4-column grid with fixed cell dimensions.
 
 Widget pixel widths depend on the measured board width: `(boardWidth - (GRID_COLUMNS - 1) × GRID_GUTTER) / GRID_COLUMNS × colSpan + (colSpan - 1) × GRID_GUTTER`.
 
+## Widget Types
+
+Ten registered widget types (defined in `WidgetRegistry.ts`, union in `types.ts`):
+
+| Widget Type       | Default Size | Supported Sizes     | Removable | Resizable | Category | Notes                            |
+| ----------------- | ------------ | ------------------- | --------- | --------- | -------- | -------------------------------- |
+| `profile-header`  | hero         | wide, large, hero   | No        | Yes       | profile  | Mandatory; max 1 instance        |
+| `social-proof`    | wide         | wide, large         | Yes       | Yes       | activity | Streaks & activity summary       |
+| `friends`         | medium       | small, medium, wide | Yes       | Yes       | social   | Friend list preview              |
+| `badges`          | medium       | small, medium, wide | Yes       | Yes       | gaming   | Featured badges                  |
+| `achievements`    | medium       | small, medium, wide | Yes       | Yes       | gaming   | Trophy case preview              |
+| `mutual-friends`  | medium       | small, medium, wide | Yes       | Yes       | social   | Mutual friends with the viewer   |
+| `favorite-game`   | medium       | small, medium, wide | Yes       | Yes       | gaming   | Most-played game stats           |
+| `profile-stats`   | wide         | medium, wide        | Yes       | Yes       | gaming   | Games played, wins, hours        |
+| `recent-activity` | wide         | wide, large         | Yes       | Yes       | activity | Latest events timeline           |
+| `viewer-actions`  | wide         | wide, large         | No        | No        | social   | Viewer-only; injected at runtime |
+
+Each widget type has `maxInstances: 1`.
+
+### Viewer-Actions Widget
+
+The `viewer-actions` widget is a **synthetic, non-persisted widget** used only on the viewer profile screen (`UserProfileScreen`). It is:
+
+- **Not included in the default layout** (never persisted to Firestore)
+- **Not shown in the Widget Gallery** (filtered by `canRemove: false`)
+- **Injected at runtime** by `UserProfileScreen` via the `augmentedVisibleWidgets` memo
+- Positioned at the bottom of whichever board layout the target user has saved
+- Renders: muted badge, friendship duration pill, last active label, and the `ProfileActionsBar`
+
+Instance details:
+
+- `instanceId: "__viewer-actions__"`
+- `size: "large"` (4×2)
+- `pinned: true`
+
 ## Board Container
 
 **File:** `src/components/profile/WidgetBoard/WidgetBoardContainer.tsx`
@@ -45,6 +80,15 @@ The container:
 5. Renders the `CustomizeModeToolbar` and `WidgetGallery` when in customize mode
 
 Board height is dynamic — it grows/shrinks as widgets are added, removed, or rearranged.
+
+### Read-Only / Viewer Mode
+
+When the `readOnly` prop is `true`:
+
+- `CustomizeModeToolbar` is suppressed
+- `WidgetSizeSelector` and `WidgetGallery` are suppressed
+- Each `WidgetWrapper` receives `readOnly={true}`, disabling long-press-to-customize
+- `onEnterCustomize` is set to `undefined`
 
 ## Occupancy Map
 
@@ -209,12 +253,26 @@ Edit overlays (remove button, resize handle, drag handle) fade in/out with opaci
 
 ### Hook Hierarchy
 
+**Own profile (editable):**
+
 ```
 OwnProfileScreen
   └─ useBoardState(userId)
        └─ useBoardPersistence(userId)
             └─ Firestore: Users/{userId}/ProfileLayout/board
 ```
+
+**Viewer profile (read-only):**
+
+```
+UserProfileScreen
+  └─ useBoardState(userId, { readOnly: true })
+       └─ useBoardPersistence(userId, { readOnly: true })
+            └─ Firestore: Users/{userId}/ProfileLayout/board (read-only subscription)
+  └─ augmentedVisibleWidgets   ← injects synthetic viewer-actions widget
+```
+
+When `readOnly` is `true`: `save()` is a no-op, default layout is not persisted, and `onSnapshot` still subscribes (so the viewer sees live layout changes).
 
 ### State Layers
 
@@ -259,6 +317,8 @@ Generated when no saved layout exists (first profile load):
 
 Additional widgets (favorite-game, profile-stats, recent-activity, mutual-friends) are available in the Widget Gallery but not placed by default.
 
+> The `viewer-actions` widget is **never** included in the default layout. It is injected synthetically at runtime on the viewer profile screen only.
+
 ## Key Files
 
 | File                       | Purpose                                                  |
@@ -274,6 +334,49 @@ Additional widgets (favorite-game, profile-stats, recent-activity, mutual-friend
 | `WidgetSizeSelector.tsx`   | Resize size preset selection UI                          |
 | `adapters.tsx`             | Widget content renderers per type and size               |
 | `types.ts`                 | Types, constants, size presets, schema version           |
+
+## Persistence & Firestore Rules
+
+**Document path:** `Users/{userId}/ProfileLayout/board`
+
+**Schema version:** `1` (stored in `schemaVersion` field; validated on read)
+
+**Firestore security rules:**
+
+| Operation         | Rule                                          |
+| ----------------- | --------------------------------------------- |
+| **Read**          | `isAuth()` — any authenticated user           |
+| **Create/Update** | `isAuth() && isOwner(uid)` + field validation |
+| **Delete**        | `isAuth() && isOwner(uid)`                    |
+
+Write validation enforces required fields (`schemaVersion`, `widgets`) and type constraints.
+
+## Widget Adapters
+
+**File:** `src/components/profile/WidgetBoard/adapters.tsx`
+
+Each widget type has a corresponding adapter component in the `WIDGET_ADAPTERS` map. Adapters receive `{ widget, boardContext }` and render the widget content.
+
+| Widget Type       | Adapter               | Renders                                                      |
+| ----------------- | --------------------- | ------------------------------------------------------------ |
+| `profile-header`  | ProfileHeaderAdapter  | Avatar, display name, username, bio (3 size variants)        |
+| `social-proof`    | SocialProofAdapter    | Streaks, activity summary                                    |
+| `friends`         | FriendsAdapter        | Friend list preview grid                                     |
+| `badges`          | BadgesAdapter         | Featured badge display                                       |
+| `achievements`    | AchievementsAdapter   | Trophy case preview                                          |
+| `mutual-friends`  | MutualFriendsAdapter  | Mutual friends with the viewer                               |
+| `favorite-game`   | FavoriteGameAdapter   | Most-played game stats                                       |
+| `profile-stats`   | ProfileStatsAdapter   | Games played, wins, hours                                    |
+| `recent-activity` | RecentActivityAdapter | Latest events timeline                                       |
+| `viewer-actions`  | ViewerActionsAdapter  | Muted badge, friendship pill, last active, ProfileActionsBar |
+
+### Profile Header Size Variants
+
+The `ProfileHeaderAdapter` renders different layouts based on the current widget size:
+
+- **hero (4×4):** Full layout — large avatar, display name, username, bio, edit button
+- **large (4×2):** Compact — medium avatar, name, username, truncated bio
+- **wide (4×1):** Minimal — small avatar, name, username inline
 
 ## See Also
 

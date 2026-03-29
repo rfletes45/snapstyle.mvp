@@ -404,6 +404,21 @@ export const IMPLEMENTED_GAME_IDS = new Set<GameId>([
   // "minigolf_duels", // disabled — not working, deferred until ready
 ]);
 
+/**
+ * Games hidden from the catalog UI.
+ * These are Coming Soon games that are not yet ready for display.
+ * Bounce Blitz and Checkers remain visible as Coming Soon.
+ */
+export const HIDDEN_GAME_IDS = new Set<GameId>([
+  "word_master",
+  "lights_out",
+  "gomoku",
+  "crossword_puzzle",
+  "starforge_game",
+  "dot_match",
+  "minigolf_duels",
+]);
+
 // =============================================================================
 // Limits & Timeouts
 // =============================================================================

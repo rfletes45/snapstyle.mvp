@@ -34,7 +34,7 @@
 
 import * as admin from "firebase-admin";
 import * as functions from "firebase-functions";
-import { getUserPushToken, sendExpoPushNotification } from "./utils";
+import { notifyUser } from "./notificationCenter";
 
 const db = admin.firestore();
 
@@ -214,7 +214,12 @@ export async function updateStreakOnMessage(
   if (result && result.milestoneReached) {
     const ms = result.milestoneReached;
     await Promise.all([
-      sendStreakMilestoneNotification(result.uid1, result.uid2, ms),
+      sendStreakMilestoneNotification(
+        result.uid1,
+        result.uid2,
+        ms,
+        result.friendshipId,
+      ),
       grantMilestoneCosmetic(result.uid1, ms),
       grantMilestoneCosmetic(result.uid2, ms),
     ]);
@@ -237,21 +242,30 @@ async function sendStreakMilestoneNotification(
   user1Id: string,
   user2Id: string,
   milestone: number,
+  friendshipId: string,
 ): Promise<void> {
-  const body = MILESTONE_MESSAGES[milestone] || `🔥 ${milestone}-day streak!`;
+  const body = MILESTONE_MESSAGES[milestone] || `${milestone}-day streak!`;
 
   for (const userId of [user1Id, user2Id]) {
     try {
-      const token = await getUserPushToken(userId);
-      if (token) {
-        await sendExpoPushNotification({
-          to: token,
-          title: "Streak Milestone! 🎉",
-          body,
-          data: { type: "streak_milestone", milestone },
-          sound: "default",
-        });
-      }
+      await notifyUser({
+        recipientUid: userId,
+        type: "streak_milestone",
+        category: "progression",
+        dedupeKey: `streak_milestone:${friendshipId}:${milestone}:${userId}`,
+        collapseKey: `streak:${friendshipId}`,
+        title: `${milestone}-Day Streak!`,
+        body,
+        friendshipId,
+        route: {
+          screen: "Friends",
+        },
+        data: {
+          friendshipId,
+          milestone,
+        },
+        badgeEligible: false,
+      });
     } catch (err) {
       console.error(`[streaks] notify error for ${userId}:`, err);
     }
@@ -285,18 +299,25 @@ async function grantMilestoneCosmetic(
 
     console.log(`[streaks] Granted ${itemId} to ${userId} (${milestone}d)`);
 
-    // Optional cosmetic-unlock push notification
     const itemName = COSMETIC_NAMES[itemId] || itemId;
-    const token = await getUserPushToken(userId);
-    if (token) {
-      await sendExpoPushNotification({
-        to: token,
-        title: "New Cosmetic Unlocked! 🎁",
-        body: `You earned ${itemName} for your ${milestone}-day streak!`,
-        data: { type: "cosmetic_unlock", itemId, milestone },
-        sound: "default",
-      });
-    }
+    await notifyUser({
+      recipientUid: userId,
+      type: "cosmetic_unlock",
+      category: "progression",
+      dedupeKey: `cosmetic_unlock:${userId}:${itemId}`,
+      collapseKey: `cosmetic_unlock:${userId}`,
+      title: "New Cosmetic Unlocked!",
+      body: `You earned ${itemName} for your ${milestone}-day streak!`,
+      route: {
+        screen: "Friends",
+      },
+      data: {
+        itemId,
+        itemName,
+        milestone,
+      },
+      badgeEligible: false,
+    });
   } catch (err) {
     console.error(`[streaks] cosmetic grant error for ${userId}:`, err);
   }
@@ -351,43 +372,38 @@ export const streakReminder = functions.pubsub
             const u1Sent = lastSent1 === today;
             const u2Sent = lastSent2 === today;
 
+            const sendReminder = async (userToNotify: string) => {
+              await notifyUser({
+                recipientUid: userToNotify,
+                type: "streak_at_risk",
+                category: "social",
+                dedupeKey: `streak_at_risk:${doc.id}:${userToNotify}:${today}`,
+                collapseKey: `streak:${doc.id}`,
+                title: `Your ${data.streakCount}-Day Streak Is at Risk`,
+                body: "Send a message before midnight to keep it alive!",
+                friendshipId: doc.id,
+                route: {
+                  screen: "Friends",
+                },
+                data: {
+                  friendshipId: doc.id,
+                  streakCount: data.streakCount,
+                },
+                badgeEligible: false,
+              });
+              console.log(`[streaks] Reminder sent to ${userToNotify}`);
+            };
+
             // Only remind the user who hasn't sent yet today.
             if (u1Sent !== u2Sent) {
               const userToNotify = u1Sent ? uid2 : uid1;
-              const token = await getUserPushToken(userToNotify);
-              if (token) {
-                await sendExpoPushNotification({
-                  to: token,
-                  title: "Streak at Risk! ⚠️",
-                  body: `Your ${data.streakCount}-day streak is about to end! Send a message to keep it going.`,
-                  data: {
-                    type: "streak_reminder",
-                    friendshipId: doc.id,
-                    streakCount: data.streakCount,
-                  },
-                  sound: "default",
-                });
-                console.log(`[streaks] Reminder sent to ${userToNotify}`);
-              }
+              await sendReminder(userToNotify);
             }
 
             // Neither user sent today — both need reminding.
             if (!u1Sent && !u2Sent) {
               for (const uid of [uid1, uid2]) {
-                const token = await getUserPushToken(uid);
-                if (token) {
-                  await sendExpoPushNotification({
-                    to: token,
-                    title: "Streak at Risk! ⚠️",
-                    body: `Your ${data.streakCount}-day streak is about to end! Send a message to keep it going.`,
-                    data: {
-                      type: "streak_reminder",
-                      friendshipId: doc.id,
-                      streakCount: data.streakCount,
-                    },
-                    sound: "default",
-                  });
-                }
+                await sendReminder(uid);
               }
             }
           }

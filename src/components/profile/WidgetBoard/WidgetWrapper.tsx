@@ -478,7 +478,7 @@ function WidgetWrapperBase({
               borderColor: isCustomizing
                 ? colors.primary + "40"
                 : colors.outline + "30",
-              borderWidth: isCustomizing ? 1.5 : 1,
+              borderWidth: isCustomizing ? 2 : 1.5,
             },
           ]}
         >
