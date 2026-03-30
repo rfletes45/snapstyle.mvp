@@ -47,3 +47,5 @@ export {
   registerStreamPushToken,
   unregisterStreamPushToken,
 } from "./streamPushRegistration";
+
+export { ensureStreamUsersExist } from "./streamUserProvisioning";

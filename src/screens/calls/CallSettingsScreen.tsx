@@ -18,8 +18,8 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { theme } from "@/constants/theme";
 import { callSettingsService } from "@/services/calls";
+import { useAppTheme } from "@/store/ThemeContext";
 import {
   AudioOutput,
   CallSettings,
@@ -28,7 +28,6 @@ import {
   DEFAULT_CALL_SETTINGS,
   RingtoneOption,
 } from "@/types/call";
-
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("screens/calls/CallSettingsScreen");
@@ -73,6 +72,7 @@ const DAYS_OF_WEEK = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 export function CallSettingsScreen() {
   const navigation = useNavigation<any>();
+  const { colors } = useAppTheme();
 
   // State
   const [settings, setSettings] = useState<CallSettings>(DEFAULT_CALL_SETTINGS);
@@ -142,8 +142,14 @@ export function CallSettingsScreen() {
   // Render a section header
   const renderSectionHeader = (title: string, subtitle?: string) => (
     <View style={styles.sectionHeader}>
-      <Text style={styles.sectionTitle}>{title}</Text>
-      {subtitle && <Text style={styles.sectionSubtitle}>{subtitle}</Text>}
+      <Text style={[styles.sectionTitle, { color: colors.primary }]}>
+        {title}
+      </Text>
+      {subtitle && (
+        <Text style={[styles.sectionSubtitle, { color: colors.textSecondary }]}>
+          {subtitle}
+        </Text>
+      )}
     </View>
   );
 
@@ -155,26 +161,36 @@ export function CallSettingsScreen() {
     onToggle: (value: boolean) => void,
     icon?: string,
   ) => (
-    <View style={styles.settingRow}>
+    <View style={[styles.settingRow, { borderBottomColor: colors.border }]}>
       {icon && (
         <View style={styles.settingIcon}>
-          <Ionicons name={icon as keyof typeof Ionicons.glyphMap} size={22} color={theme.colors.primary} />
+          <Ionicons
+            name={icon as keyof typeof Ionicons.glyphMap}
+            size={22}
+            color={colors.primary}
+          />
         </View>
       )}
       <View style={styles.settingContent}>
-        <Text style={styles.settingLabel}>{label}</Text>
+        <Text style={[styles.settingLabel, { color: colors.text }]}>
+          {label}
+        </Text>
         {description && (
-          <Text style={styles.settingDescription}>{description}</Text>
+          <Text
+            style={[styles.settingDescription, { color: colors.textSecondary }]}
+          >
+            {description}
+          </Text>
         )}
       </View>
       <Switch
         value={value}
         onValueChange={onToggle}
         trackColor={{
-          false: theme.colors.border,
-          true: theme.colors.primaryContainer,
+          false: colors.border,
+          true: colors.primaryContainer,
         }}
-        thumbColor={value ? theme.colors.primary : theme.colors.surface}
+        thumbColor={value ? colors.primary : colors.surface}
       />
     </View>
   );
@@ -191,9 +207,8 @@ export function CallSettingsScreen() {
 
     return (
       <TouchableOpacity
-        style={styles.settingRow}
+        style={[styles.settingRow, { borderBottomColor: colors.border }]}
         onPress={() => {
-          // Show picker (simplified - in production use a modal or action sheet)
           Alert.alert(
             label,
             undefined,
@@ -210,19 +225,25 @@ export function CallSettingsScreen() {
             <Ionicons
               name={icon as keyof typeof Ionicons.glyphMap}
               size={22}
-              color={theme.colors.primary}
+              color={colors.primary}
             />
           </View>
         )}
         <View style={styles.settingContent}>
-          <Text style={styles.settingLabel}>{label}</Text>
+          <Text style={[styles.settingLabel, { color: colors.text }]}>
+            {label}
+          </Text>
         </View>
         <View style={styles.pickerValue}>
-          <Text style={styles.pickerValueText}>{selectedOption?.label}</Text>
+          <Text
+            style={[styles.pickerValueText, { color: colors.textSecondary }]}
+          >
+            {selectedOption?.label}
+          </Text>
           <Ionicons
             name="chevron-forward"
             size={20}
-            color={theme.colors.textSecondary}
+            color={colors.textSecondary}
           />
         </View>
       </TouchableOpacity>
@@ -254,9 +275,17 @@ export function CallSettingsScreen() {
         {dndSchedule.enabled && (
           <>
             {/* Time range */}
-            <View style={styles.timeRangeContainer}>
+            <View
+              style={[
+                styles.timeRangeContainer,
+                { borderBottomColor: colors.border },
+              ]}
+            >
               <TouchableOpacity
-                style={styles.timeButton}
+                style={[
+                  styles.timeButton,
+                  { backgroundColor: colors.background },
+                ]}
                 onPress={() => {
                   // In production, use a time picker
                   Alert.alert(
@@ -265,8 +294,12 @@ export function CallSettingsScreen() {
                   );
                 }}
               >
-                <Text style={styles.timeLabel}>From</Text>
-                <Text style={styles.timeValue}>
+                <Text
+                  style={[styles.timeLabel, { color: colors.textSecondary }]}
+                >
+                  From
+                </Text>
+                <Text style={[styles.timeValue, { color: colors.text }]}>
                   {formatTime(dndSchedule.startHour, dndSchedule.startMinute)}
                 </Text>
               </TouchableOpacity>
@@ -274,11 +307,14 @@ export function CallSettingsScreen() {
               <Ionicons
                 name="arrow-forward"
                 size={20}
-                color={theme.colors.textSecondary}
+                color={colors.textSecondary}
               />
 
               <TouchableOpacity
-                style={styles.timeButton}
+                style={[
+                  styles.timeButton,
+                  { backgroundColor: colors.background },
+                ]}
                 onPress={() => {
                   Alert.alert(
                     "Select End Time",
@@ -286,8 +322,12 @@ export function CallSettingsScreen() {
                   );
                 }}
               >
-                <Text style={styles.timeLabel}>To</Text>
-                <Text style={styles.timeValue}>
+                <Text
+                  style={[styles.timeLabel, { color: colors.textSecondary }]}
+                >
+                  To
+                </Text>
+                <Text style={[styles.timeValue, { color: colors.text }]}>
                   {formatTime(dndSchedule.endHour, dndSchedule.endMinute)}
                 </Text>
               </TouchableOpacity>
@@ -295,7 +335,9 @@ export function CallSettingsScreen() {
 
             {/* Days of week */}
             <View style={styles.daysContainer}>
-              <Text style={styles.daysLabel}>Active Days</Text>
+              <Text style={[styles.daysLabel, { color: colors.textSecondary }]}>
+                Active Days
+              </Text>
               <View style={styles.daysRow}>
                 {DAYS_OF_WEEK.map((day, index) => {
                   const isActive = dndSchedule.daysOfWeek.includes(index);
@@ -304,7 +346,11 @@ export function CallSettingsScreen() {
                       key={day}
                       style={[
                         styles.dayButton,
-                        isActive && styles.dayButtonActive,
+                        { backgroundColor: colors.background },
+                        isActive && [
+                          styles.dayButtonActive,
+                          { backgroundColor: colors.primary },
+                        ],
                       ]}
                       onPress={() => {
                         const newDays = isActive
@@ -319,7 +365,11 @@ export function CallSettingsScreen() {
                       <Text
                         style={[
                           styles.dayText,
-                          isActive && styles.dayTextActive,
+                          { color: colors.textSecondary },
+                          isActive && [
+                            styles.dayTextActive,
+                            { color: colors.onPrimary },
+                          ],
                         ]}
                       >
                         {day}
@@ -338,27 +388,34 @@ export function CallSettingsScreen() {
   // Loading state
   if (isLoading) {
     return (
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView
+        style={[styles.container, { backgroundColor: colors.background }]}
+      >
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={theme.colors.primary} />
+          <ActivityIndicator size="large" color={colors.primary} />
         </View>
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={["top"]}>
+    <SafeAreaView
+      style={[styles.container, { backgroundColor: colors.background }]}
+      edges={["top"]}
+    >
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { borderBottomColor: colors.border }]}>
         <TouchableOpacity
           style={styles.backButton}
           onPress={() => navigation.goBack()}
         >
-          <Ionicons name="arrow-back" size={24} color={theme.colors.text} />
+          <Ionicons name="arrow-back" size={24} color={colors.text} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Call Settings</Text>
+        <Text style={[styles.headerTitle, { color: colors.text }]}>
+          Call Settings
+        </Text>
         {isSaving ? (
-          <ActivityIndicator size="small" color={theme.colors.primary} />
+          <ActivityIndicator size="small" color={colors.primary} />
         ) : (
           <View style={styles.headerSpacer} />
         )}
@@ -370,7 +427,12 @@ export function CallSettingsScreen() {
       >
         {/* Camera Settings */}
         {renderSectionHeader("Camera", "Video call camera preferences")}
-        <View style={styles.section}>
+        <View
+          style={[
+            styles.section,
+            { backgroundColor: colors.surface, borderColor: colors.border },
+          ]}
+        >
           {renderPicker(
             "Default Camera",
             CAMERA_OPTIONS,
@@ -394,7 +456,12 @@ export function CallSettingsScreen() {
 
         {/* Audio Settings */}
         {renderSectionHeader("Audio", "Sound and microphone settings")}
-        <View style={styles.section}>
+        <View
+          style={[
+            styles.section,
+            { backgroundColor: colors.surface, borderColor: colors.border },
+          ]}
+        >
           {renderPicker(
             "Default Audio Output",
             AUDIO_OUTPUT_OPTIONS,
@@ -424,7 +491,12 @@ export function CallSettingsScreen() {
 
         {/* Ringtone Settings */}
         {renderSectionHeader("Notifications", "Incoming call alerts")}
-        <View style={styles.section}>
+        <View
+          style={[
+            styles.section,
+            { backgroundColor: colors.surface, borderColor: colors.border },
+          ]}
+        >
           {renderPicker(
             "Ringtone",
             RINGTONE_OPTIONS,
@@ -443,11 +515,23 @@ export function CallSettingsScreen() {
 
         {/* Do Not Disturb */}
         {renderSectionHeader("Do Not Disturb", "Schedule quiet hours")}
-        <View style={styles.section}>{renderDNDSchedule()}</View>
+        <View
+          style={[
+            styles.section,
+            { backgroundColor: colors.surface, borderColor: colors.border },
+          ]}
+        >
+          {renderDNDSchedule()}
+        </View>
 
         {/* Privacy Settings */}
         {renderSectionHeader("Privacy", "Control who can call you")}
-        <View style={styles.section}>
+        <View
+          style={[
+            styles.section,
+            { backgroundColor: colors.surface, borderColor: colors.border },
+          ]}
+        >
           {renderPicker(
             "Allow Calls From",
             ALLOW_CALLS_OPTIONS,
@@ -471,7 +555,12 @@ export function CallSettingsScreen() {
 
         {/* Quality Settings */}
         {renderSectionHeader("Quality & Data", "Video quality and data usage")}
-        <View style={styles.section}>
+        <View
+          style={[
+            styles.section,
+            { backgroundColor: colors.surface, borderColor: colors.border },
+          ]}
+        >
           {renderPicker(
             "Preferred Video Quality",
             VIDEO_QUALITY_OPTIONS,
@@ -497,7 +586,12 @@ export function CallSettingsScreen() {
 
         {/* Accessibility */}
         {renderSectionHeader("Accessibility", "Visual and haptic feedback")}
-        <View style={styles.section}>
+        <View
+          style={[
+            styles.section,
+            { backgroundColor: colors.surface, borderColor: colors.border },
+          ]}
+        >
           {renderToggle(
             "Flash on Ring",
             "Flash screen for incoming calls",
@@ -523,11 +617,16 @@ export function CallSettingsScreen() {
 
         {/* Reset button */}
         <TouchableOpacity
-          style={styles.resetButton}
+          style={[
+            styles.resetButton,
+            { backgroundColor: colors.surface, borderColor: colors.error },
+          ]}
           onPress={handleResetDefaults}
         >
-          <Ionicons name="refresh" size={20} color={theme.colors.error} />
-          <Text style={styles.resetButtonText}>Reset to Defaults</Text>
+          <Ionicons name="refresh" size={20} color={colors.error} />
+          <Text style={[styles.resetButtonText, { color: colors.error }]}>
+            Reset to Defaults
+          </Text>
         </TouchableOpacity>
 
         {/* Bottom padding */}
@@ -540,7 +639,6 @@ export function CallSettingsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: theme.colors.background,
   },
   loadingContainer: {
     flex: 1,
@@ -555,7 +653,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
   },
   backButton: {
     padding: 4,
@@ -564,7 +661,6 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 20,
     fontWeight: "600",
-    color: theme.colors.text,
     marginLeft: 12,
   },
   headerSpacer: {
@@ -588,20 +684,16 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 13,
     fontWeight: "600",
-    color: theme.colors.primary,
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
   sectionSubtitle: {
     fontSize: 12,
-    color: theme.colors.textSecondary,
     marginTop: 2,
   },
   section: {
-    backgroundColor: theme.colors.surface,
     borderTopWidth: 1,
     borderBottomWidth: 1,
-    borderColor: theme.colors.border,
   },
 
   // Setting row
@@ -611,7 +703,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 14,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: theme.colors.border,
   },
   settingIcon: {
     width: 36,
@@ -623,11 +714,9 @@ const styles = StyleSheet.create({
   },
   settingLabel: {
     fontSize: 16,
-    color: theme.colors.text,
   },
   settingDescription: {
     fontSize: 13,
-    color: theme.colors.textSecondary,
     marginTop: 2,
   },
 
@@ -639,7 +728,6 @@ const styles = StyleSheet.create({
   },
   pickerValueText: {
     fontSize: 15,
-    color: theme.colors.textSecondary,
   },
 
   // DND
@@ -654,24 +742,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     gap: 16,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: theme.colors.border,
   },
   timeButton: {
     alignItems: "center",
     padding: 12,
-    backgroundColor: theme.colors.background,
     borderRadius: 12,
     minWidth: 100,
   },
   timeLabel: {
     fontSize: 12,
-    color: theme.colors.textSecondary,
     marginBottom: 4,
   },
   timeValue: {
     fontSize: 18,
     fontWeight: "600",
-    color: theme.colors.text,
   },
   daysContainer: {
     paddingHorizontal: 16,
@@ -679,7 +763,6 @@ const styles = StyleSheet.create({
   },
   daysLabel: {
     fontSize: 13,
-    color: theme.colors.textSecondary,
     marginBottom: 8,
   },
   daysRow: {
@@ -692,19 +775,13 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: theme.colors.background,
   },
-  dayButtonActive: {
-    backgroundColor: theme.colors.primary,
-  },
+  dayButtonActive: {},
   dayText: {
     fontSize: 12,
     fontWeight: "500",
-    color: theme.colors.textSecondary,
   },
-  dayTextActive: {
-    color: "#fff",
-  },
+  dayTextActive: {},
 
   // Reset button
   resetButton: {
@@ -715,15 +792,12 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     paddingVertical: 14,
     borderRadius: 12,
-    backgroundColor: theme.colors.surface,
     borderWidth: 1,
-    borderColor: theme.colors.error,
     gap: 8,
   },
   resetButtonText: {
     fontSize: 16,
     fontWeight: "500",
-    color: theme.colors.error,
   },
 
   bottomPadding: {

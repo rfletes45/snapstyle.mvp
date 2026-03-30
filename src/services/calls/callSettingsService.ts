@@ -7,6 +7,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import { AppState, AppStateStatus } from "react-native";
 
+import { getAuthInstance, getFirestoreInstance } from "@/services/firebase";
 import {
   AudioOutput,
   CallSettings,
@@ -16,8 +17,6 @@ import {
   DNDSchedule,
   RingtoneOption,
 } from "@/types/call";
-import { getAuthInstance, getFirestoreInstance } from "@/services/firebase";
-
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("services/calls/callSettingsService");
@@ -144,7 +143,9 @@ class CallSettingsService {
       const userId = getAuth().currentUser?.uid;
       if (userId) {
         const docRef = doc(getDb(), "Users", userId, "Settings", "calls");
-        await setDoc(docRef, this.settings, { merge: true });
+        // Strip undefined values — Firestore rejects them
+        const cleaned = JSON.parse(JSON.stringify(this.settings));
+        await setDoc(docRef, cleaned, { merge: true });
       }
 
       // Notify listeners
@@ -172,7 +173,8 @@ class CallSettingsService {
       const userId = getAuth().currentUser?.uid;
       if (userId) {
         const docRef = doc(getDb(), "Users", userId, "Settings", "calls");
-        await setDoc(docRef, this.settings);
+        const cleaned = JSON.parse(JSON.stringify(this.settings));
+        await setDoc(docRef, cleaned);
       }
 
       this.notifyListeners();

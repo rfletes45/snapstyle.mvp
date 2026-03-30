@@ -19,9 +19,8 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import Avatar from "@/components/Avatar";
-import { theme } from "@/constants/theme";
 import { useStreamCall } from "@/contexts/StreamCallContext";
-import { useColors } from "@/store/ThemeContext";
+import { useAppTheme } from "@/store/ThemeContext";
 import {
   CallHistoryEntry,
   CallHistoryFilter,
@@ -53,7 +52,7 @@ const FILTER_OPTIONS: { key: FilterOption; label: string; icon: string }[] = [
 
 export function CallHistoryScreen() {
   const navigation = useNavigation<any>();
-  const colors = useColors();
+  const { colors } = useAppTheme();
   const { startCall } = useStreamCall();
 
   // State
@@ -249,7 +248,12 @@ export function CallHistoryScreen() {
 
   // Render filter chips
   const renderFilters = () => (
-    <View style={styles.filterContainer}>
+    <View
+      style={[
+        styles.filterContainer,
+        { backgroundColor: colors.surface, borderBottomColor: colors.border },
+      ]}
+    >
       <FlatList
         horizontal
         data={FILTER_OPTIONS}
@@ -260,7 +264,8 @@ export function CallHistoryScreen() {
           <TouchableOpacity
             style={[
               styles.filterChip,
-              activeFilter === item.key && styles.filterChipActive,
+              { backgroundColor: colors.background },
+              activeFilter === item.key && { backgroundColor: colors.primary },
             ]}
             onPress={() => setActiveFilter(item.key)}
           >
@@ -272,6 +277,7 @@ export function CallHistoryScreen() {
             <Text
               style={[
                 styles.filterChipText,
+                { color: colors.textSecondary },
                 activeFilter === item.key && styles.filterChipTextActive,
               ]}
             >
@@ -288,22 +294,41 @@ export function CallHistoryScreen() {
     if (!stats) return null;
 
     return (
-      <View style={styles.statsContainer}>
+      <View
+        style={[
+          styles.statsContainer,
+          { backgroundColor: colors.surface, borderBottomColor: colors.border },
+        ]}
+      >
         <View style={styles.statItem}>
-          <Text style={styles.statValue}>{stats.totalCalls}</Text>
-          <Text style={styles.statLabel}>Total</Text>
+          <Text style={[styles.statValue, { color: colors.text }]}>
+            {stats.totalCalls}
+          </Text>
+          <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
+            Total
+          </Text>
         </View>
-        <View style={styles.statDivider} />
+        <View
+          style={[styles.statDivider, { backgroundColor: colors.border }]}
+        />
         <View style={styles.statItem}>
-          <Text style={styles.statValue}>{stats.missedCalls}</Text>
-          <Text style={styles.statLabel}>Missed</Text>
+          <Text style={[styles.statValue, { color: colors.text }]}>
+            {stats.missedCalls}
+          </Text>
+          <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
+            Missed
+          </Text>
         </View>
-        <View style={styles.statDivider} />
+        <View
+          style={[styles.statDivider, { backgroundColor: colors.border }]}
+        />
         <View style={styles.statItem}>
-          <Text style={styles.statValue}>
+          <Text style={[styles.statValue, { color: colors.text }]}>
             {callHistoryService.formatDuration(stats.totalDuration)}
           </Text>
-          <Text style={styles.statLabel}>Total Time</Text>
+          <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
+            Total Time
+          </Text>
         </View>
       </View>
     );
@@ -317,7 +342,11 @@ export function CallHistoryScreen() {
 
     return (
       <TouchableOpacity
-        style={[styles.callItem, isSelected && styles.callItemSelected]}
+        style={[
+          styles.callItem,
+          { backgroundColor: colors.background },
+          isSelected && { backgroundColor: colors.primaryContainer },
+        ]}
         onPress={() => {
           if (isSelectionMode) {
             handleToggleSelection(item.callId);
@@ -333,7 +362,14 @@ export function CallHistoryScreen() {
         {isSelectionMode && (
           <View style={styles.checkboxContainer}>
             <View
-              style={[styles.checkbox, isSelected && styles.checkboxSelected]}
+              style={[
+                styles.checkbox,
+                { borderColor: colors.border },
+                isSelected && {
+                  backgroundColor: colors.primary,
+                  borderColor: colors.primary,
+                },
+              ]}
             >
               {isSelected && (
                 <Ionicons name="checkmark" size={16} color="#fff" />
@@ -347,13 +383,26 @@ export function CallHistoryScreen() {
           {otherParticipant?.avatarConfig ? (
             <Avatar config={otherParticipant.avatarConfig} size={50} />
           ) : (
-            <View style={styles.avatarPlaceholder}>
+            <View
+              style={[
+                styles.avatarPlaceholder,
+                { backgroundColor: colors.surface },
+              ]}
+            >
               <Ionicons name="person" size={24} color={colors.textSecondary} />
             </View>
           )}
 
           {/* Call type icon overlay */}
-          <View style={styles.callTypeOverlay}>
+          <View
+            style={[
+              styles.callTypeOverlay,
+              {
+                backgroundColor: colors.primary,
+                borderColor: colors.background,
+              },
+            ]}
+          >
             <Ionicons
               name={item.type === "video" ? "videocam" : "call"}
               size={12}
@@ -365,7 +414,11 @@ export function CallHistoryScreen() {
         {/* Call info */}
         <View style={styles.callInfo}>
           <Text
-            style={[styles.callerName, isMissed && styles.missedCallText]}
+            style={[
+              styles.callerName,
+              { color: colors.text },
+              isMissed && { color: colors.error },
+            ]}
             numberOfLines={1}
           >
             {item.otherParticipants.length > 1
@@ -388,15 +441,19 @@ export function CallHistoryScreen() {
             />
 
             {/* Time */}
-            <Text style={styles.callTime}>
+            <Text style={[styles.callTime, { color: colors.textSecondary }]}>
               {callHistoryService.formatRelativeTime(item.createdAt)}
             </Text>
 
             {/* Duration */}
             {item.duration !== null && item.duration > 0 && (
               <>
-                <Text style={styles.metaDot}>•</Text>
-                <Text style={styles.callDuration}>
+                <Text style={[styles.metaDot, { color: colors.textSecondary }]}>
+                  •
+                </Text>
+                <Text
+                  style={[styles.callDuration, { color: colors.textSecondary }]}
+                >
                   {callHistoryService.formatDuration(item.duration)}
                 </Text>
               </>
@@ -404,8 +461,15 @@ export function CallHistoryScreen() {
 
             {/* Missed badge */}
             {isMissed && (
-              <View style={styles.missedBadge}>
-                <Text style={styles.missedBadgeText}>Missed</Text>
+              <View
+                style={[
+                  styles.missedBadge,
+                  { backgroundColor: colors.errorContainer },
+                ]}
+              >
+                <Text style={[styles.missedBadgeText, { color: colors.error }]}>
+                  Missed
+                </Text>
               </View>
             )}
           </View>
@@ -447,8 +511,10 @@ export function CallHistoryScreen() {
   const renderEmptyState = () => (
     <View style={styles.emptyContainer}>
       <Ionicons name="call-outline" size={64} color={colors.textSecondary} />
-      <Text style={styles.emptyTitle}>No Calls Yet</Text>
-      <Text style={styles.emptySubtitle}>
+      <Text style={[styles.emptyTitle, { color: colors.text }]}>
+        No Calls Yet
+      </Text>
+      <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
         {activeFilter === "all"
           ? "Your call history will appear here"
           : `No ${activeFilter} calls found`}
@@ -543,7 +609,11 @@ export function CallHistoryScreen() {
             tintColor={colors.primary}
           />
         }
-        ItemSeparatorComponent={() => <View style={styles.separator} />}
+        ItemSeparatorComponent={() => (
+          <View
+            style={[styles.separator, { backgroundColor: colors.border }]}
+          />
+        )}
       />
     </SafeAreaView>
   );
@@ -552,7 +622,6 @@ export function CallHistoryScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: theme.colors.background,
   },
   loadingContainer: {
     flex: 1,
@@ -567,7 +636,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
   },
   backButton: {
     padding: 4,
@@ -576,7 +644,6 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 20,
     fontWeight: "600",
-    color: theme.colors.text,
     marginLeft: 12,
   },
   headerActions: {
@@ -589,7 +656,6 @@ const styles = StyleSheet.create({
   },
   cancelText: {
     fontSize: 16,
-    color: theme.colors.primary,
     fontWeight: "500",
   },
 
@@ -600,9 +666,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     paddingVertical: 16,
     paddingHorizontal: 24,
-    backgroundColor: theme.colors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
   },
   statItem: {
     flex: 1,
@@ -611,24 +675,19 @@ const styles = StyleSheet.create({
   statValue: {
     fontSize: 20,
     fontWeight: "700",
-    color: theme.colors.text,
   },
   statLabel: {
     fontSize: 12,
-    color: theme.colors.textSecondary,
     marginTop: 2,
   },
   statDivider: {
     width: 1,
     height: 32,
-    backgroundColor: theme.colors.border,
   },
 
   // Filters
   filterContainer: {
-    backgroundColor: theme.colors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
   },
   filterList: {
     paddingHorizontal: 12,
@@ -641,17 +700,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 20,
-    backgroundColor: theme.colors.background,
     marginRight: 8,
     gap: 6,
   },
-  filterChipActive: {
-    backgroundColor: theme.colors.primary,
-  },
+  filterChipActive: {},
   filterChipText: {
     fontSize: 13,
     fontWeight: "500",
-    color: theme.colors.textSecondary,
   },
   filterChipTextActive: {
     color: "#fff",
@@ -666,7 +721,6 @@ const styles = StyleSheet.create({
   },
   separator: {
     height: 1,
-    backgroundColor: theme.colors.border,
     marginLeft: 76,
   },
 
@@ -676,11 +730,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: 16,
     paddingVertical: 12,
-    backgroundColor: theme.colors.background,
   },
-  callItemSelected: {
-    backgroundColor: theme.colors.primaryContainer,
-  },
+  callItemSelected: {},
 
   // Checkbox
   checkboxContainer: {
@@ -691,14 +742,10 @@ const styles = StyleSheet.create({
     height: 24,
     borderRadius: 12,
     borderWidth: 2,
-    borderColor: theme.colors.border,
     justifyContent: "center",
     alignItems: "center",
   },
-  checkboxSelected: {
-    backgroundColor: theme.colors.primary,
-    borderColor: theme.colors.primary,
-  },
+  checkboxSelected: {},
 
   // Avatar
   avatarContainer: {
@@ -709,7 +756,6 @@ const styles = StyleSheet.create({
     width: 50,
     height: 50,
     borderRadius: 25,
-    backgroundColor: theme.colors.surface,
     justifyContent: "center",
     alignItems: "center",
   },
@@ -720,11 +766,9 @@ const styles = StyleSheet.create({
     width: 20,
     height: 20,
     borderRadius: 10,
-    backgroundColor: theme.colors.primary,
     justifyContent: "center",
     alignItems: "center",
     borderWidth: 2,
-    borderColor: theme.colors.background,
   },
 
   // Call info
@@ -734,12 +778,9 @@ const styles = StyleSheet.create({
   callerName: {
     fontSize: 16,
     fontWeight: "500",
-    color: theme.colors.text,
     marginBottom: 4,
   },
-  missedCallText: {
-    color: theme.colors.error,
-  },
+  missedCallText: {},
   callMeta: {
     flexDirection: "row",
     alignItems: "center",
@@ -747,28 +788,23 @@ const styles = StyleSheet.create({
   },
   callTime: {
     fontSize: 13,
-    color: theme.colors.textSecondary,
     marginLeft: 4,
   },
   metaDot: {
     fontSize: 13,
-    color: theme.colors.textSecondary,
   },
   callDuration: {
     fontSize: 13,
-    color: theme.colors.textSecondary,
   },
   missedBadge: {
     marginLeft: 8,
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
-    backgroundColor: theme.colors.errorContainer,
   },
   missedBadgeText: {
     fontSize: 11,
     fontWeight: "600",
-    color: theme.colors.error,
   },
 
   // Action buttons
@@ -791,12 +827,10 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 20,
     fontWeight: "600",
-    color: theme.colors.text,
     marginTop: 16,
   },
   emptySubtitle: {
     fontSize: 14,
-    color: theme.colors.textSecondary,
     textAlign: "center",
     marginTop: 8,
   },

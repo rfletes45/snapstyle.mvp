@@ -126,13 +126,20 @@ export async function getStreamCallHistory(
 
 /**
  * Subscribe to real-time call history updates.
+ * Returns a no-op unsubscribe if the user is not authenticated.
+ * Calls onError when the subscription or auth check fails.
  */
 export function subscribeToStreamCallHistory(
   onUpdate: (entries: StreamCallHistoryEntry[]) => void,
   maxResults = 50,
+  onError?: (err: Error) => void,
 ): Unsubscribe {
   const ctx = getUserHistoryRef();
-  if (!ctx) return () => {};
+  if (!ctx) {
+    // User not authenticated — signal empty data immediately
+    onUpdate([]);
+    return () => {};
+  }
 
   const q = query(ctx.ref, orderBy("createdAt", "desc"), limit(maxResults));
 
@@ -144,8 +151,9 @@ export function subscribeToStreamCallHistory(
       );
       onUpdate(entries);
     },
-    () => {
-      // Swallow subscription errors
+    (err) => {
+      console.error("[StreamCallHistory] Subscription error:", err);
+      if (onError) onError(err);
     },
   );
 }

@@ -104,7 +104,7 @@ import { getRateLimitStatus } from "./rateLimiter";
 import { deleteAccountFunction } from "./deleteAccount";
 
 // Stream Video token issuance
-import { getStreamVideoToken } from "./streamToken";
+import { ensureStreamUsers, getStreamVideoToken } from "./streamToken";
 
 // Stream Call History webhook
 import { streamCallWebhook } from "./streamCallHistory";
@@ -237,7 +237,7 @@ export {
 export const deleteAccount = deleteAccountFunction;
 
 // ─── Stream Video ──────────────────────────────────────────────────────────
-export { getStreamVideoToken, streamCallWebhook };
+export { ensureStreamUsers, getStreamVideoToken, streamCallWebhook };
 
 // ─── Callable aliases for client backward-compat ───────────────────────────
 // Client iap.ts calls "verifyIAPPurchase" — map it to the canonical handler.

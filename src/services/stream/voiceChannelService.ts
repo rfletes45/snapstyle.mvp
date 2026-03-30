@@ -12,8 +12,10 @@
  * - Real-time participant/occupancy updates via Stream
  */
 
+import { callSettingsService } from "@/services/calls";
 import type { Call } from "@stream-io/video-react-native-sdk";
 import { getStreamClient } from "./streamClient";
+import { toStreamDevice } from "./streamUtils";
 
 /**
  * Stream call type for voice channels.
@@ -57,13 +59,18 @@ export async function joinVoiceChannel(
     },
   });
 
-  // Join with mic on, no video, no ringing
+  // Join with mic on, audio-only. Do NOT pass video settings_override for
+  // audio_room — sending video overrides triggers Stream validation of
+  // target_resolution which fails with 0-dimension defaults.
+  const config = callSettingsService.getCallConfig();
   await call.join({
     create: false,
     data: {
       settings_override: {
-        audio: { mic_default_on: true, default_device: "speaker" },
-        video: { camera_default_on: false },
+        audio: {
+          mic_default_on: true,
+          default_device: toStreamDevice(config.audio.defaultOutput),
+        },
       },
     },
   });

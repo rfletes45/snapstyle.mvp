@@ -5,9 +5,12 @@
  * Each call gets a unique ID and uses Stream's built-in ringing mechanism.
  */
 
+import { callSettingsService } from "@/services/calls";
 import type { DirectCallMode } from "@/types/streamCall";
 import type { Call } from "@stream-io/video-react-native-sdk";
 import { getStreamClient } from "./streamClient";
+import { ensureStreamUsersExist } from "./streamUserProvisioning";
+import { toStreamDevice } from "./streamUtils";
 
 /**
  * Stream call type for 1:1 ringing calls.
@@ -30,6 +33,12 @@ export async function startDirectCall(
   mode: DirectCallMode,
 ): Promise<Call> {
   const client = getStreamClient();
+  const config = callSettingsService.getCallConfig();
+
+  // Ensure both caller and callee exist in Stream before creating the call.
+  // This prevents the "users don't exist" error from Stream.
+  await ensureStreamUsersExist([callerId, calleeId]);
+
   const call = client.call(DIRECT_CALL_TYPE, callId);
 
   await call.getOrCreate({
@@ -42,14 +51,18 @@ export async function startDirectCall(
     },
   });
 
-  // Join with appropriate media settings
+  // Join with media settings derived from user preferences
+  const cameraOn = mode === "video" && config.video.startEnabled;
   await call.join({
     create: false,
     ring: true,
     data: {
       settings_override: {
-        audio: { mic_default_on: true, default_device: "speaker" },
-        video: { camera_default_on: mode === "video" },
+        audio: {
+          mic_default_on: true,
+          default_device: toStreamDevice(config.audio.defaultOutput),
+        },
+        video: { camera_default_on: cameraOn },
       },
     },
   });
@@ -65,11 +78,17 @@ export async function acceptDirectCall(
   call: Call,
   mode: DirectCallMode = "audio",
 ): Promise<void> {
+  const config = callSettingsService.getCallConfig();
+  const cameraOn = mode === "video" && config.video.startEnabled;
+
   await call.join({
     data: {
       settings_override: {
-        audio: { mic_default_on: true, default_device: "speaker" },
-        video: { camera_default_on: mode === "video" },
+        audio: {
+          mic_default_on: true,
+          default_device: toStreamDevice(config.audio.defaultOutput),
+        },
+        video: { camera_default_on: cameraOn },
       },
     },
   });

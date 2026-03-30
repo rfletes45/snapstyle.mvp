@@ -8,10 +8,11 @@
 
 import { CALL_FEATURES } from "@/constants/featureFlags";
 import { useStreamCall } from "@/contexts/StreamCallContext";
+import { useAuth } from "@/store/AuthContext";
 import { useAppTheme } from "@/store/ThemeContext";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import type { Call } from "@stream-io/video-react-native-sdk";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Dimensions,
   StyleSheet,
@@ -26,6 +27,19 @@ const streamSDK = CALL_FEATURES.CALLS_ENABLED
   : null;
 const useCalls: () => Call[] = streamSDK?.useCalls ?? (() => []);
 const CallingState = streamSDK?.CallingState;
+
+// Lazy-load call settings for DND / privacy gating
+const callSettingsSvc = CALL_FEATURES.CALLS_ENABLED
+  ? (require("@/services/calls") as { callSettingsService: any })
+      .callSettingsService
+  : null;
+
+// Lazy-load profile service for friendship check
+const profileSvc = CALL_FEATURES.CALLS_ENABLED
+  ? (require("@/services/profileService") as {
+      getRelationship: (a: string, b: string) => Promise<{ type: string }>;
+    })
+  : null;
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -50,6 +64,7 @@ function IncomingCallHandlerInner({
   onNavigateToCall,
 }: IncomingCallHandlerProps) {
   const { acceptCall, rejectCall, isBusy, activeSession } = useStreamCall();
+  const { currentFirebaseUser } = useAuth();
   const { colors } = useAppTheme();
 
   // Get incoming ringing calls from Stream
@@ -59,15 +74,88 @@ function IncomingCallHandlerInner({
   );
 
   const [pendingCall, setPendingCall] = useState<Call | null>(null);
+  // null = checking, true = allowed, false = rejected (auto-handled)
+  const [callAllowed, setCallAllowed] = useState<boolean | null>(null);
+
+  // Track which call ID the permission check corresponds to
+  const checkedCallIdRef = useRef<string | null>(null);
 
   // Always show the most recent incoming call
   useEffect(() => {
     if (incomingCalls.length > 0) {
-      setPendingCall(incomingCalls[0]);
+      const newCall = incomingCalls[0];
+      setPendingCall(newCall);
+      // Reset permission state when a new call arrives
+      if (checkedCallIdRef.current !== newCall.id) {
+        setCallAllowed(null);
+        checkedCallIdRef.current = null;
+      }
     } else {
       setPendingCall(null);
+      setCallAllowed(null);
+      checkedCallIdRef.current = null;
     }
   }, [incomingCalls.length]);
+
+  // Check DND / privacy settings when a new incoming call is detected
+  useEffect(() => {
+    if (!pendingCall || isBusy || !callSettingsSvc) return;
+    // Already checked this call
+    if (checkedCallIdRef.current === pendingCall.id) return;
+
+    const callerId = pendingCall.state.createdBy?.id;
+    if (!callerId) {
+      // Can't determine caller — allow through (fail open)
+      setCallAllowed(true);
+      checkedCallIdRef.current = pendingCall.id;
+      return;
+    }
+
+    let cancelled = false;
+    const currentUid = currentFirebaseUser?.uid;
+
+    (async () => {
+      try {
+        // Determine friendship status
+        let isFriend = false;
+        if (profileSvc?.getRelationship && currentUid) {
+          const rel = await profileSvc.getRelationship(currentUid, callerId);
+          if (cancelled) return;
+          isFriend = rel.type === "friend";
+        }
+
+        const { allowed, reason } = await callSettingsSvc.shouldAllowCall(
+          callerId,
+          isFriend,
+        );
+        if (cancelled) return;
+
+        if (!allowed) {
+          console.info(`[IncomingCallHandler] Auto-rejecting call: ${reason}`);
+          await rejectCall(pendingCall);
+          setPendingCall(null);
+          setCallAllowed(null);
+        } else {
+          setCallAllowed(true);
+          checkedCallIdRef.current = pendingCall.id;
+        }
+      } catch (err) {
+        // On error, allow the call through (fail open)
+        if (!cancelled) {
+          console.warn(
+            "[IncomingCallHandler] shouldAllowCall check failed:",
+            err,
+          );
+          setCallAllowed(true);
+          checkedCallIdRef.current = pendingCall.id;
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [pendingCall, isBusy, currentFirebaseUser?.uid, rejectCall]);
 
   const handleAccept = useCallback(async () => {
     if (!pendingCall) return;
@@ -109,6 +197,9 @@ function IncomingCallHandlerInner({
 
   // Don't show incoming UI while busy (effect above handles rejection)
   if (isBusy && activeSession) return null;
+
+  // Wait for shouldAllowCall check to complete before showing UI
+  if (callAllowed !== true) return null;
 
   // Derive caller info from the call state
   const callerName =

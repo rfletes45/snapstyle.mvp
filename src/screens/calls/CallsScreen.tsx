@@ -8,6 +8,10 @@
  * Uses Stream live data for active rooms and Firestore for durable history.
  */
 
+import {
+  FilterChips,
+  type FilterChipOption,
+} from "@/components/shared/FilterChips";
 import ActiveRoomCard from "@/components/stream/ActiveRoomCard";
 import CallHistoryRow from "@/components/stream/CallHistoryRow";
 import { CALL_FEATURES } from "@/constants/featureFlags";
@@ -39,7 +43,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 // Filter chips
 // ---------------------------------------------------------------------------
 
-const FILTER_OPTIONS: { key: CallHistoryFilterType; label: string }[] = [
+const FILTER_OPTIONS: FilterChipOption<CallHistoryFilterType>[] = [
   { key: "all", label: "All" },
   { key: "missed", label: "Missed" },
   { key: "direct", label: "Direct" },
@@ -67,6 +71,7 @@ export default function CallsScreen() {
     entries,
     loading: historyLoading,
     error: historyError,
+    errorMessage: historyErrorMessage,
     refresh: refreshHistory,
   } = useStreamCallHistory(activeFilter);
 
@@ -216,35 +221,12 @@ export default function CallsScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Filter chips */}
-      <View style={styles.filterRow}>
-        {FILTER_OPTIONS.map((f) => {
-          const isActive = activeFilter === f.key;
-          return (
-            <TouchableOpacity
-              key={f.key}
-              style={[
-                styles.filterChip,
-                {
-                  backgroundColor: isActive ? colors.primary : colors.surface,
-                  borderColor: isActive ? colors.primary : colors.border,
-                },
-              ]}
-              onPress={() => setActiveFilter(f.key)}
-              activeOpacity={0.7}
-            >
-              <Text
-                style={[
-                  styles.filterLabel,
-                  { color: isActive ? colors.onPrimary : colors.textSecondary },
-                ]}
-              >
-                {f.label}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
+      {/* Filter chips — uses shared component matching Messages screen */}
+      <FilterChips
+        options={FILTER_OPTIONS}
+        activeKey={activeFilter}
+        onSelect={setActiveFilter}
+      />
 
       {/* Content */}
       <FlatList
@@ -272,7 +254,7 @@ export default function CallsScreen() {
               <Text
                 style={[styles.emptySubtitle, { color: colors.textSecondary }]}
               >
-                Pull down to try again.
+                {historyErrorMessage || "Pull down to try again."}
               </Text>
             </View>
           ) : (
@@ -342,22 +324,6 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 28,
     fontWeight: "800",
-  },
-  filterRow: {
-    flexDirection: "row",
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    gap: 8,
-  },
-  filterChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 16,
-    borderWidth: 1,
-  },
-  filterLabel: {
-    fontSize: 13,
-    fontWeight: "600",
   },
   sectionHeader: {
     flexDirection: "row",
