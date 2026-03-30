@@ -355,6 +355,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
 
   // Games V4 state
   const [gamePickerVisible, setGamePickerVisible] = useState(false);
+  const [gameInviteCreating, setGameInviteCreating] = useState(false);
 
   // Reply navigation state (highlight + jump-back)
   const [highlightedMessageId, setHighlightedMessageId] = useState<
@@ -463,7 +464,9 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     })
       .then((members) => {
         if (members.length > 0) {
-          setGroupMembers((current) => (current.length > 0 ? current : members));
+          setGroupMembers((current) =>
+            current.length > 0 ? current : members,
+          );
         }
       })
       .catch((error) => {
@@ -474,7 +477,12 @@ export default function GroupChatScreen({ route, navigation }: Props) {
       .finally(() => {
         setMemberBootstrapPending(false);
       });
-  }, [group?.avatarUrl, groupId, groupMembers.length, initialGroupData?.avatarUrl]);
+  }, [
+    group?.avatarUrl,
+    groupId,
+    groupMembers.length,
+    initialGroupData?.avatarUrl,
+  ]);
 
   // Seed reactions from denormalized reactionsSummary for instant first render.
   // The real-time subscription will reconcile with full data (hasReacted, userIds).
@@ -832,7 +840,8 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   // Games V4: handle game selection from picker
   const handleGameSelected = useCallback(
     async (gameId: GameId) => {
-      if (!groupId || !uid) return;
+      if (!groupId || !uid || gameInviteCreating) return;
+      setGameInviteCreating(true);
       try {
         const { inviteId } = await createGameInvite({
           conversationId: groupId,
@@ -846,9 +855,11 @@ export default function GroupChatScreen({ route, navigation }: Props) {
             ? "Game service is not available. Please make sure Cloud Functions are deployed."
             : (err?.message ?? "Failed to create game invite");
         Alert.alert("Game Error", msg);
+      } finally {
+        setGameInviteCreating(false);
       }
     },
-    [groupId, uid, navigation],
+    [groupId, uid, navigation, gameInviteCreating],
   );
 
   const handleOpenMediaViewer = useCallback(
@@ -2090,6 +2101,20 @@ export default function GroupChatScreen({ route, navigation }: Props) {
           multiplayerOnly
         />
       )}
+
+      {/* Games V4: Invite creation loading overlay */}
+      {gameInviteCreating && (
+        <View style={styles.gameInviteLoadingOverlay}>
+          <View style={styles.gameInviteLoadingBox}>
+            <ActivityIndicator size="small" color={colors.primary} />
+            <Text
+              style={[styles.gameInviteLoadingText, { color: colors.text }]}
+            >
+              Creating game invite...
+            </Text>
+          </View>
+        </View>
+      )}
     </>
   );
 }
@@ -2193,5 +2218,30 @@ const styles = StyleSheet.create({
   avatarSpacer: {
     width: 32,
     height: 32,
+  },
+  gameInviteLoadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(0,0,0,0.3)",
+    zIndex: 100,
+  },
+  gameInviteLoadingBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    gap: 10,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  gameInviteLoadingText: {
+    fontSize: 14,
+    fontWeight: "600",
   },
 });

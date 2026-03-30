@@ -383,6 +383,30 @@ export function subscribeToConversationInvites(
 }
 
 /**
+ * Check whether a pending (non-resolved) invite already exists for the given
+ * game + conversation.  Returns the first matching invite, or null.
+ *
+ * Used client-side to prevent duplicate invite spam before calling
+ * `createGameInvite`.
+ */
+export async function findPendingInvite(
+  conversationId: string,
+  gameId: GameId,
+): Promise<GameInviteV4 | null> {
+  const db = getFirestoreInstance();
+  const q = query(
+    collection(db, COLLECTIONS.GAME_INVITES),
+    where("conversationId", "==", conversationId),
+    where("gameId", "==", gameId),
+    where("status", "in", ["sent", "lobby"]),
+    limit(1),
+  );
+  const snap = await getDocs(q);
+  if (snap.empty) return null;
+  return snap.docs[0].data() as GameInviteV4;
+}
+
+/**
  * Subscribe to a game session document.
  */
 export function subscribeToSession(

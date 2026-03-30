@@ -199,7 +199,7 @@ async function getUserProfile(uid) {
     return {
         displayName: data.displayName || "Unknown",
         avatarConfig: data.avatarConfig,
-        profilePictureUrl: data.profilePictureUrl ?? null,
+        profilePictureUrl: data.profilePicture?.url ?? null,
     };
 }
 // =============================================================================

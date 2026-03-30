@@ -75,6 +75,16 @@ export interface VoiceChannelParams {
 // ---------------------------------------------------------------------------
 
 export type ActiveMediaSession =
-  | { type: "direct_call"; callId: string }
-  | { type: "voice_channel"; channelId: string }
+  | {
+      type: "direct_call";
+      callId: string;
+      recipientName?: string;
+      mode?: DirectCallMode;
+    }
+  | {
+      type: "voice_channel";
+      channelId: string;
+      channelName?: string;
+      groupId?: string;
+    }
   | null;

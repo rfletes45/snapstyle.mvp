@@ -11,6 +11,7 @@
  * It queries the channel state from Stream for occupancy info.
  */
 
+import { ProfilePicture } from "@/components/profile/ProfilePicture/ProfilePicture";
 import { useStreamCall } from "@/contexts/StreamCallContext";
 import { getVoiceChannelId, queryVoiceChannel } from "@/services/stream";
 import { useAppTheme } from "@/store/ThemeContext";
@@ -28,6 +29,7 @@ interface VoiceChannelCardProps {
 interface ChannelOccupant {
   userId: string;
   name: string;
+  image?: string;
 }
 
 export default function VoiceChannelCard({
@@ -62,6 +64,7 @@ export default function VoiceChannelCard({
             participants.map((p) => ({
               userId: p.userId,
               name: p.name || p.userId,
+              image: (p as any).image || undefined,
             })),
           );
         } else {
@@ -124,10 +127,11 @@ export default function VoiceChannelCard({
         <View style={styles.occupants}>
           {occupants.slice(0, 5).map((o) => (
             <View key={o.userId} style={styles.occupantRow}>
-              <MaterialCommunityIcons
-                name="account"
-                size={14}
-                color={colors.textSecondary}
+              <ProfilePicture
+                url={o.image ?? null}
+                name={o.name}
+                size={20}
+                showLoading={false}
               />
               <Text
                 style={[styles.occupantName, { color: colors.textSecondary }]}

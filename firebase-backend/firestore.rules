@@ -313,6 +313,40 @@ service cloud.firestore {
       }
 
       // --------------------------------------------------------
+      // StreamCallHistory subcollection
+      // Written by:
+      //   1. Cloud Functions (streamCallWebhook) — primary, after each call ends
+      //   2. Client (StreamCallContext) — fast fallback for immediate UI feedback
+      //      and for events that don't trigger webhooks (declined, cancelled calls)
+      // --------------------------------------------------------
+      match /StreamCallHistory/{entryId} {
+        // User can only read their own stream call history
+        allow read: if isAuth() && isOwner(uid);
+
+        // User can create/update entries in their own history
+        // (client writes for immediate feedback; webhook overwrites with canonical data)
+        allow create, update: if isAuth() && isOwner(uid);
+
+        // Delete: owner can remove their own history entries
+        allow delete: if isAuth() && isOwner(uid);
+      }
+
+      // --------------------------------------------------------
+      // Settings subcollection (uppercase — call settings)
+      // Stores user call preferences at Users/{uid}/Settings/calls
+      // --------------------------------------------------------
+      match /Settings/{settingId} {
+        // User can only read their own settings
+        allow read: if isAuth() && isOwner(uid);
+
+        // User can create/update their own settings
+        allow create, update: if isAuth() && isOwner(uid);
+
+        // No delete — settings persist
+        allow delete: if false;
+      }
+
+      // --------------------------------------------------------
       // Settings subcollection (Inbox Overhaul)
       // Stores user preferences for inbox, notifications, etc.
       // --------------------------------------------------------
@@ -1964,8 +1998,13 @@ service cloud.firestore {
     // Server-written only. Created by resolveSessionInternal.
     match /GameResultsV4/{sessionId} {
       // Read: participants can read their game results.
+      // resource == null handles onSnapshot listeners that attach before
+      // the document is created — Firestore evaluates the rule immediately;
+      // if we reject, the listener is killed and never gets the data.
+      // Allowing a read on a non-existent doc leaks nothing (empty snapshot).
       allow read: if isAuth() &&
-                    request.auth.uid in resource.data.participantIds;
+                    (resource == null ||
+                     request.auth.uid in resource.data.participantIds);
 
       // Write: Cloud Functions only.
       allow create, update, delete: if false;

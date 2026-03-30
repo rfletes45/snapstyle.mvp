@@ -181,6 +181,74 @@ interface ChatScreenParams {
 }
 
 // ==========================================================================
+// ChatDMHeaderMenu — isolated so menu toggle doesn't re-render ChatScreen
+// ==========================================================================
+function ChatDMHeaderMenu({
+  chatId,
+  chatName,
+  onBlock,
+  onReport,
+  navigation,
+}: {
+  chatId: string | null;
+  chatName: string | undefined;
+  onBlock: () => void;
+  onReport: () => void;
+  navigation: any;
+}) {
+  const [visible, setVisible] = useState(false);
+  const theme = useTheme();
+  const contentStyle = useMemo(
+    () => ({ backgroundColor: theme.colors.surface }),
+    [theme.colors.surface],
+  );
+
+  return (
+    <Menu
+      visible={visible}
+      onDismiss={() => setVisible(false)}
+      anchor={
+        <IconButton
+          icon="dots-vertical"
+          size={24}
+          onPress={() => setVisible(true)}
+        />
+      }
+      contentStyle={contentStyle}
+    >
+      <Menu.Item
+        onPress={() => {
+          setVisible(false);
+          navigation.navigate("ChatSettings", {
+            chatId,
+            chatType: "dm",
+            chatName,
+          });
+        }}
+        title="Settings"
+        leadingIcon="cog-outline"
+      />
+      <Menu.Item
+        onPress={() => {
+          setVisible(false);
+          onBlock();
+        }}
+        title="Block User"
+        leadingIcon="block-helper"
+      />
+      <Menu.Item
+        onPress={() => {
+          setVisible(false);
+          onReport();
+        }}
+        title="Report User"
+        leadingIcon="flag"
+      />
+    </Menu>
+  );
+}
+
+// ==========================================================================
 // ChatScreen Component
 // ==========================================================================
 
@@ -234,7 +302,6 @@ export default function ChatScreen({
   const messageListRef = React.useRef<ChatMessageListRef>(null);
 
   // Modal state
-  const [menuVisible, setMenuVisible] = useState(false);
   const [blockModalVisible, setBlockModalVisible] = useState(false);
   const [reportModalVisible, setReportModalVisible] = useState(false);
   const [scheduleModalVisible, setScheduleModalVisible] = useState(false);
@@ -242,6 +309,7 @@ export default function ChatScreen({
 
   // Games V4 state
   const [gamePickerVisible, setGamePickerVisible] = useState(false);
+  const [gameInviteCreating, setGameInviteCreating] = useState(false);
 
   // Message actions state
   const [actionsSheetVisible, setActionsSheetVisible] = useState(false);
@@ -764,50 +832,16 @@ export default function ChatScreen({
           }}
           size={22}
         />
-        <Menu
-          visible={menuVisible}
-          onDismiss={() => setMenuVisible(false)}
-          anchor={
-            <IconButton
-              icon="dots-vertical"
-              size={24}
-              onPress={() => setMenuVisible(true)}
-            />
-          }
-          contentStyle={{ backgroundColor: theme.colors.surface }}
-        >
-          <Menu.Item
-            onPress={() => {
-              setMenuVisible(false);
-              navigation.navigate("ChatSettings", {
-                chatId,
-                chatType: "dm",
-                chatName: friendProfile?.username,
-              });
-            }}
-            title="Settings"
-            leadingIcon="cog-outline"
-          />
-          <Menu.Item
-            onPress={() => {
-              setMenuVisible(false);
-              setBlockModalVisible(true);
-            }}
-            title="Block User"
-            leadingIcon="block-helper"
-          />
-          <Menu.Item
-            onPress={() => {
-              setMenuVisible(false);
-              setReportModalVisible(true);
-            }}
-            title="Report User"
-            leadingIcon="flag"
-          />
-        </Menu>
+        <ChatDMHeaderMenu
+          chatId={chatId}
+          chatName={friendProfile?.username}
+          onBlock={() => setBlockModalVisible(true)}
+          onReport={() => setReportModalVisible(true)}
+          navigation={navigation}
+        />
       </View>
     ),
-    [friendUid, friendProfile, chatId, menuVisible, theme, navigation],
+    [friendUid, friendProfile, chatId, navigation],
   );
 
   // ==========================================================================
@@ -1132,7 +1166,8 @@ export default function ChatScreen({
   // Games V4: handle game selection from picker
   const handleGameSelected = useCallback(
     async (gameId: GameId) => {
-      if (!chatId || !uid) return;
+      if (!chatId || !uid || gameInviteCreating) return;
+      setGameInviteCreating(true);
       try {
         const { inviteId } = await createGameInvite({
           conversationId: chatId,
@@ -1146,9 +1181,11 @@ export default function ChatScreen({
             ? "Game service is not available. Please make sure Cloud Functions are deployed."
             : (err?.message ?? "Failed to create game invite");
         Alert.alert("Game Error", msg);
+      } finally {
+        setGameInviteCreating(false);
       }
     },
-    [chatId, uid, navigation],
+    [chatId, uid, navigation, gameInviteCreating],
   );
 
   const handleScheduleMessage = async (scheduledFor: Date) => {
@@ -1508,6 +1545,23 @@ export default function ChatScreen({
           multiplayerOnly
         />
       )}
+
+      {/* Games V4: Invite creation loading overlay */}
+      {gameInviteCreating && (
+        <View style={styles.gameInviteLoadingOverlay}>
+          <View style={styles.gameInviteLoadingBox}>
+            <ActivityIndicator size="small" color={theme.colors.primary} />
+            <Text
+              style={[
+                styles.gameInviteLoadingText,
+                { color: theme.colors.onSurface },
+              ]}
+            >
+              Creating game invite...
+            </Text>
+          </View>
+        </View>
+      )}
     </>
   );
 }
@@ -1552,5 +1606,30 @@ const styles = StyleSheet.create({
     margin: 0,
     width: 40,
     height: 40,
+  },
+  gameInviteLoadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(0,0,0,0.3)",
+    zIndex: 100,
+  },
+  gameInviteLoadingBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    gap: 10,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  gameInviteLoadingText: {
+    fontSize: 14,
+    fontWeight: "600",
   },
 });

@@ -83,7 +83,11 @@ interface StreamCallContextType {
 
   // Direct call actions
   /** Start an outgoing 1:1 call */
-  startCall: (recipientId: string, mode: DirectCallMode) => Promise<string>;
+  startCall: (
+    recipientId: string,
+    mode: DirectCallMode,
+    recipientName?: string,
+  ) => Promise<string>;
   /** Accept an incoming ringing call */
   acceptCall: (call: Call) => Promise<void>;
   /** Reject/decline an incoming ringing call */
@@ -209,7 +213,11 @@ function StreamCallInnerProvider({
   // ── Direct call actions ─────────────────────────────────────────────────
 
   const startCall = useCallback(
-    async (recipientId: string, mode: DirectCallMode): Promise<string> => {
+    async (
+      recipientId: string,
+      mode: DirectCallMode,
+      recipientName?: string,
+    ): Promise<string> => {
       if (busyRef.current) {
         throw new Error("Already in a call or voice channel.");
       }
@@ -220,7 +228,12 @@ function StreamCallInnerProvider({
         const call = await startDirectCall(callId, userId, recipientId, mode);
         activeCallRef.current = call;
         setActiveCall(call);
-        setActiveSession({ type: "direct_call", callId });
+        setActiveSession({
+          type: "direct_call",
+          callId,
+          recipientName: recipientName ?? recipientId,
+          mode,
+        });
         sessionMetaRef.current = {
           mode,
           recipientId,
@@ -258,7 +271,12 @@ function StreamCallInnerProvider({
       };
       activeCallRef.current = call;
       setActiveCall(call);
-      setActiveSession({ type: "direct_call", callId: call.id });
+      setActiveSession({
+        type: "direct_call",
+        callId: call.id,
+        recipientName: call.state.createdBy?.name,
+        mode,
+      });
     } catch (err) {
       busyRef.current = false;
       throw err;
@@ -315,6 +333,8 @@ function StreamCallInnerProvider({
         setActiveSession({
           type: "voice_channel",
           channelId: call.id,
+          channelName: groupName,
+          groupId,
         });
         sessionMetaRef.current = {
           groupId,

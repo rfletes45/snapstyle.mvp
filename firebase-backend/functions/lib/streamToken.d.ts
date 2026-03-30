@@ -1,9 +1,9 @@
 /**
- * Stream Video Token Issuance
+ * Stream Video Token Issuance & User Provisioning
  *
  * Mints short-lived Stream Video user tokens from the secure backend.
- * The client calls this callable function to obtain a token for
- * initializing the Stream Video SDK.
+ * Also upserts the calling user in Stream so they exist before any call
+ * operation, and provides an endpoint to ensure call members exist.
  *
  * Environment variables required (set in firebase-backend/functions/.env):
  *   STREAM_API_KEY=your_key
@@ -14,8 +14,18 @@
 import * as functions from "firebase-functions";
 /**
  * Authenticated callable that returns a Stream Video user token.
+ * Also upserts the authenticated user in Stream so they are guaranteed
+ * to exist before any call operations.
  *
  * Request: (no data required)
  * Response: { token: string; apiKey: string }
  */
 export declare const getStreamVideoToken: functions.HttpsFunction & functions.Runnable<any>;
+/**
+ * Ensures that a list of user IDs exist in Stream Video.
+ * Called by the client before creating a call to guarantee all members exist.
+ *
+ * Request: { userIds: string[] }
+ * Response: { provisioned: number }
+ */
+export declare const ensureStreamUsers: functions.HttpsFunction & functions.Runnable<any>;

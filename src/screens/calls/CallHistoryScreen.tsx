@@ -1,11 +1,13 @@
 /**
  * CallHistoryScreen - Display recent calls with filtering and actions
- * Supports call from history, delete, and filter by type/direction
+ *
+ * Uses the Stream-based call history system (Users/{uid}/StreamCallHistory).
+ * Supports filtering, deletion, and redial.
  */
 
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -18,123 +20,88 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import Avatar from "@/components/Avatar";
 import { useStreamCall } from "@/contexts/StreamCallContext";
-import { useAppTheme } from "@/store/ThemeContext";
+import { useStreamCallHistory } from "@/hooks/useStreamCallHistory";
 import {
-  CallHistoryEntry,
-  CallHistoryFilter,
-  CallHistoryStats,
-  CallType,
-} from "@/types/call";
-
-import { callHistoryService } from "@/services/calls";
+  clearAllStreamCallHistory,
+  deleteCallHistoryEntry,
+} from "@/services/stream/streamCallHistoryService";
+import { useAppTheme } from "@/store/ThemeContext";
+import type {
+  CallHistoryFilterType,
+  StreamCallHistoryEntry,
+} from "@/types/streamCallHistory";
+import { formatDurationFull } from "@/utils/time";
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("screens/calls/CallHistoryScreen");
-// Filter options
-type FilterOption =
-  | "all"
-  | "incoming"
-  | "outgoing"
-  | "missed"
-  | "video"
-  | "audio";
+
+// Map UI filter keys to StreamCallHistory filter types
+type FilterOption = "all" | "missed" | "direct" | "rooms";
 
 const FILTER_OPTIONS: { key: FilterOption; label: string; icon: string }[] = [
   { key: "all", label: "All", icon: "list" },
   { key: "missed", label: "Missed", icon: "call-outline" },
-  { key: "incoming", label: "Incoming", icon: "arrow-down" },
-  { key: "outgoing", label: "Outgoing", icon: "arrow-up" },
-  { key: "video", label: "Video", icon: "videocam" },
-  { key: "audio", label: "Audio", icon: "call" },
+  { key: "direct", label: "Direct", icon: "call" },
+  { key: "rooms", label: "Rooms", icon: "people" },
 ];
+
+function formatRelativeTime(timestamp: number): string {
+  const diff = Date.now() - timestamp;
+  const minutes = Math.floor(diff / 60_000);
+  const hours = Math.floor(diff / 3_600_000);
+  const days = Math.floor(diff / 86_400_000);
+
+  if (minutes < 1) return "Just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  if (hours < 24) return `${hours}h ago`;
+  if (days < 7) return `${days}d ago`;
+  return new Date(timestamp).toLocaleDateString();
+}
 
 export function CallHistoryScreen() {
   const navigation = useNavigation<any>();
   const { colors } = useAppTheme();
   const { startCall } = useStreamCall();
 
-  // State
-  const [history, setHistory] = useState<CallHistoryEntry[]>([]);
-  const [stats, setStats] = useState<CallHistoryStats | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isRefreshing, setIsRefreshing] = useState(false);
   const [activeFilter, setActiveFilter] = useState<FilterOption>("all");
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const [isSelectionMode, setIsSelectionMode] = useState(false);
 
-  // Load call history
-  const loadHistory = useCallback(async () => {
-    try {
-      const filter: CallHistoryFilter = {};
+  // Real-time call history from Firestore
+  const {
+    entries,
+    loading: isLoading,
+    error,
+    errorMessage,
+    refresh,
+  } = useStreamCallHistory(activeFilter as CallHistoryFilterType, 100);
 
-      // Map filter option to CallHistoryFilter
-      switch (activeFilter) {
-        case "missed":
-          filter.direction = "missed";
-          break;
-        case "incoming":
-          filter.direction = "incoming";
-          break;
-        case "outgoing":
-          filter.direction = "outgoing";
-          break;
-        case "video":
-          filter.type = "video";
-          break;
-        case "audio":
-          filter.type = "audio";
-          break;
-      }
-
-      const [entries, callStats] = await Promise.all([
-        callHistoryService.getCallHistory(filter, 100),
-        callHistoryService.getCallStats(),
-      ]);
-
-      setHistory(entries);
-      setStats(callStats);
-    } catch (error) {
-      logger.error("Error loading call history:", error);
-      Alert.alert("Error", "Failed to load call history");
-    } finally {
-      setIsLoading(false);
-      setIsRefreshing(false);
-    }
-  }, [activeFilter]);
-
-  // Initial load and filter change
-  useEffect(() => {
-    setIsLoading(true);
-    loadHistory();
-  }, [loadHistory]);
-
-  // Mark missed calls as seen when screen opens
-  useEffect(() => {
-    callHistoryService.markMissedCallsSeen();
-  }, []);
-
-  // Pull to refresh
-  const handleRefresh = useCallback(() => {
-    setIsRefreshing(true);
-    loadHistory();
-  }, [loadHistory]);
+  // Compute stats from current entries
+  const stats = useMemo(() => {
+    if (entries.length === 0) return null;
+    const totalCalls = entries.length;
+    const missedCalls = entries.filter((e) => e.result === "missed").length;
+    const totalDuration = entries.reduce(
+      (sum, e) => sum + (e.durationSeconds ?? 0),
+      0,
+    );
+    return { totalCalls, missedCalls, totalDuration };
+  }, [entries]);
 
   // Call from history (Stream-powered)
   const handleCallFromHistory = useCallback(
-    async (entry: CallHistoryEntry, callType?: CallType) => {
-      const otherParticipant = entry.otherParticipants[0];
-      if (!otherParticipant) return;
+    async (entry: StreamCallHistoryEntry, forceMode?: "audio" | "video") => {
+      if (!entry.otherUserId) return;
 
-      const type = callType || entry.type;
-      const mode = type === "video" ? "video" : ("audio" as const);
+      const mode =
+        forceMode ?? (entry.entryType === "direct_video" ? "video" : "audio");
 
       try {
-        const callId = await startCall(otherParticipant.odId, mode);
+        const callId = await startCall(entry.otherUserId, mode);
         navigation.navigate("DirectCall", {
           callId,
-          recipientName: otherParticipant.displayName || "User",
+          recipientName: entry.otherUserName || "User",
           mode,
           isOutgoing: true,
         });
@@ -149,7 +116,7 @@ export function CallHistoryScreen() {
   );
 
   // Delete single entry
-  const handleDeleteEntry = useCallback((callId: string) => {
+  const handleDeleteEntry = useCallback((entryId: string) => {
     Alert.alert("Delete Call", "Are you sure you want to delete this call?", [
       { text: "Cancel", style: "cancel" },
       {
@@ -157,9 +124,8 @@ export function CallHistoryScreen() {
         style: "destructive",
         onPress: async () => {
           try {
-            await callHistoryService.deleteCallHistoryEntry(callId);
-            setHistory((prev) => prev.filter((e) => e.callId !== callId));
-          } catch (error) {
+            await deleteCallHistoryEntry(entryId);
+          } catch (err) {
             Alert.alert("Error", "Failed to delete call");
           }
         },
@@ -181,15 +147,12 @@ export function CallHistoryScreen() {
           style: "destructive",
           onPress: async () => {
             try {
-              await callHistoryService.deleteMultipleEntries(
-                Array.from(selectedItems),
-              );
-              setHistory((prev) =>
-                prev.filter((e) => !selectedItems.has(e.callId)),
-              );
+              for (const id of selectedItems) {
+                await deleteCallHistoryEntry(id);
+              }
               setSelectedItems(new Set());
               setIsSelectionMode(false);
-            } catch (error) {
+            } catch (err) {
               Alert.alert("Error", "Failed to delete calls");
             }
           },
@@ -210,9 +173,8 @@ export function CallHistoryScreen() {
           style: "destructive",
           onPress: async () => {
             try {
-              await callHistoryService.clearAllHistory();
-              setHistory([]);
-            } catch (error) {
+              await clearAllStreamCallHistory();
+            } catch (err) {
               Alert.alert("Error", "Failed to clear history");
             }
           },
@@ -222,22 +184,22 @@ export function CallHistoryScreen() {
   }, []);
 
   // Toggle selection
-  const handleToggleSelection = useCallback((callId: string) => {
+  const handleToggleSelection = useCallback((entryId: string) => {
     setSelectedItems((prev) => {
       const newSet = new Set(prev);
-      if (newSet.has(callId)) {
-        newSet.delete(callId);
+      if (newSet.has(entryId)) {
+        newSet.delete(entryId);
       } else {
-        newSet.add(callId);
+        newSet.add(entryId);
       }
       return newSet;
     });
   }, []);
 
   // Long press to enter selection mode
-  const handleLongPress = useCallback((callId: string) => {
+  const handleLongPress = useCallback((entryId: string) => {
     setIsSelectionMode(true);
-    setSelectedItems(new Set([callId]));
+    setSelectedItems(new Set([entryId]));
   }, []);
 
   // Cancel selection mode
@@ -324,7 +286,7 @@ export function CallHistoryScreen() {
         />
         <View style={styles.statItem}>
           <Text style={[styles.statValue, { color: colors.text }]}>
-            {callHistoryService.formatDuration(stats.totalDuration)}
+            {formatDurationFull(stats.totalDuration)}
           </Text>
           <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
             Total Time
@@ -335,10 +297,14 @@ export function CallHistoryScreen() {
   };
 
   // Render call history item
-  const renderCallItem = ({ item }: { item: CallHistoryEntry }) => {
-    const otherParticipant = item.otherParticipants[0];
-    const isSelected = selectedItems.has(item.callId);
-    const isMissed = !item.wasAnswered && item.direction === "incoming";
+  const renderCallItem = ({ item }: { item: StreamCallHistoryEntry }) => {
+    const isSelected = selectedItems.has(item.id);
+    const isMissed = item.result === "missed";
+    const isVoiceRoom = item.entryType === "voice_room";
+    const displayName = isVoiceRoom
+      ? item.groupName || "Voice Room"
+      : item.otherUserName || "Unknown";
+    const isVideo = item.entryType === "direct_video";
 
     return (
       <TouchableOpacity
@@ -349,13 +315,12 @@ export function CallHistoryScreen() {
         ]}
         onPress={() => {
           if (isSelectionMode) {
-            handleToggleSelection(item.callId);
-          } else {
-            // Navigate to call info or start call
+            handleToggleSelection(item.id);
+          } else if (!isVoiceRoom) {
             handleCallFromHistory(item);
           }
         }}
-        onLongPress={() => handleLongPress(item.callId)}
+        onLongPress={() => handleLongPress(item.id)}
         activeOpacity={0.7}
       >
         {/* Selection checkbox */}
@@ -378,20 +343,20 @@ export function CallHistoryScreen() {
           </View>
         )}
 
-        {/* Avatar */}
+        {/* Avatar placeholder */}
         <View style={styles.avatarContainer}>
-          {otherParticipant?.avatarConfig ? (
-            <Avatar config={otherParticipant.avatarConfig} size={50} />
-          ) : (
-            <View
-              style={[
-                styles.avatarPlaceholder,
-                { backgroundColor: colors.surface },
-              ]}
-            >
-              <Ionicons name="person" size={24} color={colors.textSecondary} />
-            </View>
-          )}
+          <View
+            style={[
+              styles.avatarPlaceholder,
+              { backgroundColor: colors.surface },
+            ]}
+          >
+            <Ionicons
+              name={isVoiceRoom ? "people" : "person"}
+              size={24}
+              color={colors.textSecondary}
+            />
+          </View>
 
           {/* Call type icon overlay */}
           <View
@@ -404,7 +369,7 @@ export function CallHistoryScreen() {
             ]}
           >
             <Ionicons
-              name={item.type === "video" ? "videocam" : "call"}
+              name={isVoiceRoom ? "people" : isVideo ? "videocam" : "call"}
               size={12}
               color="#fff"
             />
@@ -421,9 +386,7 @@ export function CallHistoryScreen() {
             ]}
             numberOfLines={1}
           >
-            {item.otherParticipants.length > 1
-              ? `${otherParticipant?.displayName} +${item.otherParticipants.length - 1}`
-              : otherParticipant?.displayName || "Unknown"}
+            {displayName}
           </Text>
 
           <View style={styles.callMeta}>
@@ -434,7 +397,9 @@ export function CallHistoryScreen() {
                   ? "call-outline"
                   : item.direction === "incoming"
                     ? "arrow-down"
-                    : "arrow-up"
+                    : item.direction === "joined"
+                      ? "enter-outline"
+                      : "arrow-up"
               }
               size={14}
               color={isMissed ? colors.error : colors.textSecondary}
@@ -442,11 +407,11 @@ export function CallHistoryScreen() {
 
             {/* Time */}
             <Text style={[styles.callTime, { color: colors.textSecondary }]}>
-              {callHistoryService.formatRelativeTime(item.createdAt)}
+              {formatRelativeTime(item.createdAt)}
             </Text>
 
             {/* Duration */}
-            {item.duration !== null && item.duration > 0 && (
+            {item.durationSeconds != null && item.durationSeconds > 0 && (
               <>
                 <Text style={[styles.metaDot, { color: colors.textSecondary }]}>
                   •
@@ -454,7 +419,7 @@ export function CallHistoryScreen() {
                 <Text
                   style={[styles.callDuration, { color: colors.textSecondary }]}
                 >
-                  {callHistoryService.formatDuration(item.duration)}
+                  {formatDurationFull(item.durationSeconds)}
                 </Text>
               </>
             )}
@@ -475,10 +440,9 @@ export function CallHistoryScreen() {
           </View>
         </View>
 
-        {/* Action buttons */}
-        {!isSelectionMode && (
+        {/* Action buttons (direct calls only) */}
+        {!isSelectionMode && !isVoiceRoom && (
           <View style={styles.actionButtons}>
-            {/* Audio call button */}
             <TouchableOpacity
               style={styles.actionButton}
               onPress={() => handleCallFromHistory(item, "audio")}
@@ -486,7 +450,6 @@ export function CallHistoryScreen() {
               <Ionicons name="call" size={22} color={colors.primary} />
             </TouchableOpacity>
 
-            {/* Video call button */}
             <TouchableOpacity
               style={styles.actionButton}
               onPress={() => handleCallFromHistory(item, "video")}
@@ -494,10 +457,21 @@ export function CallHistoryScreen() {
               <Ionicons name="videocam" size={22} color={colors.primary} />
             </TouchableOpacity>
 
-            {/* More options */}
             <TouchableOpacity
               style={styles.actionButton}
-              onPress={() => handleDeleteEntry(item.callId)}
+              onPress={() => handleDeleteEntry(item.id)}
+            >
+              <Ionicons name="trash-outline" size={20} color={colors.error} />
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Delete button for voice rooms */}
+        {!isSelectionMode && isVoiceRoom && (
+          <View style={styles.actionButtons}>
+            <TouchableOpacity
+              style={styles.actionButton}
+              onPress={() => handleDeleteEntry(item.id)}
             >
               <Ionicons name="trash-outline" size={20} color={colors.error} />
             </TouchableOpacity>
@@ -521,6 +495,56 @@ export function CallHistoryScreen() {
       </Text>
     </View>
   );
+
+  // Error state — distinguish permission denied from transient errors
+  if (error && !isLoading) {
+    const isPermissionError = errorMessage?.includes("permission");
+    return (
+      <SafeAreaView
+        style={[styles.container, { backgroundColor: colors.background }]}
+      >
+        <View style={[styles.header, { borderBottomColor: colors.border }]}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => navigation.goBack()}
+          >
+            <Ionicons name="arrow-back" size={24} color={colors.text} />
+          </TouchableOpacity>
+          <Text style={[styles.headerTitle, { color: colors.text }]}>
+            Calls
+          </Text>
+          <View style={styles.headerActions} />
+        </View>
+        <View style={styles.emptyContainer}>
+          <Ionicons
+            name={
+              isPermissionError
+                ? "lock-closed-outline"
+                : "cloud-offline-outline"
+            }
+            size={64}
+            color={colors.textSecondary}
+          />
+          <Text style={[styles.emptyTitle, { color: colors.text }]}>
+            {isPermissionError
+              ? "Couldn\u2019t load history"
+              : "Something went wrong"}
+          </Text>
+          <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
+            {isPermissionError
+              ? "Please sign out and sign in again."
+              : "Check your connection and try again."}
+          </Text>
+          <TouchableOpacity
+            style={[styles.retryButton, { backgroundColor: colors.primary }]}
+            onPress={refresh}
+          >
+            <Text style={styles.retryButtonText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   // Loading state
   if (isLoading) {
@@ -594,18 +618,18 @@ export function CallHistoryScreen() {
 
       {/* Call list */}
       <FlatList
-        data={history}
-        keyExtractor={(item) => item.callId}
+        data={entries}
+        keyExtractor={(item) => item.id}
         renderItem={renderCallItem}
         contentContainerStyle={[
           styles.listContent,
-          history.length === 0 && styles.emptyListContent,
+          entries.length === 0 && styles.emptyListContent,
         ]}
         ListEmptyComponent={renderEmptyState}
         refreshControl={
           <RefreshControl
-            refreshing={isRefreshing}
-            onRefresh={handleRefresh}
+            refreshing={false}
+            onRefresh={refresh}
             tintColor={colors.primary}
           />
         }
@@ -833,6 +857,17 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: "center",
     marginTop: 8,
+  },
+  retryButton: {
+    marginTop: 20,
+    paddingHorizontal: 24,
+    paddingVertical: 10,
+    borderRadius: 20,
+  },
+  retryButtonText: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "600",
   },
 });
 

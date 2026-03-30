@@ -227,7 +227,7 @@ export default function AddFriendsSheet({
                       compact
                       onPress={() => handleAdd(item.uid, item.username)}
                       style={styles.recAddBtn}
-                      labelStyle={{ fontSize: 12 }}
+                      labelStyle={styles.recAddBtnLabel}
                     >
                       Add
                     </Button>
@@ -335,8 +335,14 @@ const styles = StyleSheet.create({
     marginTop: 8,
     borderRadius: BorderRadius.full,
     minWidth: 64,
-    height: 30,
+    minHeight: 32,
     alignSelf: "center",
     justifyContent: "center",
+  },
+  recAddBtnLabel: {
+    fontSize: 12,
+    lineHeight: 16,
+    marginVertical: 0,
+    marginHorizontal: 12,
   },
 });

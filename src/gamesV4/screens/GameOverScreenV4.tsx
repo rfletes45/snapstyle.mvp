@@ -77,6 +77,8 @@ export default function GameOverScreenV4() {
   const [result, setResult] = useState<GameResultV4 | null>(null);
   const [session, setSession] = useState<GameSessionV4 | null>(null);
   const [loading, setLoading] = useState(true);
+  /** true once we've waited a reasonable time — shows "taking longer" UI */
+  const [loadingSlow, setLoadingSlow] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [rematchLoading, setRematchLoading] = useState(false);
 
@@ -110,12 +112,19 @@ export default function GameOverScreenV4() {
     return unsub;
   }, [sessionId]);
 
-  // Fallback: stop loading after 10s if results haven't arrived
+  // Fallback: two-phase timeout while waiting for results.
+  // Phase 1 (8s)  → show "taking longer than expected" with an exit option.
+  // Phase 2 (20s) → stop spinner but keep subscription alive in case it arrives.
   useEffect(() => {
-    const timer = setTimeout(() => {
+    if (!loading) return;
+    const slow = setTimeout(() => setLoadingSlow(true), 8_000);
+    const stop = setTimeout(() => {
       if (loading) setLoading(false);
-    }, 10_000);
-    return () => clearTimeout(timer);
+    }, 20_000);
+    return () => {
+      clearTimeout(slow);
+      clearTimeout(stop);
+    };
   }, [loading]);
 
   const colors = theme.colors;
@@ -285,8 +294,24 @@ export default function GameOverScreenV4() {
               { color: theme.isDark ? "#AAA" : "#666" },
             ]}
           >
-            Loading results...
+            {loadingSlow
+              ? "Still calculating results…"
+              : "Calculating results…"}
           </Text>
+          {loadingSlow && (
+            <Text
+              style={[
+                styles.loadingText,
+                {
+                  color: theme.isDark ? "#888" : "#999",
+                  fontSize: 13,
+                  marginTop: 4,
+                },
+              ]}
+            >
+              This is taking longer than usual.
+            </Text>
+          )}
           <TouchableOpacity
             onPress={handleSafeExit}
             style={styles.safeExitButton}
@@ -328,7 +353,8 @@ export default function GameOverScreenV4() {
               { color: theme.isDark ? "#AAA" : "#666" },
             ]}
           >
-            {error ?? "The game has ended but results haven't loaded."}
+            {error ??
+              "The game has ended but results are still being calculated. They'll appear automatically if they arrive."}
           </Text>
           <TouchableOpacity
             style={[styles.primaryButton, { backgroundColor: colors.primary }]}

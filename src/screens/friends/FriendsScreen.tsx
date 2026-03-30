@@ -572,11 +572,6 @@ export default function FriendsScreen({ navigation }: any) {
         },
       ],
       marginHorizontal: interpolate(progress, [0, 1], [Spacing.sm, 48]),
-      height: interpolate(
-        progress,
-        [0, 1],
-        [SEARCH_BAR_HEIGHT_EXPANDED, SEARCH_BAR_HEIGHT_COLLAPSED],
-      ),
     };
   });
 

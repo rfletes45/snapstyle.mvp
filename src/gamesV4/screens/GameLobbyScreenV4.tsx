@@ -23,6 +23,7 @@ import {
   updateLobbySettings,
 } from "@/gamesV4/services/gameServiceV4";
 import { isCancelledInvite } from "@/gamesV4/utils/inviteState";
+import { getUserProfileByUid } from "@/services/friends";
 import { markGameNotificationsRead } from "@/services/userNotifications";
 import { useAuth } from "@/store/AuthContext";
 import { useInAppNotifications } from "@/store/InAppNotificationsContext";
@@ -156,6 +157,71 @@ export default function GameLobbyScreenV4() {
     }
     return ids;
   }, [invite?.participantIds, uid, isOptimisticallyJoined, optimisticRole]);
+
+  // Client-side profile enrichment: fetch real profiles for any participant
+  // whose summary is missing a profilePictureUrl (backend may not have it yet).
+  const [fetchedProfiles, setFetchedProfiles] = useState<
+    Map<string, { displayName: string; profilePictureUrl: string | null }>
+  >(new Map());
+
+  useEffect(() => {
+    if (!invite) return;
+    const allIds = [...invite.participantIds, ...invite.spectatorIds];
+    const needsFetch = allIds.filter((id) => {
+      const summary = participantMap.get(id) ?? spectatorMap.get(id);
+      // Fetch if no summary at all, or summary has no pfp URL
+      return !summary || !summary.profilePictureUrl;
+    });
+    if (needsFetch.length === 0) return;
+
+    let cancelled = false;
+    Promise.all(
+      needsFetch.map(async (id) => {
+        const profile = await getUserProfileByUid(id);
+        if (!profile) return null;
+        return {
+          uid: id,
+          displayName: profile.displayName || profile.username || "Player",
+          profilePictureUrl: profile.profilePicture?.url ?? null,
+        };
+      }),
+    ).then((results) => {
+      if (cancelled) return;
+      const map = new Map(fetchedProfiles);
+      for (const r of results) {
+        if (r)
+          map.set(r.uid, {
+            displayName: r.displayName,
+            profilePictureUrl: r.profilePictureUrl,
+          });
+      }
+      setFetchedProfiles(map);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    invite?.participantIds,
+    invite?.spectatorIds,
+    participantMap,
+    spectatorMap,
+  ]);
+
+  // Merged lookup: prefer server summary, fall back to client-fetched profile
+  const getPlayerInfo = useCallback(
+    (playerId: string) => {
+      const summary =
+        participantMap.get(playerId) ?? spectatorMap.get(playerId);
+      const fetched = fetchedProfiles.get(playerId);
+      return {
+        displayName: summary?.displayName || fetched?.displayName || "Player",
+        profilePictureUrl:
+          summary?.profilePictureUrl || fetched?.profilePictureUrl || null,
+      };
+    },
+    [participantMap, spectatorMap, fetchedProfiles],
+  );
 
   useEffect(() => {
     setCurrentGameInviteId(inviteId);
@@ -470,15 +536,13 @@ export default function GameLobbyScreenV4() {
             isOptimisticallyJoined &&
             playerId === uid &&
             !invite.participantIds.includes(playerId);
-          const summary = participantMap.get(playerId);
+          const info = getPlayerInfo(playerId);
           const displayName = isOptimisticEntry
             ? "You (joining...)"
             : playerId === uid
               ? "You"
-              : (summary?.displayName ?? "Player");
-          const pfpUrl = isOptimisticEntry
-            ? null
-            : (summary?.profilePictureUrl ?? null);
+              : info.displayName;
+          const pfpUrl = isOptimisticEntry ? null : info.profilePictureUrl;
 
           return (
             <View
@@ -493,7 +557,7 @@ export default function GameLobbyScreenV4() {
             >
               <UserAvatar
                 profilePictureUrl={pfpUrl}
-                displayName={isOptimisticEntry ? "You" : summary?.displayName}
+                displayName={isOptimisticEntry ? "You" : info.displayName}
                 uid={playerId}
                 size={32}
               />
@@ -538,12 +602,10 @@ export default function GameLobbyScreenV4() {
             SPECTATORS
           </Text>
           {invite.spectatorIds.map((specId) => {
-            const summary = spectatorMap.get(specId);
+            const specInfo = getPlayerInfo(specId);
             const displayName =
-              specId === uid
-                ? "You (spectating)"
-                : (summary?.displayName ?? "Spectator");
-            const pfpUrl = summary?.profilePictureUrl;
+              specId === uid ? "You (spectating)" : specInfo.displayName;
+            const pfpUrl = specInfo.profilePictureUrl;
 
             return (
               <View
@@ -558,7 +620,7 @@ export default function GameLobbyScreenV4() {
               >
                 <UserAvatar
                   profilePictureUrl={pfpUrl}
-                  displayName={summary?.displayName}
+                  displayName={specInfo.displayName}
                   uid={specId}
                   size={32}
                   fallbackIcon="eye"

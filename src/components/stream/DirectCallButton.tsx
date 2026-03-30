@@ -52,7 +52,7 @@ export default function DirectCallButton({
 
       setStarting(true);
       try {
-        const callId = await startCall(recipientId, mode);
+        const callId = await startCall(recipientId, mode, recipientName);
         onCallStarted(callId, mode);
       } catch (err: any) {
         Alert.alert(
@@ -63,7 +63,7 @@ export default function DirectCallButton({
         setStarting(false);
       }
     },
-    [isDisabled, isBusy, startCall, recipientId, onCallStarted],
+    [isDisabled, isBusy, startCall, recipientId, recipientName, onCallStarted],
   );
 
   if (!CALL_FEATURES.CALLS_ENABLED) return null;

@@ -4,13 +4,16 @@
  * Discord-style shared voice room UI. Replaces the legacy GroupCallScreen.
  *
  * Features:
- * - Real-time participant list
- * - Mute/unmute toggle
+ * - Real-time participant list with proper display names and profile pictures
+ * - Mute/unmute toggle with permission diagnostics
+ * - Back navigation (minimize) while staying connected
  * - Leave button (does NOT end the room for others)
  * - Active speaker indicators
  * - No ringing, no incoming overlay needed
  */
 
+import { ProfilePicture } from "@/components/profile/ProfilePicture/ProfilePicture";
+import { CallControlBar } from "@/components/stream/CallControlBar";
 import { useStreamCall } from "@/contexts/StreamCallContext";
 import { useAppTheme } from "@/store/ThemeContext";
 import type { MainStackParamList } from "@/types/navigation/root";
@@ -25,13 +28,13 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
-  Platform,
-  SafeAreaView,
+  Pressable,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 type Props = NativeStackScreenProps<MainStackParamList, "VoiceChannel">;
 
@@ -63,17 +66,21 @@ export default function VoiceChannelScreen({ route, navigation }: Props) {
     });
   }, [groupId, channelName, isAlreadyInChannel, joinChannel]);
 
+  // Leave = deliberate disconnect + navigate back
   const handleLeave = useCallback(async () => {
     try {
       await leaveChannel();
     } catch (err) {
       console.error("[VoiceChannelScreen] leaveChannel error:", err);
     } finally {
-      if (navigation.canGoBack()) {
-        navigation.goBack();
-      }
+      if (navigation.canGoBack()) navigation.goBack();
     }
   }, [leaveChannel, navigation]);
+
+  // Back = minimize (stay in call, navigate back)
+  const handleMinimize = useCallback(() => {
+    if (navigation.canGoBack()) navigation.goBack();
+  }, [navigation]);
 
   if (joinError) {
     return (
@@ -81,7 +88,22 @@ export default function VoiceChannelScreen({ route, navigation }: Props) {
         style={[styles.container, { backgroundColor: colors.background }]}
       >
         <View style={styles.centered}>
-          <Text style={[styles.statusText, { color: colors.text }]}>
+          <MaterialCommunityIcons
+            name="alert-circle-outline"
+            size={48}
+            color={colors.error}
+          />
+          <Text
+            style={[styles.errorTitle, { color: colors.text, marginTop: 12 }]}
+          >
+            Couldn't join voice channel
+          </Text>
+          <Text
+            style={[
+              styles.errorDetail,
+              { color: colors.textSecondary, marginTop: 6 },
+            ]}
+          >
             {joinError}
           </Text>
           <TouchableOpacity
@@ -119,7 +141,11 @@ export default function VoiceChannelScreen({ route, navigation }: Props) {
 
   return (
     <StreamCall call={activeCall}>
-      <VoiceChannelContent channelName={channelName} onLeave={handleLeave} />
+      <VoiceChannelContent
+        channelName={channelName}
+        onLeave={handleLeave}
+        onMinimize={handleMinimize}
+      />
     </StreamCall>
   );
 }
@@ -131,9 +157,11 @@ export default function VoiceChannelScreen({ route, navigation }: Props) {
 function VoiceChannelContent({
   channelName,
   onLeave,
+  onMinimize,
 }: {
   channelName: string;
   onLeave: () => void;
+  onMinimize: () => void;
 }) {
   const { colors } = useAppTheme();
   const {
@@ -149,27 +177,48 @@ function VoiceChannelContent({
   const dominantSpeaker = useDominantSpeaker();
   const isJoined = callingState === CallingState.JOINED;
 
-  // Get status text
-  const getStatusText = () => {
+  // Safe mic toggle — only allow when JOINED to prevent permanent track death
+  const handleToggleMic = useCallback(async () => {
+    if (callingState !== CallingState.JOINED) return;
+    try {
+      await microphone.toggle();
+    } catch (err) {
+      console.warn("[VoiceChannelScreen] mic toggle failed:", err);
+    }
+  }, [callingState, microphone]);
+
+  // Elapsed timer
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    if (!isJoined) return;
+    const iv = setInterval(() => setElapsed((e) => e + 1), 1000);
+    return () => clearInterval(iv);
+  }, [isJoined]);
+
+  const timeStr = `${Math.floor(elapsed / 60)}:${(elapsed % 60).toString().padStart(2, "0")}`;
+
+  // Build status text
+  const statusText = (() => {
     switch (callingState) {
       case CallingState.JOINING:
         return "Connecting...";
       case CallingState.JOINED:
-        return `${participants.length} ${participants.length === 1 ? "person" : "people"} in channel`;
+        return `${participants.length} ${participants.length === 1 ? "person" : "people"} · ${timeStr}`;
       case CallingState.RECONNECTING:
         return "Reconnecting...";
       default:
         return "";
     }
-  };
+  })();
 
   const renderParticipant = useCallback(
     ({ item }: { item: (typeof participants)[0] }) => {
       const isSpeaking = dominantSpeaker?.userId === item.userId;
-      const isParticipantMuted = !item.publishedTracks?.includes(
-        // SfuModels.TrackType.AUDIO
-        1,
-      );
+      const isParticipantMuted = !item.publishedTracks?.includes(1); // TrackType.AUDIO
+
+      // Derive display name — never show raw userId unless no better data
+      const displayName = item.name || "Participant";
+      const avatarUrl = item.image;
 
       return (
         <View
@@ -177,28 +226,37 @@ function VoiceChannelContent({
             styles.participantRow,
             {
               backgroundColor: isSpeaking
-                ? "rgba(67, 160, 71, 0.12)"
+                ? "rgba(67, 160, 71, 0.10)"
                 : "transparent",
-              borderColor: colors.border,
             },
           ]}
         >
+          {/* Profile picture from Stream user data */}
           <View
-            style={[
-              styles.participantAvatar,
-              {
-                backgroundColor: isSpeaking ? "#43A047" : colors.primary,
-              },
-            ]}
+            style={[styles.avatarRing, isSpeaking && styles.avatarRingSpeaking]}
           >
-            <MaterialCommunityIcons name="account" size={24} color="#fff" />
+            <ProfilePicture
+              url={avatarUrl ?? null}
+              name={displayName}
+              size={40}
+              showLoading={false}
+            />
           </View>
-          <Text
-            style={[styles.participantName, { color: colors.text }]}
-            numberOfLines={1}
-          >
-            {item.name || item.userId}
-          </Text>
+
+          <View style={styles.participantInfo}>
+            <Text
+              style={[styles.participantName, { color: colors.text }]}
+              numberOfLines={1}
+            >
+              {displayName}
+            </Text>
+            {isSpeaking && (
+              <Text style={[styles.speakingLabel, { color: "#43A047" }]}>
+                Speaking
+              </Text>
+            )}
+          </View>
+
           <View style={styles.participantIcons}>
             {isSpeaking && (
               <MaterialCommunityIcons
@@ -225,25 +283,43 @@ function VoiceChannelContent({
   return (
     <SafeAreaView
       style={[styles.container, { backgroundColor: colors.background }]}
+      edges={["top"]}
     >
-      {/* Header */}
+      {/* Header with back arrow */}
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
-        <View style={styles.headerLeft}>
+        <Pressable
+          onPress={onMinimize}
+          style={styles.backButton}
+          accessibilityLabel="Minimize voice room"
+          accessibilityRole="button"
+          hitSlop={12}
+        >
           <MaterialCommunityIcons
-            name="volume-high"
-            size={22}
-            color="#43A047"
+            name="chevron-down"
+            size={28}
+            color={colors.text}
           />
-          <Text
-            style={[styles.channelName, { color: colors.text }]}
-            numberOfLines={1}
-          >
-            {channelName}
+        </Pressable>
+
+        <View style={styles.headerCenter}>
+          <View style={styles.headerTitleRow}>
+            <View style={styles.liveIndicator}>
+              <View style={styles.liveDot} />
+            </View>
+            <Text
+              style={[styles.channelName, { color: colors.text }]}
+              numberOfLines={1}
+            >
+              {channelName}
+            </Text>
+          </View>
+          <Text style={[styles.statusText, { color: colors.textSecondary }]}>
+            {statusText}
           </Text>
         </View>
-        <Text style={[styles.statusText, { color: colors.textSecondary }]}>
-          {getStatusText()}
-        </Text>
+
+        {/* Spacer to center title */}
+        <View style={styles.headerSpacer} />
       </View>
 
       {/* Participant List */}
@@ -261,47 +337,21 @@ function VoiceChannelContent({
             />
             <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
               {isJoined
-                ? "You're the only one here"
+                ? "You\u2019re the only one here"
                 : "Connecting to voice channel..."}
             </Text>
           </View>
         }
       />
 
-      {/* Bottom Controls */}
-      <View
-        style={[
-          styles.bottomBar,
-          {
-            backgroundColor: colors.surface,
-            borderTopColor: colors.border,
-          },
-        ]}
-      >
-        <TouchableOpacity
-          style={[styles.controlButton, isMuted && styles.controlButtonMuted]}
-          onPress={() => microphone.toggle()}
-        >
-          <MaterialCommunityIcons
-            name={isMuted ? "microphone-off" : "microphone"}
-            size={26}
-            color={isMuted ? "#E53935" : colors.text}
-          />
-          <Text style={[styles.controlLabel, { color: colors.textSecondary }]}>
-            {isMuted ? "Unmute" : "Mute"}
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.controlButton, styles.leaveButton]}
-          onPress={onLeave}
-        >
-          <MaterialCommunityIcons name="phone-hangup" size={26} color="#fff" />
-          <Text style={[styles.controlLabel, { color: "#fff" }]}>
-            Disconnect
-          </Text>
-        </TouchableOpacity>
-      </View>
+      {/* Polished control bar */}
+      <CallControlBar
+        isMuted={isMuted}
+        onToggleMic={handleToggleMic}
+        micDisabled={!isJoined}
+        onLeave={onLeave}
+        leaveLabel="Disconnect"
+      />
     </SafeAreaView>
   );
 }
@@ -314,26 +364,69 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
+    paddingHorizontal: 32,
   },
+  errorTitle: {
+    fontSize: 18,
+    fontWeight: "600",
+    textAlign: "center",
+  },
+  errorDetail: {
+    fontSize: 14,
+    textAlign: "center",
+  },
+
+  // Header
   header: {
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  headerLeft: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  headerCenter: {
+    flex: 1,
+    alignItems: "center",
+  },
+  headerTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  liveIndicator: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: "rgba(67, 160, 71, 0.25)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  liveDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "#43A047",
   },
   channelName: {
-    fontSize: 20,
+    fontSize: 17,
     fontWeight: "700",
-    marginLeft: 8,
   },
   statusText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "500",
+    marginTop: 2,
   },
+  headerSpacer: {
+    width: 40,
+  },
+
+  // Participants
   listContent: {
     paddingHorizontal: 16,
     paddingVertical: 8,
@@ -343,21 +436,29 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingVertical: 10,
     paddingHorizontal: 12,
-    borderRadius: 10,
+    borderRadius: 12,
     marginBottom: 4,
   },
-  participantAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: "center",
-    alignItems: "center",
+  avatarRing: {
+    borderRadius: 22,
+    borderWidth: 2,
+    borderColor: "transparent",
     marginRight: 12,
   },
-  participantName: {
+  avatarRingSpeaking: {
+    borderColor: "#43A047",
+  },
+  participantInfo: {
     flex: 1,
-    fontSize: 16,
+  },
+  participantName: {
+    fontSize: 15,
+    fontWeight: "600",
+  },
+  speakingLabel: {
+    fontSize: 11,
     fontWeight: "500",
+    marginTop: 1,
   },
   participantIcons: {
     flexDirection: "row",
@@ -374,39 +475,14 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 15,
     marginTop: 12,
+    textAlign: "center",
   },
-  bottomBar: {
-    flexDirection: "row",
-    justifyContent: "space-evenly",
-    alignItems: "center",
-    paddingVertical: 16,
-    paddingBottom: Platform.OS === "ios" ? 36 : 16,
-    borderTopWidth: StyleSheet.hairlineWidth,
-  },
-  controlButton: {
-    alignItems: "center",
-    justifyContent: "center",
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: "rgba(128,128,128,0.12)",
-  },
-  controlButtonMuted: {
-    backgroundColor: "rgba(229,57,53,0.12)",
-  },
-  leaveButton: {
-    backgroundColor: "#E53935",
-  },
-  controlLabel: {
-    fontSize: 11,
-    marginTop: 3,
-    fontWeight: "500",
-  },
+
   retryButton: {
     marginTop: 20,
     paddingHorizontal: 24,
     paddingVertical: 10,
-    borderRadius: 8,
+    borderRadius: 20,
   },
   retryButtonText: {
     color: "#fff",

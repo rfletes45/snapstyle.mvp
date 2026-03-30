@@ -37,6 +37,7 @@ import {
   createGameInvite,
   fetchFriendsLeaderboard,
   fetchGameHistoryByGame,
+  findPendingInvite,
   resumeOrCreateSoloSession,
   type LeaderboardEntryV4,
 } from "@/gamesV4/services/gameServiceV4";
@@ -55,7 +56,13 @@ import {
   type RouteProp,
 } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -74,6 +81,22 @@ type Nav = NativeStackNavigationProp<MainStackParamList>;
 type Route = RouteProp<MainStackParamList, "GameDetailV4">;
 
 const LIST_CAP = 5;
+
+// ── Invite flow state machine ────────────────────────────────────────
+type InvitePhase =
+  | "idle"
+  | "checking" // dedup query in progress
+  | "sending" // createGameInvite callable in-flight
+  | "navigating" // invite created, navigating to lobby
+  | "failed";
+
+interface InviteFlowState {
+  phase: InvitePhase;
+  /** Friendly name shown in UI while sending */
+  targetName: string;
+  /** Error message when phase === "failed" */
+  error?: string;
+}
 
 // =============================================================================
 // Component
@@ -103,7 +126,12 @@ export default function GameDetailScreenV4() {
   const [showAllAchievements, setShowAllAchievements] = useState(false);
   const [showAllHistory, setShowAllHistory] = useState(false);
   const [showConversationPicker, setShowConversationPicker] = useState(false);
-  const [inviting, setInviting] = useState(false);
+  const [inviteFlow, setInviteFlow] = useState<InviteFlowState>({
+    phase: "idle",
+    targetName: "",
+  });
+  // Prevent double-fire during the async gap
+  const inviteFlowRef = useRef(false);
 
   // ── Hooks ──────────────────────────────────────────────────────────────
   const { pb, loading: pbLoading } = useGamePBV4(gameId);
@@ -188,43 +216,50 @@ export default function GameDetailScreenV4() {
   }, [gameId, launching, navigation]);
 
   const handleInviteFriend = useCallback(() => {
+    if (inviteFlow.phase !== "idle" && inviteFlow.phase !== "failed") return;
     setShowConversationPicker(true);
-  }, []);
+  }, [inviteFlow.phase]);
 
   const handleConversationSelected = useCallback(
     async (result: ConversationPickerResult) => {
       setShowConversationPicker(false);
-      if (inviting) return;
-      setInviting(true);
+      // Guard: reject if already in-flight
+      if (inviteFlowRef.current) return;
+      inviteFlowRef.current = true;
+
+      const targetName = result.displayName || "chat";
+
+      // Phase 1 — Check for existing pending invite (anti-spam dedup)
+      setInviteFlow({ phase: "checking", targetName });
+      try {
+        const existing = await findPendingInvite(result.conversationId, gameId);
+        if (existing) {
+          // An invite already exists — jump straight to its lobby
+          setInviteFlow({ phase: "navigating", targetName });
+          navigation.navigate("GameLobbyV4", {
+            inviteId: existing.inviteId,
+          });
+          setInviteFlow({ phase: "idle", targetName: "" });
+          inviteFlowRef.current = false;
+          return;
+        }
+      } catch {
+        // Dedup check failed — proceed with creation anyway
+      }
+
+      // Phase 2 — Create invite
+      setInviteFlow({ phase: "sending", targetName });
       try {
         const { inviteId } = await createGameInvite({
           conversationId: result.conversationId,
           conversationScope: result.conversationScope,
           gameId,
         });
-        // Navigate to the chat where the invite was sent
-        if (result.conversationScope === "dm") {
-          // For DM: extract friend UID from chat ID
-          const parts = result.conversationId.split("_");
-          const friendUid = parts.find((p: string) => p !== uid);
-          if (friendUid) {
-            navigation.navigate("ChatDetail", {
-              friendUid,
-              friendName: result.displayName,
-            });
-          } else {
-            navigation.navigate("GameLobbyV4", { inviteId });
-          }
-        } else {
-          navigation.navigate("GroupChat", {
-            groupId: result.conversationId,
-            groupName: result.displayName,
-          });
-        }
-        Alert.alert(
-          "Invite Sent!",
-          `Game invite sent to ${result.displayName}.`,
-        );
+
+        // Phase 3 — Navigate directly to lobby (skip the chat hop)
+        setInviteFlow({ phase: "navigating", targetName });
+        navigation.navigate("GameLobbyV4", { inviteId });
+        setInviteFlow({ phase: "idle", targetName: "" });
       } catch (err: unknown) {
         const errObj = err as { code?: string; message?: string };
         const msg =
@@ -232,12 +267,13 @@ export default function GameDetailScreenV4() {
           errObj?.message === "not-found"
             ? "Game service is not available. Please make sure Cloud Functions are deployed."
             : (errObj?.message ?? "Failed to create game invite");
+        setInviteFlow({ phase: "failed", targetName, error: msg });
         Alert.alert("Invite Error", msg);
       } finally {
-        setInviting(false);
+        inviteFlowRef.current = false;
       }
     },
-    [gameId, uid, navigation, inviting],
+    [gameId, navigation],
   );
 
   // ── Colors ─────────────────────────────────────────────────────────────
@@ -426,11 +462,29 @@ export default function GameDetailScreenV4() {
                     { backgroundColor: theme.colors.primary },
                   ]}
                   onPress={handleInviteFriend}
-                  disabled={inviting}
+                  disabled={
+                    inviteFlow.phase !== "idle" && inviteFlow.phase !== "failed"
+                  }
                   activeOpacity={0.7}
                 >
-                  {inviting ? (
-                    <ActivityIndicator size="small" color="#FFF" />
+                  {inviteFlow.phase !== "idle" &&
+                  inviteFlow.phase !== "failed" ? (
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: 8,
+                      }}
+                    >
+                      <ActivityIndicator size="small" color="#FFF" />
+                      <Text style={styles.playButtonText}>
+                        {inviteFlow.phase === "checking"
+                          ? "Checking…"
+                          : inviteFlow.phase === "sending"
+                            ? `Sending to ${inviteFlow.targetName}…`
+                            : "Opening lobby…"}
+                      </Text>
+                    </View>
                   ) : (
                     <>
                       <MaterialCommunityIcons
@@ -443,7 +497,9 @@ export default function GameDetailScreenV4() {
                   )}
                 </TouchableOpacity>
                 <Text style={[styles.inviteHintText, { color: subtextColor }]}>
-                  Choose a chat to send this game invite.
+                  {inviteFlow.phase === "failed"
+                    ? (inviteFlow.error ?? "Invite failed. Tap to retry.")
+                    : "Choose a chat to send this game invite."}
                 </Text>
 
                 {/* Alternate info */}

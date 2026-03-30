@@ -19,7 +19,7 @@
 
 import React, { forwardRef, useCallback } from "react";
 import type { ScrollViewProps } from "react-native";
-import { Platform, ScrollView, UIManager, View } from "react-native";
+import { ScrollView, UIManager, View } from "react-native";
 import {
   KeyboardStickyView,
   useReanimatedKeyboardAnimation,
@@ -33,35 +33,38 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 // ---------------------------------------------------------------------------
 // Detect whether the native KCSV view is available in this binary.
-// On Android it registers as "ClippingScrollViewDecoratorView".
-// On iOS it registers as "KeyboardChatScrollView" (or similar).
-// If not present we fall back to a plain ScrollView so the app still runs.
+// Both platforms register the native view as "ClippingScrollViewDecoratorView".
+// In Expo Go the JS module exists but the native view is a stub that can't
+// render, so we validate by both checking UIManager AND trying to require
+// the component. If either fails we fall back to a plain ScrollView.
 // ---------------------------------------------------------------------------
 let _kcsvAvailable = false;
+let KeyboardChatScrollView: any = null;
+type KeyboardChatScrollViewProps = { keyboardLiftBehavior?: string };
 try {
-  if (Platform.OS === "android") {
-    _kcsvAvailable =
-      UIManager.getViewManagerConfig("ClippingScrollViewDecoratorView") != null;
-  } else {
-    _kcsvAvailable =
-      UIManager.hasViewManagerConfig?.("KeyboardChatScrollView") ??
-      UIManager.getViewManagerConfig("KeyboardChatScrollView") != null;
+  const NATIVE_VIEW = "ClippingScrollViewDecoratorView";
+  const hasNative =
+    (UIManager.hasViewManagerConfig?.(NATIVE_VIEW) ??
+      UIManager.getViewManagerConfig(NATIVE_VIEW)) != null;
+  if (hasNative) {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const kcModule = require("react-native-keyboard-controller");
+    if (kcModule.KeyboardChatScrollView) {
+      // Final sanity check: Expo Go registers stubs that pass UIManager but
+      // fail at render. Detect Expo Go via missing native WebRTC module
+      // (same heuristic as CALL_FEATURES.CALLS_ENABLED).
+      try {
+        require("@stream-io/react-native-webrtc");
+        KeyboardChatScrollView = kcModule.KeyboardChatScrollView;
+        _kcsvAvailable = true;
+      } catch {
+        // Expo Go — native binary doesn't include custom native modules
+        _kcsvAvailable = false;
+      }
+    }
   }
 } catch {
   _kcsvAvailable = false;
-}
-
-// Only import KCSV component when native side is ready
-let KeyboardChatScrollView: any = null;
-type KeyboardChatScrollViewProps = { keyboardLiftBehavior?: string };
-if (_kcsvAvailable) {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const kcModule = require("react-native-keyboard-controller");
-    KeyboardChatScrollView = kcModule.KeyboardChatScrollView;
-  } catch {
-    _kcsvAvailable = false;
-  }
 }
 
 /** Whether the native KeyboardChatScrollView is available in this build */
