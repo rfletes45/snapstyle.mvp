@@ -117,12 +117,6 @@ function UserProfileScreenContent({
   const currentUserId = currentFirebaseUser?.uid;
 
   const colors = useColors();
-  // Calls require native modules AND the target's privacy settings must allow it
-  const canInitiateCalls =
-    CALL_FEATURES.CALLS_ENABLED &&
-    (relationship
-      ? canCallUser(profile?.privacy ?? DEFAULT_PRIVACY_SETTINGS, relationship)
-      : false);
 
   // ==========================================================================
   // Target User's Widget Board Layout (read-only)
@@ -153,6 +147,13 @@ function UserProfileScreenContent({
   const [reportModalVisible, setReportModalVisible] = useState(false);
   const [muteModalVisible, setMuteModalVisible] = useState(false);
   const [muteActionLoading, setMuteActionLoading] = useState(false);
+
+  // Calls require native modules AND the target's privacy settings must allow it
+  const canInitiateCalls =
+    CALL_FEATURES.CALLS_ENABLED &&
+    (relationship
+      ? canCallUser(profile?.privacy ?? DEFAULT_PRIVACY_SETTINGS, relationship)
+      : false);
 
   // Badges hook — subscribes to the viewed user's badges
   const { featuredBadges, stats: badgeStats } = useBadges(userId);

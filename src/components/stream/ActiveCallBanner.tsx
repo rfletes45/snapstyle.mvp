@@ -10,10 +10,10 @@
 
 import { CALL_FEATURES } from "@/constants/featureFlags";
 import { useStreamCall } from "@/contexts/StreamCallContext";
+import { navigationRef } from "@/services/navigationRef";
 import { useAppTheme } from "@/store/ThemeContext";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { useNavigation, useNavigationState } from "@react-navigation/native";
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -27,16 +27,32 @@ function ActiveCallBannerInner() {
   const { activeSession, isBusy } = useStreamCall();
   const { colors } = useAppTheme();
   const insets = useSafeAreaInsets();
-  const navigation = useNavigation<any>();
 
   // Track elapsed time
   const [elapsed, setElapsed] = useState(0);
 
-  // Get the current route name to decide if we should show the banner
-  const currentRouteName = useNavigationState((state) => {
-    if (!state?.routes?.length) return "";
-    return state.routes[state.index]?.name ?? "";
-  });
+  // Track current route name using the global navigationRef
+  // (useNavigationState requires being inside a navigator; this component
+  // is rendered as a sibling of the navigator, so we use the ref instead)
+  const [currentRouteName, setCurrentRouteName] = useState("");
+
+  const updateRouteName = useCallback(() => {
+    if (navigationRef.isReady()) {
+      setCurrentRouteName(navigationRef.getCurrentRoute()?.name ?? "");
+    }
+  }, []);
+
+  useEffect(() => {
+    // Set initial route name
+    updateRouteName();
+
+    // Listen for navigation state changes
+    const unsubscribe = navigationRef.addListener(
+      "state" as any,
+      updateRouteName,
+    );
+    return unsubscribe;
+  }, [updateRouteName]);
 
   // The banner is visible when: user is in a call AND not currently on a call screen
   const isOnCallScreen =
@@ -59,15 +75,17 @@ function ActiveCallBannerInner() {
   const timeStr = `${Math.floor(elapsed / 60)}:${(elapsed % 60).toString().padStart(2, "0")}`;
 
   const handlePress = () => {
+    if (!navigationRef.isReady()) return;
+
     if (activeSession?.type === "direct_call") {
-      navigation.navigate("DirectCall", {
+      navigationRef.navigate("DirectCall" as any, {
         callId: activeSession.callId,
         recipientName: activeSession.recipientName ?? "",
         mode: activeSession.mode ?? "audio",
         isOutgoing: true,
       });
     } else if (activeSession?.type === "voice_channel") {
-      navigation.navigate("VoiceChannel", {
+      navigationRef.navigate("VoiceChannel" as any, {
         channelId: activeSession.channelId,
         channelName: activeSession.channelName ?? "Voice Room",
         groupId: activeSession.groupId ?? "",

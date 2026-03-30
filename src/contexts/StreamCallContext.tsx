@@ -442,8 +442,8 @@ export function StreamCallProvider({
     };
   }, [currentFirebaseUser?.uid]);
 
-  // If calls are disabled or client not ready, render children without Stream
-  if (!CALL_FEATURES.CALLS_ENABLED || !client) {
+  // If calls are disabled, client not ready, or user logged out, render noop
+  if (!CALL_FEATURES.CALLS_ENABLED || !client || !currentFirebaseUser?.uid) {
     const noopValue: StreamCallContextType = {
       isReady: false,
       activeSession: null,
@@ -470,7 +470,7 @@ export function StreamCallProvider({
 
   return (
     <StreamVideo client={client}>
-      <StreamCallInnerProvider userId={currentFirebaseUser!.uid}>
+      <StreamCallInnerProvider userId={currentFirebaseUser.uid}>
         {children}
       </StreamCallInnerProvider>
     </StreamVideo>

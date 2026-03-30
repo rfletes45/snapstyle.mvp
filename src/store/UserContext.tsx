@@ -100,6 +100,11 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   const retryCountRef = useRef(0);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Stale-request guard: incremented each time refreshProfile starts.
+  // If the generation changes while an async fetch is in-flight, the
+  // old fetch discards its results instead of overwriting newer state.
+  const fetchGenerationRef = useRef(0);
+
   const refreshProfile = useCallback(async () => {
     if (!currentFirebaseUser) {
       setProfile(null);
@@ -109,13 +114,52 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    const generation = ++fetchGenerationRef.current;
+
+    // ── EARLY CACHE: For returning users, pre-populate state from the
+    // AsyncStorage cache BEFORE the Firestore round-trip. This prevents a
+    // brief mis-routing to onboarding while the network fetch is in flight.
+    const cached = await loadCachedProfile();
+    if (generation !== fetchGenerationRef.current) return; // stale check
+
+    const hasCachedProfile =
+      cached && cached.uid === currentFirebaseUser.uid && cached.username;
+
+    if (hasCachedProfile) {
+      logger.info(
+        "[UserContext] Pre-populating from cached profile for UID " +
+          currentFirebaseUser.uid,
+      );
+      setProfile(cached);
+      setProfileFetchStatus("found");
+      setIsHydrated(true);
+    }
+
+    // ── NETWORK FETCH: Always fetch latest from Firestore.
+    // Only set "loading" status if we don't have a cached profile,
+    // to avoid briefly overwriting the "found" status that keeps
+    // AppGate in "ready" state.
     setLoading(true);
     setError(null);
-    setProfileFetchStatus("loading");
+    if (!hasCachedProfile) {
+      setProfileFetchStatus("loading");
+    }
 
     try {
       const db = getFirestoreInstance();
       const userDoc = await getDoc(doc(db, "Users", currentFirebaseUser.uid));
+
+      // Discard results if a newer fetch has started
+      if (generation !== fetchGenerationRef.current) {
+        logger.warn(
+          "[UserContext] Discarding stale profile fetch (generation " +
+            generation +
+            " vs current " +
+            fetchGenerationRef.current +
+            ")",
+        );
+        return;
+      }
 
       if (userDoc.exists()) {
         const profileData = userDoc.data() as AppUser;
@@ -133,6 +177,9 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       setLoading(false);
       setIsHydrated(true);
     } catch (err: any) {
+      // Discard errors from stale fetches
+      if (generation !== fetchGenerationRef.current) return;
+
       logger.error("[UserContext] Error fetching profile:", err);
       setError(err.message);
 
@@ -140,6 +187,10 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       // This prevents an existing user from being misrouted to onboarding
       // just because Firestore was temporarily unavailable.
       const cached = await loadCachedProfile();
+
+      // Re-check staleness after another await
+      if (generation !== fetchGenerationRef.current) return;
+
       if (cached && cached.uid === currentFirebaseUser.uid && cached.username) {
         logger.warn(
           "[UserContext] Using cached profile after fetch error — existing user protected",
@@ -207,6 +258,11 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
 
       if (uidChanged) {
         // Genuinely new user — show loading while we fetch their profile
+        logger.info(
+          "[UserContext] UID changed (" +
+            currentFirebaseUser.uid +
+            ") — resetting hydration and fetching profile",
+        );
         setIsHydrated(false);
         setProfileFetchStatus("idle");
         retryCountRef.current = 0;

@@ -44,8 +44,8 @@ type KeyboardChatScrollViewProps = { keyboardLiftBehavior?: string };
 try {
   const NATIVE_VIEW = "ClippingScrollViewDecoratorView";
   const hasNative =
-    (UIManager.hasViewManagerConfig?.(NATIVE_VIEW) ??
-      UIManager.getViewManagerConfig(NATIVE_VIEW)) != null;
+    UIManager.hasViewManagerConfig?.(NATIVE_VIEW) ??
+    UIManager.getViewManagerConfig(NATIVE_VIEW) != null;
   if (hasNative) {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const kcModule = require("react-native-keyboard-controller");

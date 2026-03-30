@@ -298,6 +298,24 @@ export function AppGate({
     timedOut,
   ]);
 
+  // Log state transitions for diagnosing routing issues
+  useEffect(() => {
+    logger.info(
+      "[AppGate] State: " +
+        state.hydrationState +
+        " | authHydrated=" +
+        authHydrated +
+        " profileHydrated=" +
+        profileHydrated +
+        " profileFetchStatus=" +
+        profileFetchStatus +
+        " hasUsername=" +
+        !!profile?.username +
+        " banChecked=" +
+        banChecked,
+    );
+  }, [state.hydrationState]);
+
   // Show loading screen during hydration
   if (!state.isHydrated) {
     return <LoadingScreen message={loadingMessage} />;

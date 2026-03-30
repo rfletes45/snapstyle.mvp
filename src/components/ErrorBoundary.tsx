@@ -6,16 +6,6 @@
  * the Catppuccin theme.
  */
 
-import { createLogger } from "@/utils/log";
-import React, { Component, ErrorInfo, ReactNode } from "react";
-import {
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  useColorScheme,
-  View,
-} from "react-native";
 import {
   BorderRadius,
   DarkColors,
@@ -26,6 +16,16 @@ import {
   Mocha,
   Spacing,
 } from "@/constants/theme";
+import { createLogger } from "@/utils/log";
+import React, { Component, ErrorInfo, ReactNode } from "react";
+import {
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  useColorScheme,
+  View,
+} from "react-native";
 
 const log = createLogger("ErrorBoundary");
 
@@ -147,8 +147,8 @@ function ErrorFallback({ error, errorInfo, onRetry }: ErrorFallbackProps) {
           Oops! Something went wrong
         </Text>
         <Text style={[styles.message, { color: colors.textSecondary }]}>
-          We&apos;re sorry, but something unexpected happened. Please try again or
-          restart the app if the issue persists.
+          We&apos;re sorry, but something unexpected happened. Please try again
+          or restart the app if the issue persists.
         </Text>
 
         {/* Retry button */}
@@ -165,22 +165,18 @@ function ErrorFallback({ error, errorInfo, onRetry }: ErrorFallbackProps) {
           </Text>
         </Pressable>
 
-        {/* Show details toggle (dev only) */}
-        {__DEV__ && (
-          <Pressable
-            style={styles.detailsToggle}
-            onPress={() => setShowDetails(!showDetails)}
-          >
-            <Text style={[styles.detailsToggleText, { color: colors.primary }]}>
-              {showDetails
-                ? "Hide Technical Details"
-                : "Show Technical Details"}
-            </Text>
-          </Pressable>
-        )}
+        {/* Show details toggle */}
+        <Pressable
+          style={styles.detailsToggle}
+          onPress={() => setShowDetails(!showDetails)}
+        >
+          <Text style={[styles.detailsToggleText, { color: colors.primary }]}>
+            {showDetails ? "Hide Technical Details" : "Show Technical Details"}
+          </Text>
+        </Pressable>
 
-        {/* Error details (dev only) */}
-        {__DEV__ && showDetails && (
+        {/* Error details */}
+        {showDetails && (
           <ScrollView
             style={[
               styles.detailsContainer,
