@@ -13,7 +13,7 @@
 
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import React, { memo, useMemo } from "react";
+import React, { memo, useCallback, useMemo } from "react";
 import {
   ActivityIndicator,
   StyleSheet,
@@ -1749,6 +1749,733 @@ const viewerActionsStyles = StyleSheet.create({
 });
 
 // =============================================================================
+// Tasks Overview Adapter
+// =============================================================================
+
+/**
+ * Tasks widget — shows Daily & Monthly task progress.
+ *
+ * data.dailyCompleted / data.dailyTotal — daily task counts
+ * data.monthlyCompleted / data.monthlyTotal — monthly task counts
+ * data.onPress — navigate to Tasks screen (owner only, non-customize)
+ * data.isOwner — whether this is the profile owner
+ * data.isCustomizing — whether in customize mode
+ */
+export const TasksOverviewAdapter = memo(function TasksOverviewAdapter({
+  size,
+  data,
+}: WidgetAdapterProps) {
+  const colors = useColors();
+  const isInteractive = data.isOwner && !data.isCustomizing && !!data.onPress;
+
+  const dailyDone = data.dailyCompleted ?? 0;
+  const dailyTotal = data.dailyTotal ?? 0;
+  const monthlyDone = data.monthlyCompleted ?? 0;
+  const monthlyTotal = data.monthlyTotal ?? 0;
+  const dailyProgress = dailyTotal > 0 ? dailyDone / dailyTotal : 0;
+  const monthlyProgress = monthlyTotal > 0 ? monthlyDone / monthlyTotal : 0;
+
+  const handlePress = useCallback(() => {
+    if (isInteractive) data.onPress();
+  }, [isInteractive, data.onPress]);
+
+  if (size === "wide") {
+    return (
+      <TouchableOpacity
+        style={[taskStyles.wideRoot, { backgroundColor: colors.surface }]}
+        onPress={handlePress}
+        activeOpacity={isInteractive ? 0.7 : 1}
+        disabled={!isInteractive}
+      >
+        <View style={taskStyles.wideHeader}>
+          <MaterialCommunityIcons
+            name="checkbox-marked-circle-outline"
+            size={16}
+            color={colors.primary}
+          />
+          <Text style={[taskStyles.title, { color: colors.text }]}>Tasks</Text>
+          {isInteractive && (
+            <MaterialCommunityIcons
+              name="chevron-right"
+              size={16}
+              color={colors.textSecondary}
+            />
+          )}
+        </View>
+        <View style={taskStyles.wideChipRow}>
+          <View
+            style={[
+              taskStyles.chip,
+              { backgroundColor: colors.primary + "12" },
+            ]}
+          >
+            <Text style={[taskStyles.chipLabel, { color: colors.primary }]}>
+              Daily
+            </Text>
+            <Text style={[taskStyles.chipValue, { color: colors.text }]}>
+              {dailyDone}/{dailyTotal}
+            </Text>
+          </View>
+          <View
+            style={[
+              taskStyles.chip,
+              { backgroundColor: colors.secondary + "12" },
+            ]}
+          >
+            <Text style={[taskStyles.chipLabel, { color: colors.secondary }]}>
+              Monthly
+            </Text>
+            <Text style={[taskStyles.chipValue, { color: colors.text }]}>
+              {monthlyDone}/{monthlyTotal}
+            </Text>
+          </View>
+        </View>
+      </TouchableOpacity>
+    );
+  }
+
+  // large (4×2)
+  return (
+    <TouchableOpacity
+      style={[taskStyles.largeRoot, { backgroundColor: colors.surface }]}
+      onPress={handlePress}
+      activeOpacity={isInteractive ? 0.7 : 1}
+      disabled={!isInteractive}
+    >
+      <View style={taskStyles.wideHeader}>
+        <MaterialCommunityIcons
+          name="checkbox-marked-circle-outline"
+          size={16}
+          color={colors.primary}
+        />
+        <Text style={[taskStyles.title, { color: colors.text }]}>Tasks</Text>
+        {isInteractive && (
+          <MaterialCommunityIcons
+            name="chevron-right"
+            size={16}
+            color={colors.textSecondary}
+          />
+        )}
+      </View>
+      <View style={taskStyles.largeSection}>
+        <View style={taskStyles.sectionRow}>
+          <Text
+            style={[taskStyles.sectionLabel, { color: colors.textSecondary }]}
+          >
+            Daily
+          </Text>
+          <Text style={[taskStyles.sectionCount, { color: colors.text }]}>
+            {dailyDone}/{dailyTotal}
+          </Text>
+        </View>
+        <ProgressBar
+          progress={dailyProgress}
+          color={colors.primary}
+          style={taskStyles.progressBar}
+        />
+      </View>
+      <View style={taskStyles.largeSection}>
+        <View style={taskStyles.sectionRow}>
+          <Text
+            style={[taskStyles.sectionLabel, { color: colors.textSecondary }]}
+          >
+            Monthly
+          </Text>
+          <Text style={[taskStyles.sectionCount, { color: colors.text }]}>
+            {monthlyDone}/{monthlyTotal}
+          </Text>
+        </View>
+        <ProgressBar
+          progress={monthlyProgress}
+          color={colors.secondary}
+          style={taskStyles.progressBar}
+        />
+      </View>
+      {isInteractive && (
+        <TouchableOpacity
+          style={[taskStyles.cta, { backgroundColor: colors.primary + "15" }]}
+          onPress={handlePress}
+          activeOpacity={0.7}
+        >
+          <Text style={[taskStyles.ctaText, { color: colors.primary }]}>
+            Open Tasks
+          </Text>
+        </TouchableOpacity>
+      )}
+    </TouchableOpacity>
+  );
+});
+
+const taskStyles = StyleSheet.create({
+  wideRoot: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: Spacing.md,
+    gap: Spacing.sm,
+    borderRadius: BorderRadius.lg,
+    overflow: "hidden",
+  },
+  wideHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    flexShrink: 0,
+  },
+  title: { fontSize: 14, fontWeight: "700" },
+  wideChipRow: {
+    flex: 1,
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: 8,
+  },
+  chip: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    gap: 6,
+  },
+  chipLabel: { fontSize: 11, fontWeight: "600" },
+  chipValue: { fontSize: 13, fontWeight: "700" },
+  largeRoot: {
+    flex: 1,
+    padding: Spacing.md,
+    borderRadius: BorderRadius.lg,
+    overflow: "hidden",
+    gap: Spacing.sm,
+  },
+  largeSection: { gap: 4 },
+  sectionRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  sectionLabel: { fontSize: 12, fontWeight: "600" },
+  sectionCount: { fontSize: 12, fontWeight: "700" },
+  progressBar: { height: 6, borderRadius: 3 },
+  cta: {
+    alignSelf: "flex-start",
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 14,
+    marginTop: 2,
+  },
+  ctaText: { fontSize: 12, fontWeight: "700" },
+});
+
+// =============================================================================
+// Wallet Balance Adapter
+// =============================================================================
+
+/**
+ * Wallet widget — shows token balance.
+ *
+ * data.balance — token amount
+ * data.loading — whether wallet is loading
+ * data.onPress — navigate to wallet (owner only, non-customize)
+ * data.isOwner — whether this is the profile owner
+ * data.isCustomizing — whether in customize mode
+ */
+export const WalletBalanceAdapter = memo(function WalletBalanceAdapter({
+  size,
+  data,
+}: WidgetAdapterProps) {
+  const colors = useColors();
+  const isInteractive = data.isOwner && !data.isCustomizing && !!data.onPress;
+  const balance = data.balance ?? 0;
+  const loading = data.loading ?? false;
+
+  const handlePress = useCallback(() => {
+    if (isInteractive) data.onPress();
+  }, [isInteractive, data.onPress]);
+
+  if (size === "small") {
+    return (
+      <TouchableOpacity
+        style={[walletStyles.smallRoot, { backgroundColor: colors.surface }]}
+        onPress={handlePress}
+        activeOpacity={isInteractive ? 0.7 : 1}
+        disabled={!isInteractive}
+      >
+        <MaterialCommunityIcons
+          name="star-circle"
+          size={22}
+          color={colors.warning ?? colors.primary}
+        />
+        {loading ? (
+          <ActivityIndicator size="small" color={colors.primary} />
+        ) : (
+          <Text
+            style={[walletStyles.balanceLg, { color: colors.text }]}
+            numberOfLines={1}
+          >
+            {balance.toLocaleString()}
+          </Text>
+        )}
+      </TouchableOpacity>
+    );
+  }
+
+  if (size === "medium") {
+    return (
+      <TouchableOpacity
+        style={[walletStyles.medRoot, { backgroundColor: colors.surface }]}
+        onPress={handlePress}
+        activeOpacity={isInteractive ? 0.7 : 1}
+        disabled={!isInteractive}
+      >
+        <MaterialCommunityIcons
+          name="star-circle"
+          size={28}
+          color={colors.warning ?? colors.primary}
+        />
+        <Text
+          style={[walletStyles.walletLabel, { color: colors.textSecondary }]}
+        >
+          Tokens
+        </Text>
+        {loading ? (
+          <ActivityIndicator size="small" color={colors.primary} />
+        ) : (
+          <Text style={[walletStyles.balanceXl, { color: colors.text }]}>
+            {balance.toLocaleString()}
+          </Text>
+        )}
+        {isInteractive && (
+          <MaterialCommunityIcons
+            name="chevron-right"
+            size={16}
+            color={colors.textSecondary}
+            style={walletStyles.chevron}
+          />
+        )}
+      </TouchableOpacity>
+    );
+  }
+
+  // wide (4×1)
+  return (
+    <TouchableOpacity
+      style={[walletStyles.wideRoot, { backgroundColor: colors.surface }]}
+      onPress={handlePress}
+      activeOpacity={isInteractive ? 0.7 : 1}
+      disabled={!isInteractive}
+    >
+      <MaterialCommunityIcons
+        name="star-circle"
+        size={24}
+        color={colors.warning ?? colors.primary}
+      />
+      <Text style={[walletStyles.walletLabel, { color: colors.textSecondary }]}>
+        Wallet
+      </Text>
+      <View style={walletStyles.wideBalanceArea}>
+        {loading ? (
+          <ActivityIndicator size="small" color={colors.primary} />
+        ) : (
+          <Text style={[walletStyles.balanceLg, { color: colors.text }]}>
+            {balance.toLocaleString()}
+          </Text>
+        )}
+        <Text
+          style={[walletStyles.tokenSuffix, { color: colors.textSecondary }]}
+        >
+          tokens
+        </Text>
+      </View>
+      {isInteractive && (
+        <TouchableOpacity
+          style={[walletStyles.cta, { backgroundColor: colors.primary + "15" }]}
+          onPress={handlePress}
+          activeOpacity={0.7}
+        >
+          <Text style={[walletStyles.ctaText, { color: colors.primary }]}>
+            Open Wallet
+          </Text>
+        </TouchableOpacity>
+      )}
+    </TouchableOpacity>
+  );
+});
+
+const walletStyles = StyleSheet.create({
+  smallRoot: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    borderRadius: BorderRadius.lg,
+    overflow: "hidden",
+    paddingHorizontal: Spacing.sm,
+  },
+  medRoot: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
+    borderRadius: BorderRadius.lg,
+    overflow: "hidden",
+    padding: Spacing.md,
+  },
+  wideRoot: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: Spacing.md,
+    gap: Spacing.sm,
+    borderRadius: BorderRadius.lg,
+    overflow: "hidden",
+  },
+  walletLabel: { fontSize: 12, fontWeight: "600" },
+  balanceLg: { fontSize: 18, fontWeight: "800" },
+  balanceXl: { fontSize: 24, fontWeight: "800" },
+  tokenSuffix: { fontSize: 12, fontWeight: "500", marginLeft: 4 },
+  wideBalanceArea: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "baseline",
+    justifyContent: "flex-end",
+  },
+  chevron: { position: "absolute", right: 8, bottom: 8 },
+  cta: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 14,
+  },
+  ctaText: { fontSize: 12, fontWeight: "700" },
+});
+
+// =============================================================================
+// Theme Mode Adapter
+// =============================================================================
+
+/**
+ * Theme widget — switch Light / Dark / Auto.
+ *
+ * data.themeMode — current mode ("light" | "dark" | "auto")
+ * data.onChangeMode — setter (owner only, non-customize)
+ * data.isOwner — whether this is the profile owner
+ * data.isCustomizing — whether in customize mode
+ */
+const THEME_OPTIONS: { key: string; label: string; icon: string }[] = [
+  { key: "light", label: "Light", icon: "white-balance-sunny" },
+  { key: "dark", label: "Dark", icon: "moon-waning-crescent" },
+  { key: "auto", label: "Auto", icon: "brightness-auto" },
+];
+
+export const ThemeModeAdapter = memo(function ThemeModeAdapter({
+  size,
+  data,
+}: WidgetAdapterProps) {
+  const colors = useColors();
+  const active = data.themeMode ?? "auto";
+  const canInteract =
+    data.isOwner && !data.isCustomizing && !!data.onChangeMode;
+
+  const handleSelect = useCallback(
+    (key: string) => {
+      if (canInteract) data.onChangeMode(key);
+    },
+    [canInteract, data.onChangeMode],
+  );
+
+  const isCompact = size === "small";
+
+  return (
+    <View
+      style={[
+        themeStyles.root,
+        isCompact && themeStyles.rootCompact,
+        { backgroundColor: colors.surface },
+      ]}
+    >
+      {!isCompact && (
+        <View style={themeStyles.headerRow}>
+          <MaterialCommunityIcons
+            name="brightness-6"
+            size={14}
+            color={colors.textSecondary}
+          />
+          <Text
+            style={[themeStyles.headerLabel, { color: colors.textSecondary }]}
+          >
+            Appearance
+          </Text>
+        </View>
+      )}
+      <View
+        style={[
+          themeStyles.segmented,
+          isCompact && themeStyles.segmentedCompact,
+        ]}
+      >
+        {THEME_OPTIONS.map((opt) => {
+          const isActive = active === opt.key;
+          return (
+            <TouchableOpacity
+              key={opt.key}
+              style={[
+                themeStyles.seg,
+                isCompact && themeStyles.segCompact,
+                isActive && {
+                  backgroundColor: colors.primary + "20",
+                  borderColor: colors.primary,
+                  borderWidth: 1.5,
+                },
+              ]}
+              onPress={() => handleSelect(opt.key)}
+              activeOpacity={canInteract ? 0.7 : 1}
+              disabled={!canInteract}
+            >
+              <MaterialCommunityIcons
+                name={opt.icon as keyof typeof MaterialCommunityIcons.glyphMap}
+                size={isCompact ? 14 : 16}
+                color={isActive ? colors.primary : colors.textSecondary}
+              />
+              {!isCompact && (
+                <Text
+                  style={[
+                    themeStyles.segLabel,
+                    {
+                      color: isActive ? colors.primary : colors.textSecondary,
+                      fontWeight: isActive ? "700" : "500",
+                    },
+                  ]}
+                >
+                  {opt.label}
+                </Text>
+              )}
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+      {size === "wide" && (
+        <Text style={[themeStyles.desc, { color: colors.textSecondary }]}>
+          {active === "auto"
+            ? "Follows system"
+            : active === "dark"
+              ? "Dark mode active"
+              : "Light mode active"}
+        </Text>
+      )}
+    </View>
+  );
+});
+
+const themeStyles = StyleSheet.create({
+  root: {
+    flex: 1,
+    padding: Spacing.md,
+    borderRadius: BorderRadius.lg,
+    overflow: "hidden",
+    justifyContent: "center",
+    gap: 6,
+  },
+  rootCompact: {
+    padding: Spacing.sm,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginBottom: 2,
+  },
+  headerLabel: { fontSize: 11, fontWeight: "600" },
+  segmented: {
+    flexDirection: "row",
+    gap: 6,
+  },
+  segmentedCompact: { gap: 4 },
+  seg: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
+    paddingVertical: 7,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "transparent",
+  },
+  segCompact: {
+    paddingVertical: 5,
+    paddingHorizontal: 6,
+    borderRadius: 8,
+    flex: 1,
+  },
+  segLabel: { fontSize: 12 },
+  desc: { fontSize: 11, marginTop: 2 },
+});
+
+// =============================================================================
+// Chat Layout Mode Adapter
+// =============================================================================
+
+/**
+ * Chat layout widget — switch Bubbles / Stacked.
+ *
+ * data.chatLayoutMode — current mode ("bubbles" | "stacked")
+ * data.onChangeMode — setter (owner only, non-customize)
+ * data.isOwner — whether this is the profile owner
+ * data.isCustomizing — whether in customize mode
+ */
+const CHAT_LAYOUT_OPTIONS: { key: string; label: string; icon: string }[] = [
+  { key: "bubbles", label: "Bubbles", icon: "message-outline" },
+  { key: "stacked", label: "Stacked", icon: "format-list-text" },
+];
+
+export const ChatLayoutModeAdapter = memo(function ChatLayoutModeAdapter({
+  size,
+  data,
+}: WidgetAdapterProps) {
+  const colors = useColors();
+  const active = data.chatLayoutMode ?? "bubbles";
+  const canInteract =
+    data.isOwner && !data.isCustomizing && !!data.onChangeMode;
+
+  const handleSelect = useCallback(
+    (key: string) => {
+      if (canInteract) data.onChangeMode(key);
+    },
+    [canInteract, data.onChangeMode],
+  );
+
+  const isCompact = size === "small";
+
+  return (
+    <View
+      style={[
+        chatLayoutStyles.root,
+        isCompact && chatLayoutStyles.rootCompact,
+        { backgroundColor: colors.surface },
+      ]}
+    >
+      {!isCompact && (
+        <View style={chatLayoutStyles.headerRow}>
+          <MaterialCommunityIcons
+            name="message-text-outline"
+            size={14}
+            color={colors.textSecondary}
+          />
+          <Text
+            style={[
+              chatLayoutStyles.headerLabel,
+              { color: colors.textSecondary },
+            ]}
+          >
+            Chat Layout
+          </Text>
+        </View>
+      )}
+      <View
+        style={[
+          chatLayoutStyles.segmented,
+          isCompact && chatLayoutStyles.segmentedCompact,
+        ]}
+      >
+        {CHAT_LAYOUT_OPTIONS.map((opt) => {
+          const isActive = active === opt.key;
+          return (
+            <TouchableOpacity
+              key={opt.key}
+              style={[
+                chatLayoutStyles.seg,
+                isCompact && chatLayoutStyles.segCompact,
+                isActive && {
+                  backgroundColor: colors.primary + "20",
+                  borderColor: colors.primary,
+                  borderWidth: 1.5,
+                },
+              ]}
+              onPress={() => handleSelect(opt.key)}
+              activeOpacity={canInteract ? 0.7 : 1}
+              disabled={!canInteract}
+            >
+              <MaterialCommunityIcons
+                name={opt.icon as keyof typeof MaterialCommunityIcons.glyphMap}
+                size={isCompact ? 15 : 17}
+                color={isActive ? colors.primary : colors.textSecondary}
+              />
+              <Text
+                style={[
+                  chatLayoutStyles.segLabel,
+                  isCompact && chatLayoutStyles.segLabelCompact,
+                  {
+                    color: isActive ? colors.primary : colors.textSecondary,
+                    fontWeight: isActive ? "700" : "500",
+                  },
+                ]}
+              >
+                {opt.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+      {size === "wide" && (
+        <Text style={[chatLayoutStyles.desc, { color: colors.textSecondary }]}>
+          {active === "bubbles"
+            ? "Classic chat bubbles"
+            : "Discord-style stacked"}
+        </Text>
+      )}
+    </View>
+  );
+});
+
+const chatLayoutStyles = StyleSheet.create({
+  root: {
+    flex: 1,
+    padding: Spacing.md,
+    borderRadius: BorderRadius.lg,
+    overflow: "hidden",
+    justifyContent: "center",
+    gap: 6,
+  },
+  rootCompact: {
+    padding: Spacing.sm,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginBottom: 2,
+  },
+  headerLabel: { fontSize: 11, fontWeight: "600" },
+  segmented: {
+    flexDirection: "row",
+    gap: 6,
+  },
+  segmentedCompact: { gap: 4 },
+  seg: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 5,
+    paddingVertical: 7,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "transparent",
+  },
+  segCompact: {
+    paddingVertical: 5,
+    paddingHorizontal: 6,
+    borderRadius: 8,
+  },
+  segLabel: { fontSize: 12 },
+  segLabelCompact: { fontSize: 11 },
+  desc: { fontSize: 11, marginTop: 2 },
+});
+
+// =============================================================================
 // Adapter Registry
 // =============================================================================
 
@@ -1767,6 +2494,10 @@ export const WIDGET_ADAPTERS: Record<
   "profile-stats": ProfileStatsAdapter,
   "recent-activity": RecentActivityAdapter,
   "viewer-actions": ViewerActionsAdapter,
+  "tasks-overview": TasksOverviewAdapter,
+  "wallet-balance": WalletBalanceAdapter,
+  "theme-mode": ThemeModeAdapter,
+  "chat-layout-mode": ChatLayoutModeAdapter,
 };
 
 // =============================================================================

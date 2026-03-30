@@ -51,11 +51,6 @@ export declare const onNewFriendRequest: functions.CloudFunction<functions.fires
  */
 export declare const onStoryViewed: functions.CloudFunction<functions.firestore.QueryDocumentSnapshot>;
 /**
- * streakReminder: Daily check for at-risk streaks
- * Runs at 8 PM UTC to remind users whose streaks are at risk
- */
-export declare const streakReminder: functions.CloudFunction<unknown>;
-/**
  * onDeleteMessage: Triggered when a message document is deleted
  * Cleans up associated Storage object if it's an image snap
  *

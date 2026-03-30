@@ -9,6 +9,7 @@
  * Configure in Stream Dashboard → Webhooks → call.session_ended
  */
 
+import * as crypto from "crypto";
 import * as admin from "firebase-admin";
 import * as functions from "firebase-functions";
 
@@ -49,16 +50,26 @@ export const streamCallWebhook = functions.https.onRequest(async (req, res) => {
     return;
   }
 
-  // Verify webhook authenticity via a shared secret (set via firebase functions:config:set stream.webhook_secret="...")
-  const webhookSecret = functions.config().stream?.webhook_secret;
-  if (webhookSecret) {
-    const provided =
-      req.headers["x-webhook-secret"] ?? req.headers["authorization"];
-    if (provided !== webhookSecret && provided !== `Bearer ${webhookSecret}`) {
-      functions.logger.warn("Stream webhook: invalid or missing secret");
+  // Verify webhook authenticity via Stream's HMAC-SHA256 signature.
+  // Stream signs every webhook body with your API Secret and sends
+  // the hex digest in the X-Signature header.
+  const apiSecret = process.env.STREAM_API_SECRET;
+  const signature = req.headers["x-signature"] as string | undefined;
+
+  if (apiSecret && signature) {
+    const expectedSignature = crypto
+      .createHmac("sha256", apiSecret)
+      .update(req.rawBody)
+      .digest("hex");
+    if (signature !== expectedSignature) {
+      functions.logger.warn("Stream webhook: invalid X-Signature");
       res.status(401).send("Unauthorized");
       return;
     }
+  } else if (apiSecret && !signature) {
+    functions.logger.warn("Stream webhook: missing X-Signature header");
+    res.status(401).send("Unauthorized");
+    return;
   }
 
   try {

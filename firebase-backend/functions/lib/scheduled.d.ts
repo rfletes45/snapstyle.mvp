@@ -1,1 +1,2 @@
-export { cleanupExpiredPushTokens, cleanupExpiredSnaps, cleanupExpiredStories, cleanupOldScheduledMessages, streakReminder, } from "./legacy";
+export { cleanupExpiredPushTokens, cleanupExpiredSnaps, cleanupExpiredStories, cleanupOldScheduledMessages, } from "./legacy";
+export { streakReminder } from "./streaks";

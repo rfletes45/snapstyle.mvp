@@ -379,6 +379,10 @@ export function useChatComposer(
   // onChangeText (fires first) and onSelectionChange (fires second)
   const textRef = useRef(text);
   const cursorRef = useRef(cursorPosition);
+  // Synchronous guard against double-sends during rapid taps.
+  // React state (`sending`) is batched and may not re-render in time
+  // to update `canSend` before a second call enters the closure.
+  const sendingRef = useRef(false);
   const [mentionUidsState, setMentionUids] = useState<string[]>([]);
   const [uploadProgress, setUploadProgress] = useState<{
     current: number;
@@ -561,42 +565,62 @@ export function useChatComposer(
   // -------------------------------------------------------------------------
 
   const send = useCallback(async () => {
-    if (!canSend) return;
-
+    // Use ref-based guard to prevent double-sends during rapid taps.
+    // `canSend` comes from the closure and may be stale if React hasn't
+    // re-rendered since the previous send set `sending = true`.
+    if (!canSend || sendingRef.current) return;
+    sendingRef.current = true;
     setSending(true);
+
+    // Snapshot values from refs BEFORE clearing — refs always hold the
+    // latest value regardless of stale closures or batched renders.
+    const textSnapshot = textRef.current;
+    const mentionSnapshot = [...mentionUidsState];
+    const replySnapshot = replyTo;
+    const attachmentSnapshot = hasAttachments
+      ? [...attachmentsHook.attachments]
+      : [];
+
+    // Clear composer state IMMEDIATELY so the user can start typing
+    // the next message. This must happen before any await to prevent
+    // the native TextInput buffer from accumulating old + new text.
+    clearText();
+    if (enableAttachments && hasAttachments) {
+      attachmentsHook.clearAttachments();
+    }
 
     try {
       // Upload attachments if we have them and an upload handler
       let uploadedAttachments: AttachmentV2[] | undefined;
-      if (hasAttachments && onUploadAttachments) {
-        const localAttachments = attachmentsHook.attachments;
-        setUploadProgress({ current: 0, total: localAttachments.length });
+      if (attachmentSnapshot.length > 0 && onUploadAttachments) {
+        setUploadProgress({ current: 0, total: attachmentSnapshot.length });
 
         if (debug) {
           log.debug("Uploading attachments", {
             operation: "uploadAttachments",
-            data: { count: localAttachments.length },
+            data: { count: attachmentSnapshot.length },
           });
         }
 
-        uploadedAttachments = await onUploadAttachments(localAttachments);
+        uploadedAttachments = await onUploadAttachments(attachmentSnapshot);
         setUploadProgress(null);
       }
 
       const sendOptions: ComposerSendOptions = {
-        replyTo: replyTo ?? undefined,
-        mentionUids: mentionUidsState.length > 0 ? mentionUidsState : undefined,
-        attachments: hasAttachments ? attachmentsHook.attachments : undefined,
+        replyTo: replySnapshot ?? undefined,
+        mentionUids: mentionSnapshot.length > 0 ? mentionSnapshot : undefined,
+        attachments:
+          attachmentSnapshot.length > 0 ? attachmentSnapshot : undefined,
       };
 
       if (debug) {
         log.debug("Sending message", {
           operation: "send",
           data: {
-            textLength: text.length,
-            hasReply: !!replyTo,
-            mentionCount: mentionUidsState.length,
-            attachmentCount: attachmentsHook.attachments.length,
+            textLength: textSnapshot.length,
+            hasReply: !!replySnapshot,
+            mentionCount: mentionSnapshot.length,
+            attachmentCount: attachmentSnapshot.length,
             isIntegrated,
           },
         });
@@ -604,34 +628,26 @@ export function useChatComposer(
 
       // Use chatHook.sendMessage if integrated, otherwise use onSend callback
       if (chatHook) {
-        await chatHook.sendMessage(text, {
-          replyTo: replyTo ?? undefined,
-          mentionUids:
-            mentionUidsState.length > 0 ? mentionUidsState : undefined,
-          attachments: uploadedAttachments
-            ? attachmentsHook.attachments
-            : undefined,
+        await chatHook.sendMessage(textSnapshot, {
+          replyTo: replySnapshot ?? undefined,
+          mentionUids: mentionSnapshot.length > 0 ? mentionSnapshot : undefined,
+          attachments: uploadedAttachments ? attachmentSnapshot : undefined,
         });
         // chatHook.sendMessage auto-clears replyTo when clearReplyOnSend is true (default)
       } else {
-        await onSend(text, sendOptions);
-      }
-
-      // Clear state after successful send
-      clearText();
-      if (enableAttachments) {
-        attachmentsHook.clearAttachments();
+        await onSend(textSnapshot, sendOptions);
       }
     } catch (err) {
       log.error("Send failed", err);
       setUploadProgress(null);
-      // Don't clear on error so user can retry
+      // Restore text so the user can retry without retyping
+      setText(textSnapshot);
     } finally {
+      sendingRef.current = false;
       setSending(false);
     }
   }, [
     canSend,
-    text,
     replyTo,
     mentionUidsState,
     hasAttachments,
@@ -642,6 +658,7 @@ export function useChatComposer(
     onUploadAttachments,
     isIntegrated,
     clearText,
+    setText,
     debug,
   ]);
 

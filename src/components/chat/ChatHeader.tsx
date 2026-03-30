@@ -20,6 +20,7 @@
 import { AppImage } from "@/components/AppImage";
 import { ProfilePictureWithDecoration } from "@/components/profile/ProfilePicture";
 import { PresenceIndicator } from "@/components/ui";
+import { buildRemoteImageSource } from "@/utils/remoteImageSource";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React from "react";
 import { StyleSheet, TouchableOpacity, View, ViewStyle } from "react-native";
@@ -119,8 +120,9 @@ export function ChatHeader({
     if (avatarUrl) {
       return (
         <AppImage
-          source={{ uri: avatarUrl }}
+          source={buildRemoteImageSource(avatarUrl)}
           style={styles.groupAvatarImage}
+          transition={0}
           debugLabel="ChatHeaderGroupAvatar"
         />
       );

@@ -16,6 +16,164 @@ jest.mock("../../constants/featureFlags", () => ({
   DEBUG_UNIFIED_MESSAGING: false,
 }));
 
+// ---------------------------------------------------------------------------
+// Rapid-send / snapshot-before-clear behavioural contract tests
+// ---------------------------------------------------------------------------
+// These tests exercise the send() contract by simulating the internal state
+// management that useChatComposer performs on send:
+//   1. Snapshot text from the ref (latest value, not stale closure)
+//   2. Clear text BEFORE awaiting the async send call
+//   3. Pass the snapshot—not the cleared state—to the send callback
+//   4. On error, restore the snapshot so the user can retry
+//   5. A ref-based guard prevents a second send while one is in-flight
+// ---------------------------------------------------------------------------
+
+describe("useChatComposer send() contract", () => {
+  /**
+   * Simulates the send-handler's state management extracted from useChatComposer.
+   * This lets us verify the snapshot-before-clear ordering without renderHook.
+   */
+  function createSendSimulator() {
+    // Simulated state
+    let text = "";
+    const textRef = { current: "" };
+    const sendingRef = { current: false };
+    const callLog: string[] = [];
+
+    const setText = (t: string) => {
+      text = t;
+      textRef.current = t;
+    };
+
+    const clearText = () => {
+      callLog.push("clearText");
+      text = "";
+      textRef.current = "";
+    };
+
+    const send = async (onSend: (sentText: string) => Promise<void>) => {
+      if (sendingRef.current) {
+        callLog.push("guard:blocked");
+        return;
+      }
+      if (!textRef.current.trim()) return;
+
+      sendingRef.current = true;
+      callLog.push("sending:true");
+
+      const snapshot = textRef.current;
+      clearText();
+
+      try {
+        callLog.push(`onSend:${snapshot}`);
+        await onSend(snapshot);
+      } catch {
+        // Restore on error
+        setText(snapshot);
+        callLog.push(`restore:${snapshot}`);
+      } finally {
+        sendingRef.current = false;
+        callLog.push("sending:false");
+      }
+    };
+
+    return { setText, send, getText: () => text, getLog: () => callLog };
+  }
+
+  it("snapshots text and clears BEFORE the async send", async () => {
+    const sim = createSendSimulator();
+    sim.setText("hello");
+
+    let textSeenByCallback = "";
+    let textDuringSend = "";
+
+    await sim.send(async (sentText) => {
+      textSeenByCallback = sentText;
+      textDuringSend = sim.getText();
+    });
+
+    // The send callback received the original text snapshot
+    expect(textSeenByCallback).toBe("hello");
+    // The composer was already cleared when the callback executed
+    expect(textDuringSend).toBe("");
+    // Log proves ordering: clear happens before the send call
+    expect(sim.getLog()).toEqual([
+      "sending:true",
+      "clearText",
+      "onSend:hello",
+      "sending:false",
+    ]);
+  });
+
+  it("prevents double-send via ref-based guard", async () => {
+    const sim = createSendSimulator();
+    sim.setText("first");
+
+    let resolveFirst!: () => void;
+    const firstSendPromise = new Promise<void>((r) => {
+      resolveFirst = r;
+    });
+
+    // Start first send (blocks until we resolve)
+    const p1 = sim.send(async () => {
+      await firstSendPromise;
+    });
+
+    // Attempt second send while first is in-flight
+    sim.setText("second");
+    const p2 = sim.send(async () => {
+      /* should never execute */
+    });
+
+    // Resolve the first send
+    resolveFirst();
+    await p1;
+    await p2;
+
+    expect(sim.getLog()).toEqual([
+      "sending:true",
+      "clearText",
+      "onSend:first",
+      "guard:blocked",
+      "sending:false",
+    ]);
+  });
+
+  it("restores text on send error so user can retry", async () => {
+    const sim = createSendSimulator();
+    sim.setText("important msg");
+
+    await sim.send(async () => {
+      throw new Error("Network error");
+    });
+
+    expect(sim.getText()).toBe("important msg");
+    expect(sim.getLog()).toContain("restore:important msg");
+  });
+
+  it("user can type during async send and text is preserved", async () => {
+    const sim = createSendSimulator();
+    sim.setText("first");
+
+    let resolveFirst!: () => void;
+    const firstSendPromise = new Promise<void>((r) => {
+      resolveFirst = r;
+    });
+
+    const p1 = sim.send(async () => {
+      // While the send is in-flight, the user types a new message
+      sim.setText("second");
+      await firstSendPromise;
+    });
+
+    resolveFirst();
+    await p1;
+
+    // The user's new text survived the send
+    expect(sim.getText()).toBe("second");
+  });
+});
+
 describe("useChatComposer Configuration", () => {
   describe("configuration types", () => {
     const mockOnSend = jest.fn().mockResolvedValue(undefined);

@@ -5,6 +5,74 @@ import { updateStreakOnMessage } from "./streaks";
 
 const db = admin.firestore();
 
+/**
+ * Retrieve all active push tokens for a user.  Used to build the
+ * `excludeTokens` list so we never deliver a notification to the
+ * sender's own device.
+ */
+async function getUserPushTokens(uid: string): Promise<string[]> {
+  try {
+    const tokenSet = new Set<string>();
+    const snap = await db
+      .collection("Users")
+      .doc(uid)
+      .collection("NotificationDevices")
+      .get();
+    for (const doc of snap.docs) {
+      const token = doc.data()?.expoPushToken;
+      if (typeof token === "string" && token.length > 0) {
+        tokenSet.add(token);
+      }
+    }
+
+    const userDoc = await db.collection("Users").doc(uid).get();
+    const legacyToken = userDoc.data()?.expoPushToken;
+    if (typeof legacyToken === "string" && legacyToken.length > 0) {
+      tokenSet.add(legacyToken);
+    }
+
+    return Array.from(tokenSet);
+  } catch {
+    return [];
+  }
+}
+
+async function revokeDuplicateLegacyRootTokens(
+  ownerUid: string,
+  token: string,
+): Promise<void> {
+  const staleRootSnap = await db
+    .collection("Users")
+    .where("expoPushToken", "==", token)
+    .get();
+
+  const staleRootWrites: Promise<FirebaseFirestore.WriteResult>[] = [];
+  for (const userDoc of staleRootSnap.docs) {
+    if (userDoc.id === ownerUid) continue;
+
+    functions.logger.info(
+      `[onPushTokenRegistered] Clearing stale legacy root token from user ${userDoc.id} ` +
+        `- token now owned by ${ownerUid}`,
+    );
+
+    staleRootWrites.push(
+      userDoc.ref.set(
+        {
+          expoPushToken: admin.firestore.FieldValue.delete(),
+        },
+        { merge: true },
+      ),
+    );
+  }
+
+  if (staleRootWrites.length > 0) {
+    await Promise.all(staleRootWrites);
+    functions.logger.info(
+      `[onPushTokenRegistered] Cleared ${staleRootWrites.length} stale legacy root token(s) for ${ownerUid}`,
+    );
+  }
+}
+
 type NotificationPreviewMode = "full" | "sender_only" | "generic";
 type NotifyLevel = "all" | "mentions" | "none";
 
@@ -202,6 +270,10 @@ export const onNewMessage = functions.firestore
       previewMode: notificationPreview,
     });
 
+    // Collect sender's push tokens so we can exclude them from delivery.
+    // This prevents self-notifications when a stale token mapping exists.
+    const senderTokens = await getUserPushTokens(senderId);
+
     await notifyUser({
       recipientUid,
       type: "dm_message",
@@ -228,6 +300,7 @@ export const onNewMessage = functions.firestore
         friendUid: senderId,
       },
       respectConversationMute: true,
+      excludeTokens: senderTokens,
     });
 
     return null;
@@ -268,6 +341,9 @@ export const onNewGroupMessageV2 = functions.firestore
       String(message.kind || message.type || "text"),
       message.text || message.content,
     );
+
+    // Collect sender's push tokens so we can exclude them from delivery.
+    const senderTokens = await getUserPushTokens(senderId);
 
     await Promise.all(
       memberIds
@@ -316,6 +392,7 @@ export const onNewGroupMessageV2 = functions.firestore
               mentioned,
             },
             respectConversationMute: true,
+            excludeTokens: senderTokens,
           });
         }),
     );
@@ -364,6 +441,83 @@ export const onMessageRequestCreatedNotification = functions.firestore
           typeof data.requesterId === "string" ? data.requesterId : undefined,
       },
     });
+
+    return null;
+  });
+
+/**
+ * Enforce push-token uniqueness across users.
+ *
+ * When a NotificationDevice document is created or updated with a non-null
+ * push token, this trigger searches for ALL other users' NotificationDevices
+ * documents that share the same token and invalidates them.  This prevents
+ * the "stale token after account switch" bug where a device token remains
+ * active under a previous user.
+ */
+export const onPushTokenRegistered = functions.firestore
+  .document("Users/{uid}/NotificationDevices/{deviceId}")
+  .onWrite(async (change, context) => {
+    const after = change.after.exists ? change.after.data() : null;
+    if (!after) return null; // deletion — nothing to clean up
+    const token = after.expoPushToken;
+    if (typeof token !== "string" || token.length === 0) return null;
+
+    const ownerUid = context.params.uid;
+
+    // Use a collectionGroup query to find ALL NotificationDevices with
+    // this token, then invalidate matches that belong to a different user.
+    try {
+      const snap = await db
+        .collectionGroup("NotificationDevices")
+        .where("expoPushToken", "==", token)
+        .get();
+
+      const staleWrites: Promise<FirebaseFirestore.WriteResult>[] = [];
+      for (const doc of snap.docs) {
+        // Path: Users/{uid}/NotificationDevices/{deviceId}
+        const parts = doc.ref.path.split("/");
+        const docOwnerUid = parts[1];
+        if (docOwnerUid === ownerUid) continue; // same user — skip
+
+        functions.logger.info(
+          `[onPushTokenRegistered] Revoking stale token from user ${docOwnerUid} ` +
+            `(device ${doc.id}) — token now owned by ${ownerUid}`,
+        );
+
+        staleWrites.push(
+          doc.ref.set(
+            {
+              expoPushToken: null,
+              pushEnabled: false,
+              revokedBy: ownerUid,
+              revokedAt: admin.firestore.FieldValue.serverTimestamp(),
+            },
+            { merge: true },
+          ),
+        );
+      }
+
+      if (staleWrites.length > 0) {
+        await Promise.all(staleWrites);
+        functions.logger.info(
+          `[onPushTokenRegistered] Revoked ${staleWrites.length} stale token(s) for token owned by ${ownerUid}`,
+        );
+      }
+    } catch (err) {
+      functions.logger.error(
+        "[onPushTokenRegistered] Failed to clean stale tokens:",
+        err,
+      );
+    }
+
+    try {
+      await revokeDuplicateLegacyRootTokens(ownerUid, token);
+    } catch (err) {
+      functions.logger.error(
+        "[onPushTokenRegistered] Failed to clean stale legacy root tokens:",
+        err,
+      );
+    }
 
     return null;
   });

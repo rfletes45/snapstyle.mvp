@@ -42,3 +42,8 @@ export {
   subscribeToStreamCallHistory,
   updateCallHistory,
 } from "./streamCallHistoryService";
+
+export {
+  registerStreamPushToken,
+  unregisterStreamPushToken,
+} from "./streamPushRegistration";

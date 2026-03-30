@@ -14,13 +14,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   addWidget as addWidgetToBoard,
   buildOccupancyMap,
-  compactWidgets,
   hideWidget,
   moveWidget,
   resizeWidget,
   resolveConflicts,
   resolveResize,
   restoreWidget,
+  settleBoardAfterDrop,
+  stableCompact,
 } from "./BoardLayoutEngine";
 import type {
   BoardMode,
@@ -170,8 +171,11 @@ export function useBoardState(
     setPreviewWidgets(null);
     setDragActiveId(null);
     if (workingWidgets) {
-      const compacted = compactWidgets(workingWidgets);
-      await persistence.save(compacted);
+      // Save the exact layout the user sees — no additional compaction pass.
+      // Every operation (drag, resize, add, remove) already produces a valid
+      // layout through the stable repack engine, so re-compacting here would
+      // risk reshuffling the board after the user has finished arranging it.
+      await persistence.save(workingWidgets);
       setWorkingWidgets(null);
     }
     setMode("view");
@@ -340,17 +344,26 @@ export function useBoardState(
     dwellTimerRef.current = null;
     dwellTargetRef.current = null;
 
+    let committed: WidgetInstance[] | null = null;
+
     if (previewWidgets) {
-      // Dwell-confirmed preview exists — commit it
-      setWorkingWidgets(previewWidgets);
+      // Dwell-confirmed preview exists — it already has vacancy healing
+      // from stableRepack. Run coupled upward settlement (phase 5).
+      committed = previewWidgets;
     } else if (latestHoverRef.current && workingWidgets) {
-      // No dwell-confirmed preview yet — compute final layout at drop position
+      // No dwell-confirmed preview yet — run full settlement from scratch.
       const { id, x, y } = latestHoverRef.current;
-      const result = resolveConflicts(workingWidgets, id, x, y);
-      if (result) {
-        setWorkingWidgets(result);
-      }
+      committed = settleBoardAfterDrop(workingWidgets, id, x, y);
     }
+
+    if (committed) {
+      // Coupled upward settlement: compact the entire board so the
+      // dropped widget AND the affected suffix beneath it settle
+      // upward together as one coherent system. No widget moves
+      // upward alone while others are stranded below.
+      setWorkingWidgets(stableCompact(committed));
+    }
+
     latestHoverRef.current = null;
     setPreviewWidgets(null);
     setDragActiveId(null);

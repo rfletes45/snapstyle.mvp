@@ -75,7 +75,11 @@ export type WidgetTypeId =
   | "favorite-game"
   | "profile-stats"
   | "recent-activity"
-  | "viewer-actions";
+  | "viewer-actions"
+  | "tasks-overview"
+  | "wallet-balance"
+  | "theme-mode"
+  | "chat-layout-mode";
 
 /** Metadata that every widget type must declare. */
 export interface WidgetTypeDefinition {
@@ -84,7 +88,7 @@ export interface WidgetTypeDefinition {
   description: string;
   icon: string;
   /** Category for gallery grouping. */
-  category: "profile" | "social" | "gaming" | "activity";
+  category: "profile" | "social" | "gaming" | "activity" | "appearance";
   defaultSize: WidgetSizeKey;
   supportedSizes: WidgetSizeKey[];
   minSize: WidgetSizeKey;
@@ -96,6 +100,10 @@ export interface WidgetTypeDefinition {
   defaultPlacementHint?: "top" | "middle" | "bottom";
   /** Maximum number of instances allowed (default 1). */
   maxInstances?: number;
+  /** Visibility scope: "all" shows on owner + viewer; "owner-only" hides for viewers. */
+  visibilityMode?: "all" | "owner-only";
+  /** When true, interactive controls (toggles, navigation) are disabled for viewers. */
+  interactiveForOwnerOnly?: boolean;
 }
 
 // =============================================================================

@@ -27,7 +27,12 @@ import {
   type ScopeFilter,
   type SearchResult,
 } from "@/hooks/useMessageSearch";
+import {
+  prepareDmThreadEntry,
+  prepareGroupThreadEntry,
+} from "@/services/chat/threadIdentityWarmup";
 import { useAppTheme } from "@/store/ThemeContext";
+import { log } from "@/utils/log";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import DateTimePicker, {
   type DateTimePickerEvent,
@@ -306,49 +311,95 @@ export function SearchSheet({ visible, onDismiss }: SearchSheetProps) {
         const c = result.conversation;
         closeSheet();
         setTimeout(() => {
-          if (c.type === "dm") {
-            navigation.navigate("ChatDetail", {
-              friendUid: c.otherUserId,
-              initialData: {
-                chatId: c.id,
-                friendName: c.name,
-                friendAvatar: c.profilePictureUrl || c.avatarUrl,
-                friendAvatarConfig: c.avatarConfig,
-                friendDecorationId: c.decorationId,
-              },
-            });
-          } else {
-            navigation.navigate("GroupChat", {
-              groupId: c.id,
-              groupName: c.name,
-              initialGroupData: { name: c.name, avatarUrl: c.avatarUrl },
-            });
-          }
+          void (async () => {
+            if (c.type === "dm") {
+              try {
+                await prepareDmThreadEntry({
+                  avatarUrl: c.profilePictureUrl || c.avatarUrl,
+                  decorationId: c.decorationId,
+                });
+              } catch (error) {
+                log.warn("[SearchSheet] Failed to warm DM thread identity", {
+                  error,
+                });
+              }
+
+              navigation.navigate("ChatDetail", {
+                friendUid: c.otherUserId,
+                initialData: {
+                  chatId: c.id,
+                  friendName: c.name,
+                  friendAvatar: c.profilePictureUrl || c.avatarUrl,
+                  friendAvatarConfig: c.avatarConfig,
+                  friendDecorationId: c.decorationId,
+                },
+              });
+            } else {
+              try {
+                await prepareGroupThreadEntry(c.id, {
+                  groupAvatarUrl: c.avatarUrl,
+                });
+              } catch (error) {
+                log.warn("[SearchSheet] Failed to warm group thread identity", {
+                  error,
+                });
+              }
+
+              navigation.navigate("GroupChat", {
+                groupId: c.id,
+                groupName: c.name,
+                initialGroupData: { name: c.name, avatarUrl: c.avatarUrl },
+              });
+            }
+          })();
         }, 50);
       } else if (result.type === "message") {
         closeSheet();
         setTimeout(() => {
-          if (result.conversationScope === "dm") {
-            navigation.navigate("ChatDetail", {
-              friendUid: result.otherUserId || result.senderId,
-              targetMessageId: result.messageId,
-              initialData: {
-                chatId: result.conversationId,
-                friendName: result.conversationName,
-                friendAvatar: result.conversationAvatar,
-              },
-            });
-          } else {
-            navigation.navigate("GroupChat", {
-              groupId: result.conversationId,
-              groupName: result.conversationName,
-              targetMessageId: result.messageId,
-              initialGroupData: {
-                name: result.conversationName,
-                avatarUrl: result.conversationAvatar,
-              },
-            });
-          }
+          void (async () => {
+            if (result.conversationScope === "dm") {
+              try {
+                await prepareDmThreadEntry({
+                  avatarUrl: result.conversationAvatar,
+                });
+              } catch (error) {
+                log.warn("[SearchSheet] Failed to warm DM result identity", {
+                  error,
+                });
+              }
+
+              navigation.navigate("ChatDetail", {
+                friendUid: result.otherUserId || result.senderId,
+                targetMessageId: result.messageId,
+                initialData: {
+                  chatId: result.conversationId,
+                  friendName: result.conversationName,
+                  friendAvatar: result.conversationAvatar,
+                },
+              });
+            } else {
+              try {
+                await prepareGroupThreadEntry(result.conversationId, {
+                  groupAvatarUrl: result.conversationAvatar,
+                });
+              } catch (error) {
+                log.warn(
+                  "[SearchSheet] Failed to warm group result identity",
+                  { error },
+                );
+              }
+
+              navigation.navigate("GroupChat", {
+                groupId: result.conversationId,
+                groupName: result.conversationName,
+                targetMessageId: result.messageId,
+                initialGroupData: {
+                  name: result.conversationName,
+                  avatarUrl: result.conversationAvatar,
+                },
+              });
+            }
+          })();
         }, 50);
       }
     },

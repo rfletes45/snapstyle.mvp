@@ -165,8 +165,8 @@ async function validateAppleReceipt(
   receiptData: string,
   expectedProductId: string,
 ): Promise<{ valid: boolean; details: any; transactionId?: string }> {
-  // Get shared secret from config
-  const sharedSecret = functions.config().apple?.shared_secret || "";
+  // Get shared secret from environment
+  const sharedSecret = process.env.APPLE_SHARED_SECRET || "";
 
   // Try production first
   let response = await fetch(APPLE_PRODUCTION_URL, {
@@ -228,8 +228,7 @@ async function validateGooglePurchase(
 ): Promise<{ valid: boolean; details: any; orderId?: string }> {
   // In production, you would use the Google Play Developer API
   // This requires setting up a service account and OAuth
-  const packageName =
-    functions.config().android?.package_name || "com.snapstyle.app";
+  const packageName = process.env.ANDROID_PACKAGE_NAME || "com.snapstyle.app";
 
   // For now, we'll implement a simplified validation
   // In production, use googleapis library:

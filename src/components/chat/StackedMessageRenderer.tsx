@@ -42,6 +42,7 @@ import { useLinkPreviews } from "@/hooks/useLinkPreviews";
 import { extractUrls, hasUrls } from "@/services/linkPreview";
 import type { ReactionSummary } from "@/services/reactions";
 import type { ReplyToMetadata } from "@/types/messaging";
+import { formatChatTimestamp } from "@/utils/chatTimestamp";
 
 // ---------------------------------------------------------------------------
 // Feed layout constants
@@ -177,11 +178,7 @@ export const StackedMessageRenderer: React.FC<StackedMessageRendererProps> =
 
       // ── Format timestamp ──────────────────────────────────────────────
       const formattedTime = React.useMemo(
-        () =>
-          new Date(message.createdAt).toLocaleTimeString("en-US", {
-            hour: "2-digit",
-            minute: "2-digit",
-          }),
+        () => formatChatTimestamp(message.createdAt),
         [message.createdAt],
       );
 
@@ -432,7 +429,7 @@ export const StackedMessageRenderer: React.FC<StackedMessageRendererProps> =
                       <Text
                         style={[
                           s.headerTimestamp,
-                          { color: theme.colors.onSurfaceVariant },
+                          { color: theme.colors.onSurface + "99" },
                         ]}
                       >
                         {formattedTime}

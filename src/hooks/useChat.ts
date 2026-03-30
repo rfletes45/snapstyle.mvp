@@ -50,6 +50,7 @@
 
 import { USE_LOCAL_STORAGE } from "@/constants/featureFlags";
 import type { SenderStyle } from "@/cosmetics/types";
+import { dedupeAndSortMessages } from "@/services/chat/normalizeMessage";
 import { updateReadWatermark as updateDMReadWatermark } from "@/services/chatMembers";
 import {
   getOrCreateDMConversation,
@@ -72,7 +73,6 @@ import {
   ReplyToMetadata,
 } from "@/types/messaging";
 import { createLogger } from "@/utils/log";
-import { dedupeAndSortMessages } from "@/services/chat/normalizeMessage";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FlatList } from "react-native";
 import { useAtBottom, type AtBottomState } from "./chat/useAtBottom";
@@ -404,7 +404,7 @@ export function useChat(config: UseChatConfig): UseChatReturn {
     messageCount: messagesHook.messages.length,
     isKeyboardOpen: keyboard.isKeyboardOpen,
     isAtBottom: scroll.isAtBottom,
-    distanceFromBottom: scroll.distanceFromBottom,
+    distanceRef: scroll.distanceRef,
     messageThreshold: autoscrollMessageThreshold,
     pixelThreshold: autoscrollMessageThreshold * 80, // ~80px per message
     debug,

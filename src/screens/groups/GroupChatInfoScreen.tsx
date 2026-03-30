@@ -9,7 +9,7 @@
  * - Role management (owner only)
  */
 
-import AppImage from "@/components/AppImage";
+import { AppImage } from "@/components/AppImage";
 import { ProfilePictureWithDecoration } from "@/components/profile/ProfilePicture";
 import { ErrorState, LoadingState } from "@/components/ui";
 import {
@@ -27,6 +27,7 @@ import {
   changeMemberRole,
   deleteGroup,
   getGroup,
+  hydrateGroupMembersForDisplay,
   getUserRole,
   leaveGroup,
   migrateGroupPermissions,
@@ -197,30 +198,7 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
     const unsubscribe = subscribeToGroupMembers(
       groupId,
       async (membersData) => {
-        // Enrich members missing profile picture data
-        const enriched = await Promise.all(
-          membersData.map(async (member) => {
-            if (
-              member.profilePictureUrl !== undefined &&
-              member.profilePictureUrl !== null
-            ) {
-              return member;
-            }
-            try {
-              const profile = await getUserProfileByUid(member.uid);
-              if (profile) {
-                return {
-                  ...member,
-                  profilePictureUrl: profile.profilePicture?.url || null,
-                  decorationId: profile.avatarDecoration?.decorationId || null,
-                };
-              }
-            } catch {
-              // Fall back to initials
-            }
-            return member;
-          }),
-        );
+        const enriched = await hydrateGroupMembersForDisplay(membersData);
 
         // Sort: owner first, then admins, then members
         const sorted = [...enriched].sort((a, b) => {

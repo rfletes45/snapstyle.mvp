@@ -5,8 +5,9 @@
  * The client calls this callable function to obtain a token for
  * initializing the Stream Video SDK.
  *
- * Environment config required:
- *   firebase functions:config:set stream.api_key="YOUR_KEY" stream.api_secret="YOUR_SECRET"
+ * Environment variables required (set in firebase-backend/functions/.env):
+ *   STREAM_API_KEY=your_key
+ *   STREAM_API_SECRET=your_secret
  *
  * @module functions/streamToken
  */

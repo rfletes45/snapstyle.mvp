@@ -6,5 +6,6 @@ Object.defineProperty(exports, "cleanupExpiredPushTokens", { enumerable: true, g
 Object.defineProperty(exports, "cleanupExpiredSnaps", { enumerable: true, get: function () { return legacy_1.cleanupExpiredSnaps; } });
 Object.defineProperty(exports, "cleanupExpiredStories", { enumerable: true, get: function () { return legacy_1.cleanupExpiredStories; } });
 Object.defineProperty(exports, "cleanupOldScheduledMessages", { enumerable: true, get: function () { return legacy_1.cleanupOldScheduledMessages; } });
-Object.defineProperty(exports, "streakReminder", { enumerable: true, get: function () { return legacy_1.streakReminder; } });
+var streaks_1 = require("./streaks");
+Object.defineProperty(exports, "streakReminder", { enumerable: true, get: function () { return streaks_1.streakReminder; } });
 //# sourceMappingURL=scheduled.js.map

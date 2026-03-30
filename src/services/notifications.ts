@@ -29,10 +29,10 @@ export interface NotificationSessionState {
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: false,
-    shouldPlaySound: true,
+    shouldPlaySound: false,
     shouldSetBadge: true,
     shouldShowBanner: false,
-    shouldShowList: true,
+    shouldShowList: false,
   }),
 });
 
@@ -103,6 +103,12 @@ export async function registerForPushNotifications(): Promise<string | null> {
       return null;
     }
 
+    if (Platform.OS === "android") {
+      // Expo requires the Android notification channel to exist before asking
+      // for the Expo push token on Android 13+.
+      await setupAndroidChannel();
+    }
+
     const projectId =
       Constants.expoConfig?.extra?.eas?.projectId ??
       "a57e6af7-ac18-4751-90ee-3b9cda7ea645";
@@ -112,10 +118,6 @@ export async function registerForPushNotifications(): Promise<string | null> {
     logger.info("Push token obtained", {
       token: tokenResponse.data.slice(0, 30) + "...",
     });
-
-    if (Platform.OS === "android") {
-      await setupAndroidChannel();
-    }
 
     return tokenResponse.data;
   } catch (error) {

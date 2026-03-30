@@ -62,12 +62,19 @@ export interface WidgetGalleryProps {
 const SCREEN_HEIGHT = Dimensions.get("window").height;
 const SHEET_HEIGHT = Math.round(SCREEN_HEIGHT * 0.92);
 
-const CATEGORY_ORDER = ["profile", "social", "gaming", "activity"] as const;
+const CATEGORY_ORDER = [
+  "profile",
+  "social",
+  "gaming",
+  "activity",
+  "appearance",
+] as const;
 const CATEGORY_META: Record<string, { label: string; icon: string }> = {
   profile: { label: "Profile", icon: "account-circle-outline" },
   social: { label: "Social", icon: "account-group-outline" },
   gaming: { label: "Gaming", icon: "gamepad-variant-outline" },
   activity: { label: "Activity", icon: "lightning-bolt-outline" },
+  appearance: { label: "Appearance", icon: "palette-outline" },
 };
 
 const SIZE_LABELS: Record<string, string> = {

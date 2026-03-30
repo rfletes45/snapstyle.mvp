@@ -27,8 +27,14 @@ export interface AtBottomConfig {
 export interface AtBottomState {
   /** Whether user is at bottom (within threshold) */
   isAtBottom: boolean;
-  /** Distance from bottom in pixels */
+  /** Distance from bottom in pixels (snapshot at last render) */
   distanceFromBottom: number;
+  /**
+   * Ref holding the latest distance from bottom, updated on every scroll
+   * frame.  Prefer this over the `distanceFromBottom` state value when you
+   * need a real-time read inside a callback (e.g. shouldAutoScroll).
+   */
+  distanceRef: { readonly current: number };
   /** Handler to attach to FlatList onScroll */
   onScroll: (event: NativeSyntheticEvent<NativeScrollEvent>) => void;
   /** Handler for scroll end events */
@@ -53,7 +59,9 @@ export function useAtBottom(config: AtBottomConfig = {}): AtBottomState {
   const { threshold = DEFAULT_THRESHOLD, debug = false } = config;
 
   const [isAtBottom, setIsAtBottom] = useState(true); // Start at bottom
-  const [distanceFromBottom, setDistanceFromBottom] = useState(0);
+  // Distance lives in a ref so high-frequency scroll events don't trigger
+  // re-renders.  The ref is exposed directly for real-time reads.
+  const distanceRef = useRef(0);
 
   // Track last known offset for stable updates
   const lastOffsetRef = useRef(0);
@@ -78,51 +86,55 @@ export function useAtBottom(config: AtBottomConfig = {}): AtBottomState {
     [threshold, debug],
   );
 
-  // Scroll event handler - throttled via RN's scrollEventThrottle
+  // Scroll event handler — only commits state on threshold boundary crossing
+  // to avoid re-rendering ChatMessageList (and re-computing dependents like
+  // maintainVisibleContentPosition) on every 16 ms scroll frame.
   const onScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-      const { contentOffset } = event.nativeEvent;
-      const offset = contentOffset.y;
+      const offset = Math.max(0, event.nativeEvent.contentOffset.y);
 
       lastOffsetRef.current = offset;
+      distanceRef.current = offset;
 
-      // For inverted FlatList, offset 0 is the bottom (newest messages)
-      const atBottom = checkIsAtBottom(offset);
-      const distance = Math.max(0, offset);
-
-      // Batch state updates
-      if (atBottom !== isAtBottom || distance !== distanceFromBottom) {
+      // Only update React state when crossing the threshold boundary
+      const atBottom = offset <= threshold;
+      if (atBottom !== isAtBottomRef.current) {
+        isAtBottomRef.current = atBottom;
         setIsAtBottom(atBottom);
-        setDistanceFromBottom(distance);
       }
     },
-    [checkIsAtBottom, isAtBottom, distanceFromBottom],
+    [threshold],
   );
 
-  // Scroll end handlers for final position update
+  // Scroll end handlers commit final position state
   const onScrollEndDrag = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-      const offset = event.nativeEvent.contentOffset.y;
-      const atBottom = checkIsAtBottom(offset);
+      const offset = Math.max(0, event.nativeEvent.contentOffset.y);
+      lastOffsetRef.current = offset;
+      distanceRef.current = offset;
+      const atBottom = offset <= threshold;
+      isAtBottomRef.current = atBottom;
       setIsAtBottom(atBottom);
-      setDistanceFromBottom(Math.max(0, offset));
     },
-    [checkIsAtBottom],
+    [threshold],
   );
 
   const onMomentumScrollEnd = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-      const offset = event.nativeEvent.contentOffset.y;
-      const atBottom = checkIsAtBottom(offset);
+      const offset = Math.max(0, event.nativeEvent.contentOffset.y);
+      lastOffsetRef.current = offset;
+      distanceRef.current = offset;
+      const atBottom = offset <= threshold;
+      isAtBottomRef.current = atBottom;
       setIsAtBottom(atBottom);
-      setDistanceFromBottom(Math.max(0, offset));
     },
-    [checkIsAtBottom],
+    [threshold],
   );
 
   return {
     isAtBottom,
-    distanceFromBottom,
+    distanceFromBottom: distanceRef.current,
+    distanceRef,
     onScroll,
     onScrollEndDrag,
     onMomentumScrollEnd,

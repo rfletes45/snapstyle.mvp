@@ -75,7 +75,6 @@ import {
   View,
 } from "react-native";
 import {
-  Appbar,
   Button,
   Divider,
   IconButton,
@@ -85,10 +84,32 @@ import {
   Text,
   useTheme,
 } from "react-native-paper";
+// Appbar removed — header is now custom Animated.View with safe area insets
+import Animated, {
+  Extrapolation,
+  interpolate,
+  useAnimatedScrollHandler,
+  useAnimatedStyle,
+  useSharedValue,
+} from "react-native-reanimated";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { shareInviteToContact } from "@/services/invites";
 
 const logger = createLogger("screens/friends/FriendsScreen");
+
+const AnimatedSectionList = Animated.createAnimatedComponent(
+  SectionList<FriendWithProfile, AlphaSection>,
+);
+
+// Header animation constants
+const HEADER_ROW_HEIGHT = 48;
+const SEARCH_ROW_HEIGHT = 38;
+const HEADER_EXPANDED = HEADER_ROW_HEIGHT + SEARCH_ROW_HEIGHT; // content height (excl. inset)
+const HEADER_COLLAPSED = HEADER_ROW_HEIGHT; // content height (excl. inset)
+const SCROLL_RANGE = 60; // scroll distance over which the transition occurs
+const SEARCH_BAR_HEIGHT_EXPANDED = 32;
+const SEARCH_BAR_HEIGHT_COLLAPSED = 30;
 
 // Enable LayoutAnimation on Android
 if (
@@ -497,6 +518,67 @@ export default function FriendsScreen({ navigation }: any) {
   const theme = useTheme();
   const { colors } = theme;
   const sectionListRef = useRef<SectionList>(null);
+  const insets = useSafeAreaInsets();
+
+  // ── Scroll-driven header animation ─────────────────────────────
+  const scrollY = useSharedValue(0);
+
+  const scrollHandler = useAnimatedScrollHandler({
+    onScroll: (event) => {
+      scrollY.value = event.contentOffset.y;
+    },
+  });
+
+  const safeTop = insets.top;
+  const headerAnimStyle = useAnimatedStyle(() => ({
+    height: interpolate(
+      scrollY.value,
+      [0, SCROLL_RANGE],
+      [safeTop + HEADER_EXPANDED, safeTop + HEADER_COLLAPSED],
+      Extrapolation.CLAMP,
+    ),
+  }));
+
+  const titleAnimStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(
+      scrollY.value,
+      [0, SCROLL_RANGE * 0.5],
+      [1, 0],
+      Extrapolation.CLAMP,
+    ),
+    transform: [
+      {
+        translateY: interpolate(
+          scrollY.value,
+          [0, SCROLL_RANGE * 0.5],
+          [0, -6],
+          Extrapolation.CLAMP,
+        ),
+      },
+    ],
+  }));
+
+  const searchBarAnimStyle = useAnimatedStyle(() => {
+    const progress = interpolate(
+      scrollY.value,
+      [0, SCROLL_RANGE],
+      [0, 1],
+      Extrapolation.CLAMP,
+    );
+    return {
+      transform: [
+        {
+          translateY: interpolate(progress, [0, 1], [0, -SEARCH_ROW_HEIGHT]),
+        },
+      ],
+      marginHorizontal: interpolate(progress, [0, 1], [Spacing.sm, 48]),
+      height: interpolate(
+        progress,
+        [0, 1],
+        [SEARCH_BAR_HEIGHT_EXPANDED, SEARCH_BAR_HEIGHT_COLLAPSED],
+      ),
+    };
+  });
 
   // Suppress friend-related notifications while on this screen
   useFocusEffect(
@@ -1025,10 +1107,25 @@ export default function FriendsScreen({ navigation }: any) {
   if (loading) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <Appbar.Header style={{ backgroundColor: colors.surface }}>
-          <Appbar.BackAction onPress={() => navigation.goBack()} />
-          <Appbar.Content title="Friends" titleStyle={{ fontWeight: "700" }} />
-        </Appbar.Header>
+        <View
+          style={[
+            styles.staticHeader,
+            { backgroundColor: colors.surface, paddingTop: insets.top },
+          ]}
+        >
+          <IconButton
+            icon="arrow-left"
+            size={24}
+            onPress={() => navigation.goBack()}
+            style={styles.headerBtn}
+          />
+          <Text
+            variant="titleLarge"
+            style={[styles.headerTitle, { color: colors.onSurface, flex: 1 }]}
+          >
+            Friends
+          </Text>
+        </View>
         <LoadingState message="Loading your friends..." />
       </View>
     );
@@ -1037,10 +1134,25 @@ export default function FriendsScreen({ navigation }: any) {
   if (error) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <Appbar.Header style={{ backgroundColor: colors.surface }}>
-          <Appbar.BackAction onPress={() => navigation.goBack()} />
-          <Appbar.Content title="Friends" titleStyle={{ fontWeight: "700" }} />
-        </Appbar.Header>
+        <View
+          style={[
+            styles.staticHeader,
+            { backgroundColor: colors.surface, paddingTop: insets.top },
+          ]}
+        >
+          <IconButton
+            icon="arrow-left"
+            size={24}
+            onPress={() => navigation.goBack()}
+            style={styles.headerBtn}
+          />
+          <Text
+            variant="titleLarge"
+            style={[styles.headerTitle, { color: colors.onSurface, flex: 1 }]}
+          >
+            Friends
+          </Text>
+        </View>
         <ErrorState
           title="Something went wrong"
           message={error}
@@ -1112,54 +1224,76 @@ export default function FriendsScreen({ navigation }: any) {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* ── Header ──────────────────────────────────────────────── */}
-      <Appbar.Header style={{ backgroundColor: colors.surface }}>
-        <Appbar.BackAction onPress={() => navigation.goBack()} />
-        <Appbar.Content
-          title="Friends"
-          titleStyle={{ fontWeight: "700" }}
-          subtitle={
-            friends.length > 0
-              ? `${friends.length} friend${friends.length !== 1 ? "s" : ""}`
-              : undefined
-          }
-        />
-        <Appbar.Action
-          icon="account-plus-outline"
-          onPress={() => setAddFriendsOpen(true)}
-          accessibilityLabel="Add friends"
-        />
-      </Appbar.Header>
-
-      {/* ── Search ──────────────────────────────────────────────── */}
-      <View
-        style={[styles.searchContainer, { backgroundColor: colors.surface }]}
+      {/* ── Animated Header ─────────────────────────────────────── */}
+      <Animated.View
+        style={[
+          styles.headerContainer,
+          { backgroundColor: colors.surface, paddingTop: insets.top },
+          headerAnimStyle,
+        ]}
       >
-        <Searchbar
-          placeholder="Search friends..."
-          onChangeText={setSearchQuery}
-          value={searchQuery}
-          style={[
-            styles.searchbar,
-            {
-              backgroundColor: colors.surfaceVariant,
-              borderRadius: BorderRadius.full,
-            },
-          ]}
-          inputStyle={{ fontSize: 14, alignSelf: "center", paddingVertical: 0 }}
-          elevation={0}
-          accessibilityLabel="Search friends"
-        />
-      </View>
+        {/* Top row: back arrow | title | add friend */}
+        <View style={styles.headerTopRow}>
+          <IconButton
+            icon="arrow-left"
+            size={24}
+            onPress={() => navigation.goBack()}
+            style={styles.headerBtn}
+            accessibilityLabel="Go back"
+          />
+          <Animated.View style={[styles.titleContainer, titleAnimStyle]}>
+            <Text
+              variant="titleLarge"
+              style={[styles.headerTitle, { color: colors.onSurface }]}
+              numberOfLines={1}
+            >
+              Friends
+            </Text>
+            {friends.length > 0 && (
+              <Text
+                variant="bodySmall"
+                style={{ color: colors.onSurfaceVariant }}
+              >
+                {friends.length} friend{friends.length !== 1 ? "s" : ""}
+              </Text>
+            )}
+          </Animated.View>
+          <IconButton
+            icon="account-plus-outline"
+            size={24}
+            onPress={() => setAddFriendsOpen(true)}
+            style={styles.headerBtn}
+            accessibilityLabel="Add friends"
+          />
+        </View>
+
+        {/* Search bar — animates from row 2 up into row 1 */}
+        <Animated.View style={[styles.searchAnimWrapper, searchBarAnimStyle]}>
+          <Searchbar
+            placeholder="Search friends..."
+            onChangeText={setSearchQuery}
+            value={searchQuery}
+            style={[
+              styles.searchbar,
+              { backgroundColor: colors.surfaceVariant },
+            ]}
+            inputStyle={styles.searchInput}
+            elevation={0}
+            accessibilityLabel="Search friends"
+          />
+        </Animated.View>
+      </Animated.View>
 
       {/* ── Main Content — Alphabetical SectionList ─────────────── */}
       <View style={{ flex: 1 }}>
-        <SectionList
-          ref={sectionListRef}
+        <AnimatedSectionList
+          ref={sectionListRef as any}
           sections={alphaSections}
-          keyExtractor={(item) => item.id}
+          keyExtractor={(item: FriendWithProfile) => item.id}
           contentContainerStyle={styles.listContent}
           stickySectionHeadersEnabled
+          onScroll={scrollHandler}
+          scrollEventThrottle={16}
           onScrollToIndexFailed={() => {}}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
@@ -1182,7 +1316,11 @@ export default function FriendsScreen({ navigation }: any) {
               />
             ) : null
           }
-          renderSectionHeader={({ section: { title } }) => (
+          renderSectionHeader={({
+            section: { title },
+          }: {
+            section: AlphaSection;
+          }) => (
             <View
               style={[
                 styles.sectionHeader,
@@ -1197,7 +1335,7 @@ export default function FriendsScreen({ navigation }: any) {
               </Text>
             </View>
           )}
-          renderItem={({ item: friend }) => {
+          renderItem={({ item: friend }: { item: FriendWithProfile }) => {
             const friendUid = friend.users.find((u: string) => u !== uid) || "";
             return (
               <FriendRow
@@ -1329,15 +1467,53 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 
-  /* Search */
-  searchContainer: {
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: Spacing.xs,
+  /* Animated header */
+  headerContainer: {
+    overflow: "hidden",
+  },
+  headerTopRow: {
+    height: HEADER_ROW_HEIGHT,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  headerBtn: {
+    margin: 0,
+  },
+  titleContainer: {
+    flex: 1,
+    justifyContent: "center",
+    paddingHorizontal: 4,
+  },
+  headerTitle: {
+    fontWeight: "700",
+  },
+
+  /* Static header (loading / error states) */
+  staticHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    height: HEADER_ROW_HEIGHT,
+    paddingHorizontal: 4,
+  },
+
+  /* Animated search bar */
+  searchAnimWrapper: {
+    height: SEARCH_BAR_HEIGHT_EXPANDED,
+    justifyContent: "center",
+    marginHorizontal: Spacing.sm,
   },
   searchbar: {
     borderRadius: BorderRadius.full,
-    minHeight: 42,
+    flex: 1,
     justifyContent: "center",
+    height: SEARCH_BAR_HEIGHT_EXPANDED,
+    minHeight: 0,
+  },
+  searchInput: {
+    fontSize: 13,
+    alignSelf: "center",
+    paddingVertical: 0,
+    minHeight: 0,
   },
 
   /* List */

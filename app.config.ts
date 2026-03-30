@@ -14,6 +14,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   ios: {
     supportsTablet: true,
     bundleIdentifier: "com.vibeapp.mobile",
+    googleServicesFile: "./GoogleService-Info.plist",
     buildNumber: "12",
     infoPlist: {
       // Camera & Microphone permissions

@@ -18,6 +18,7 @@
 
 import AppImage from "@/components/AppImage";
 import { AttachmentV2 } from "@/types/messaging";
+import { formatChatTimestamp } from "@/utils/chatTimestamp";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { memo, useCallback, useRef, useState } from "react";
 import {
@@ -315,9 +316,7 @@ export const MediaViewerModal = memo(function MediaViewerModal({
   }
 
   const currentAttachment = attachments[currentIndex];
-  const formattedTime = timestamp
-    ? timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-    : "";
+  const formattedTime = timestamp ? formatChatTimestamp(timestamp) : "";
 
   return (
     <Modal

@@ -7,11 +7,19 @@
  * @module components/profile/ProfilePicture/ProfilePicture
  */
 
-import AppImage from "@/components/AppImage";
+import { AppImage } from "@/components/AppImage";
 import { useColors } from "@/store/ThemeContext";
-import React, { useState } from "react";
+import { buildRemoteImageSource, normalizeRemoteImageUrl } from "@/utils/remoteImageSource";
+import React, { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, StyleSheet, View, ViewStyle } from "react-native";
 import { InitialsAvatar } from "./InitialsAvatar";
+
+/**
+ * Delay (ms) before showing the loading spinner. Images that load from
+ * the expo-image memory / disk cache resolve in <16 ms, so a short
+ * grace period prevents the spinner from flashing for cached images.
+ */
+const LOADING_GRACE_MS = 150;
 
 export interface ProfilePictureProps {
   /** Profile picture URL (null for fallback) */
@@ -46,21 +54,55 @@ export function ProfilePicture({
   onError,
 }: ProfilePictureProps) {
   const colors = useColors();
-  const [isLoading, setIsLoading] = useState(true);
+  const [hasLoaded, setHasLoaded] = useState(false);
+  const [showSpinner, setShowSpinner] = useState(false);
   const [hasError, setHasError] = useState(false);
+  const graceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Determine which URL to use
-  const imageUrl = useThumbnail && thumbnailUrl ? thumbnailUrl : url;
+  const imageUrl = normalizeRemoteImageUrl(
+    useThumbnail && thumbnailUrl ? thumbnailUrl : url,
+  );
+  const imageSource = buildRemoteImageSource(imageUrl);
+
+  useEffect(() => {
+    setHasLoaded(false);
+    setShowSpinner(false);
+    setHasError(false);
+  }, [imageUrl]);
+
+  // Start the grace timer on mount. If the image loads within LOADING_GRACE_MS
+  // the spinner never appears. Otherwise we show it until onLoad fires.
+  useEffect(() => {
+    if (!imageUrl) return;
+    if (hasLoaded) return;
+    graceTimerRef.current = setTimeout(() => {
+      setShowSpinner(true);
+    }, LOADING_GRACE_MS);
+    return () => {
+      if (graceTimerRef.current) clearTimeout(graceTimerRef.current);
+    };
+  }, [hasLoaded, imageUrl]);
 
   // Handle image load
   const handleLoad = () => {
-    setIsLoading(false);
+    setHasLoaded(true);
+    setShowSpinner(false);
+    if (graceTimerRef.current) {
+      clearTimeout(graceTimerRef.current);
+      graceTimerRef.current = null;
+    }
     onLoad?.();
   };
 
   // Handle image error
   const handleError = () => {
-    setIsLoading(false);
+    setHasLoaded(true);
+    setShowSpinner(false);
+    if (graceTimerRef.current) {
+      clearTimeout(graceTimerRef.current);
+      graceTimerRef.current = null;
+    }
     setHasError(true);
     onError?.();
   };
@@ -83,7 +125,7 @@ export function ProfilePicture({
       ]}
     >
       <AppImage
-        source={{ uri: imageUrl }}
+        source={imageSource}
         style={[
           styles.image,
           {
@@ -100,8 +142,8 @@ export function ProfilePicture({
         priority="high"
       />
 
-      {/* Loading overlay */}
-      {showLoading && isLoading && (
+      {/* Loading overlay – only shown after grace period for non-cached images */}
+      {showLoading && showSpinner && !hasLoaded && (
         <View
           style={[
             styles.loadingOverlay,

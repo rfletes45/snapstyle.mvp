@@ -33,11 +33,62 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.onMessageRequestCreatedNotification = exports.onNewGroupMessageV2 = exports.onNewMessage = void 0;
+exports.onPushTokenRegistered = exports.onMessageRequestCreatedNotification = exports.onNewGroupMessageV2 = exports.onNewMessage = void 0;
 const admin = __importStar(require("firebase-admin"));
 const functions = __importStar(require("firebase-functions"));
 const notificationCenter_1 = require("./notificationCenter");
+const streaks_1 = require("./streaks");
 const db = admin.firestore();
+/**
+ * Retrieve all active push tokens for a user.  Used to build the
+ * `excludeTokens` list so we never deliver a notification to the
+ * sender's own device.
+ */
+async function getUserPushTokens(uid) {
+    try {
+        const tokenSet = new Set();
+        const snap = await db
+            .collection("Users")
+            .doc(uid)
+            .collection("NotificationDevices")
+            .get();
+        for (const doc of snap.docs) {
+            const token = doc.data()?.expoPushToken;
+            if (typeof token === "string" && token.length > 0) {
+                tokenSet.add(token);
+            }
+        }
+        const userDoc = await db.collection("Users").doc(uid).get();
+        const legacyToken = userDoc.data()?.expoPushToken;
+        if (typeof legacyToken === "string" && legacyToken.length > 0) {
+            tokenSet.add(legacyToken);
+        }
+        return Array.from(tokenSet);
+    }
+    catch {
+        return [];
+    }
+}
+async function revokeDuplicateLegacyRootTokens(ownerUid, token) {
+    const staleRootSnap = await db
+        .collection("Users")
+        .where("expoPushToken", "==", token)
+        .get();
+    const staleRootWrites = [];
+    for (const userDoc of staleRootSnap.docs) {
+        if (userDoc.id === ownerUid)
+            continue;
+        functions.logger.info(`[onPushTokenRegistered] Clearing stale legacy root token from user ${userDoc.id} ` +
+            `- token now owned by ${ownerUid}`);
+        staleRootWrites.push(userDoc.ref.set({
+            expoPushToken: admin.firestore.FieldValue.delete(),
+        }, { merge: true }));
+    }
+    if (staleRootWrites.length > 0) {
+        await Promise.all(staleRootWrites);
+        functions.logger.info(`[onPushTokenRegistered] Cleared ${staleRootWrites.length} stale legacy root token(s) for ${ownerUid}`);
+    }
+}
 function buildMessagePreview(kind, text) {
     if (kind === "text" && text) {
         return text.length > 120 ? `${text.slice(0, 117)}...` : text;
@@ -119,8 +170,8 @@ function buildDmCopy(params) {
     const { senderName, previewText, previewMode } = params;
     if (previewMode === "generic") {
         return {
-            title: "New message",
-            body: "Open Vibe to view it",
+            title: "Vibe",
+            body: "You have a new message",
         };
     }
     if (previewMode === "sender_only") {
@@ -138,21 +189,23 @@ function buildGroupCopy(params) {
     const { senderName, groupName, previewText, previewMode, mentioned } = params;
     if (previewMode === "generic") {
         return {
-            title: mentioned ? `${groupName}` : groupName,
-            body: mentioned ? "You were mentioned in a message" : "New message",
+            title: groupName,
+            body: mentioned ? "You were mentioned" : "New message",
         };
     }
     if (previewMode === "sender_only") {
         return {
-            title: mentioned ? `${groupName}` : groupName,
+            title: groupName,
             body: mentioned
                 ? `${senderName} mentioned you`
                 : `${senderName} sent a message`,
         };
     }
     return {
-        title: mentioned ? `${groupName} - mentioned you` : groupName,
-        body: previewText,
+        title: groupName,
+        body: mentioned
+            ? `${senderName} mentioned you: ${previewText}`
+            : `${senderName}: ${previewText}`,
     };
 }
 exports.onNewMessage = functions.firestore
@@ -174,6 +227,15 @@ exports.onNewMessage = functions.firestore
     if (!recipientUid)
         return null;
     const notifyLevel = await getDmNotifyLevel(chatId, recipientUid);
+    // Always update streak tracking regardless of notification preferences.
+    // Streak logic runs in its own try/catch so notification failures don't
+    // block streak updates and vice-versa.
+    try {
+        await (0, streaks_1.updateStreakOnMessage)(senderId, recipientUid);
+    }
+    catch (streakErr) {
+        console.error("[onNewMessage] Streak update failed:", streakErr);
+    }
     if (notifyLevel === "none") {
         return null;
     }
@@ -187,6 +249,9 @@ exports.onNewMessage = functions.firestore
         previewText,
         previewMode: notificationPreview,
     });
+    // Collect sender's push tokens so we can exclude them from delivery.
+    // This prevents self-notifications when a stale token mapping exists.
+    const senderTokens = await getUserPushTokens(senderId);
     await (0, notificationCenter_1.notifyUser)({
         recipientUid,
         type: "dm_message",
@@ -213,6 +278,7 @@ exports.onNewMessage = functions.firestore
             friendUid: senderId,
         },
         respectConversationMute: true,
+        excludeTokens: senderTokens,
     });
     return null;
 });
@@ -244,6 +310,8 @@ exports.onNewGroupMessageV2 = functions.firestore
         ? message.senderName
         : await getUserDisplayName(senderId);
     const previewText = buildMessagePreview(String(message.kind || message.type || "text"), message.text || message.content);
+    // Collect sender's push tokens so we can exclude them from delivery.
+    const senderTokens = await getUserPushTokens(senderId);
     await Promise.all(memberIds
         .filter((uid) => uid !== senderId)
         .map(async (recipientUid) => {
@@ -289,6 +357,7 @@ exports.onNewGroupMessageV2 = functions.firestore
                 mentioned,
             },
             respectConversationMute: true,
+            excludeTokens: senderTokens,
         });
     }));
     return null;
@@ -304,11 +373,10 @@ exports.onMessageRequestCreatedNotification = functions.firestore
         category: "message",
         dedupeKey: `message_request:${recipientUid}:${chatId}`,
         collapseKey: `message_request:${recipientUid}`,
-        title: "New message request",
-        body: typeof data.messagePreview === "string" &&
-            data.messagePreview.length > 0
-            ? data.messagePreview
-            : `${data.requesterName || "Someone"} wants to message you`,
+        title: "Message Request",
+        body: typeof data.requesterName === "string" && data.requesterName.length > 0
+            ? `${data.requesterName} wants to message you`
+            : "Someone wants to send you a message",
         actorUid: typeof data.requesterId === "string" ? data.requesterId : undefined,
         actorName: typeof data.requesterName === "string" ? data.requesterName : "Someone",
         conversationId: chatId,
@@ -330,6 +398,64 @@ exports.onMessageRequestCreatedNotification = functions.firestore
             requesterId: typeof data.requesterId === "string" ? data.requesterId : undefined,
         },
     });
+    return null;
+});
+/**
+ * Enforce push-token uniqueness across users.
+ *
+ * When a NotificationDevice document is created or updated with a non-null
+ * push token, this trigger searches for ALL other users' NotificationDevices
+ * documents that share the same token and invalidates them.  This prevents
+ * the "stale token after account switch" bug where a device token remains
+ * active under a previous user.
+ */
+exports.onPushTokenRegistered = functions.firestore
+    .document("Users/{uid}/NotificationDevices/{deviceId}")
+    .onWrite(async (change, context) => {
+    const after = change.after.exists ? change.after.data() : null;
+    if (!after)
+        return null; // deletion — nothing to clean up
+    const token = after.expoPushToken;
+    if (typeof token !== "string" || token.length === 0)
+        return null;
+    const ownerUid = context.params.uid;
+    // Use a collectionGroup query to find ALL NotificationDevices with
+    // this token, then invalidate matches that belong to a different user.
+    try {
+        const snap = await db
+            .collectionGroup("NotificationDevices")
+            .where("expoPushToken", "==", token)
+            .get();
+        const staleWrites = [];
+        for (const doc of snap.docs) {
+            // Path: Users/{uid}/NotificationDevices/{deviceId}
+            const parts = doc.ref.path.split("/");
+            const docOwnerUid = parts[1];
+            if (docOwnerUid === ownerUid)
+                continue; // same user — skip
+            functions.logger.info(`[onPushTokenRegistered] Revoking stale token from user ${docOwnerUid} ` +
+                `(device ${doc.id}) — token now owned by ${ownerUid}`);
+            staleWrites.push(doc.ref.set({
+                expoPushToken: null,
+                pushEnabled: false,
+                revokedBy: ownerUid,
+                revokedAt: admin.firestore.FieldValue.serverTimestamp(),
+            }, { merge: true }));
+        }
+        if (staleWrites.length > 0) {
+            await Promise.all(staleWrites);
+            functions.logger.info(`[onPushTokenRegistered] Revoked ${staleWrites.length} stale token(s) for token owned by ${ownerUid}`);
+        }
+    }
+    catch (err) {
+        functions.logger.error("[onPushTokenRegistered] Failed to clean stale tokens:", err);
+    }
+    try {
+        await revokeDuplicateLegacyRootTokens(ownerUid, token);
+    }
+    catch (err) {
+        functions.logger.error("[onPushTokenRegistered] Failed to clean stale legacy root tokens:", err);
+    }
     return null;
 });
 //# sourceMappingURL=notifications.js.map

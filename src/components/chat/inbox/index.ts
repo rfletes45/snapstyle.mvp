@@ -52,3 +52,6 @@ export type { FriendRequestItemProps } from "./FriendRequestItem";
 
 export { GroupInviteItem } from "./GroupInviteItem";
 export type { GroupInviteItemProps } from "./GroupInviteItem";
+
+export { ContactsOnboardingCard } from "./ContactsOnboardingCard";
+export type { ContactsOnboardingCardProps } from "./ContactsOnboardingCard";

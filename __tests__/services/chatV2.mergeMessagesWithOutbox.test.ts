@@ -1,9 +1,7 @@
 import { mergeMessagesWithOutbox } from "../../src/services/messaging/messageMerge";
 import type { MessageV2, OutboxItem } from "../../src/types/messaging";
 
-function makeOutboxItem(
-  overrides: Partial<OutboxItem> = {},
-): OutboxItem {
+function makeOutboxItem(overrides: Partial<OutboxItem> = {}): OutboxItem {
   return {
     messageId: "outbox-1",
     scope: "dm",
@@ -18,9 +16,7 @@ function makeOutboxItem(
   };
 }
 
-function makeServerMessage(
-  overrides: Partial<MessageV2> = {},
-): MessageV2 {
+function makeServerMessage(overrides: Partial<MessageV2> = {}): MessageV2 {
   return {
     id: "server-1",
     scope: "dm",
@@ -91,8 +87,16 @@ describe("mergeMessagesWithOutbox", () => {
 
   it("keeps combined output ordered newest-first", () => {
     const serverMessages: MessageV2[] = [
-      makeServerMessage({ id: "server-old", serverReceivedAt: 2_000 }),
-      makeServerMessage({ id: "server-new", serverReceivedAt: 8_000 }),
+      makeServerMessage({
+        id: "server-old",
+        createdAt: 2_000,
+        serverReceivedAt: 2_100,
+      }),
+      makeServerMessage({
+        id: "server-new",
+        createdAt: 8_000,
+        serverReceivedAt: 8_100,
+      }),
     ];
     const outboxItems: OutboxItem[] = [
       makeOutboxItem({

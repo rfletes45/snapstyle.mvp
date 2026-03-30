@@ -162,7 +162,7 @@ export default function CallsScreen() {
   // Render
   // ---------------------------------------------------------------------------
 
-  // Disabled state for Expo Go
+  // Disabled state — native call modules are not available in this build
   if (!callsEnabled) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -175,19 +175,16 @@ export default function CallsScreen() {
         </View>
         <View style={styles.emptyContainer}>
           <MaterialCommunityIcons
-            name="phone-off"
+            name="phone-outline"
             size={48}
             color={colors.textMuted}
           />
           <Text style={[styles.emptyTitle, { color: colors.text }]}>
-            Calls Unavailable
+            Calls Coming Soon
           </Text>
           <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
-            Calling features require a development build.{"\n"}Run{" "}
-            <Text style={{ fontFamily: "monospace" }}>
-              npx expo run:android
-            </Text>{" "}
-            or <Text style={{ fontFamily: "monospace" }}>run:ios</Text>.
+            Audio and video calling is not available in this build.{"\n"}
+            Check back for updates!
           </Text>
         </View>
       </View>

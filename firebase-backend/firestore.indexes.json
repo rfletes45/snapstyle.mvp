@@ -603,6 +603,11 @@
       "fieldPath": "deleteAt",
       "ttl": true,
       "indexes": [{ "order": "ASCENDING", "queryScope": "COLLECTION" }]
+    },
+    {
+      "collectionGroup": "NotificationDevices",
+      "fieldPath": "expoPushToken",
+      "indexes": [{ "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }]
     }
   ]
 }

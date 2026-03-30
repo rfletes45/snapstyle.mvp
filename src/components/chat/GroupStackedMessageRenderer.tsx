@@ -33,6 +33,7 @@ import type { MentionableMember } from "@/services/mentionParser";
 import { extractMentionsExact } from "@/services/mentionParser";
 import type { ReactionSummary } from "@/services/reactions";
 import type { MessageV2, ReplyToMetadata } from "@/types/messaging";
+import { formatChatTimestamp } from "@/utils/chatTimestamp";
 
 // ---------------------------------------------------------------------------
 // Feed layout constants
@@ -123,14 +124,6 @@ export const GroupStackedMessageRenderer: React.FC<GroupStackedMessageRendererPr
 
       const imageAttachment = item.attachments?.find((a) => a.kind === "image");
       const voiceAttachment = item.attachments?.find((a) => a.kind === "audio");
-
-      const formatTime = (timestamp: number) => {
-        const date = new Date(timestamp);
-        return date.toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit",
-        });
-      };
 
       // ── Mention-targeted row styling (Discord-like) ───────────────
       // Only highlight the row if the message mentions the current user
@@ -306,10 +299,10 @@ export const GroupStackedMessageRenderer: React.FC<GroupStackedMessageRendererPr
                       <Text
                         style={[
                           gs.headerTimestamp,
-                          { color: colors.textMuted },
+                          { color: colors.textSecondary },
                         ]}
                       >
-                        {formatTime(item.createdAt)}
+                        {formatChatTimestamp(item.createdAt)}
                       </Text>
                     </View>
                   )}
@@ -341,14 +334,9 @@ export const GroupStackedMessageRenderer: React.FC<GroupStackedMessageRendererPr
                     </View>
                   )}
 
-                  {/* Timestamp (group end only, when header didn't show it) */}
-                  {vm.showTimestamp && !vm.isGroupStart && (
-                    <View style={gs.metaRow}>
-                      <Text style={[gs.metaText, { color: colors.textMuted }]}>
-                        {formatTime(item.createdAt)}
-                      </Text>
-                    </View>
-                  )}
+                  {/* Grouped stacked mode: the group-start header row always
+                     owns the single timestamp for the entire group. No
+                     per-bubble footer timestamp is ever rendered here. */}
                 </View>
               </View>
             </TouchableOpacity>

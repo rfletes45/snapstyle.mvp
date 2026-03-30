@@ -32,11 +32,14 @@ import { useFullProfileData } from "@/hooks/useFullProfileData";
 import { usePendingRewards } from "@/hooks/usePendingRewards";
 import { useProfileData } from "@/hooks/useProfileData";
 import { useProfilePicture } from "@/hooks/useProfilePicture";
+import { useTasksSummary } from "@/hooks/useTasksSummary";
 import { useTopStreaks } from "@/hooks/useTopStreaks";
+import { useWallet } from "@/hooks/useWallet";
 import { fetchUserActivities } from "@/services/activityFeed";
 
 import { useAuth } from "@/store/AuthContext";
-import { useColors } from "@/store/ThemeContext";
+import { useConversationDisplayMode } from "@/store/ConversationDisplayModeContext";
+import { useAppTheme, useColors } from "@/store/ThemeContext";
 import { useUser } from "@/store/UserContext";
 import type { ProfileBio, ProfileStatus } from "@/types/userProfile";
 
@@ -136,6 +139,13 @@ export default function OwnProfileScreen({
   } = useGameStatsV4();
 
   const pendingRewards = usePendingRewards();
+
+  // ── New Widget Data Hooks ───────────────────────────────────────────
+
+  const tasksSummary = useTasksSummary(currentFirebaseUser?.uid);
+  const { wallet, loading: walletLoading } = useWallet();
+  const { themeMode, setThemeMode } = useAppTheme();
+  const { displayMode, setDisplayMode } = useConversationDisplayMode();
 
   // ── Recent Activity (for widget) ────────────────────────────────────
 
@@ -354,6 +364,34 @@ export default function OwnProfileScreen({
       "recent-activity": {
         activities: recentActivities,
       },
+      "tasks-overview": {
+        dailyCompleted: tasksSummary.dailyCompleted,
+        dailyTotal: tasksSummary.dailyTotal,
+        monthlyCompleted: tasksSummary.monthlyCompleted,
+        monthlyTotal: tasksSummary.monthlyTotal,
+        isOwner: true,
+        isCustomizing: isCustomizing,
+        onPress: () => navigation.navigate("Tasks"),
+      },
+      "wallet-balance": {
+        balance: wallet?.tokensBalance ?? 0,
+        loading: walletLoading,
+        isOwner: true,
+        isCustomizing: isCustomizing,
+        onPress: () => navigation.navigate("Wallet"),
+      },
+      "theme-mode": {
+        themeMode,
+        isOwner: true,
+        isCustomizing: isCustomizing,
+        onChangeMode: setThemeMode,
+      },
+      "chat-layout-mode": {
+        chatLayoutMode: displayMode,
+        isOwner: true,
+        isCustomizing: isCustomizing,
+        onChangeMode: setDisplayMode,
+      },
     }),
     [
       baseProfile,
@@ -380,6 +418,14 @@ export default function OwnProfileScreen({
       handleEditStatus,
       handleEditName,
       board.actions,
+      tasksSummary,
+      wallet,
+      walletLoading,
+      themeMode,
+      setThemeMode,
+      displayMode,
+      setDisplayMode,
+      isCustomizing,
     ],
   );
 

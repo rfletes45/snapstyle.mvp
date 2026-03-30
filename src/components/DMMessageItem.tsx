@@ -39,6 +39,7 @@ import { useLinkPreviews } from "@/hooks/useLinkPreviews";
 import { extractUrls, hasUrls } from "@/services/linkPreview";
 import type { ReactionSummary } from "@/services/reactions";
 import type { ReplyToMetadata } from "@/types/messaging";
+import { formatChatTimestamp } from "@/utils/chatTimestamp";
 
 const IMAGE_MAX_WIDTH = 240;
 const IMAGE_MAX_HEIGHT = 320;
@@ -528,30 +529,26 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
                   </View>
                 </TouchableOpacity>
 
-                {/* Timestamp and status row - only shown on last message of group */}
-                {showTimestamp && (
-                  <View
+                <View
+                  style={[
+                    styles.timestampStatusRow,
+                    isSentByMe
+                      ? styles.timestampStatusRowSent
+                      : styles.timestampStatusRowReceived,
+                    !showTimestamp && styles.timestampStatusRowHidden,
+                  ]}
+                  pointerEvents="none"
+                >
+                  {renderStatus()}
+                  <Text
                     style={[
-                      styles.timestampStatusRow,
-                      isSentByMe
-                        ? styles.timestampStatusRowSent
-                        : styles.timestampStatusRowReceived,
+                      styles.timestamp,
+                      { color: theme.colors.onSurface + "99" },
                     ]}
                   >
-                    {renderStatus()}
-                    <Text
-                      style={[
-                        styles.timestamp,
-                        { color: theme.colors.onSurfaceVariant },
-                      ]}
-                    >
-                      {new Date(message.createdAt).toLocaleTimeString("en-US", {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
-                    </Text>
-                  </View>
-                )}
+                    {formatChatTimestamp(message.createdAt)}
+                  </Text>
+                </View>
               </View>
             </View>
 
@@ -651,6 +648,9 @@ const styles = StyleSheet.create({
   },
   timestampStatusRowReceived: {
     alignSelf: "flex-start",
+  },
+  timestampStatusRowHidden: {
+    opacity: 0,
   },
   statusContainer: {},
   sendingStatus: {

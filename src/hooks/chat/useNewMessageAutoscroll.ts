@@ -26,7 +26,13 @@ export interface AutoscrollConfig {
   isKeyboardOpen: boolean;
   /** Whether user is at bottom of list */
   isAtBottom: boolean;
-  /** Distance from bottom in pixels */
+  /**
+   * Ref holding the latest distance-from-bottom value (pixels).
+   * Read inside shouldAutoScroll for a real-time value without
+   * adding a state dependency that recreates the callback every frame.
+   */
+  distanceRef?: { readonly current: number };
+  /** @deprecated Use distanceRef instead. Kept for backwards compatibility. */
   distanceFromBottom?: number;
   /** Message threshold for auto-scroll when keyboard closed (default: 30) */
   messageThreshold?: number;
@@ -69,6 +75,7 @@ export function useNewMessageAutoscroll(
     messageCount,
     isKeyboardOpen,
     isAtBottom,
+    distanceRef,
     distanceFromBottom = 0,
     messageThreshold = DEFAULT_MESSAGE_THRESHOLD,
     pixelThreshold = DEFAULT_PIXEL_THRESHOLD,
@@ -82,7 +89,6 @@ export function useNewMessageAutoscroll(
   const prevMessageCountRef = useRef(messageCount);
   const flatListRef = useRef<FlatList<any> | null>(null);
   const wasAtBottomRef = useRef(isAtBottom);
-  const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Set FlatList ref for scrolling
   const setFlatListRef = useCallback((ref: FlatList<any> | null) => {
@@ -114,14 +120,16 @@ export function useNewMessageAutoscroll(
     }
 
     // Rule: Within threshold distance → scroll
-    // Use pixel threshold as a proxy for message count
-    if (distanceFromBottom <= pixelThreshold) {
+    // Read from the ref for a real-time value (avoids stale closure from
+    // state-based distanceFromBottom which lagged behind by a render cycle).
+    const distance = distanceRef?.current ?? distanceFromBottom;
+    if (distance <= pixelThreshold) {
       if (debug) {
         log.debug("Auto-scroll: within threshold", {
           operation: "shouldAutoScroll",
           data: {
             reason: "withinThreshold",
-            distanceFromBottom,
+            distanceFromBottom: distance,
             pixelThreshold,
           },
         });
@@ -135,13 +143,20 @@ export function useNewMessageAutoscroll(
         operation: "shouldAutoScroll",
         data: {
           reason: "tooFar",
-          distanceFromBottom,
+          distanceFromBottom: distance,
           pixelThreshold,
         },
       });
     }
     return false;
-  }, [isKeyboardOpen, isAtBottom, distanceFromBottom, pixelThreshold, debug]);
+  }, [
+    isKeyboardOpen,
+    isAtBottom,
+    distanceRef,
+    distanceFromBottom,
+    pixelThreshold,
+    debug,
+  ]);
 
   // Handle new messages arriving
   const onNewMessages = useCallback(
@@ -227,24 +242,17 @@ export function useNewMessageAutoscroll(
       const result = onNewMessages(messageCount);
 
       if (result.shouldScroll && flatListRef.current) {
-        // Small delay to let the new message render
-        if (scrollTimeoutRef.current) {
-          clearTimeout(scrollTimeoutRef.current);
-        }
-        scrollTimeoutRef.current = setTimeout(() => {
-          flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
-        }, 50);
+        // For an inverted FlatList, offset 0 is the bottom (newest). Use a
+        // non-animated scroll so it completes in one frame and doesn't fight
+        // maintainVisibleContentPosition which adjusts scroll position to
+        // compensate for content-size changes (e.g. grouped-message timestamp
+        // removal).  A delayed animated scroll previously caused visible
+        // jitter on every consecutive send.
+        flatListRef.current.scrollToOffset({ offset: 0, animated: false });
       }
     } else {
       prevMessageCountRef.current = messageCount;
     }
-
-    return () => {
-      if (scrollTimeoutRef.current) {
-        clearTimeout(scrollTimeoutRef.current);
-        scrollTimeoutRef.current = null;
-      }
-    };
   }, [messageCount, onNewMessages]);
 
   return {

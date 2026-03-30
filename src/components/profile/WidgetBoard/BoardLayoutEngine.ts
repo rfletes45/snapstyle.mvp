@@ -155,99 +155,271 @@ export function findNearestSlot(
 }
 
 // =============================================================================
-// Compaction (Gravity)
+// Stable Reflow Engine
 // =============================================================================
 
 /**
- * Compact all visible widgets upward (vertical gravity) while preserving
- * each widget's horizontal (x) position. Only shifts x if the widget
- * can't fit at its current column due to size/bounds constraints.
+ * Return visible widgets in deterministic visual order:
+ * primary: y ascending, secondary: x ascending, tertiary: instanceId.
+ */
+export function getVisualOrder(widgets: WidgetInstance[]): WidgetInstance[] {
+  return [...widgets]
+    .filter((w) => w.visible)
+    .sort((a, b) => {
+      if (a.y !== b.y) return a.y - b.y;
+      if (a.x !== b.x) return a.x - b.x;
+      return a.instanceId.localeCompare(b.instanceId);
+    });
+}
+
+/** Get the grid rectangle for a widget (position + span). */
+export function getWidgetRect(widget: WidgetInstance): GridRect {
+  const span = SIZE_PRESETS[widget.size];
+  return { x: widget.x, y: widget.y, w: span.w, h: span.h };
+}
+
+/** Check if two grid rectangles overlap. */
+function rectsOverlap(a: GridRect, b: GridRect): boolean {
+  return (
+    a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y
+  );
+}
+
+/** Get the bottom edge (max row) of placed visible widgets. */
+function getMaxPlacedRow(placed: WidgetInstance[]): number {
+  let max = 0;
+  for (const w of placed) {
+    if (!w.visible) continue;
+    const span = SIZE_PRESETS[w.size];
+    const bottom = w.y + span.h;
+    if (bottom > max) max = bottom;
+  }
+  return max;
+}
+
+/**
+ * Find the best deterministic position for a widget.
+ *
+ * Search policy (in order):
+ * 1. Current position — if y >= searchStart and slot is free
+ * 2. Preferred column — scan rows from searchStart downward
+ * 3. Row-major scan — scan (row, col) from searchStart downward
+ * 4. Absolute fallback — bottom of the grid
+ *
+ * Never uses spiral/radius search or Euclidean distance.
+ */
+function findStablePosition(
+  placed: WidgetInstance[],
+  preferredX: number,
+  searchStart: number,
+  span: WidgetSpan,
+  currentY?: number,
+): { x: number; y: number } {
+  const grid = buildOccupancyMap(placed);
+  const maxRow = getMaxPlacedRow(placed) + 20;
+
+  // Strategy 1: try exact current position (minimize movement)
+  if (currentY !== undefined && currentY >= searchStart) {
+    if (canPlace(grid, { x: preferredX, y: currentY, w: span.w, h: span.h })) {
+      return { x: preferredX, y: currentY };
+    }
+  }
+
+  // Strategy 2: preferred column, scan rows from searchStart
+  for (let row = searchStart; row <= maxRow; row++) {
+    if (canPlace(grid, { x: preferredX, y: row, w: span.w, h: span.h })) {
+      return { x: preferredX, y: row };
+    }
+  }
+
+  // Strategy 3: deterministic row-major scan from searchStart
+  for (let row = searchStart; row <= maxRow; row++) {
+    for (let col = 0; col <= GRID_COLUMNS - span.w; col++) {
+      if (canPlace(grid, { x: col, y: row, w: span.w, h: span.h })) {
+        return { x: col, y: row };
+      }
+    }
+  }
+
+  // Absolute fallback — place at the grid bottom
+  return { x: 0, y: getMaxPlacedRow(placed) };
+}
+
+/**
+ * Stable repack with a pinned (active) widget.
+ *
+ * Used for drag preview, drag commit, resize preview, and resize commit.
+ * The pinned widget is placed at its target rect first. All other visible
+ * widgets are then repacked in their original visual order:
+ *   - Widgets whose bottom edge is above the affected region AND that
+ *     don't overlap the pinned rect are frozen in place (fixed prefix).
+ *   - Remaining widgets are packed deterministically (affected suffix),
+ *     preserving their relative visual order.
  *
  * Deterministic: same input always produces the same output.
- * Returns a new widget array with updated x,y positions.
  */
-export function compactWidgets(widgets: WidgetInstance[]): WidgetInstance[] {
-  // Sort by current position: top-to-bottom, then left-to-right
-  const visible = widgets
-    .filter((w) => w.visible)
-    .sort((a, b) => (a.y !== b.y ? a.y - b.y : a.x - b.x));
-
+export function stableRepack(
+  widgets: WidgetInstance[],
+  pinnedId: string,
+  targetX: number,
+  targetY: number,
+  targetSize?: WidgetSizeKey,
+): WidgetInstance[] | null {
+  const visible = widgets.filter((w) => w.visible);
   const hidden = widgets.filter((w) => !w.visible);
 
-  // Rebuild occupancy incrementally
-  const placed: WidgetInstance[] = [];
-  let maxRow = 0;
+  const pinned = visible.find((w) => w.instanceId === pinnedId);
+  if (!pinned) return null;
 
-  for (const widget of visible) {
+  // Compute visual order of non-pinned widgets BEFORE the move
+  const others = getVisualOrder(
+    visible.filter((w) => w.instanceId !== pinnedId),
+  );
+
+  // Compute pinned widget's new rect
+  const newSize = targetSize ?? pinned.size;
+  const newSpan = SIZE_PRESETS[newSize];
+  const cx = Math.max(0, Math.min(targetX, GRID_COLUMNS - newSpan.w));
+  const cy = Math.max(0, targetY);
+  const pinnedRect: GridRect = { x: cx, y: cy, w: newSpan.w, h: newSpan.h };
+  const pinnedPlaced: WidgetInstance = {
+    ...pinned,
+    x: cx,
+    y: cy,
+    size: newSize,
+  };
+
+  // Determine affected start row (min of old and new top edge)
+  const oldRect = getWidgetRect(pinned);
+  const affectedStartRow = Math.min(oldRect.y, cy);
+
+  // Partition: widgets above the affected zone that don't overlap the
+  // pinned rect are frozen; everything else gets repacked.
+  const fixed: WidgetInstance[] = [];
+  const affected: WidgetInstance[] = [];
+
+  for (const w of others) {
+    const wRect = getWidgetRect(w);
+    const wBottom = wRect.y + wRect.h;
+    if (wBottom <= affectedStartRow && !rectsOverlap(wRect, pinnedRect)) {
+      fixed.push(w);
+    } else {
+      affected.push(w); // keeps visual order from `others`
+    }
+  }
+
+  // Lock fixed prefix + pinned widget
+  const placed: WidgetInstance[] = [...fixed, pinnedPlaced];
+
+  // Pack affected suffix in visual order, using minRow to prevent
+  // a later widget from leapfrogging an earlier one.
+  let minRow = 0;
+  for (const widget of affected) {
     const span = SIZE_PRESETS[widget.size];
-    const tempGrid = buildOccupancyMap(placed);
-
-    // Preserve horizontal position — only compact vertically
-    let targetX = widget.x;
-    if (targetX + span.w > GRID_COLUMNS) {
-      targetX = Math.max(0, GRID_COLUMNS - span.w);
+    let preferredX = widget.x;
+    if (preferredX + span.w > GRID_COLUMNS) {
+      preferredX = Math.max(0, GRID_COLUMNS - span.w);
     }
 
-    // Scan rows top-down at the preserved x-column
-    let bestPos: { x: number; y: number } | null = null;
-    for (let row = 0; row <= maxRow + 1; row++) {
-      const expandedGrid = ensureGridRows(tempGrid, row + span.h);
-      if (
-        canPlace(expandedGrid, { x: targetX, y: row, w: span.w, h: span.h })
-      ) {
-        bestPos = { x: targetX, y: row };
-        break;
-      }
-    }
+    const searchStart = Math.max(affectedStartRow, minRow);
+    // Do NOT pass widget.y (strategy 1) here. Affected widgets must
+    // repack from the top of the affected region so that vacancies
+    // left by the dragged widget are healed upward.
+    const pos = findStablePosition(placed, preferredX, searchStart, span);
 
-    // Fallback: if x-preserving placement fails, search all columns
-    if (!bestPos) {
-      outerLoop: for (let row = 0; row <= maxRow + 2; row++) {
-        for (let col = 0; col <= GRID_COLUMNS - span.w; col++) {
-          const expandedGrid = ensureGridRows(tempGrid, row + span.h);
-          if (
-            canPlace(expandedGrid, { x: col, y: row, w: span.w, h: span.h })
-          ) {
-            bestPos = { x: col, y: row };
-            break outerLoop;
-          }
-        }
-      }
-    }
-
-    if (!bestPos) {
-      // Absolute fallback — put at end
-      bestPos = { x: 0, y: maxRow };
-    }
-
-    const updated: WidgetInstance = {
-      ...widget,
-      x: bestPos.x,
-      y: bestPos.y,
-      updatedAt: widget.updatedAt,
-    };
-    placed.push(updated);
-
-    const bottom = bestPos.y + span.h;
-    if (bottom > maxRow) maxRow = bottom;
+    placed.push({ ...widget, x: pos.x, y: pos.y });
+    minRow = pos.y; // next widget must be at this row or later
   }
 
   return [...placed, ...hidden];
 }
 
 /**
- * Ensure the occupancy grid has at least `rows` rows, extending with
- * empty cells if needed.
+ * Stable compact (gravity) without a pinned widget.
+ *
+ * Used after remove, restore, add, and as the general compaction.
+ * Processes all visible widgets in visual order and packs each one
+ * at the topmost valid position, preferring the widget's current column.
+ *
+ * Deterministic: same input always produces the same output.
  */
-function ensureGridRows(grid: OccupancyCell[], rows: number): OccupancyCell[] {
-  const currentRows = getGridRows(grid);
-  if (currentRows >= rows) return grid;
-  const extra = (rows - currentRows) * GRID_COLUMNS;
-  const extension: OccupancyCell[] = [];
-  for (let i = 0; i < extra; i++) {
-    extension.push({ instanceId: null });
+export function stableCompact(widgets: WidgetInstance[]): WidgetInstance[] {
+  const ordered = getVisualOrder(widgets);
+  const hidden = widgets.filter((w) => !w.visible);
+
+  const placed: WidgetInstance[] = [];
+
+  for (const widget of ordered) {
+    const span = SIZE_PRESETS[widget.size];
+    let targetX = widget.x;
+    if (targetX + span.w > GRID_COLUMNS) {
+      targetX = Math.max(0, GRID_COLUMNS - span.w);
+    }
+
+    // Compact always searches from row 0 (pull upward)
+    const pos = findStablePosition(placed, targetX, 0, span);
+    placed.push({ ...widget, x: pos.x, y: pos.y });
   }
-  return [...grid, ...extension];
+
+  return [...placed, ...hidden];
+}
+
+// =============================================================================
+// Compaction (public API — delegates to stableCompact)
+// =============================================================================
+
+/**
+ * Compact all visible widgets upward (vertical gravity) while preserving
+ * each widget's horizontal (x) position when possible.
+ *
+ * Deterministic: same input always produces the same output.
+ * Returns a new widget array with updated x,y positions.
+ */
+export function compactWidgets(widgets: WidgetInstance[]): WidgetInstance[] {
+  return stableCompact(widgets);
+}
+
+// =============================================================================
+// Coupled Post-Drop Settlement
+// =============================================================================
+
+/**
+ * Settle the board after a drag-drop or resize commit.
+ *
+ * Runs stableCompact on the resolved layout to:
+ * 1. Compact the dropped widget upward to the highest valid row
+ * 2. Compact all suffix widgets beneath it upward together
+ * 3. Heal any remaining vertical gaps in the affected region
+ *
+ * This is the "coupled settlement" — the active widget and the suffix
+ * beneath it settle upward as one coherent ordered system. No widget
+ * is allowed to move upward independently while others are left behind.
+ *
+ * Vacancy healing during preview is handled by stableRepack (which
+ * repacks the affected suffix from the top of the affected zone).
+ * This function provides the final upward tightening pass on drop.
+ *
+ * Deterministic: same input always produces the same output.
+ */
+export function settleBoardAfterDrop(
+  widgets: WidgetInstance[],
+  droppedId: string,
+  targetX: number,
+  targetY: number,
+  targetSize?: WidgetSizeKey,
+): WidgetInstance[] | null {
+  // Phases 1-4: resolve conflicts with vacancy healing
+  const resolved = stableRepack(
+    widgets,
+    droppedId,
+    targetX,
+    targetY,
+    targetSize,
+  );
+  if (!resolved) return null;
+
+  // Phase 5: coupled upward settlement of active + affected suffix
+  return stableCompact(resolved);
 }
 
 // =============================================================================
@@ -376,23 +548,46 @@ export function generateDefaultLayout(): WidgetInstance[] {
       createdAt: now,
       updatedAt: now,
     },
+    {
+      instanceId: "default-tasks-overview",
+      widgetType: "tasks-overview",
+      size: "wide",
+      x: 0,
+      y: 8,
+      visible: true,
+      pinned: false,
+      config: {},
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      instanceId: "default-wallet-balance",
+      widgetType: "wallet-balance",
+      size: "small",
+      x: 0,
+      y: 9,
+      visible: true,
+      pinned: false,
+      config: {},
+      createdAt: now,
+      updatedAt: now,
+    },
   ];
 }
 
 // =============================================================================
-// Live Reflow — Conflict Resolution During Drag
+// Live Reflow — Stable Conflict Resolution During Drag
 // =============================================================================
 
 /**
- * Resolve a drag preview layout. The dragged widget is tentatively placed
- * at (targetX, targetY). Any conflicting widgets are relocated to their
- * nearest valid position, deterministically, and the whole layout is then
- * gravity-compacted with the dragged widget's position preserved.
+ * Resolve a drag preview layout using the stable repack engine.
+ *
+ * The dragged widget is placed at (targetX, targetY). All other visible
+ * widgets are repacked in their original visual order, preserving relative
+ * positions. No spiral search, no nearest-slot relocation.
  *
  * Returns a new widget array representing the preview layout, or `null`
- * if placement would be invalid (e.g. out of grid column bounds).
- *
- * This is called continuously during drag to produce live reflow.
+ * if the dragged widget is not found.
  */
 export function resolveConflicts(
   widgets: WidgetInstance[],
@@ -400,195 +595,15 @@ export function resolveConflicts(
   targetX: number,
   targetY: number,
 ): WidgetInstance[] | null {
-  const draggedIdx = widgets.findIndex((w) => w.instanceId === draggedId);
-  if (draggedIdx === -1) return null;
-
-  const dragged = widgets[draggedIdx];
-  const span = SIZE_PRESETS[dragged.size];
-
-  // Clamp to grid bounds
-  const clampedX = Math.max(0, Math.min(targetX, GRID_COLUMNS - span.w));
-  const clampedY = Math.max(0, targetY);
-
-  // Start with the dragged widget in its preview position
-  const preview: WidgetInstance[] = widgets.map((w) =>
-    w.instanceId === draggedId ? { ...w, x: clampedX, y: clampedY } : { ...w },
-  );
-
-  // Build occupancy excluding the dragged widget to find conflicts
-  const draggedRect: GridRect = {
-    x: clampedX,
-    y: clampedY,
-    w: span.w,
-    h: span.h,
-  };
-
-  // Identify conflicting widgets (those whose footprint overlaps the dragged rect)
-  const conflicting: string[] = [];
-  for (const w of preview) {
-    if (w.instanceId === draggedId || !w.visible) continue;
-    const ws = SIZE_PRESETS[w.size];
-    if (rectsOverlap(draggedRect, { x: w.x, y: w.y, w: ws.w, h: ws.h })) {
-      conflicting.push(w.instanceId);
-    }
-  }
-
-  if (conflicting.length === 0) {
-    // No conflicts — just compact while preserving dragged position
-    return compactWithPinned(preview, draggedId);
-  }
-
-  // Resolve conflicts: relocate each conflicting widget to nearest valid slot.
-  // Process by proximity to the dragged widget (closest first) for stability.
-  conflicting.sort((a, b) => {
-    const wa = preview.find((w) => w.instanceId === a)!;
-    const wb = preview.find((w) => w.instanceId === b)!;
-    const distA = Math.abs(wa.x - clampedX) + Math.abs(wa.y - clampedY);
-    const distB = Math.abs(wb.x - clampedX) + Math.abs(wb.y - clampedY);
-    return distA - distB;
-  });
-
-  // Build an occupancy grid that includes the dragged widget and all
-  // non-conflicting widgets (these are "fixed" for the purpose of relocation).
-  const fixedWidgets = preview.filter(
-    (w) => w.visible && !conflicting.includes(w.instanceId),
-  );
-
-  for (const conflictId of conflicting) {
-    const cIdx = preview.findIndex((w) => w.instanceId === conflictId);
-    if (cIdx === -1) continue;
-    const cWidget = preview[cIdx];
-    const cSpan = SIZE_PRESETS[cWidget.size];
-
-    // Build occupancy from all currently-fixed widgets
-    const currentFixed = preview.filter(
-      (w) =>
-        (w.visible && !conflicting.includes(w.instanceId)) ||
-        w.instanceId === draggedId ||
-        // Include already-relocated conflicting widgets
-        (conflicting.includes(w.instanceId) &&
-          conflicting.indexOf(w.instanceId) < conflicting.indexOf(conflictId)),
-    );
-    // Rebuild: include dragged + non-conflicting + already-resolved
-    const resolved = preview.filter(
-      (w) =>
-        w.visible &&
-        w.instanceId !== conflictId &&
-        (w.instanceId === draggedId ||
-          !conflicting.includes(w.instanceId) ||
-          conflicting.indexOf(w.instanceId) < conflicting.indexOf(conflictId)),
-    );
-    const grid = buildOccupancyMap(resolved);
-
-    // Try original position first (it may have cleared if another widget moved)
-    const slot = findNearestSlot(grid, cSpan, cWidget.x, cWidget.y, conflictId);
-
-    if (slot) {
-      preview[cIdx] = { ...cWidget, x: slot.x, y: slot.y };
-    } else {
-      // Absolute fallback: place at the bottom of the grid
-      const totalRows = getGridRows(grid);
-      preview[cIdx] = { ...cWidget, x: 0, y: totalRows };
-    }
-  }
-
-  return compactWithPinned(preview, draggedId);
+  return stableRepack(widgets, draggedId, targetX, targetY);
 }
 
 /**
- * Check if two grid rectangles overlap.
- */
-function rectsOverlap(a: GridRect, b: GridRect): boolean {
-  return (
-    a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y
-  );
-}
-
-/**
- * Compact widgets with gravity while preserving the position of a specific
- * widget (the dragged widget). This ensures the dragged widget stays where
- * the user placed it while other widgets compact around it.
- */
-function compactWithPinned(
-  widgets: WidgetInstance[],
-  pinnedId: string,
-): WidgetInstance[] {
-  const pinnedWidget = widgets.find((w) => w.instanceId === pinnedId);
-  if (!pinnedWidget) return compactWidgets(widgets);
-
-  // Sort visible widgets by position (top-to-bottom, left-to-right),
-  // but process the pinned widget first so it claims its spot.
-  const visible = widgets
-    .filter((w) => w.visible)
-    .sort((a, b) => {
-      if (a.instanceId === pinnedId) return -1;
-      if (b.instanceId === pinnedId) return 1;
-      return a.y !== b.y ? a.y - b.y : a.x - b.x;
-    });
-
-  const hidden = widgets.filter((w) => !w.visible);
-  const placed: WidgetInstance[] = [];
-  let maxRow = 0;
-
-  for (const widget of visible) {
-    const span = SIZE_PRESETS[widget.size];
-
-    if (widget.instanceId === pinnedId) {
-      // Keep pinned widget exactly where it is
-      placed.push(widget);
-      const bottom = widget.y + span.h;
-      if (bottom > maxRow) maxRow = bottom;
-      continue;
-    }
-
-    // Compact other widgets upward, respecting the pinned widget
-    const tempGrid = buildOccupancyMap(placed);
-    let targetX = widget.x;
-    if (targetX + span.w > GRID_COLUMNS) {
-      targetX = Math.max(0, GRID_COLUMNS - span.w);
-    }
-
-    let bestPos: { x: number; y: number } | null = null;
-    for (let row = 0; row <= maxRow + 1; row++) {
-      const expandedGrid = ensureGridRows(tempGrid, row + span.h);
-      if (
-        canPlace(expandedGrid, { x: targetX, y: row, w: span.w, h: span.h })
-      ) {
-        bestPos = { x: targetX, y: row };
-        break;
-      }
-    }
-
-    if (!bestPos) {
-      outerSearch: for (let row = 0; row <= maxRow + 2; row++) {
-        for (let col = 0; col <= GRID_COLUMNS - span.w; col++) {
-          const expandedGrid = ensureGridRows(tempGrid, row + span.h);
-          if (
-            canPlace(expandedGrid, { x: col, y: row, w: span.w, h: span.h })
-          ) {
-            bestPos = { x: col, y: row };
-            break outerSearch;
-          }
-        }
-      }
-    }
-
-    if (!bestPos) {
-      bestPos = { x: 0, y: maxRow };
-    }
-
-    placed.push({ ...widget, x: bestPos.x, y: bestPos.y });
-    const bottom = bestPos.y + span.h;
-    if (bottom > maxRow) maxRow = bottom;
-  }
-
-  return [...placed, ...hidden];
-}
-
-/**
- * Resolve a resize preview. The widget is tentatively given `newSize`
- * while staying anchored at its current top-left. Any conflicts are
- * resolved using the same nearest-slot algorithm.
+ * Resolve a resize preview using the stable repack engine.
+ *
+ * The widget is given `newSize` and stays anchored at its current top-left
+ * (clamped if the new span exceeds grid bounds). All other visible widgets
+ * are repacked in stable visual order.
  */
 export function resolveResize(
   widgets: WidgetInstance[],
@@ -601,19 +616,13 @@ export function resolveResize(
   const widget = widgets[idx];
   const newSpan = SIZE_PRESETS[newSize];
 
-  // Clamp x if needed
+  // Clamp x if the new size exceeds grid bounds
   let newX = widget.x;
   if (newX + newSpan.w > GRID_COLUMNS) {
     newX = Math.max(0, GRID_COLUMNS - newSpan.w);
   }
 
-  // Build a temporary widgets array with the new size applied
-  const temp = widgets.map((w) =>
-    w.instanceId === instanceId ? { ...w, size: newSize, x: newX } : { ...w },
-  );
-
-  // Use resolveConflicts to handle any overlaps
-  return resolveConflicts(temp, instanceId, newX, widget.y);
+  return stableRepack(widgets, instanceId, newX, widget.y, newSize);
 }
 
 // =============================================================================
@@ -698,7 +707,7 @@ export function hideWidget(
   return compactWidgets(updated);
 }
 
-/** Restore a hidden widget and place it at the best available slot. */
+/** Restore a hidden widget and compact using stable reflow. */
 export function restoreWidget(
   widgets: WidgetInstance[],
   instanceId: string,
@@ -707,33 +716,29 @@ export function restoreWidget(
   if (idx === -1) return null;
 
   const widget = widgets[idx];
-  const span = SIZE_PRESETS[widget.size];
 
-  // Find a spot for the restored widget
-  const visibleOnly = widgets.filter(
-    (w) => w.visible && w.instanceId !== instanceId,
-  );
-  const grid = buildOccupancyMap(visibleOnly);
-  const slot = findNearestSlot(grid, span, 0, getGridRows(grid));
-  if (!slot) return null;
+  // Make the widget visible with a provisional position at the grid bottom
+  // so that stableCompact places it in the best gap.
+  const visibleOnly = widgets.filter((w) => w.visible);
+  const bottomRow = getMaxPlacedRow(visibleOnly);
 
   const updated = [...widgets];
   updated[idx] = {
     ...widget,
     visible: true,
-    x: slot.x,
-    y: slot.y,
+    x: widget.x,
+    y: bottomRow,
     updatedAt: new Date().toISOString(),
   };
 
-  return compactWidgets(updated);
+  return stableCompact(updated);
 }
 
 // =============================================================================
 // Add New Widget
 // =============================================================================
 
-/** Add a new widget instance to the board at the best available slot. */
+/** Add a new widget instance to the board using stable compaction. */
 export function addWidget(
   widgets: WidgetInstance[],
   widgetType: WidgetInstance["widgetType"],
@@ -744,21 +749,15 @@ export function addWidget(
   const existing = widgets.find((w) => w.widgetType === widgetType);
   if (existing) return widgets;
 
-  const span = SIZE_PRESETS[size];
-  const grid = buildOccupancyMap(widgets.filter((w) => w.visible));
-  const totalRows = getGridRows(grid);
-  const slot = findNearestSlot(grid, span, 0, totalRows) ?? {
-    x: 0,
-    y: totalRows,
-  };
+  const bottomRow = getMaxPlacedRow(widgets.filter((w) => w.visible));
 
   const now = new Date().toISOString();
   const newWidget: WidgetInstance = {
     instanceId: `${widgetType}-${Date.now()}`,
     widgetType,
     size,
-    x: slot.x,
-    y: slot.y,
+    x: 0,
+    y: bottomRow,
     visible: true,
     pinned: false,
     config,
@@ -766,5 +765,5 @@ export function addWidget(
     updatedAt: now,
   };
 
-  return compactWidgets([...widgets, newWidget]);
+  return stableCompact([...widgets, newWidget]);
 }

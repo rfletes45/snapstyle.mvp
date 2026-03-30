@@ -68,15 +68,62 @@ interface DateLikeTimestamp {
   toMillis?: () => number;
   getTime?: () => number;
 }
+
+interface CachedGroupMemberIdentity {
+  profilePictureUrl: string | null;
+  decorationId: string | null;
+  fetchedAt: number;
+}
 // =============================================================================
 // Constants
 // =============================================================================
 
 /** Default number of messages to load per page */
 const DEFAULT_PAGE_SIZE = 30;
+const GROUP_MEMBER_IDENTITY_CACHE_TTL_MS = 5 * 60 * 1000;
+const groupMemberIdentityCache = new Map<string, CachedGroupMemberIdentity>();
 
 /** Invite expiry in milliseconds (7 days) */
 const INVITE_EXPIRY_MS = GROUP_LIMITS.INVITE_EXPIRY_DAYS * 24 * 60 * 60 * 1000;
+
+function hasOwnField(
+  value: Record<string, unknown>,
+  field: string,
+): boolean {
+  return Object.prototype.hasOwnProperty.call(value, field);
+}
+
+function cacheGroupMemberIdentity(
+  uid: string,
+  profilePictureUrl: string | null,
+  decorationId: string | null,
+): void {
+  groupMemberIdentityCache.set(uid, {
+    profilePictureUrl,
+    decorationId,
+    fetchedAt: Date.now(),
+  });
+}
+
+async function getCachedGroupMemberIdentity(
+  uid: string,
+): Promise<CachedGroupMemberIdentity | null> {
+  const cached = groupMemberIdentityCache.get(uid);
+  if (cached && Date.now() - cached.fetchedAt <= GROUP_MEMBER_IDENTITY_CACHE_TTL_MS) {
+    return cached;
+  }
+
+  const profile = await getUserProfileByUid(uid);
+  if (!profile) return null;
+
+  const identity = {
+    profilePictureUrl: profile.profilePicture?.url || null,
+    decorationId: profile.avatarDecoration?.decorationId || null,
+    fetchedAt: Date.now(),
+  };
+  groupMemberIdentityCache.set(uid, identity);
+  return identity;
+}
 
 // =============================================================================
 // Group Creation
@@ -680,6 +727,12 @@ export async function getGroupMembers(groupId: string): Promise<GroupMember[]> {
 
   return snapshot.docs.map((doc) => {
     const data = doc.data();
+    const profilePictureUrl = hasOwnField(data, "profilePictureUrl")
+      ? (data.profilePictureUrl ?? null)
+      : undefined;
+    const decorationId = hasOwnField(data, "decorationId")
+      ? (data.decorationId ?? null)
+      : undefined;
     return {
       uid: doc.id,
       role: data.role,
@@ -694,10 +747,64 @@ export async function getGroupMembers(groupId: string): Promise<GroupMember[]> {
       displayName: data.displayName,
       username: data.username,
       avatarConfig: data.avatarConfig,
-      profilePictureUrl: data.profilePictureUrl || null,
-      decorationId: data.decorationId || null,
+      profilePictureUrl,
+      decorationId,
     } as GroupMember;
   });
+}
+
+export async function hydrateGroupMembersForDisplay(
+  members: GroupMember[],
+): Promise<GroupMember[]> {
+  if (members.length === 0) return members;
+
+  return Promise.all(
+    members.map(async (member) => {
+      const hasMirroredIdentity =
+        member.profilePictureUrl !== undefined && member.decorationId !== undefined;
+
+      if (hasMirroredIdentity) {
+        cacheGroupMemberIdentity(
+          member.uid,
+          member.profilePictureUrl ?? null,
+          member.decorationId ?? null,
+        );
+        return member;
+      }
+
+      try {
+        const identity = await getCachedGroupMemberIdentity(member.uid);
+        return {
+          ...member,
+          profilePictureUrl:
+            member.profilePictureUrl !== undefined
+              ? member.profilePictureUrl
+              : (identity?.profilePictureUrl ?? null),
+          decorationId:
+            member.decorationId !== undefined
+              ? member.decorationId
+              : (identity?.decorationId ?? null),
+        };
+      } catch {
+        return {
+          ...member,
+          profilePictureUrl:
+            member.profilePictureUrl !== undefined
+              ? member.profilePictureUrl
+              : null,
+          decorationId:
+            member.decorationId !== undefined ? member.decorationId : null,
+        };
+      }
+    }),
+  );
+}
+
+export async function getGroupMembersForDisplay(
+  groupId: string,
+): Promise<GroupMember[]> {
+  const members = await getGroupMembers(groupId);
+  return hydrateGroupMembersForDisplay(members);
 }
 
 /**
@@ -719,6 +826,12 @@ export function subscribeToGroupMembers(
     (snapshot) => {
       const members = snapshot.docs.map((doc) => {
         const data = doc.data();
+        const profilePictureUrl = hasOwnField(data, "profilePictureUrl")
+          ? (data.profilePictureUrl ?? null)
+          : undefined;
+        const decorationId = hasOwnField(data, "decorationId")
+          ? (data.decorationId ?? null)
+          : undefined;
         return {
           uid: doc.id,
           role: data.role,
@@ -733,8 +846,8 @@ export function subscribeToGroupMembers(
           displayName: data.displayName,
           username: data.username,
           avatarConfig: data.avatarConfig,
-          profilePictureUrl: data.profilePictureUrl || null,
-          decorationId: data.decorationId || null,
+          profilePictureUrl,
+          decorationId,
         } as GroupMember;
       });
 

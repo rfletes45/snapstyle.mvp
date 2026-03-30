@@ -31,8 +31,9 @@ import ReportUserModal from "@/components/ReportUserModal";
 import { MuteOptionsModal } from "@/components/profile";
 import { MoreOptionsMenu } from "@/components/profile/ProfileActions/index";
 import {
-  WidgetBoardContainer,
+  getWidgetDefinition,
   useBoardState,
+  WidgetBoardContainer,
 } from "@/components/profile/WidgetBoard";
 import type { WidgetInstance } from "@/components/profile/WidgetBoard/types";
 import { SIZE_PRESETS } from "@/components/profile/WidgetBoard/types";
@@ -80,6 +81,7 @@ import type {
   ProfileRelationship,
   UserProfileData,
 } from "@/types/userProfile";
+import { canCallUser, DEFAULT_PRIVACY_SETTINGS } from "@/types/userProfile";
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("screens/profile/UserProfileScreen");
@@ -115,7 +117,12 @@ function UserProfileScreenContent({
   const currentUserId = currentFirebaseUser?.uid;
 
   const colors = useColors();
-  const canInitiateCalls = CALL_FEATURES.CALLS_ENABLED;
+  // Calls require native modules AND the target's privacy settings must allow it
+  const canInitiateCalls =
+    CALL_FEATURES.CALLS_ENABLED &&
+    (relationship
+      ? canCallUser(profile?.privacy ?? DEFAULT_PRIVACY_SETTINGS, relationship)
+      : false);
 
   // ==========================================================================
   // Target User's Widget Board Layout (read-only)
@@ -884,6 +891,27 @@ function UserProfileScreenContent({
         onUnblock: handleUnblock,
         onMoreOptions: handleMoreOptions,
       },
+      // tasks-overview: omitted — owner-only widget, filtered out for viewers
+      "wallet-balance": {
+        balance: (profile as any)?.wallet?.tokensBalance ?? 0,
+        loading: false,
+        isOwner: false,
+        isCustomizing: false,
+      },
+      "theme-mode": {
+        themeMode: (profile as any)?.useSystemTheme
+          ? "auto"
+          : profile?.theme?.equippedThemeId?.includes("dark")
+            ? "dark"
+            : "light",
+        isOwner: false,
+        isCustomizing: false,
+      },
+      "chat-layout-mode": {
+        chatLayoutMode: (profile as any)?.conversationDisplayMode ?? "bubbles",
+        isOwner: false,
+        isCustomizing: false,
+      },
     }),
     [
       profile,
@@ -926,7 +954,11 @@ function UserProfileScreenContent({
   // ==========================================================================
 
   const augmentedVisibleWidgets = useMemo(() => {
-    const base = board.visibleWidgets;
+    // Filter out owner-only widgets (e.g. tasks-overview) for viewers
+    const base = board.visibleWidgets.filter((w) => {
+      const def = getWidgetDefinition(w.widgetType);
+      return !def || def.visibilityMode !== "owner-only";
+    });
     // Find the bottom-most row occupied by existing widgets
     let maxBottom = 0;
     for (const w of base) {

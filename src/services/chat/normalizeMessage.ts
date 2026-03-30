@@ -8,8 +8,16 @@ import type { MessageV2, ReplyToMetadata } from "@/types/messaging";
 
 // Keep this as a shared, explicit rule so all runtimes (SQLite-first and
 // Firestore-first) produce stable ordering.
+//
+// Uses `createdAt` as the primary sort key because it is set once at message
+// creation and **never changes**.  `serverReceivedAt` is only available after
+// the Cloud Function round-trip, and during rapid burst-sends the first synced
+// message's `serverReceivedAt` is larger than all remaining pending messages'
+// `createdAt` — which causes the synced message to leap to the newest position
+// and visually teleport in the UI.  Sorting by `createdAt` eliminates this
+// discontinuity while preserving the user's intended send order.
 export function getCanonicalMessageTimestamp(message: MessageV2): number {
-  return message.serverReceivedAt || message.createdAt || 0;
+  return message.createdAt || message.serverReceivedAt || 0;
 }
 
 /**
@@ -35,14 +43,17 @@ export function compareMessagesCanonicalDesc(
   a: MessageV2,
   b: MessageV2,
 ): number {
+  // Primary: createdAt (stable — set once, never mutated)
   const aPrimary = getCanonicalMessageTimestamp(a);
   const bPrimary = getCanonicalMessageTimestamp(b);
   if (aPrimary !== bPrimary) return bPrimary - aPrimary;
 
-  const aCreated = a.createdAt || 0;
-  const bCreated = b.createdAt || 0;
-  if (aCreated !== bCreated) return bCreated - aCreated;
+  // Secondary: serverReceivedAt (tie-breaks cross-device messages with identical createdAt)
+  const aServer = a.serverReceivedAt || 0;
+  const bServer = b.serverReceivedAt || 0;
+  if (aServer !== bServer) return bServer - aServer;
 
+  // Tertiary: lexicographic ID for full determinism
   return b.id.localeCompare(a.id);
 }
 
@@ -248,6 +259,13 @@ function choosePreferredMessage(a: MessageV2, b: MessageV2): MessageV2 {
   ) {
     return a;
   }
+
+  // For duplicate server records (e.g. modified snapshot arriving twice),
+  // prefer the one with the more recent serverReceivedAt — it carries the
+  // most up-to-date payload (edited text, reactions, etc.).
+  const aServer = a.serverReceivedAt || 0;
+  const bServer = b.serverReceivedAt || 0;
+  if (aServer !== bServer) return aServer > bServer ? a : b;
 
   return a;
 }

@@ -7,6 +7,7 @@
  * @module utils/imagePrefetch
  */
 
+import { warmIdentityImageUrls } from "@/services/chat/threadIdentityWarmup";
 import { Image } from "expo-image";
 import { useEffect, useRef } from "react";
 
@@ -91,6 +92,15 @@ export function usePrefetchProfileImages(
     .filter(Boolean) as string[] | undefined;
 
   usePrefetch(urls);
+
+  const key = urls?.join("|") ?? "";
+  const prevWarmKey = useRef("");
+
+  useEffect(() => {
+    if (!key || key === prevWarmKey.current) return;
+    prevWarmKey.current = key;
+    void warmIdentityImageUrls(urls);
+  }, [key, urls]);
 }
 
 /**

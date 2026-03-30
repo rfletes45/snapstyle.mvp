@@ -53,8 +53,9 @@ async function notifyInviteCreated(invite, senderDisplayName, recipientUids) {
         category: "games",
         dedupeKey: `game_invite:${invite.inviteId}:${uid}`,
         collapseKey: `game_invite:${invite.conversationId}`,
-        title: `${gameName(invite.gameId)} invite`,
-        body: `${senderDisplayName} invited you to play ${gameName(invite.gameId)}`,
+        title: `${senderDisplayName} invited you to play`,
+        subtitle: gameName(invite.gameId),
+        body: `Tap to join the ${gameName(invite.gameId)} lobby`,
         actorUid: invite.createdBy,
         actorName: senderDisplayName,
         conversationId: invite.conversationId,
@@ -84,8 +85,8 @@ async function notifyTurn(session, turnPlayerUid, lastActorName, versionToken) {
         category: "games",
         dedupeKey: `game_turn:${session.sessionId}:${turnPlayerUid}:${versionToken ?? session.integrity.version}`,
         collapseKey: `game_turn:${session.sessionId}`,
-        title: `Your turn - ${gameName(session.gameId)}`,
-        body: `${lastActorName} made a move. It's your turn.`,
+        title: `Your Turn — ${gameName(session.gameId)}`,
+        body: `${lastActorName} made a move. Tap to play.`,
         conversationId: session.conversationId,
         conversationScope: session.conversationScope,
         sessionId: session.sessionId,
@@ -111,13 +112,18 @@ async function notifyTurn(session, turnPlayerUid, lastActorName, versionToken) {
     });
 }
 async function notifyResolved(result, conversationScope, resolverUid) {
-    let body = "The game has ended.";
-    if (result.resolutionType === "draw") {
-        body = "The game ended in a draw.";
-    }
-    else if (result.winnerIds.length > 0) {
-        const winnerEntry = result.scoreboard.find((entry) => result.winnerIds.includes(entry.uid));
-        body = `${winnerEntry?.displayName ?? "Someone"} won the game.`;
+    function buildGameOverBody(uid) {
+        if (result.resolutionType === "draw") {
+            return "The game ended in a draw.";
+        }
+        if (result.winnerIds.length > 0) {
+            if (result.winnerIds.includes(uid)) {
+                return "Congratulations, you won!";
+            }
+            const winnerEntry = result.scoreboard.find((entry) => result.winnerIds.includes(entry.uid));
+            return `${winnerEntry?.displayName ?? "Your opponent"} won the game.`;
+        }
+        return "The game has ended.";
     }
     await Promise.all(result.participantIds
         .filter((uid) => uid !== resolverUid)
@@ -127,8 +133,8 @@ async function notifyResolved(result, conversationScope, resolverUid) {
         category: "games",
         dedupeKey: `game_resolved:${result.sessionId}:${uid}`,
         collapseKey: `game_resolved:${result.sessionId}`,
-        title: `Game over - ${gameName(result.gameId)}`,
-        body,
+        title: `Game Over — ${gameName(result.gameId)}`,
+        body: buildGameOverBody(uid),
         conversationId: result.conversationId,
         conversationScope,
         sessionId: result.sessionId,
@@ -157,8 +163,9 @@ async function notifyPlayerJoinedLobby(invite, joinerDisplayName) {
         category: "games",
         dedupeKey: `game_lobby_ready:${invite.inviteId}:${invite.hostId}`,
         collapseKey: `game_invite:${invite.inviteId}`,
-        title: `${gameName(invite.gameId)} lobby`,
-        body: `${joinerDisplayName} joined the lobby`,
+        title: `${joinerDisplayName} joined your lobby`,
+        subtitle: gameName(invite.gameId),
+        body: "Your game is ready to start!",
         actorName: joinerDisplayName,
         conversationId: invite.conversationId,
         conversationScope: invite.conversationScope,
@@ -182,17 +189,18 @@ async function notifyAchievementUnlocked(params) {
     if (achievementIds.length === 0)
         return;
     const achievementCount = achievementIds.length;
-    const body = achievementCount === 1
-        ? achievementTitles?.[0] || "You unlocked a new achievement"
-        : `You unlocked ${achievementCount} achievements`;
     await (0, notificationCenter_1.notifyUser)({
         recipientUid: uid,
         type: "achievement_unlocked",
         category: "progression",
         dedupeKey: `achievement_unlocked:${uid}:${sessionId ?? achievementIds.join(",")}`,
         collapseKey: `achievement_unlocked:${uid}`,
-        title: "Achievement unlocked",
-        body,
+        title: achievementCount === 1
+            ? "Achievement Unlocked!"
+            : `${achievementCount} Achievements Unlocked!`,
+        body: achievementCount === 1
+            ? achievementTitles?.[0] || "You earned a new achievement"
+            : `${achievementTitles?.slice(0, 2).join(", ") || "Multiple achievements"} and more`,
         sectionId: sectionId ?? null,
         sessionId: sessionId ?? null,
         gameId: gameId ?? null,

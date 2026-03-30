@@ -48,8 +48,8 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.adminApplyStrike = exports.adminLiftBan = exports.adminSetBan = exports.cleanupExpiredPushTokens = exports.checkMessageRateLimit = exports.sendFriendRequestWithRateLimit = exports.seedShopCatalog = exports.initializeExistingWallets = exports.seedMonthlyTasks = exports.seedDailyTasks = exports.recordDailyLogin = exports.onFriendAddedTaskProgress = exports.onStoryPostedTaskProgress = exports.onStoryViewedTaskProgress = exports.onMessageSentTaskProgress = exports.claimTaskReward = exports.onUserCreated = exports.cleanupOldScheduledMessages = exports.onScheduledMessageCreated = exports.processScheduledMessages = exports.cleanupExpiredStories = exports.cleanupExpiredSnaps = exports.onDeleteMessage = exports.streakReminder = exports.onStoryViewed = exports.onNewFriendRequest = exports.onNewGroupMessageV2 = exports.onNewMessage = exports.onCallUpdated = exports.onCallCreated = exports.handleCallTimeouts = exports.getTurnCredentials = exports.cleanupCallSignaling = exports.triggerDailyDeals = exports.generateWeeklyDeals = exports.generateDailyDeals = exports.cleanupOldDeals = exports.sendGift = exports.openGift = exports.getGiftHistory = exports.expireGifts = exports.validateReceipt = exports.restorePurchases = exports.getPurchaseHistory = exports.purchaseWithTokens = exports.grantItem = exports.toggleReactionV2 = exports.deleteMessageForAllV2 = exports.editMessageV2 = exports.sendMessageV2 = void 0;
-exports.fetchLinkPreview = exports.updateExpiredBans = exports.onNewReport = exports.onNewMessageEvent = exports.initializeFirstAdmin = exports.adminSetAdminClaim = exports.adminResolveReport = exports.adminApplyWarning = void 0;
+exports.adminApplyWarning = exports.adminApplyStrike = exports.adminLiftBan = exports.adminSetBan = exports.cleanupExpiredPushTokens = exports.checkMessageRateLimit = exports.sendFriendRequestWithRateLimit = exports.seedShopCatalog = exports.initializeExistingWallets = exports.seedMonthlyTasks = exports.seedDailyTasks = exports.recordDailyLogin = exports.onFriendAddedTaskProgress = exports.onStoryPostedTaskProgress = exports.onStoryViewedTaskProgress = exports.onMessageSentTaskProgress = exports.claimTaskReward = exports.onUserCreated = exports.cleanupOldScheduledMessages = exports.onScheduledMessageCreated = exports.processScheduledMessages = exports.cleanupExpiredStories = exports.cleanupExpiredSnaps = exports.onDeleteMessage = exports.onStoryViewed = exports.onNewFriendRequest = exports.onNewGroupMessageV2 = exports.onNewMessage = exports.onCallUpdated = exports.onCallCreated = exports.handleCallTimeouts = exports.getTurnCredentials = exports.cleanupCallSignaling = exports.triggerDailyDeals = exports.generateWeeklyDeals = exports.generateDailyDeals = exports.cleanupOldDeals = exports.sendGift = exports.openGift = exports.getGiftHistory = exports.expireGifts = exports.validateReceipt = exports.restorePurchases = exports.getPurchaseHistory = exports.purchaseWithTokens = exports.grantItem = exports.toggleReactionV2 = exports.deleteMessageForAllV2 = exports.editMessageV2 = exports.sendMessageV2 = void 0;
+exports.fetchLinkPreview = exports.updateExpiredBans = exports.onNewReport = exports.onNewMessageEvent = exports.initializeFirstAdmin = exports.adminSetAdminClaim = exports.adminResolveReport = void 0;
 const admin = __importStar(require("firebase-admin"));
 const functions = __importStar(require("firebase-functions"));
 const httpAuth_1 = require("./httpAuth");
@@ -128,7 +128,8 @@ exports.onNewMessage = functions.firestore
         if (isMuted) {
             console.log(`[onNewMessage] Skipping muted user ${recipientId.substring(0, 8)}`);
             // Still update streak tracking even if muted
-            await updateStreakOnMessage(senderId, recipientId);
+            // NOTE: Streak updates are now handled by the canonical streak engine
+            // in streaks.ts, wired through notifications.ts onNewMessage.
             return;
         }
         // Get sender's display name
@@ -194,8 +195,7 @@ exports.onNewMessage = functions.firestore
             });
             console.log(`✅ Sent notification to ${recipientId}`);
         }
-        // Update streak tracking
-        await updateStreakOnMessage(senderId, recipientId);
+        // NOTE: Streak tracking moved to canonical engine in streaks.ts
     }
     catch (error) {
         console.error("❌ Error in onNewMessage:", error);
@@ -438,227 +438,13 @@ exports.onNewGroupMessageV2 = functions.firestore
         console.error("❌ Error in onNewGroupMessageV2:", error);
     }
 });
-async function updateStreakOnMessage(senderId, recipientId) {
-    try {
-        console.log("🔵 [updateStreakOnMessage] Starting streak update", {
-            senderId,
-            recipientId,
-        });
-        // Find the friendship document using array-contains
-        // Since Friends documents have a "users" array with both UIDs,
-        // we query for documents containing the sender, then filter client-side
-        const friendsRef = db.collection("Friends");
-        const querySnapshot = await friendsRef
-            .where("users", "array-contains", senderId)
-            .get();
-        // Find the friendship that includes both users
-        let friendDoc = querySnapshot.docs.find((doc) => {
-            const users = doc.data().users;
-            return users.includes(recipientId);
-        });
-        if (!friendDoc) {
-            console.log("❌ [updateStreakOnMessage] Friendship not found");
-            return;
-        }
-        console.log("✅ [updateStreakOnMessage] Found friendship:", friendDoc.id);
-        const data = friendDoc.data();
-        const today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
-        const [uid1, uid2] = data.users;
-        const isUser1 = senderId === uid1;
-        const lastSentField = isUser1 ? "lastSentDay_uid1" : "lastSentDay_uid2";
-        const otherLastSentField = isUser1
-            ? "lastSentDay_uid2"
-            : "lastSentDay_uid1";
-        const currentLastSent = data[lastSentField] || "";
-        const otherLastSent = data[otherLastSentField] || "";
-        const streakUpdatedDay = data.streakUpdatedDay || "";
-        let streakCount = data.streakCount || 0;
-        console.log("🔵 [updateStreakOnMessage] Current state:", {
-            today,
-            isUser1,
-            currentLastSent,
-            otherLastSent,
-            streakUpdatedDay,
-            streakCount,
-        });
-        // If user already sent today, no update needed
-        if (currentLastSent === today) {
-            console.log("⏭️ [updateStreakOnMessage] User already sent today, skipping");
-            return;
-        }
-        const updates = {
-            [lastSentField]: today,
-        };
-        // Check if this completes today's streak requirement
-        const otherSentToday = otherLastSent === today;
-        console.log("🔵 [updateStreakOnMessage] Checking streak conditions:", {
-            otherSentToday,
-            streakUpdatedDayNotToday: streakUpdatedDay !== today,
-        });
-        if (otherSentToday && streakUpdatedDay !== today) {
-            // Both users have now sent today - update streak
-            if (!streakUpdatedDay) {
-                // First streak ever - start at 1
-                streakCount = 1;
-                console.log("🆕 [updateStreakOnMessage] First streak started:", streakCount);
-            }
-            else {
-                // Check if streak continues from yesterday
-                const lastUpdate = new Date(streakUpdatedDay);
-                const todayDate = new Date(today);
-                const daysDiff = Math.floor((todayDate.getTime() - lastUpdate.getTime()) / (1000 * 60 * 60 * 24));
-                console.log("🔵 [updateStreakOnMessage] Days since last update:", daysDiff);
-                if (daysDiff <= 1) {
-                    // Streak continues (today or yesterday)
-                    streakCount += 1;
-                    console.log("🔥 [updateStreakOnMessage] Streak continues:", streakCount);
-                }
-                else {
-                    // Streak broken, start fresh
-                    streakCount = 1;
-                    console.log("💔➡️🆕 [updateStreakOnMessage] Streak broken, restarting:", streakCount);
-                }
-            }
-            updates.streakCount = streakCount;
-            updates.streakUpdatedDay = today;
-        }
-        else if (!otherSentToday) {
-            // Check if streak needs reset
-            const lastUpdate = new Date(streakUpdatedDay || "2000-01-01");
-            const todayDate = new Date(today);
-            const daysDiff = Math.floor((todayDate.getTime() - lastUpdate.getTime()) / (1000 * 60 * 60 * 24));
-            if (daysDiff > 1 && streakCount > 0) {
-                console.log("💔 [updateStreakOnMessage] Streak broken, resetting");
-                updates.streakCount = 0;
-            }
-            else {
-                console.log("⏳ [updateStreakOnMessage] Waiting for other user to send");
-            }
-        }
-        console.log("🔵 [updateStreakOnMessage] Applying updates:", updates);
-        await friendDoc.ref.update(updates);
-        console.log("✅ [updateStreakOnMessage] Streak updated for friendship:", friendDoc.id);
-        // Check for milestone and award cosmetics
-        if (updates.streakCount) {
-            const milestones = [3, 7, 14, 30, 50, 100, 365];
-            console.log("🔵 [updateStreakOnMessage] Checking milestone:", updates.streakCount, "Valid milestones:", milestones);
-            if (milestones.includes(updates.streakCount)) {
-                console.log("🎉 [updateStreakOnMessage] MILESTONE REACHED!", updates.streakCount, "days");
-                // Send notifications and award cosmetics
-                await sendStreakMilestoneNotification(senderId, recipientId, updates.streakCount);
-                // Grant cosmetic rewards to both users
-                await grantMilestoneCosmetic(senderId, updates.streakCount);
-                await grantMilestoneCosmetic(recipientId, updates.streakCount);
-                console.log("✅ [updateStreakOnMessage] Milestone rewards granted!");
-            }
-            else {
-                console.log("ℹ️ [updateStreakOnMessage] Not a milestone day. Next milestone:", milestones.find((m) => m > updates.streakCount) || "none");
-            }
-        }
-    }
-    catch (error) {
-        console.error("❌ [updateStreakOnMessage] Error:", error);
-    }
-}
-/**
- * Send notification when streak milestone is reached
- */
-async function sendStreakMilestoneNotification(user1Id, user2Id, milestone) {
-    const messages = {
-        3: "🔥 3-day streak! You're on fire!",
-        7: "🔥 1 week streak! Amazing!",
-        14: "🔥 2 week streak! Incredible!",
-        30: "🔥 30-day streak! One month strong!",
-        50: "🔥 50-day streak! Legendary!",
-        100: "💯 100-day streak! Champion!",
-        365: "🏆 365-day streak! One whole year!",
-    };
-    const body = messages[milestone] || `🔥 ${milestone}-day streak!`;
-    // Notify both users
-    for (const userId of [user1Id, user2Id]) {
-        const token = await (0, utils_1.getUserPushToken)(userId);
-        if (token) {
-            await (0, utils_1.sendExpoPushNotification)({
-                to: token,
-                title: "Streak Milestone! 🎉",
-                body,
-                data: { type: "streak_milestone", milestone },
-                sound: "default",
-            });
-        }
-    }
-}
-// ============================================
-// COSMETICS REWARDS
-// ============================================
-/**
- * Mapping of streak milestones to cosmetic item IDs
- */
-const MILESTONE_COSMETICS = {
-    3: "hat_flame",
-    7: "glasses_cool",
-    14: "bg_gradient",
-    30: "hat_crown",
-    50: "glasses_star",
-    100: "bg_rainbow",
-    365: "hat_legendary",
-};
-/**
- * Cosmetic item names for notifications
- */
-const COSMETIC_NAMES = {
-    hat_flame: "Flame Cap 🔥",
-    glasses_cool: "Cool Shades 😎",
-    bg_gradient: "Gradient Glow ✨",
-    hat_crown: "Golden Crown 👑",
-    glasses_star: "Star Glasses 🤩",
-    bg_rainbow: "Rainbow Burst 🌈",
-    hat_legendary: "Legendary Halo 😇",
-};
-/**
- * Grant a cosmetic item to a user when they reach a streak milestone
- */
-async function grantMilestoneCosmetic(userId, milestone) {
-    try {
-        const itemId = MILESTONE_COSMETICS[milestone];
-        if (!itemId) {
-            console.log(`No cosmetic reward for milestone ${milestone}`);
-            return;
-        }
-        // Check if user already has this item
-        const inventoryRef = db
-            .collection("Users")
-            .doc(userId)
-            .collection("inventory")
-            .doc(itemId);
-        const existingItem = await inventoryRef.get();
-        if (existingItem.exists) {
-            console.log(`User ${userId} already has item ${itemId}`);
-            return;
-        }
-        // Grant the item
-        await inventoryRef.set({
-            itemId,
-            acquiredAt: Date.now(),
-        });
-        console.log(`🎁 Granted ${itemId} to user ${userId} for ${milestone}-day streak`);
-        // Send notification about new cosmetic
-        const itemName = COSMETIC_NAMES[itemId] || itemId;
-        const pushToken = await (0, utils_1.getUserPushToken)(userId);
-        if (pushToken) {
-            await (0, utils_1.sendExpoPushNotification)({
-                to: pushToken,
-                title: "New Cosmetic Unlocked! 🎁",
-                body: `You earned ${itemName} for your ${milestone}-day streak!`,
-                data: { type: "cosmetic_unlock", itemId, milestone },
-                sound: "default",
-            });
-        }
-    }
-    catch (error) {
-        console.error(`❌ Error granting cosmetic to ${userId}:`, error);
-    }
-}
+// ═══════════════════════════════════════════════════════════════════════════════
+// STREAK LOGIC — REMOVED
+// Streak management (updateStreakOnMessage, streakReminder, milestone cosmetics)
+// has been moved to the canonical streak engine in streaks.ts.
+// The server-authoritative streak updates are now wired through
+// notifications.ts onNewMessage → streaks.updateStreakOnMessage.
+// ═══════════════════════════════════════════════════════════════════════════════
 /**
  * onNewFriendRequest: Notify user when they receive a friend request
  */
@@ -717,77 +503,33 @@ exports.onStoryViewed = functions.firestore
         const viewerName = viewerDoc.exists
             ? viewerDoc.data()?.displayName || "Someone"
             : "Someone";
-        // Get author's push token
-        const pushToken = await (0, utils_1.getUserPushToken)(authorId);
-        if (pushToken) {
-            await (0, utils_1.sendExpoPushNotification)({
-                to: pushToken,
-                title: "Story Viewed! 👀",
-                body: `${viewerName} viewed your story`,
-                data: {
-                    type: "story_view",
-                    storyId,
-                    viewerId,
-                },
-                sound: "default",
-            });
-            console.log(`✅ Sent story view notification to ${authorId}`);
-        }
+        const { notifyUser: notifyUserCenter } = await Promise.resolve().then(() => __importStar(require("./notificationCenter")));
+        await notifyUserCenter({
+            recipientUid: authorId,
+            type: "story_viewed",
+            category: "social",
+            dedupeKey: `story_viewed:${storyId}:${viewerId}`,
+            collapseKey: `story_viewed:${authorId}`,
+            title: `${viewerName} viewed your story`,
+            body: "Tap to see who's watching",
+            actorUid: viewerId,
+            actorName: viewerName,
+            route: {
+                screen: "MainTabs",
+            },
+            data: {
+                storyId,
+                viewerId,
+            },
+            badgeEligible: false,
+        });
+        console.log(`✅ Sent story view notification to ${authorId}`);
     }
     catch (error) {
         console.error("❌ Error in onStoryViewed:", error);
     }
 });
-/**
- * streakReminder: Daily check for at-risk streaks
- * Runs at 8 PM UTC to remind users whose streaks are at risk
- */
-exports.streakReminder = functions.pubsub
-    .schedule("0 20 * * *") // 8 PM UTC daily
-    .timeZone("UTC")
-    .onRun(async () => {
-    try {
-        const today = new Date().toISOString().split("T")[0];
-        // Find all friendships with active streaks
-        const friendsRef = db.collection("Friends");
-        const activeStreaks = await friendsRef.where("streakCount", ">", 0).get();
-        console.log(`Checking ${activeStreaks.docs.length} active streaks`);
-        for (const doc of activeStreaks.docs) {
-            const data = doc.data();
-            const [uid1, uid2] = data.users;
-            const lastSent1 = data.lastSentDay_uid1 || "";
-            const lastSent2 = data.lastSentDay_uid2 || "";
-            // Check if only one user has sent today (streak at risk)
-            const user1SentToday = lastSent1 === today;
-            const user2SentToday = lastSent2 === today;
-            if (user1SentToday !== user2SentToday) {
-                // Streak is at risk - notify the user who hasn't sent
-                const userToNotify = user1SentToday ? uid2 : uid1;
-                const token = await (0, utils_1.getUserPushToken)(userToNotify);
-                if (token) {
-                    await (0, utils_1.sendExpoPushNotification)({
-                        to: token,
-                        title: "Streak at Risk! ⚠️",
-                        body: `Your ${data.streakCount}-day streak is about to end! Send a message to keep it going.`,
-                        data: {
-                            type: "streak_reminder",
-                            friendshipId: doc.id,
-                            streakCount: data.streakCount,
-                        },
-                        sound: "default",
-                    });
-                    console.log(`✅ Sent streak reminder to ${userToNotify}`);
-                }
-            }
-        }
-        console.log("✅ Streak reminder check complete");
-        return;
-    }
-    catch (error) {
-        console.error("❌ Error in streakReminder:", error);
-        throw error;
-    }
-});
+// NOTE: streakReminder has been moved to streaks.ts
 /**
  * onDeleteMessage: Triggered when a message document is deleted
  * Cleans up associated Storage object if it's an image snap

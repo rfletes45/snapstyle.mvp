@@ -23,7 +23,7 @@
  * @module screens/groups/GroupChatScreen
  */
 
-import AppImage from "@/components/AppImage";
+import { AppImage } from "@/components/AppImage";
 import { usePrefetch, usePrefetchChatImages } from "@/utils/imagePrefetch";
 
 const IMAGE_MAX_WIDTH = 240;
@@ -117,9 +117,19 @@ import ScheduleMessageModal from "@/components/ScheduleMessageModal";
 import { ErrorState } from "@/components/ui";
 
 // Services
-import { getUserProfileByUid } from "@/services/friends";
+import {
+  cachePreparedGroupMembers,
+  getPreparedGroupMembers,
+  prepareGroupThreadEntry,
+  warmGroupIdentityAssets,
+} from "@/services/chat/threadIdentityWarmup";
 import { getGroupMemberPrivate } from "@/services/groupMembers";
-import { getGroup, getGroupMembers, isGroupMember } from "@/services/groups";
+import {
+  getGroup,
+  hydrateGroupMembersForDisplay,
+  isGroupMember,
+  subscribeToGroupMembers,
+} from "@/services/groups";
 import { extractUrls, fetchPreview, hasUrls } from "@/services/linkPreview";
 import {
   extractMentionsExact,
@@ -190,6 +200,7 @@ import {
   useRenderChatScrollComponent,
 } from "@/components/chat/ChatKeyboardScrollView";
 import { createLogger } from "@/utils/log";
+import { buildRemoteImageSource } from "@/utils/remoteImageSource";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 const logger = createLogger("screens/groups/GroupChatScreen");
 // =============================================================================
@@ -214,6 +225,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     groupId,
     groupName: initialGroupName,
     targetMessageId,
+    initialGroupData,
   } = route.params;
   const { colors, isDark } = useAppTheme();
   const insets = useSafeAreaInsets();
@@ -273,11 +285,27 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   // Screen State (No message state - uses unified hook)
   // ==========================================================================
 
-  const [group, setGroup] = useState<Group | null>(null);
+  // Seed group state from navigation params for instant header rendering.
+  // The full group data will overwrite this once Firestore responds.
+  const [group, setGroup] = useState<Group | null>(() => {
+    if (initialGroupData?.avatarUrl || initialGroupName) {
+      return {
+        id: groupId,
+        name: initialGroupData?.name || initialGroupName || "",
+        avatarUrl: initialGroupData?.avatarUrl || null,
+      } as Group;
+    }
+    return null;
+  });
   const [groupLoading, setGroupLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [snackbar, setSnackbar] = useState({ visible: false, message: "" });
-  const [groupMembers, setGroupMembers] = useState<GroupMember[]>([]);
+  const [groupMembers, setGroupMembers] = useState<GroupMember[]>(
+    () => getPreparedGroupMembers(groupId) ?? [],
+  );
+  const [memberBootstrapPending, setMemberBootstrapPending] = useState(
+    () => (getPreparedGroupMembers(groupId) ?? []).length === 0,
+  );
   const messageListRef = useRef<ChatMessageListRef>(null);
   const textInputRef = useRef<any>(null);
 
@@ -419,6 +447,34 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     [groupMembers],
   );
   usePrefetch(memberAvatarUrls.length > 0 ? memberAvatarUrls : undefined);
+
+  // Prefetch the group avatar for instant header rendering
+  const groupAvatarUrls = useMemo(
+    () => (group?.avatarUrl ? [group.avatarUrl] : undefined),
+    [group?.avatarUrl],
+  );
+  usePrefetch(groupAvatarUrls);
+
+  useEffect(() => {
+    if (!groupId || groupMembers.length > 0) return;
+
+    prepareGroupThreadEntry(groupId, {
+      groupAvatarUrl: group?.avatarUrl || initialGroupData?.avatarUrl || null,
+    })
+      .then((members) => {
+        if (members.length > 0) {
+          setGroupMembers((current) => (current.length > 0 ? current : members));
+        }
+      })
+      .catch((error) => {
+        logger.debug("[GroupChatScreen] Warm-start member bootstrap failed", {
+          error,
+        });
+      })
+      .finally(() => {
+        setMemberBootstrapPending(false);
+      });
+  }, [group?.avatarUrl, groupId, groupMembers.length, initialGroupData?.avatarUrl]);
 
   // Seed reactions from denormalized reactionsSummary for instant first render.
   // The real-time subscription will reconcile with full data (hasReacted, userIds).
@@ -566,41 +622,6 @@ export default function GroupChatScreen({ route, navigation }: Props) {
         setGroup(groupData);
         setPermissionsConfig(groupData.permissionsConfig);
         navigation.setOptions({ title: groupData.name });
-
-        const members = await getGroupMembers(groupId);
-
-        // Enrich members missing profile picture data from their user profiles
-        const enrichedMembers = await Promise.all(
-          members.map(async (member) => {
-            if (
-              member.profilePictureUrl !== undefined &&
-              member.profilePictureUrl !== null
-            ) {
-              return member;
-            }
-            try {
-              const profile = await getUserProfileByUid(member.uid);
-              if (profile) {
-                return {
-                  ...member,
-                  profilePictureUrl: profile.profilePicture?.url || null,
-                  decorationId: profile.avatarDecoration?.decorationId || null,
-                };
-              }
-            } catch {
-              // Silently fall back to initials avatar
-            }
-            return member;
-          }),
-        );
-
-        setGroupMembers(enrichedMembers);
-
-        // Resolve user role from member list
-        const currentMember = enrichedMembers.find((m) => m.uid === uid);
-        if (currentMember) {
-          setUserRole(currentMember.role);
-        }
       } catch (err: any) {
         logger.error("Error loading group:", err);
         setError(err.message || "Failed to load group");
@@ -611,6 +632,47 @@ export default function GroupChatScreen({ route, navigation }: Props) {
 
     loadGroup();
   }, [groupId, uid, navigation]);
+
+  useEffect(() => {
+    if (!groupId) return;
+
+    let active = true;
+    const unsubscribe = subscribeToGroupMembers(groupId, (members) => {
+      void hydrateGroupMembersForDisplay(members)
+        .then((enrichedMembers) => {
+          if (!active) return;
+
+          cachePreparedGroupMembers(groupId, enrichedMembers);
+          setGroupMembers(enrichedMembers);
+          setMemberBootstrapPending(false);
+
+          const currentMember = uid
+            ? enrichedMembers.find((member) => member.uid === uid)
+            : null;
+          if (currentMember) {
+            setUserRole(currentMember.role);
+          }
+
+          void warmGroupIdentityAssets({
+            groupAvatarUrl:
+              group?.avatarUrl || initialGroupData?.avatarUrl || null,
+            members: enrichedMembers,
+          });
+        })
+        .catch((error) => {
+          logger.warn("[GroupChatScreen] Failed to hydrate group members", {
+            error,
+          });
+          if (!active) return;
+          setMemberBootstrapPending(false);
+        });
+    });
+
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [group?.avatarUrl, groupId, initialGroupData?.avatarUrl, uid]);
 
   useEffect(() => {
     if (!uid || !groupId) return;
@@ -1197,25 +1259,30 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   // Get sender info from group members
   // ==========================================================================
 
+  const groupMemberById = useMemo(
+    () => new Map(groupMembers.map((member) => [member.uid, member])),
+    [groupMembers],
+  );
+
   const getSenderProfileInfo = useCallback(
     (senderId: string) => {
-      const member = groupMembers.find((m) => m.uid === senderId);
+      const member = groupMemberById.get(senderId);
       return {
         displayName: member?.displayName || member?.username || "Unknown",
         profilePictureUrl: member?.profilePictureUrl || null,
         decorationId: member?.decorationId || null,
       };
     },
-    [groupMembers],
+    [groupMemberById],
   );
 
   const getSenderDisplayName = useCallback(
     (message: MessageV2) => {
       if (message.senderName) return message.senderName;
-      const member = groupMembers.find((m) => m.uid === message.senderId);
+      const member = groupMemberById.get(message.senderId);
       return member?.displayName || member?.username || "Unknown";
     },
-    [groupMembers],
+    [groupMemberById],
   );
 
   // ==========================================================================
@@ -1594,23 +1661,22 @@ export default function GroupChatScreen({ route, navigation }: Props) {
                   })()}
                 </TouchableOpacity>
 
-                {/* Only show timestamp on last message of group */}
-                {showTimestamp && (
-                  <View
-                    style={[
-                      styles.timestampRow,
-                      isOwnMessage
-                        ? styles.timestampRowSent
-                        : styles.timestampRowReceived,
-                    ]}
+                <View
+                  style={[
+                    styles.timestampRow,
+                    isOwnMessage
+                      ? styles.timestampRowSent
+                      : styles.timestampRowReceived,
+                    !showTimestamp && styles.timestampRowHidden,
+                  ]}
+                  pointerEvents="none"
+                >
+                  <Text
+                    style={[styles.messageTime, { color: colors.textMuted }]}
                   >
-                    <Text
-                      style={[styles.messageTime, { color: colors.textMuted }]}
-                    >
-                      {formatTime(item.createdAt)}
-                    </Text>
-                  </View>
-                )}
+                    {formatTime(item.createdAt)}
+                  </Text>
+                </View>
               </View>
             </View>
 
@@ -1678,7 +1744,16 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   // OPTIMIZATION: Show skeleton instead of full-screen loading
   // Shell (header, composer) renders immediately to prevent flicker
   // Only show skeleton when we truly have no group data yet
-  const showSkeleton = groupLoading && !groupId;
+  const showSkeleton =
+    (groupLoading && !group && groupMembers.length === 0) ||
+    (messages.length > 0 && memberBootstrapPending);
+
+  // Keyboard-sync: configure KCSV and get stable renderScrollComponent
+  setChatScrollViewConfig({
+    offset: 60 + insets.bottom,
+    keyboardLiftBehavior: "whenAtEnd",
+  });
+  const renderScrollComponent = useRenderChatScrollComponent();
 
   if (error) {
     return (
@@ -1705,13 +1780,6 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   // Main Render
   // ==========================================================================
 
-  // Keyboard-sync: configure KCSV and get stable renderScrollComponent
-  setChatScrollViewConfig({
-    offset: 60 + insets.bottom,
-    keyboardLiftBehavior: "whenAtEnd",
-  });
-  const renderScrollComponent = useRenderChatScrollComponent();
-
   return (
     <>
       <KeyboardAvoidingView
@@ -1729,11 +1797,12 @@ export default function GroupChatScreen({ route, navigation }: Props) {
           >
             {group?.avatarUrl ? (
               <AppImage
-                source={{ uri: group.avatarUrl }}
+                source={buildRemoteImageSource(group.avatarUrl)}
                 style={[
                   styles.groupIcon,
                   { width: 36, height: 36, borderRadius: 18 },
                 ]}
+                transition={0}
                 debugLabel="GroupAvatar"
               />
             ) : (
@@ -2085,6 +2154,7 @@ const styles = StyleSheet.create({
   timestampRow: { flexDirection: "row", alignItems: "center", marginTop: 6 },
   timestampRowSent: { alignSelf: "flex-end", marginRight: 4 },
   timestampRowReceived: { alignSelf: "flex-start", marginLeft: 4 },
+  timestampRowHidden: { opacity: 0 },
   systemMessage: { alignItems: "center", marginVertical: 12 },
   systemMessageText: {
     fontSize: 12,
@@ -2122,5 +2192,6 @@ const styles = StyleSheet.create({
   },
   avatarSpacer: {
     width: 32,
+    height: 32,
   },
 });

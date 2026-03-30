@@ -68,6 +68,12 @@ export interface NotificationRequest {
   iosThreadId?: string;
   /** iOS category identifier for actionable notifications. */
   iosCategoryId?: string;
+  /**
+   * Push tokens to exclude from delivery — typically the actor/sender's
+   * device tokens.  This prevents the sender from receiving their own
+   * notification even if a stale device entry exists under the recipient.
+   */
+  excludeTokens?: string[];
 }
 
 interface NotificationPreferenceSnapshot {
@@ -387,21 +393,6 @@ async function getPushDevices(
     });
   }
 
-  if (devices.length === 0) {
-    const userDoc = await db.collection("Users").doc(uid).get();
-    const legacyToken =
-      typeof userDoc.data()?.expoPushToken === "string"
-        ? (userDoc.data()?.expoPushToken as string)
-        : null;
-    if (legacyToken && !tokenSeen.has(legacyToken)) {
-      devices.push({
-        deviceId: "legacy",
-        expoPushToken: legacyToken,
-        platform: null,
-      });
-    }
-  }
-
   return devices;
 }
 
@@ -471,14 +462,24 @@ async function chooseNotificationDecision(
   }
 
   const pushDevices = await getPushDevices(request.recipientUid);
-  if (pushDevices.length === 0) {
+
+  // Filter out the sender's device tokens to prevent self-notifications.
+  // This handles the case where a device was previously logged into the
+  // recipient's account and the push token wasn't fully cleaned up on logout.
+  const excludeSet = new Set(request.excludeTokens ?? []);
+  const filteredDevices =
+    excludeSet.size > 0
+      ? pushDevices.filter((d) => !excludeSet.has(d.expoPushToken))
+      : pushDevices;
+
+  if (filteredDevices.length === 0) {
     return { channel: "none", reason: "no_push_devices" };
   }
 
   return {
     channel: "push",
     reason: "no_active_session",
-    pushDevices,
+    pushDevices: filteredDevices,
   };
 }
 

@@ -262,6 +262,15 @@ export function ChatComposer({
     // Store ref to input before calling onSend (in case of re-renders)
     const input = inputRef.current;
 
+    // Clear the native TextInput buffer immediately so that any keystrokes
+    // typed while the async send is in flight start from an empty buffer
+    // instead of concatenating with the old text ("hi" + "bye" → "hibye").
+    // The React state clear (via onSend → clearText) follows asynchronously
+    // on the next render, but by then the native buffer is already empty.
+    if (input) {
+      input.clear();
+    }
+
     try {
       // Call onSend and await it in case it's async
       await Promise.resolve(onSend());

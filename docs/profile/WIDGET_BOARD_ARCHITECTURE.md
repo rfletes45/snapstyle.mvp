@@ -121,31 +121,33 @@ Position changes are animated using Reanimated shared values (see [Animation Mod
 
 ### Compaction (Gravity)
 
-**Function:** `compactWidgets()` in `BoardLayoutEngine.ts`
+**Function:** `compactWidgets()` / `stableCompact()` in `BoardLayoutEngine.ts`
 
 After any layout change, widgets compact upward (gravity pulls everything to the top):
 
-1. Sort visible widgets by position: top-to-bottom, then left-to-right
-2. For each widget: scan rows upward from current Y to find the first valid position at the widget's current X
-3. If X-preserving placement fails: search all columns
+1. Sort visible widgets by visual order: y ascending, x ascending, instanceId tiebreaker
+2. For each widget in order: place at the topmost valid position at the widget's preferred X
+3. If X-preserving placement fails: scan all columns in row-major order
 4. Absolute fallback: place at grid bottom
 5. Deterministic: same input always produces same output
 
-**Pinned variant:** `compactWithPinned(widgets, pinnedId)` preserves one widget's exact position. The pinned widget gets first claim on space; all others compact around it. Used during drag previews.
+### Conflict Resolution (Stable Repack)
 
-### Conflict Resolution
-
-**Function:** `resolveConflicts()` in `BoardLayoutEngine.ts`
+**Function:** `resolveConflicts()` / `stableRepack()` in `BoardLayoutEngine.ts`
 
 When a widget is dragged or resized into a position that overlaps other widgets:
 
-1. Clamp the moved widget to grid bounds
-2. Identify all overlapping widgets via rectangle intersection (`rectsOverlap()`)
-3. Sort conflicts by distance to the moved widget (closest first, for visual stability)
-4. Iteratively relocate each conflicted widget to the nearest valid slot via spiral search
-5. Call `compactWithPinned()` to finalize the layout with the moved widget pinned
+1. Place the dragged widget (pinned) at its target grid position, clamped to bounds
+2. Compute affected region: `min(oldY, newY)` determines the start row
+3. Partition non-pinned widgets into **fixed prefix** (bottom edge ≤ affected start, no overlap with pinned rect) and **affected suffix** (everything else)
+4. Fixed prefix is preserved in place
+5. Affected suffix is repacked in visual order from the top of the affected zone:
+   - Each widget is placed at the topmost valid position at its preferred X
+   - No current-position preservation — widgets that can move upward into vacancies **do** move (vacancy healing)
+   - `minRow` constraint prevents later widgets from leapfrogging earlier ones
+   - No spiral search, no distance-based relocation
 
-**Nearest slot search:** Starts at the widget's original position and spirals outward (up to radius 20). If no slot is found within the spiral, falls back to placing at the grid bottom.
+**Vacancy healing:** When the active widget leaves its origin, the affected suffix is repacked from the top of the affected zone. This means widgets below the vacated space automatically move upward to fill it during the preview.
 
 ### Resize Resolution
 
@@ -155,8 +157,32 @@ When a widget is resized:
 
 1. Apply the new size
 2. Clamp X position if the widget now exceeds grid width
-3. Delegate to `resolveConflicts()` to handle any overlaps
+3. Delegate to `stableRepack()` to handle any overlaps and compact the affected region
 4. Returns updated layout or `null` if the resize is invalid
+
+### Coupled Post-Drop Settlement
+
+**Function:** `settleBoardAfterDrop()` in `BoardLayoutEngine.ts`
+
+After a widget is dropped, the board runs a **coupled settlement pass** on the entire layout:
+
+1. Run `stableRepack()` to resolve conflicts and heal vacancies (phases 1–4)
+2. Run `stableCompact()` to compact the entire board upward (phase 5)
+
+Phase 5 is the critical addition: it compacts the **active widget AND the affected suffix together** — the active widget settles from its drop position to the highest valid row, and all widgets below it settle upward with it.
+
+Properties:
+
+- **Coupled:** The active widget never moves upward alone; the suffix moves with it
+- **No dead gaps:** The final layout has no unnecessary vertical space between the active widget and the widgets below it
+- **Stable order:** Visual order (y → x → instanceId) is always preserved
+- **Deterministic:** Same input always produces the same output
+- **Animated:** Active widget uses `snap` spring; passive widgets use `reflow` spring
+
+Wired into `commitPreview()` in `useBoardState.ts`:
+
+- If a dwell-confirmed preview exists: runs `stableCompact()` on the preview
+- If no preview: runs `settleBoardAfterDrop()` from scratch
 
 ## Drag-and-Drop System
 
@@ -293,10 +319,9 @@ When `readOnly` is `true`: `save()` is a no-op, default layout is not persisted,
 
 **Done (save):**
 
-1. Compact working widgets
-2. Persist to Firestore
-3. Clear working/preview state
-4. Set mode to `"view"`
+1. Save the exact working layout to Firestore (no re-compaction — every operation already produces a valid settled layout)
+2. Clear working/preview state
+3. Set mode to `"view"`
 
 **Cancel (discard):**
 

@@ -19,6 +19,10 @@ import type { FriendRequestWithUser } from "@/hooks/useFriendRequests";
 import { useInboxData } from "@/hooks/useInboxData";
 import { useInboxTyping } from "@/hooks/useInboxTyping";
 import { useUnifiedInboxRequests } from "@/hooks/useUnifiedInboxRequests";
+import {
+  prepareDmThreadEntry,
+  prepareGroupThreadEntry,
+} from "@/services/chat/threadIdentityWarmup";
 import { markNotificationsReadByTypes } from "@/services/userNotifications";
 import { useAuth } from "@/store/AuthContext";
 import { useInAppNotifications } from "@/store/InAppNotificationsContext";
@@ -246,7 +250,7 @@ export default function ChatListScreen() {
   // =============================================================================
 
   const handleConversationPress = useCallback(
-    (conversation: InboxConversation) => {
+    async (conversation: InboxConversation) => {
       // Optimistically mark as read in local state (immediate UI update)
       markConversationReadOptimistic(conversation.id, conversation.type);
 
@@ -254,6 +258,15 @@ export default function ChatListScreen() {
       actions.markRead(conversation);
 
       if (conversation.type === "dm") {
+        try {
+          await prepareDmThreadEntry({
+            avatarUrl: conversation.profilePictureUrl || conversation.avatarUrl,
+            decorationId: conversation.decorationId,
+          });
+        } catch (error) {
+          log.warn("[Inbox] Failed to warm DM thread identity", { error });
+        }
+
         navigation.navigate("ChatDetail", {
           friendUid: conversation.otherUserId,
           // OPTIMIZATION: Pass cached data for instant display
@@ -268,6 +281,14 @@ export default function ChatListScreen() {
           },
         });
       } else {
+        try {
+          await prepareGroupThreadEntry(conversation.id, {
+            groupAvatarUrl: conversation.avatarUrl,
+          });
+        } catch (error) {
+          log.warn("[Inbox] Failed to warm group thread identity", { error });
+        }
+
         navigation.navigate("GroupChat", {
           groupId: conversation.id,
           groupName: conversation.name,

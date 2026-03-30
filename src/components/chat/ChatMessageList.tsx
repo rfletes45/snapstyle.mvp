@@ -131,7 +131,7 @@ function ChatMessageListInner<T>(
     messageCount: data.length,
     isKeyboardOpen,
     isAtBottom: atBottom.isAtBottom,
-    distanceFromBottom: atBottom.distanceFromBottom,
+    distanceRef: atBottom.distanceRef,
     debug,
   });
 
@@ -150,6 +150,27 @@ function ChatMessageListInner<T>(
   const dynamicContentStyle = useMemo(
     () => [styles.contentContainer, contentContainerStyle],
     [contentContainerStyle],
+  );
+
+  // maintainVisibleContentPosition keeps scroll position stable when items are
+  // added above the viewport (pagination) or below it (new messages while
+  // scrolled up).  autoscrollToTopThreshold tells the native scroll view to
+  // snap to offset 0 whenever the first visible item is within 200 px of the
+  // start — matching the useAtBottom threshold — so new messages at the bottom
+  // appear instantly on the UI thread without a JS-round-trip delay.
+  //
+  // Previously this prop was *toggled* off when the user was at the bottom
+  // (to avoid grouped-message layout bounces), but toggling the prop itself
+  // caused FlatList to reconfigure its internal scroll state, producing
+  // visible teleports/jumps.  Keeping it always-on with the native autoscroll
+  // threshold eliminates both the toggling reconfiguration *and* the JS-delay
+  // frame-gap that the old explicit scrollToOffset(0) left behind.
+  const maintainVisibleContentPosition = useMemo(
+    () => ({
+      minIndexForVisible: 1,
+      autoscrollToTopThreshold: 200,
+    }),
+    [],
   );
 
   // Scroll to bottom (for inverted list, this is offset 0)
@@ -187,7 +208,7 @@ function ChatMessageListInner<T>(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
       atBottom.onScroll(event);
     },
-    [atBottom],
+    [atBottom.onScroll],
   );
 
   // Handle scroll end
@@ -195,14 +216,14 @@ function ChatMessageListInner<T>(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
       atBottom.onScrollEndDrag(event);
     },
-    [atBottom],
+    [atBottom.onScrollEndDrag],
   );
 
   const handleMomentumScrollEnd = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
       atBottom.onMomentumScrollEnd(event);
     },
-    [atBottom],
+    [atBottom.onMomentumScrollEnd],
   );
 
   // Handle scroll to index failure
@@ -246,10 +267,7 @@ function ChatMessageListInner<T>(
     // Performance
     ...LIST_PERFORMANCE_PROPS,
     // Maintain scroll position when content changes (new messages / pagination)
-    maintainVisibleContentPosition: {
-      minIndexForVisible: 1,
-      autoscrollToTopThreshold: 100,
-    },
+    maintainVisibleContentPosition,
     // Handle scroll failures
     onScrollToIndexFailed: handleScrollToIndexFailed,
     // Styles

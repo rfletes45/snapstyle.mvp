@@ -62,6 +62,7 @@ import {
   onMessageRequestCreatedNotification,
   onNewGroupMessageV2,
   onNewMessage,
+  onPushTokenRegistered,
 } from "./notifications";
 import {
   cleanupExpiredPushTokens,
@@ -206,6 +207,7 @@ export {
   onNewMessage,
   onNewMessageEvent,
   onNewReport,
+  onPushTokenRegistered,
   onScheduledMessageCreated,
   onStoryPostedTaskProgress,
   onStoryViewed,

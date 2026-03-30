@@ -429,7 +429,7 @@ export function getThreadMessages(
   const messages = db.getAllSync<MessageRow>(
     `SELECT * FROM messages
      WHERE thread_root_id = ? AND deleted_for_all = 0
-     ORDER BY COALESCE(server_received_at, created_at) ASC
+     ORDER BY created_at ASC
      LIMIT ?`,
     [rootMessageId, limit],
   );
@@ -497,12 +497,12 @@ export function getMessages(
   }
 
   if (beforeTimestamp) {
-    whereClause += " AND COALESCE(server_received_at, created_at) < ?";
+    whereClause += " AND created_at < ?";
     params.push(beforeTimestamp);
   }
 
   if (afterTimestamp) {
-    whereClause += " AND COALESCE(server_received_at, created_at) > ?";
+    whereClause += " AND created_at > ?";
     params.push(afterTimestamp);
   }
 
@@ -511,7 +511,7 @@ export function getMessages(
   const messages = db.getAllSync<MessageRow>(
     `SELECT * FROM messages 
      WHERE ${whereClause}
-     ORDER BY COALESCE(server_received_at, created_at) DESC
+     ORDER BY created_at DESC
      LIMIT ?`,
     params,
   );
