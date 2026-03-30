@@ -6,6 +6,7 @@
 import Avatar from "@/components/Avatar";
 import { AvatarConfig } from "@/types/models";
 import { Ionicons } from "@expo/vector-icons";
+import { MediaStream, RTCView } from "@stream-io/react-native-webrtc";
 import React, { useEffect, useMemo, useRef } from "react";
 import {
   Animated,
@@ -17,7 +18,6 @@ import {
   View,
   ViewStyle,
 } from "react-native";
-import { MediaStream, RTCView } from "react-native-webrtc";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 

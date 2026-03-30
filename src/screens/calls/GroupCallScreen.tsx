@@ -21,6 +21,7 @@ import { GroupCallLayout, GroupCallParticipant } from "@/types/call";
 import { formatDurationSecondsPadded as formatDuration } from "@/utils/time";
 import { Ionicons } from "@expo/vector-icons";
 import { RouteProp, useNavigation, useRoute } from "@react-navigation/native";
+import { MediaStream } from "@stream-io/react-native-webrtc";
 import React, { JSX, useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -33,7 +34,6 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { MediaStream } from "react-native-webrtc";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 

@@ -1,0 +1,56 @@
+﻿[
+  {
+    "id": "51c92bd5-839d-4308-abc6-d76e47dab8f2",
+    "status": "ERRORED",
+    "platform": "IOS",
+    "error": {
+      "errorCode": "UNKNOWN_ERROR",
+      "message": "Unknown error. See logs of the Install pods build phase for more information."
+    },
+    "artifacts": {
+      "xcodeBuildLogsUrl": "https://job-logs.eascdn.net/production-xcode-logs/51c92bd5-839d-4308-abc6-d76e47dab8f2?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260330%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260330T060802Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=4c7ef5adf2e3232d927371cfa46d953ddf93e8133264195974eb08a539f2a8159872a5113b0fca68b7efd71796c566fdf1ee769efd590ac59f28285915cd31dbb096348222b27510b651d0712d98e4afc379ab42b72abcd2d13cfea0e29ed9a17fa660e07ac89aba7d7c4bc70b0efcbc37242a43609002bbb6ea06e00d978719239052ddccd601d968ba1ecf13b7f9177d8d5f3158754406f866670f3a7ece13dbe12f50461a13db3afca49ec186ad929e6e984fbd20449f5cee5b3e42fd78be9067da10ae06a63ce0380f62bb5e833b528430b2a6b90a8f43243b93991bbfe2219d8ce85a06645cb83feb3efb80855680770b9e89935bdc2363e0fe534e269e"
+    },
+    "fingerprint": {
+      "id": "019d3d57-774f-7a05-8ad6-d926dc7d668f",
+      "hash": "4aa25c078291a01dbea59a95f42bcad5705c32a5"
+    },
+    "initiatingActor": {
+      "id": "eabc51d0-d7ba-4c08-ad2b-d21edecb2194",
+      "displayName": "rfletes"
+    },
+    "logFiles": [
+      "https://job-logs.eascdn.net/production/51c92bd5-839d-4308-abc6-d76e47dab8f2/1774850635831-e509ee78-b2a5-48fc-87e3-73b07e33b9fd.txt?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260330%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260330T060802Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=b1814159b21b14523fafc7207f747756fd836c2fc20f30f1ade334a5687d9f7ccc757e661641476ad060df3ed887d42f76d6420ac5b1494142040c54d8d024f956f636976a84afa0077a8dba0d5e8cef1fdc1da15ebd625e38f5d13330479c5c3c369c21e6d486bc14fe059912c2a07037bf1995dfeb36d4dd07ad5e12f6fcfe4ef18c0059d03725bb0677e57b71dbd2a5461a5e33ea562889745e33826eb466ec0a6ff023185a160f144b3f25e7d385f33282339a3432be53b6835503bbff40d5c92891764b2f7bc5d510d973a2e4ea79a41392d06e55a810346b894cffb0e96a8ee2b17cc414ea0504c5b5a15cb9937e122e464fbcbe13ec2157e0b39cb87f",
+      "https://job-logs.eascdn.net/production/51c92bd5-839d-4308-abc6-d76e47dab8f2/1774850641976-44f9190d-c859-4869-949f-a0f20fa4bbeb.txt?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260330%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260330T060802Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=29e55d7c977e946c07480cfe5c633c463a3a26d8d3de14a140ff7f3564a48410c259ff4579c1add081e12a0f4e825db6ba21a561aeec2b43663822b6082380a741ceab1315acd4fec14f822d4e5b071da5ae4be3b28e7b7aebfd50e51f30c70df6d9b7703ee992d503bf78ca7c948724907229f103b6d19d6e389d817c36fca6240eaf7dd7905df935a3e9b67f6f85403155a3cea1d3075c85d87830079d14a366c4f93266bae02143f81b310aa1b9a96395489392fbfad2c251239bb99ac22252070f787c5462fee1df6a99038b23880e3c5a1865ebf8cc8ce6416c4a2b80966457d1fc9c60e5ecc64181dfe69ee79b78704d20af8907fdf1928cf131642ad3",
+      "https://job-logs.eascdn.net/production/51c92bd5-839d-4308-abc6-d76e47dab8f2/1774850642332-8e3b6d32-0b2d-4601-a72b-7ea936c1aa96.txt?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260330%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260330T060802Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=0138fe5ff9cdb0390e2da2991c7cdeaa227560c52318f1b028eaf5ae1a8ef1569386a1cbb3086dcbff40397db917f6d988e8cf96c8d87bc681e07a6c2d15a92121b2d50be8eafa26239ee5e00e694b3b82a08e75ed21d4f2e88c5185a8cab564ec184068528b0d8c9f891dfabe515101c159925432e4be8b856214d493e07b72c2e35ac9847d9c2d36f01214f60d42b0c73a9a2060c167840d43ae92c82d318a27003592b7cc4a45f97ae439a0b6afcbaff52e7ba707fadad7f9db2c995bcdc8ef8b118431f3162d82f212ad925aa945700b23569b646d69b85df0a3fda7f30b8e6095bc722531bbed5c940197dc00b8b9c8abb356743c2e9ecb9416aa1297db",
+      "https://job-logs.eascdn.net/production/51c92bd5-839d-4308-abc6-d76e47dab8f2/1774850642529-c5222161-9e82-4690-a92b-1109a4fc1ce9.txt?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260330%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260330T060802Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=8d6d8038c4ecd20d1194f5a38d3c730de90502c9c9189a3f939c18b6034fc0a0cc00717b887821314ef9add2229c9a9380d99e174287421ba7723fdd3dc0e65faca50692c9c8405fcdeaf8752e8c7bdfcadb36e5ef7688ef4537ece2110cec5677f3bbca991f2262725068a5e6ae9c62ca2beae7acc8174ebc287019be3e3609276fa3e2b52f7228119d4e140f785ba331992000847b6d102fd85425c0292015ede937fa68092762196c88a832feef06fcab1320bdadc971ba59451cbed8c071c8e41c297f6f61ad75db221e2836a43376ff156c2a3f85076ae0ef7f97e2e3263d07bc48b3246cef1eff678afb52de7637dd151d5cd4981d5344778e73142d51"
+    ],
+    "project": {
+      "id": "a57e6af7-ac18-4751-90ee-3b9cda7ea645",
+      "name": "snapstyle-mvp",
+      "slug": "snapstyle-mvp",
+      "ownerAccount": {
+        "id": "bf29f370-56ee-4790-aa8a-70e7b0042ceb",
+        "name": "rfletes"
+      }
+    },
+    "distribution": "STORE",
+    "buildProfile": "production",
+    "sdkVersion": "54.0.0",
+    "appVersion": "1.0.0",
+    "appBuildVersion": "14",
+    "runtimeVersion": "1.0.0",
+    "gitCommitHash": "0a072d5288d19768f9377b11332f227bc1092a91",
+    "gitCommitMessage": "feat: Add Contacts Onboarding Card and related hooks\n\n- Implemented ContactsOnboardingCard component for managing contacts access onboarding with multiple variants (prominent, compact, limited, denied).\n- Created useContactsOnboarding hook to manage permission status, card visibility, and async storage for dismissal persistence.\n- Introduced useTasksSummary hook for tracking daily and monthly task progress counts.\n- Developed threadIdentityWarmup service for prefetching identity images and decorations for chat threads.\n- Added streamPushRegistration service for registering and unregistering device push tokens with Stream Video.\n- Implemented centralized chat timestamp formatting utility for consistent timestamp display across chat UI.\n- Created remoteImageSource utility for normalizing and building remote image sources.",
+    "priority": "NORMAL",
+    "createdAt": "2026-03-30T06:03:55.455Z",
+    "updatedAt": "2026-03-30T06:06:13.331Z",
+    "completedAt": "2026-03-30T06:06:10.188Z",
+    "expirationDate": "2026-04-29T06:03:55.528Z",
+    "isForIosSimulator": false,
+    "metrics": {
+      "buildWaitTime": 252,
+      "buildQueueTime": 46859,
+      "buildDuration": 83439
+    }
+  }
+]

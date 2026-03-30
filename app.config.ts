@@ -15,7 +15,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     supportsTablet: true,
     bundleIdentifier: "com.vibeapp.mobile",
     googleServicesFile: "./GoogleService-Info.plist",
-    buildNumber: "12",
+    buildNumber: "15",
     infoPlist: {
       // Camera & Microphone permissions
       NSCameraUsageDescription: "Vibe needs camera access for video calls",
@@ -140,9 +140,8 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
         enableFrameProcessors: true,
       },
     ],
-    // Stream Video SDK + WebRTC config plugins
+    // Stream Video SDK (includes its own WebRTC fork)
     "@stream-io/video-react-native-sdk",
-    "@config-plugins/react-native-webrtc",
   ],
   experiments: {
     typedRoutes: true,

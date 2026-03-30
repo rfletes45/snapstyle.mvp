@@ -6,6 +6,13 @@
 import { getAuthInstance, getFirestoreInstance } from "@/services/firebase";
 import { DEFAULT_ICE_SERVERS, IceConfig, SignalingMessage } from "@/types/call";
 import { generateUUID } from "@/utils/uuid";
+import {
+  mediaDevices,
+  MediaStream,
+  RTCIceCandidate,
+  RTCPeerConnection,
+  RTCSessionDescription,
+} from "@stream-io/react-native-webrtc";
 import * as Crypto from "expo-crypto";
 import {
   collection,
@@ -20,13 +27,6 @@ import {
   where,
 } from "firebase/firestore";
 import { PermissionsAndroid, Platform } from "react-native";
-import {
-  mediaDevices,
-  MediaStream,
-  RTCIceCandidate,
-  RTCPeerConnection,
-  RTCSessionDescription,
-} from "react-native-webrtc";
 
 function uuidv4(): string {
   try {

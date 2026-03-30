@@ -34,7 +34,19 @@ interface IncomingCallHandlerProps {
   onNavigateToCall?: (callId: string, mode: "audio" | "video") => void;
 }
 
-export default function IncomingCallHandler({
+/**
+ * Outer guard: only render the inner handler when the Stream client is
+ * connected (i.e. `<StreamVideo>` is above us in the tree). Without this,
+ * the real `useCalls()` hook would throw on the first render frame because
+ * the client hasn't initialized yet.
+ */
+export default function IncomingCallHandler(props: IncomingCallHandlerProps) {
+  const { isReady } = useStreamCall();
+  if (!isReady) return null;
+  return <IncomingCallHandlerInner {...props} />;
+}
+
+function IncomingCallHandlerInner({
   onNavigateToCall,
 }: IncomingCallHandlerProps) {
   const { acceptCall, rejectCall, isBusy, activeSession } = useStreamCall();

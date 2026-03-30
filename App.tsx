@@ -160,7 +160,7 @@ function AppContent() {
       >
         <Text
           style={{
-            color: colors.onBackground,
+            color: colors.text,
             fontSize: 18,
             fontWeight: "bold",
             marginBottom: 8,
@@ -170,16 +170,14 @@ function AppContent() {
         </Text>
         <Text
           style={{
-            color: colors.onBackground,
+            color: colors.text,
             fontSize: 14,
             textAlign: "center",
           }}
         >
           {bootError}
         </Text>
-        <Text
-          style={{ color: colors.onBackground, fontSize: 12, marginTop: 16 }}
-        >
+        <Text style={{ color: colors.text, fontSize: 12, marginTop: 16 }}>
           Please restart the app.
         </Text>
       </View>

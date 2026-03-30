@@ -15,6 +15,7 @@ import { createLogger } from "@/utils/log";
 import { formatDurationSecondsPadded as formatDuration } from "@/utils/time";
 import { Ionicons } from "@expo/vector-icons";
 import { RouteProp, useNavigation, useRoute } from "@react-navigation/native";
+import { RTCView } from "@stream-io/react-native-webrtc";
 import React, { JSX, useEffect } from "react";
 import {
   ActivityIndicator,
@@ -26,7 +27,6 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { RTCView } from "react-native-webrtc";
 
 const logger = createLogger("screens/calls/VideoCallScreen");
 const logInfo = (msg: string, data?: any) =>
