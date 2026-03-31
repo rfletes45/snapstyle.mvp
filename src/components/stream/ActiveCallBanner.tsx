@@ -91,11 +91,8 @@ function ActiveCallBannerInner({
     return () => clearInterval(interval);
   }, [isBusy]);
 
-  if (!isVisible) return null;
-
-  const isVoiceRoom = activeSession?.type === "voice_channel";
-  const timeStr = `${Math.floor(elapsed / 60)}:${(elapsed % 60).toString().padStart(2, "0")}`;
-
+  // Navigate back to the active call screen
+  // MUST be above the early return — hooks cannot be after conditional returns.
   const handlePress = useCallback(() => {
     if (!navigationRef.isReady()) return;
     if (!activeSession) return;
@@ -115,6 +112,11 @@ function ActiveCallBannerInner({
       });
     }
   }, [activeSession]);
+
+  if (!isVisible) return null;
+
+  const isVoiceRoom = activeSession?.type === "voice_channel";
+  const timeStr = `${Math.floor(elapsed / 60)}:${(elapsed % 60).toString().padStart(2, "0")}`;
 
   return (
     <View
