@@ -58,10 +58,10 @@ export function useActiveVoiceRooms(
 
         const results = await Promise.allSettled(
           groupsToCheck.map(async (group) => {
-            const call = await queryVoiceChannel(group.id);
-            if (!call) return null;
+            const result = await queryVoiceChannel(group.id);
+            if (!result) return null;
 
-            const participants = call.state.participants ?? [];
+            const participants = result.state.participants ?? [];
             if (participants.length === 0) return null;
 
             return {
@@ -72,7 +72,7 @@ export function useActiveVoiceRooms(
               occupants: participants.map((p) => ({
                 userId: p.userId,
                 name: p.name || p.userId,
-                image: (p as any).image || undefined,
+                image: p.image || undefined,
               })),
               occupantCount: participants.length,
             } as ActiveVoiceRoom;

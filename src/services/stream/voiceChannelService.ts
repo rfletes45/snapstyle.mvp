@@ -78,7 +78,8 @@ export async function joinVoiceChannel(
   // settings_override MUST go here (creation time), NOT in call.join().
   // Passing video settings in join() causes Stream to validate
   // target_resolution defaults ({width:0,height:0}) which fail (min 240).
-  // Audio rooms intentionally omit video settings entirely.
+  // We set camera_default_on: false explicitly so the SDK never touches
+  // camera hardware for voice-only channels (prevents iOS camera indicator).
   try {
     await call.getOrCreate({
       data: {
@@ -91,6 +92,9 @@ export async function joinVoiceChannel(
             mic_default_on: true,
             default_device: toStreamDevice(config.audio.defaultOutput),
           },
+          video: {
+            camera_default_on: false,
+          },
         },
       },
     });
@@ -102,6 +106,8 @@ export async function joinVoiceChannel(
   }
 
   // Join without settings_override — settings were applied at creation.
+  // camera_default_on: false in settings_override ensures the SDK will
+  // NOT call camera.enable() after join, so camera hardware stays untouched.
   try {
     await call.join({ create: false });
   } catch (err: any) {
@@ -111,12 +117,9 @@ export async function joinVoiceChannel(
     );
   }
 
-  // Ensure camera is off for audio-only voice channels.
-  try {
-    await call.camera.disable();
-  } catch {
-    // Non-fatal — camera may already be off
-  }
+  // Do NOT call call.camera.disable() here — that touches the camera
+  // hardware layer on iOS, activating the camera indicator even to turn
+  // it off. The settings_override keeps it off without any hardware access.
 
   return call;
 }
@@ -132,23 +135,82 @@ export async function leaveVoiceChannel(call: Call): Promise<void> {
  * Query participant/occupancy info for a voice channel without joining.
  * Useful for showing who's in the channel from the group UI.
  *
+ * IMPORTANT: Uses the raw HTTP API (client.streamClient.post) instead of
+ * client.queryCalls() because queryCalls() creates Call objects that
+ * initialize camera/mic device managers via applyDeviceConfig(). On iOS
+ * this triggers the camera indicator even for read-only queries.
+ * The raw API returns plain JSON — no Call objects, no device setup.
+ *
  * @param groupId The group ID
- * @returns Call object with state (inspect call.state.participants)
+ * @returns Lightweight occupancy data or null if the channel doesn't exist
  */
-export async function queryVoiceChannel(groupId: string): Promise<Call | null> {
+export async function queryVoiceChannel(groupId: string): Promise<{
+  state: {
+    participants: Array<{
+      userId: string;
+      name?: string;
+      image?: string;
+    }>;
+  };
+} | null> {
   const client = getStreamClient();
+  if (!client) return null;
   const channelId = getVoiceChannelId(groupId);
-  const call = client.call(VOICE_CHANNEL_TYPE, channelId);
 
   try {
-    await call.get();
-    return call;
-  } catch (err: any) {
-    // Channel doesn't exist yet — that's fine
-    if (err?.message?.includes("not found") || err?.status === 404) {
+    // Use the raw HTTP client to query calls without creating Call objects.
+    // The coordinator endpoint POST /calls accepts the same filter format.
+    const response = await client.streamClient.post<{
+      calls: Array<{
+        call: {
+          session?: {
+            participants?: Array<{
+              user?: { id?: string; name?: string; image?: string };
+              user_session_id?: string;
+            }>;
+          };
+        };
+      }>;
+    }>("/calls", {
+      filter_conditions: {
+        cid: `${VOICE_CHANNEL_TYPE}:${channelId}`,
+      },
+      limit: 1,
+    });
+
+    if (!response.calls || response.calls.length === 0) {
       return null;
     }
-    // Re-throw unexpected errors so callers can handle them
-    throw err;
+
+    const callData = response.calls[0];
+    const session = callData.call?.session;
+    const participants =
+      session?.participants?.map((p) => ({
+        userId: p.user?.id ?? p.user_session_id ?? "",
+        name: p.user?.name ?? p.user?.id ?? "",
+        image: p.user?.image ?? undefined,
+      })) ?? [];
+
+    // Only return as "active" if there are actual participants
+    if (participants.length === 0) {
+      return null;
+    }
+
+    return { state: { participants } };
+  } catch (err: any) {
+    // Channel doesn't exist yet — that's fine
+    if (
+      err?.message?.includes("not found") ||
+      err?.status === 404 ||
+      err?.message?.includes("was not found")
+    ) {
+      return null;
+    }
+    // Swallow unexpected errors — occupancy queries should never block
+    console.warn(
+      "[VoiceChannelService] queryVoiceChannel failed:",
+      err?.message,
+    );
+    return null;
   }
 }

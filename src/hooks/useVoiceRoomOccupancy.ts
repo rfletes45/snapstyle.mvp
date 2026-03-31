@@ -53,24 +53,21 @@ export function useVoiceRoomOccupancy(
     if (!groupId || !CALL_FEATURES.CALLS_ENABLED) return;
 
     try {
-      const call = await queryVoiceChannel(groupId);
+      const result = await queryVoiceChannel(groupId);
       if (!mountedRef.current) return;
 
-      if (call) {
-        const participants = call.state.participants ?? [];
-        // Stable ordering: sort by join time (participant.joinedAt) then by userId
-        const sorted = [...participants].sort((a, b) => {
-          const aTime = (a as any).joinedAt?.getTime?.() ?? 0;
-          const bTime = (b as any).joinedAt?.getTime?.() ?? 0;
-          if (aTime !== bTime) return aTime - bTime;
-          return a.userId.localeCompare(b.userId);
-        });
+      if (result) {
+        const participants = result.state.participants ?? [];
+        // Sort by userId for stable ordering
+        const sorted = [...participants].sort((a, b) =>
+          a.userId.localeCompare(b.userId),
+        );
 
         setOccupants(
           sorted.map((p) => ({
             userId: p.userId,
             name: p.name || p.userId,
-            image: (p as any).image || undefined,
+            image: p.image,
           })),
         );
       } else {

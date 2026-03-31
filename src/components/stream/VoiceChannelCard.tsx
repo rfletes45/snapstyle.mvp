@@ -49,22 +49,22 @@ export default function VoiceChannelCard({
     activeSession?.type === "voice_channel" &&
     activeSession.channelId === channelId;
 
-  // Poll occupancy (lightweight — just reads the call state)
+  // Poll occupancy (lightweight — uses queryCalls, no camera hardware)
   useEffect(() => {
     let cancelled = false;
 
     async function fetchOccupancy() {
       try {
-        const call = await queryVoiceChannel(groupId);
+        const result = await queryVoiceChannel(groupId);
         if (cancelled) return;
 
-        if (call) {
-          const participants = call.state.participants ?? [];
+        if (result) {
+          const participants = result.state.participants ?? [];
           setOccupants(
             participants.map((p) => ({
               userId: p.userId,
               name: p.name || p.userId,
-              image: (p as any).image || undefined,
+              image: p.image || undefined,
             })),
           );
         } else {

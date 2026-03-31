@@ -39,17 +39,30 @@ import { SafeAreaView } from "react-native-safe-area-context";
 type Props = NativeStackScreenProps<MainStackParamList, "VoiceChannel">;
 
 export default function VoiceChannelScreen({ route, navigation }: Props) {
-  const { channelId, channelName, groupId } = route.params as {
-    channelId: string;
-    channelName: string;
-    groupId: string;
+  // Normalize params once at the top — prevents undefined-driven re-renders
+  const params = route.params as {
+    channelId?: string;
+    channelName?: string;
+    groupId?: string;
   };
+  const channelId = params.channelId ?? "";
+  const channelName = params.channelName ?? "Voice Room";
+  const groupId = params.groupId ?? "";
 
   const { leaveChannel, joinChannel, activeCall, activeSession } =
     useStreamCall();
   const { colors } = useAppTheme();
   const [joinError, setJoinError] = useState<string | null>(null);
   const joinAttemptedRef = useRef(false);
+  const mountedRef = useRef(true);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   // Auto-join the voice channel on mount if not already in it
   const isAlreadyInChannel =
@@ -57,12 +70,14 @@ export default function VoiceChannelScreen({ route, navigation }: Props) {
     activeSession.channelId === channelId;
 
   useEffect(() => {
-    if (isAlreadyInChannel || joinAttemptedRef.current) return;
+    if (!groupId || isAlreadyInChannel || joinAttemptedRef.current) return;
     joinAttemptedRef.current = true;
 
     joinChannel(groupId, channelName).catch((err: any) => {
       console.error("[VoiceChannelScreen] joinChannel error:", err);
-      setJoinError(err?.message || "Failed to join voice channel");
+      if (mountedRef.current) {
+        setJoinError(err?.message || "Failed to join voice channel");
+      }
     });
   }, [groupId, channelName, isAlreadyInChannel, joinChannel]);
 

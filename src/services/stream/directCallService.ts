@@ -122,7 +122,8 @@ export async function startDirectCall(
   }
 
   // Step 3: Join the call. No settings_override here — settings were
-  // applied at creation time above.
+  // applied at creation time above. The SDK reads camera_default_on
+  // from the call settings to decide whether to enable camera hardware.
   try {
     await call.join({ create: false, ring: true });
   } catch (joinErr: any) {
@@ -136,15 +137,19 @@ export async function startDirectCall(
     throw new Error(classifyCallError(joinErr, "join"));
   }
 
-  // Ensure correct camera state after join
-  try {
-    if (cameraOn) {
-      await call.camera.enable();
-    } else {
-      await call.camera.disable();
+  // Only touch camera hardware when mode is video.
+  // For audio calls, skip camera.enable/disable entirely to prevent
+  // the iOS camera indicator from activating.
+  if (mode === "video") {
+    try {
+      if (cameraOn) {
+        await call.camera.enable();
+      } else {
+        await call.camera.disable();
+      }
+    } catch {
+      // Non-fatal — camera state may already be correct
     }
-  } catch {
-    // Non-fatal — camera state may already be correct
   }
 
   console.log(`${TAG} Call ${callId} started (${mode}) → ${calleeId}`);
@@ -163,17 +168,28 @@ export async function acceptDirectCall(
   const config = callSettingsService.getCallConfig();
   const cameraOn = mode === "video" && config.video.startEnabled;
 
-  // Join without settings_override — the call settings were established
-  // at creation time by the caller. We set camera/mic after join.
+  // Join the call. The caller's settings_override.camera_default_on
+  // controls whether the SDK enables camera after join.
+  // For audio calls: camera_default_on = false → no camera hardware access.
+  // For video calls: camera_default_on = cameraOn → SDK may enable camera.
   await call.join();
 
-  // Apply camera/mic preferences after joining
-  try {
-    if (cameraOn) {
-      await call.camera.enable();
-    } else {
-      await call.camera.disable();
+  // Only touch camera hardware when mode is video.
+  // For audio calls, camera_default_on: false in the caller's settings is sufficient.
+  if (mode === "video") {
+    try {
+      if (cameraOn) {
+        await call.camera.enable();
+      } else {
+        await call.camera.disable();
+      }
+    } catch {
+      // Non-fatal — defaults are usually acceptable
     }
+  }
+
+  // Ensure microphone is on
+  try {
     await call.microphone.enable();
   } catch {
     // Non-fatal — defaults are usually acceptable

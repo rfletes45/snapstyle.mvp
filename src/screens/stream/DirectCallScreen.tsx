@@ -34,12 +34,17 @@ import { SafeAreaView } from "react-native-safe-area-context";
 type Props = NativeStackScreenProps<MainStackParamList, "DirectCall">;
 
 export default function DirectCallScreen({ route, navigation }: Props) {
-  const { callId, recipientName, mode, isOutgoing } = route.params as {
-    callId: string;
-    recipientName: string;
-    mode: "audio" | "video";
-    isOutgoing: boolean;
+  // Normalize params once at the top — prevents undefined-driven re-renders
+  const params = route.params as {
+    callId?: string;
+    recipientName?: string;
+    mode?: "audio" | "video";
+    isOutgoing?: boolean;
   };
+  const callId = params.callId ?? "";
+  const recipientName = params.recipientName ?? "";
+  const mode = params.mode ?? "audio";
+  const isOutgoing = params.isOutgoing ?? false;
 
   const { endCall, activeCall } = useStreamCall();
   const { colors } = useAppTheme();

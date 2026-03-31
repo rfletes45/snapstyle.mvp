@@ -21,16 +21,35 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 export function ActiveCallBanner() {
-  if (!CALL_FEATURES.CALLS_ENABLED) return null;
-
-  return <ActiveCallBannerInner />;
-}
-
-function ActiveCallBannerInner() {
   const { activeSession, isBusy } = useStreamCall();
   const { colors } = useAppTheme();
   const insets = useSafeAreaInsets();
 
+  // All hooks must be called unconditionally above this line.
+  // Feature-gate and visibility checks are below hooks only.
+  if (!CALL_FEATURES.CALLS_ENABLED) return null;
+
+  return (
+    <ActiveCallBannerInner
+      activeSession={activeSession}
+      isBusy={isBusy}
+      colors={colors}
+      insets={insets}
+    />
+  );
+}
+
+function ActiveCallBannerInner({
+  activeSession,
+  isBusy,
+  colors,
+  insets,
+}: {
+  activeSession: ReturnType<typeof useStreamCall>["activeSession"];
+  isBusy: boolean;
+  colors: ReturnType<typeof useAppTheme>["colors"];
+  insets: ReturnType<typeof useSafeAreaInsets>;
+}) {
   // Track elapsed time
   const [elapsed, setElapsed] = useState(0);
 
