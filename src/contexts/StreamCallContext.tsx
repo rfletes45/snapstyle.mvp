@@ -192,13 +192,23 @@ function StreamCallInnerProvider({
     [userId],
   );
 
-  // Track active session from the call's calling state
+  // Track active session from the call's calling state.
+  // This subscription is the AUTHORITATIVE cleanup path — when Stream
+  // reports LEFT/IDLE, we reset state. The explicit endCall/leaveChannel
+  // actions also reset state, so we guard with activeCallRef to avoid
+  // redundant updates (which would cause extra re-renders and potentially
+  // rapid <StreamCall> mount/unmount cycles).
   useEffect(() => {
     const call = activeCallRef.current;
     if (!call) return;
 
     const sub = call.state.callingState$.subscribe((state) => {
       if (state === CallingState.LEFT || state === CallingState.IDLE) {
+        // Only reset if this call is still the active call. The explicit
+        // endCall/leaveChannel actions null out activeCallRef BEFORE
+        // triggering call.leave(), so if we get here and ref is already
+        // null, the explicit action already handled cleanup.
+        if (activeCallRef.current !== call) return;
         recordSessionHistory("completed");
         activeCallRef.current = null;
         setActiveCall(null);
@@ -309,12 +319,27 @@ function StreamCallInnerProvider({
 
   const endCallAction = useCallback(async () => {
     const call = activeCallRef.current;
-    if (call && activeSession?.type === "direct_call") {
-      recordSessionHistory("completed");
-      await endDirectCall(call);
+    if (!call) {
+      // Already cleaned up — just ensure state is consistent
+      busyRef.current = false;
+      setActiveCall(null);
+      setActiveSession(null);
+      return;
     }
+
+    // Null the ref FIRST so the callingState$ subscription (which fires
+    // when call.endCall/leave triggers LEFT) won't double-reset state.
     activeCallRef.current = null;
-    busyRef.current = false; // Reset synchronously so user can immediately re-call
+    busyRef.current = false;
+
+    if (activeSession?.type === "direct_call") {
+      recordSessionHistory("completed");
+      try {
+        await endDirectCall(call);
+      } catch {
+        // Best-effort — call may already be ended by remote
+      }
+    }
     setActiveCall(null);
     setActiveSession(null);
   }, [activeSession, recordSessionHistory]);
@@ -354,12 +379,27 @@ function StreamCallInnerProvider({
 
   const leaveChannelAction = useCallback(async () => {
     const call = activeCallRef.current;
-    if (call && activeSession?.type === "voice_channel") {
-      recordSessionHistory("left");
-      await leaveVoiceChannel(call);
+    if (!call) {
+      // Already cleaned up — just ensure state is consistent
+      busyRef.current = false;
+      setActiveCall(null);
+      setActiveSession(null);
+      return;
     }
+
+    // Null the ref FIRST so the callingState$ subscription won't
+    // double-reset state when leaveVoiceChannel triggers LEFT.
     activeCallRef.current = null;
-    busyRef.current = false; // Reset synchronously so user can immediately re-call
+    busyRef.current = false;
+
+    if (activeSession?.type === "voice_channel") {
+      recordSessionHistory("left");
+      try {
+        await leaveVoiceChannel(call);
+      } catch {
+        // Best-effort — channel may already be left
+      }
+    }
     setActiveCall(null);
     setActiveSession(null);
   }, [activeSession, recordSessionHistory]);

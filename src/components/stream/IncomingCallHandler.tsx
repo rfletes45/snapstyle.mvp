@@ -80,6 +80,12 @@ function IncomingCallHandlerInner({
   // Track which call ID the permission check corresponds to
   const checkedCallIdRef = useRef<string | null>(null);
 
+  // Guard: prevents the auto-reject effect from rejecting a call that is
+  // currently being accepted. Without this, the accept flow sets
+  // isBusy=true (via context state) BEFORE setPendingCall(null) runs,
+  // causing the auto-reject effect to fire and reject the call we just accepted.
+  const acceptingRef = useRef(false);
+
   // Always show the most recent incoming call
   useEffect(() => {
     if (incomingCalls.length > 0) {
@@ -162,13 +168,21 @@ function IncomingCallHandlerInner({
 
     const mode =
       (pendingCall.state.custom?.mode as "audio" | "video") ?? "audio";
+    const callToAccept = pendingCall;
+
+    // Set the accepting guard BEFORE any async work. This prevents the
+    // auto-reject effect from firing between the moment acceptCall commits
+    // isBusy=true and when we clear pendingCall below.
+    acceptingRef.current = true;
+    setPendingCall(null);
 
     try {
-      await acceptCall(pendingCall);
-      setPendingCall(null);
-      onNavigateToCall?.(pendingCall.id, mode);
+      await acceptCall(callToAccept);
+      onNavigateToCall?.(callToAccept.id, mode);
     } catch (err) {
       console.error("[IncomingCallHandler] Accept failed:", err);
+    } finally {
+      acceptingRef.current = false;
     }
   }, [pendingCall, acceptCall, onNavigateToCall]);
 
@@ -183,8 +197,10 @@ function IncomingCallHandlerInner({
     }
   }, [pendingCall, rejectCall]);
 
-  // Auto-reject incoming calls when user is already busy
+  // Auto-reject incoming calls when user is already busy, but NOT when
+  // we are in the middle of accepting a call (acceptingRef guards this).
   useEffect(() => {
+    if (acceptingRef.current) return;
     if (isBusy && activeSession && pendingCall) {
       rejectCall(pendingCall).catch((err) =>
         console.warn("[IncomingCallHandler] Auto-reject failed:", err),

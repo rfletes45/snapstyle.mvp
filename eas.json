@@ -28,7 +28,6 @@
       }
     },
     "production": {
-
       "ios": {
         "buildConfiguration": "Release"
       },

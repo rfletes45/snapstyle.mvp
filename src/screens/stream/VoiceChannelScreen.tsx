@@ -81,8 +81,14 @@ export default function VoiceChannelScreen({ route, navigation }: Props) {
     });
   }, [groupId, channelName, isAlreadyInChannel, joinChannel]);
 
+  // Ref-gate prevents multiple leaveChannel dispatches. Avoids redundant
+  // state resets and rapid <StreamCall> mount/unmount during disconnection.
+  const leavingRef = useRef(false);
+
   // Leave = deliberate disconnect + navigate back
   const handleLeave = useCallback(async () => {
+    if (leavingRef.current) return;
+    leavingRef.current = true;
     try {
       await leaveChannel();
     } catch (err) {

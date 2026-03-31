@@ -76,10 +76,17 @@ export async function joinVoiceChannel(
 
   // getOrCreate will create if missing, or return existing.
   // settings_override MUST go here (creation time), NOT in call.join().
-  // Passing video settings in join() causes Stream to validate
-  // target_resolution defaults ({width:0,height:0}) which fail (min 240).
-  // We set camera_default_on: false explicitly so the SDK never touches
-  // camera hardware for voice-only channels (prevents iOS camera indicator).
+  //
+  // CRITICAL: When overriding ANY field in the video settings object,
+  // Stream's API stores the ENTIRE video override as-is. Fields not
+  // included (like target_resolution) fall back to {0, 0} internally,
+  // which fails the API's own validation (min 240×240) during join().
+  //
+  // Fix: Disable video entirely for voice channels AND provide a valid
+  // target_resolution as a safety net. This ensures:
+  //   1. The SDK never attempts video negotiation for this call
+  //   2. If the API still validates target_resolution, it passes
+  //   3. Camera hardware is never touched (no iOS indicator)
   try {
     await call.getOrCreate({
       data: {
@@ -93,7 +100,11 @@ export async function joinVoiceChannel(
             default_device: toStreamDevice(config.audio.defaultOutput),
           },
           video: {
+            enabled: false,
             camera_default_on: false,
+            // Safety net: provide valid target_resolution so partial video
+            // overrides never fail Stream's validation (min 240×240).
+            target_resolution: { width: 1280, height: 720, bitrate: 3000000 },
           },
         },
       },

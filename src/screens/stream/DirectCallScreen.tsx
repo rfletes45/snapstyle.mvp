@@ -27,7 +27,13 @@ import {
   StreamCall,
   useCallStateHooks,
 } from "@stream-io/video-react-native-sdk";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -49,7 +55,15 @@ export default function DirectCallScreen({ route, navigation }: Props) {
   const { endCall, activeCall } = useStreamCall();
   const { colors } = useAppTheme();
 
+  // Ref-gate prevents multiple endCall dispatches. Once endCall is invoked
+  // (by user tap, remote hangup, or callingState→LEFT), this ref ensures
+  // we never fire it again — which would cause redundant state resets and
+  // rapid <StreamCall> mount/unmount cycles that trigger hook ordering errors.
+  const endedRef = useRef(false);
+
   const handleEndCall = useCallback(async () => {
+    if (endedRef.current) return;
+    endedRef.current = true;
     try {
       await endCall();
     } catch (err) {
@@ -206,11 +220,17 @@ function DirectCallContent({
     }
   })();
 
-  // Notify parent when Stream reports call ended
+  // Notify parent when Stream reports call ended. Only fire after the
+  // call has been JOINED at least once — prevents false triggers from
+  // the initial IDLE state before the call connects.
+  const hasJoinedRef = useRef(false);
   useEffect(() => {
+    if (callingState === CallingState.JOINED) {
+      hasJoinedRef.current = true;
+    }
     if (
-      callingState === CallingState.LEFT ||
-      callingState === CallingState.IDLE
+      hasJoinedRef.current &&
+      (callingState === CallingState.LEFT || callingState === CallingState.IDLE)
     ) {
       onEndCall();
     }

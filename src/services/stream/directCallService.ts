@@ -94,8 +94,9 @@ export async function startDirectCall(
           },
           video: {
             camera_default_on: cameraOn,
-            // Provide valid target_resolution so partial video overrides
-            // don't fail Stream's validation (min 240×240).
+            // ALWAYS provide a valid target_resolution when overriding ANY
+            // video field. Stream's API stores the override as-is — missing
+            // fields default to {0, 0} which fails validation (min 240×240).
             target_resolution: { width: 1280, height: 720, bitrate: 3000000 },
           },
         },
