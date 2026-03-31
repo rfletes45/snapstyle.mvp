@@ -332,16 +332,26 @@ function StreamCallInnerProvider({
     activeCallRef.current = null;
     busyRef.current = false;
 
+    // Record history before clearing session (needs activeSession type)
     if (activeSession?.type === "direct_call") {
       recordSessionHistory("completed");
-      try {
-        await endDirectCall(call);
-      } catch {
-        // Best-effort — call may already be ended by remote
-      }
     }
+
+    // CRITICAL: Set state to null BEFORE the async endDirectCall.
+    // endDirectCall transitions the call object (callingState → LEFT,
+    // media tracks dispose, observables error). If child components
+    // (<DirectCallContent>) are still mounted during that transition,
+    // SDK hooks read half-disposed state → TypeError thrown mid-render
+    // after only N hooks → React error recovery re-renders → all hooks
+    // run → "Rendered more hooks than during the previous render".
     setActiveCall(null);
     setActiveSession(null);
+
+    try {
+      await endDirectCall(call);
+    } catch {
+      // Best-effort — call may already be ended by remote
+    }
   }, [activeSession, recordSessionHistory]);
 
   // ── Voice channel actions ───────────────────────────────────────────────
@@ -392,16 +402,23 @@ function StreamCallInnerProvider({
     activeCallRef.current = null;
     busyRef.current = false;
 
+    // Record history before clearing session (needs activeSession type)
     if (activeSession?.type === "voice_channel") {
       recordSessionHistory("left");
-      try {
-        await leaveVoiceChannel(call);
-      } catch {
-        // Best-effort — channel may already be left
-      }
     }
+
+    // CRITICAL: Set state to null BEFORE the async leaveVoiceChannel.
+    // Same rationale as endCallAction — leaveVoiceChannel disposes the
+    // call object, and child components must be unmounted first to
+    // prevent SDK hooks from reading half-disposed state.
     setActiveCall(null);
     setActiveSession(null);
+
+    try {
+      await leaveVoiceChannel(call);
+    } catch {
+      // Best-effort — channel may already be left
+    }
   }, [activeSession, recordSessionHistory]);
 
   // ── Context value ───────────────────────────────────────────────────────

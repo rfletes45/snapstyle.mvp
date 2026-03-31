@@ -17,6 +17,7 @@ import {
   Spacing,
 } from "@/constants/theme";
 import { createLogger } from "@/utils/log";
+import * as Clipboard from "expo-clipboard";
 import React, { Component, ErrorInfo, ReactNode } from "react";
 import {
   Pressable,
@@ -123,12 +124,36 @@ interface ErrorFallbackProps {
 
 function ErrorFallback({ error, errorInfo, onRetry }: ErrorFallbackProps) {
   const [showDetails, setShowDetails] = React.useState(false);
+  const [copied, setCopied] = React.useState(false);
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
 
   // Use Catppuccin theme colors
   const colors = isDark ? DarkColors : LightColors;
   const palette = isDark ? Mocha : Latte;
+
+  // Build full error text for clipboard
+  const fullErrorText = React.useMemo(() => {
+    const parts: string[] = [];
+    parts.push(`Error: ${error?.message || "Unknown error"}`);
+    if (error?.stack) {
+      parts.push(`\nStack Trace:\n${error.stack}`);
+    }
+    if (errorInfo?.componentStack) {
+      parts.push(`\nComponent Stack:\n${errorInfo.componentStack}`);
+    }
+    return parts.join("\n");
+  }, [error, errorInfo]);
+
+  const handleCopyError = React.useCallback(async () => {
+    try {
+      await Clipboard.setStringAsync(fullErrorText);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard unavailable — silently ignore
+    }
+  }, [fullErrorText]);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -177,47 +202,88 @@ function ErrorFallback({ error, errorInfo, onRetry }: ErrorFallbackProps) {
 
         {/* Error details */}
         {showDetails && (
-          <ScrollView
-            style={[
-              styles.detailsContainer,
-              { backgroundColor: colors.surfaceVariant },
-            ]}
-          >
-            <Text
-              style={[styles.detailsTitle, { color: colors.textSecondary }]}
+          <>
+            {/* Copy button */}
+            <Pressable
+              style={({ pressed }) => [
+                styles.copyButton,
+                {
+                  backgroundColor: copied
+                    ? palette.green
+                    : colors.surfaceVariant,
+                  borderColor: copied ? palette.green : colors.border,
+                },
+                pressed && { opacity: 0.7 },
+              ]}
+              onPress={handleCopyError}
             >
-              Error:
-            </Text>
-            <Text style={[styles.detailsText, { color: colors.textMuted }]}>
-              {error?.message || "Unknown error"}
-            </Text>
+              <Text
+                style={[
+                  styles.copyButtonText,
+                  { color: copied ? colors.onPrimary : colors.text },
+                ]}
+              >
+                {copied ? "✓ Copied!" : "Copy Full Error"}
+              </Text>
+            </Pressable>
 
-            {error?.stack && (
-              <>
-                <Text
-                  style={[styles.detailsTitle, { color: colors.textSecondary }]}
-                >
-                  Stack Trace:
-                </Text>
-                <Text style={[styles.detailsText, { color: colors.textMuted }]}>
-                  {error.stack}
-                </Text>
-              </>
-            )}
+            <ScrollView
+              style={[
+                styles.detailsContainer,
+                { backgroundColor: colors.surfaceVariant },
+              ]}
+            >
+              <Text
+                style={[styles.detailsTitle, { color: colors.textSecondary }]}
+              >
+                Error:
+              </Text>
+              <Text
+                selectable
+                style={[styles.detailsText, { color: colors.textMuted }]}
+              >
+                {error?.message || "Unknown error"}
+              </Text>
 
-            {errorInfo?.componentStack && (
-              <>
-                <Text
-                  style={[styles.detailsTitle, { color: colors.textSecondary }]}
-                >
-                  Component Stack:
-                </Text>
-                <Text style={[styles.detailsText, { color: colors.textMuted }]}>
-                  {errorInfo.componentStack}
-                </Text>
-              </>
-            )}
-          </ScrollView>
+              {error?.stack && (
+                <>
+                  <Text
+                    style={[
+                      styles.detailsTitle,
+                      { color: colors.textSecondary },
+                    ]}
+                  >
+                    Stack Trace:
+                  </Text>
+                  <Text
+                    selectable
+                    style={[styles.detailsText, { color: colors.textMuted }]}
+                  >
+                    {error.stack}
+                  </Text>
+                </>
+              )}
+
+              {errorInfo?.componentStack && (
+                <>
+                  <Text
+                    style={[
+                      styles.detailsTitle,
+                      { color: colors.textSecondary },
+                    ]}
+                  >
+                    Component Stack:
+                  </Text>
+                  <Text
+                    selectable
+                    style={[styles.detailsText, { color: colors.textMuted }]}
+                  >
+                    {errorInfo.componentStack}
+                  </Text>
+                </>
+              )}
+            </ScrollView>
+          </>
         )}
       </View>
     </View>
@@ -283,6 +349,19 @@ const styles = StyleSheet.create({
   detailsToggleText: {
     fontSize: FontSizes.sm,
     fontWeight: FontWeights.medium,
+  },
+  copyButton: {
+    marginTop: Spacing.sm,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    alignItems: "center",
+    alignSelf: "center",
+  },
+  copyButtonText: {
+    fontSize: FontSizes.sm,
+    fontWeight: FontWeights.semibold,
   },
   detailsContainer: {
     marginTop: Spacing.md,
