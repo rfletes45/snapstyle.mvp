@@ -33,6 +33,10 @@ export interface ChatMessageRendererProps {
     displayName?: string;
     username?: string;
     avatarConfig?: { baseColor: string };
+    profilePicture?: { url?: string | null } | null;
+    profilePictureUrl?: string | null;
+    avatarDecoration?: { decorationId?: string | null } | null;
+    decorationId?: string | null;
   } | null;
   chatAppearance?: ChatAppearance | null;
   onReply: (replyMetadata: ReplyToMetadata) => void;
@@ -58,6 +62,10 @@ export interface ChatMessageRendererProps {
   isGroupedWithNext: boolean;
   /** Current user's display name (for stacked mode author labels) */
   currentUserDisplayName?: string;
+  /** Current user's profile picture URL (for stacked mode avatars) */
+  currentUserProfilePictureUrl?: string | null;
+  /** Current user's decoration ID (for stacked mode avatars) */
+  currentUserDecorationId?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -85,6 +93,8 @@ export const ChatMessageRenderer: React.FC<ChatMessageRendererProps> =
       isGroupedWithPrevious,
       isGroupedWithNext,
       currentUserDisplayName,
+      currentUserProfilePictureUrl,
+      currentUserDecorationId,
     }) => {
       const isSentByMe = message.sender === currentUid;
 
@@ -123,6 +133,29 @@ export const ChatMessageRenderer: React.FC<ChatMessageRendererProps> =
           friendProfile?.displayName || friendProfile?.username || "Friend"
         );
       }, [isSentByMe, friendProfile, currentUserDisplayName]);
+
+      // Resolve sender-level profile picture (matches group chat pattern)
+      const senderProfilePictureUrl = React.useMemo(() => {
+        if (isSentByMe) {
+          return currentUserProfilePictureUrl ?? null;
+        }
+        return (
+          friendProfile?.profilePicture?.url ||
+          friendProfile?.profilePictureUrl ||
+          null
+        );
+      }, [isSentByMe, friendProfile, currentUserProfilePictureUrl]);
+
+      const senderDecorationId = React.useMemo(() => {
+        if (isSentByMe) {
+          return currentUserDecorationId ?? null;
+        }
+        return (
+          friendProfile?.avatarDecoration?.decorationId ||
+          friendProfile?.decorationId ||
+          null
+        );
+      }, [isSentByMe, friendProfile, currentUserDecorationId]);
 
       // ── Bubble mode → existing DMMessageItem ──────────────────────────
       if (displayMode === "bubbles") {
@@ -165,6 +198,8 @@ export const ChatMessageRenderer: React.FC<ChatMessageRendererProps> =
           onOptimisticReaction={onOptimisticReaction}
           vm={vm}
           senderDisplayName={senderDisplayName}
+          senderProfilePictureUrl={senderProfilePictureUrl}
+          senderDecorationId={senderDecorationId}
         />
       );
     },

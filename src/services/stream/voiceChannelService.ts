@@ -72,31 +72,51 @@ export async function joinVoiceChannel(
   }
 
   const call = client.call(VOICE_CHANNEL_TYPE, channelId);
-
-  // getOrCreate will create if missing, or return existing
-  await call.getOrCreate({
-    data: {
-      custom: {
-        groupId,
-        groupName,
-      },
-    },
-  });
-
-  // Join with mic on, audio-only, camera explicitly disabled.
   const config = callSettingsService.getCallConfig();
-  await call.join({
-    create: false,
-    data: {
-      settings_override: {
-        audio: {
-          mic_default_on: true,
-          default_device: toStreamDevice(config.audio.defaultOutput),
+
+  // getOrCreate will create if missing, or return existing.
+  // settings_override MUST go here (creation time), NOT in call.join().
+  // Passing video settings in join() causes Stream to validate
+  // target_resolution defaults ({width:0,height:0}) which fail (min 240).
+  // Audio rooms intentionally omit video settings entirely.
+  try {
+    await call.getOrCreate({
+      data: {
+        custom: {
+          groupId,
+          groupName,
         },
-        video: { camera_default_on: false },
+        settings_override: {
+          audio: {
+            mic_default_on: true,
+            default_device: toStreamDevice(config.audio.defaultOutput),
+          },
+        },
       },
-    },
-  });
+    });
+  } catch (err: any) {
+    console.error("[VoiceChannelService] getOrCreate failed:", err);
+    throw new Error(
+      `Unable to open voice channel: ${err?.message ?? "unknown error"}`,
+    );
+  }
+
+  // Join without settings_override — settings were applied at creation.
+  try {
+    await call.join({ create: false });
+  } catch (err: any) {
+    console.error("[VoiceChannelService] join failed:", err);
+    throw new Error(
+      `Unable to join voice channel: ${err?.message ?? "unknown error"}`,
+    );
+  }
+
+  // Ensure camera is off for audio-only voice channels.
+  try {
+    await call.camera.disable();
+  } catch {
+    // Non-fatal — camera may already be off
+  }
 
   return call;
 }

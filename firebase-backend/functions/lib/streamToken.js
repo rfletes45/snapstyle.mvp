@@ -90,9 +90,39 @@ exports.getStreamVideoToken = functions.https.onCall(async (_data, context) => {
     const client = getStreamClient();
     // Upsert the authenticated user in Stream so they exist for call operations.
     // This is idempotent — safe to call on every token fetch.
+    // Prefer Firestore profile data (displayName, avatarUrl) over Firebase Auth
+    // token claims, because Auth claims are often null even when the app has
+    // a rich user profile in Firestore.
     try {
-        const name = context.auth.token.name || undefined;
-        const image = context.auth.token.picture || undefined;
+        let name = context.auth.token.name || undefined;
+        let image = context.auth.token.picture || undefined;
+        // Fall back to Firestore profile when Auth token lacks name/image
+        if (!name || !image) {
+            try {
+                const userDoc = await admin
+                    .firestore()
+                    .collection("Users")
+                    .doc(userId)
+                    .get();
+                if (userDoc.exists) {
+                    const data = userDoc.data();
+                    if (!name) {
+                        name = data.displayName || data.username || undefined;
+                    }
+                    if (!image) {
+                        // Profile picture is stored as { url, thumbnailUrl, updatedAt }
+                        image =
+                            data.profilePicture?.url ||
+                                data.profilePicture?.thumbnailUrl ||
+                                undefined;
+                    }
+                }
+            }
+            catch (profileErr) {
+                // Non-fatal — proceed with whatever we have
+                functions.logger.warn(`[getStreamVideoToken] Firestore profile lookup failed for ${userId}:`, profileErr);
+            }
+        }
         await client.upsertUsers([
             {
                 id: userId,
@@ -154,7 +184,10 @@ exports.ensureStreamUsers = functions.https.onCall(async (data, context) => {
             usersToUpsert.push({
                 id: uid,
                 name: data.displayName || data.username || undefined,
-                image: data.avatarUrl || data.profileImageUrl || undefined,
+                // Profile picture is stored as { url, thumbnailUrl, updatedAt }
+                image: data.profilePicture?.url ||
+                    data.profilePicture?.thumbnailUrl ||
+                    undefined,
             });
         }
         else {

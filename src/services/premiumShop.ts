@@ -793,9 +793,9 @@ async function mockPurchase(
   // Best-effort: write entitlements for granted items
   if (items && items.length > 0) {
     try {
-      // Dynamically import to avoid circular deps at module level
-      const { getAuth } = await import("firebase/auth");
-      const auth = getAuth();
+      // Use centralized auth instance (already initialized with persistence)
+      const { getAuthInstance } = await import("@/services/firebase");
+      const auth = getAuthInstance();
       const uid = auth.currentUser?.uid;
 
       if (uid) {

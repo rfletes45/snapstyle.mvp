@@ -727,6 +727,14 @@ export default function ChatScreen({
   // in RootNavigator.tsx using getFocusedRouteNameFromRoute.
   // This eliminates flicker during navigation transitions.
 
+  // Track whether the initial chat setup has completed so we don't
+  // re-run the full init on every focus event.  We use a ref instead of
+  // putting `friendProfile` in the dependency array because
+  // setFriendProfile creates a new object reference on every background
+  // refresh, which previously caused an infinite re-execution loop:
+  //   render → useFocusEffect → fetch → setFriendProfile → render → …
+  const chatInitializedRef = useRef(false);
+
   // Initialize chat - OPTIMIZATION: Skip Firestore calls if we have cached data
   useFocusEffect(
     useCallback(() => {
@@ -734,14 +742,17 @@ export default function ChatScreen({
         if (!uid) return;
 
         try {
-          // OPTIMIZATION: If we have both chatId and friendProfile from initialData,
-          // only fetch fresh data in background (non-blocking)
-          if (chatId && friendProfile) {
+          // OPTIMIZATION: If we already initialised, just ensure presence
+          // is set and do a lightweight background refresh.
+          if (chatInitializedRef.current && chatId) {
             setCurrentChatId(chatId, "dm");
 
-            // Background refresh - don't block
+            // Background refresh — don't block, and never overwrite
+            // a valid profile with undefined (transient Firestore error).
             getUserProfileByUid(friendUid)
-              .then(setFriendProfile)
+              .then((p) => {
+                if (p) setFriendProfile(p);
+              })
               .catch((e) =>
                 logger.warn("Background profile refresh failed:", e),
               );
@@ -754,11 +765,16 @@ export default function ChatScreen({
             getUserProfileByUid(friendUid),
           ];
 
-          const [resolvedChatId, profile] = await Promise.all(promises);
+          const [resolvedChatId, fetchedProfile] = await Promise.all(promises);
 
           setChatId(resolvedChatId);
           setCurrentChatId(resolvedChatId, "dm");
-          setFriendProfile(profile);
+          // Only overwrite the profile if the fetch returned data;
+          // otherwise keep whatever initialData provided.
+          if (fetchedProfile) {
+            setFriendProfile(fetchedProfile);
+          }
+          chatInitializedRef.current = true;
         } catch (error: any) {
           logger.error("❌ [ChatScreen] Init error:", error);
           Alert.alert("Error", error.message || "Failed to initialize chat");
@@ -775,7 +791,7 @@ export default function ChatScreen({
         setCurrentChatId(null);
         clearLastOpenChat();
       };
-    }, [uid, friendUid, chatId, friendProfile, setCurrentChatId, navigation]),
+    }, [uid, friendUid, chatId, setCurrentChatId, navigation]),
   );
 
   // Load scheduled messages
@@ -1255,6 +1271,12 @@ export default function ChatScreen({
             currentFirebaseUser?.displayName ||
             "Me"
           }
+          currentUserProfilePictureUrl={
+            (profile as any)?.profilePicture?.url ?? null
+          }
+          currentUserDecorationId={
+            (profile as any)?.avatarDecoration?.decorationId ?? null
+          }
         />
       );
     },
@@ -1275,6 +1297,8 @@ export default function ChatScreen({
       profile?.displayName,
       profile?.username,
       currentFirebaseUser?.displayName,
+      (profile as any)?.profilePicture?.url,
+      (profile as any)?.avatarDecoration?.decorationId,
     ],
   );
 

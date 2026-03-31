@@ -12,12 +12,12 @@ import {
   normalizeNotificationPayload,
   shouldHandleNotificationByDedupeKey,
 } from "@/services/notifications/normalizeNotification";
-import { markUserNotificationRead } from "@/services/userNotifications";
 import {
   cleanupPresence,
   initializePresence,
   setPresenceOnline,
 } from "@/services/presence";
+import { markUserNotificationRead } from "@/services/userNotifications";
 import * as Notifications from "expo-notifications";
 import { User as FirebaseUser } from "firebase/auth";
 import React, {
@@ -85,11 +85,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (currentFirebaseUser?.uid && normalized.notificationId) {
-        markUserNotificationRead(currentFirebaseUser.uid, normalized.notificationId).catch(
-          (error) => {
-            logger.warn("[AuthContext] Failed to mark notification read:", error);
-          },
-        );
+        markUserNotificationRead(
+          currentFirebaseUser.uid,
+          normalized.notificationId,
+        ).catch((error) => {
+          logger.warn("[AuthContext] Failed to mark notification read:", error);
+        });
       }
 
       globalNavigate(
@@ -113,7 +114,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     getLastNotificationResponse()
       .then((response) => handleNotificationResponse(response))
       .catch((error) => {
-        logger.warn("[AuthContext] Failed to read last notification response:", error);
+        logger.warn(
+          "[AuthContext] Failed to read last notification response:",
+          error,
+        );
       });
 
     return () => {
@@ -215,62 +219,75 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     try {
       const auth = getAuthInstance();
+
+      // Log whether a persisted session exists at boot, BEFORE the
+      // onAuthStateChanged listener fires.  This confirms AsyncStorage-
+      // backed persistence is working.
+      if (auth.currentUser) {
+        logger.info(
+          "🔵 [AuthContext] Persisted session found at boot:",
+          auth.currentUser.email,
+        );
+      } else {
+        logger.info(
+          "🔵 [AuthContext] No persisted session at boot — waiting for onAuthStateChanged",
+        );
+      }
+
       const unsubscribe = auth.onAuthStateChanged(
         async (user: any) => {
           logger.info(
-            "🔵 [AuthContext] User state changed:",
-            user?.email || "logged out",
+            "🔵 [AuthContext] onAuthStateChanged →",
+            user ? `restored ${user.email}` : "no user (logged out)",
           );
           setCurrentFirebaseUser(user);
 
-          // Fetch custom claims when user logs in
-          if (user) {
-            try {
-              // Force refresh to get the latest custom claims.
-              // Race against a 10-second timeout so we never hang on
-              // a slow/offline network during first launch.
-              const idTokenResult = await Promise.race([
-                user.getIdTokenResult(true),
-                new Promise<never>((_, reject) =>
-                  setTimeout(
-                    () => reject(new Error("getIdTokenResult timed out")),
-                    10_000,
-                  ),
-                ),
-              ]);
-              setCustomClaims(idTokenResult.claims);
-              logger.info(
-                "🔵 [AuthContext] Custom claims loaded:",
-                idTokenResult.claims,
-              );
-              logger.info(
-                "🔵 [AuthContext] Admin status:",
-                idTokenResult.claims.admin,
-              );
+          // IMPORTANT: Mark auth as hydrated IMMEDIATELY so that AppGate
+          // and UserContext can proceed without waiting for the network-
+          // dependent token refresh below.  Custom claims are only used
+          // for admin features — they are NOT needed for navigation gating.
+          setLoading(false);
+          setIsHydrated(true);
 
-              // Initialize presence tracking
+          // Fetch custom claims asynchronously (non-blocking)
+          if (user) {
+            // Initialize presence as soon as we know the UID
+            try {
               initializePresence(user.uid);
-            } catch (error) {
-              logger.error(
-                "❌ [AuthContext] Error fetching custom claims:",
-                error,
-              );
-              setCustomClaims(null);
-              // Still initialize presence even if claims failed
-              try {
-                initializePresence(user.uid);
-              } catch {
-                // non-critical
-              }
+            } catch {
+              // non-critical
             }
+
+            // Refresh claims in the background — does NOT block hydration
+            (async () => {
+              try {
+                const idTokenResult = await Promise.race([
+                  user.getIdTokenResult(true),
+                  new Promise<never>((_, reject) =>
+                    setTimeout(
+                      () => reject(new Error("getIdTokenResult timed out")),
+                      10_000,
+                    ),
+                  ),
+                ]);
+                setCustomClaims(idTokenResult.claims);
+                logger.info(
+                  "🔵 [AuthContext] Custom claims loaded:",
+                  idTokenResult.claims?.admin ? "admin" : "standard",
+                );
+              } catch (error) {
+                logger.warn(
+                  "⚠️ [AuthContext] Custom claims refresh failed (non-critical):",
+                  error,
+                );
+                setCustomClaims(null);
+              }
+            })();
           } else {
             // Clean up presence when logging out
             cleanupPresence();
             setCustomClaims(null);
           }
-
-          setLoading(false);
-          setIsHydrated(true);
         },
         (err: any) => {
           logger.warn(

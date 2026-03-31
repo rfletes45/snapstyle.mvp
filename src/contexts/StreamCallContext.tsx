@@ -314,6 +314,7 @@ function StreamCallInnerProvider({
       await endDirectCall(call);
     }
     activeCallRef.current = null;
+    busyRef.current = false; // Reset synchronously so user can immediately re-call
     setActiveCall(null);
     setActiveSession(null);
   }, [activeSession, recordSessionHistory]);
@@ -358,6 +359,7 @@ function StreamCallInnerProvider({
       await leaveVoiceChannel(call);
     }
     activeCallRef.current = null;
+    busyRef.current = false; // Reset synchronously so user can immediately re-call
     setActiveCall(null);
     setActiveSession(null);
   }, [activeSession, recordSessionHistory]);
@@ -418,7 +420,13 @@ export function StreamCallProvider({
       // Destroy client on logout
       destroyStreamClient()
         .then(() => clearTokenCache())
-        .then(() => setClient(null));
+        .then(() => setClient(null))
+        .catch((err: any) => {
+          console.warn("[StreamCallProvider] Logout cleanup failed:", err);
+          // Still clear client state to prevent stale references
+          clearTokenCache();
+          setClient(null);
+        });
       return;
     }
 

@@ -5,17 +5,16 @@
  * Each call gets a unique ID and uses Stream's built-in ringing mechanism.
  *
  * Bootstrap sequence:
- *  1. Blocking user provisioning (caller + callee must exist in Stream)
- *  2. getOrCreate the call with ringing + members
- *  3. Join with media settings
- *
- * Step 1 is BLOCKING — Stream requires all referenced users to exist before
- * call creation. If provisioning fails, the call is NOT attempted.
+ *  1. Best-effort user provisioning (caller + callee should exist in Stream)
+ *  2. getOrCreate the call with ringing + members + settings_override
+ *  3. Join (no settings_override — Stream validates target_resolution)
+ *  4. Set camera/mic state programmatically after join
  */
 
 import { callSettingsService } from "@/services/calls";
 import type { DirectCallMode } from "@/types/streamCall";
 import type { Call } from "@stream-io/video-react-native-sdk";
+import { validateParticipantIds } from "./callSettingsValidator";
 import { getStreamClient } from "./streamClient";
 import { ensureStreamUsersExist } from "./streamUserProvisioning";
 import { toStreamDevice } from "./streamUtils";
@@ -45,59 +44,87 @@ export async function startDirectCall(
 ): Promise<Call> {
   const client = getStreamClient();
   const config = callSettingsService.getCallConfig();
+  const cameraOn = mode === "video" && config.video.startEnabled;
 
-  // Step 1: Ensure both caller and callee exist as Stream users.
-  // Stream REQUIRES all users to exist before they are referenced as call
-  // members.  This call is BLOCKING — if provisioning fails the call must
-  // not proceed, otherwise getOrCreate will fail with
-  // "users … don't exist" (stream error code 4).
+  // Validate participant IDs before any network calls
+  const [validCallerId, validCalleeId] = validateParticipantIds(
+    [callerId, calleeId],
+    "direct call",
+  );
+
+  // Step 1: Best-effort provision caller & callee as Stream users.
+  // getStreamVideoToken already upserts the CALLER on every token fetch,
+  // and the callee may already exist from their own token fetch.
+  // We attempt provisioning but proceed if it fails — getOrCreate below
+  // will fail with a clear "user not found" error if the user truly
+  // doesn't exist, which we surface with a specific message.
+  let provisionFailed = false;
   try {
-    await ensureStreamUsersExist([callerId, calleeId]);
+    await ensureStreamUsersExist([validCallerId, validCalleeId]);
   } catch (provisionErr: any) {
-    console.error(
-      `${TAG} User provisioning failed (blocking):`,
+    provisionFailed = true;
+    console.warn(
+      `${TAG} User provisioning failed (non-fatal, proceeding):`,
+      provisionErr?.code ?? "",
       provisionErr?.message ?? provisionErr,
-    );
-    throw new Error(
-      "Unable to start call: could not provision call participants. " +
-        "Please check your connection and try again.",
     );
   }
 
   // Step 2: Create (or get existing) call with ringing and member list.
+  // settings_override goes HERE at creation time, not in join().
+  // Passing video settings in join() causes Stream to validate
+  // target_resolution defaults which fail with width/height < 240.
   const call = client.call(DIRECT_CALL_TYPE, callId);
 
   try {
     await call.getOrCreate({
       ring: true,
       data: {
-        members: [{ user_id: callerId, role: "admin" }, { user_id: calleeId }],
+        members: [
+          { user_id: validCallerId, role: "admin" },
+          { user_id: validCalleeId },
+        ],
         custom: {
           mode,
         },
-      },
-    });
-  } catch (createErr: any) {
-    console.error(`${TAG} getOrCreate failed:`, createErr);
-    throw new Error(classifyCallError(createErr, "create"));
-  }
-
-  // Step 3: Join with media settings derived from user preferences.
-  const cameraOn = mode === "video" && config.video.startEnabled;
-  try {
-    await call.join({
-      create: false,
-      ring: true,
-      data: {
         settings_override: {
           audio: {
             mic_default_on: true,
             default_device: toStreamDevice(config.audio.defaultOutput),
           },
-          video: { camera_default_on: cameraOn },
+          video: {
+            camera_default_on: cameraOn,
+            // Provide valid target_resolution so partial video overrides
+            // don't fail Stream's validation (min 240×240).
+            target_resolution: { width: 1280, height: 720, bitrate: 3000000 },
+          },
         },
       },
     });
+  } catch (createErr: any) {
+    const errMsg = createErr?.message ?? String(createErr);
+    // If provisioning failed AND create failed, give a specific message
+    if (
+      provisionFailed &&
+      (errMsg.includes("user") || errMsg.includes("don't exist"))
+    ) {
+      console.error(
+        `${TAG} getOrCreate failed after provisioning failure:`,
+        createErr,
+      );
+      throw new Error(
+        "Unable to start call: one or more participants could not be registered. " +
+          "The other user may need to open the app first.",
+      );
+    }
+    console.error(`${TAG} getOrCreate failed:`, createErr);
+    throw new Error(classifyCallError(createErr, "create"));
+  }
+
+  // Step 3: Join the call. No settings_override here — settings were
+  // applied at creation time above.
+  try {
+    await call.join({ create: false, ring: true });
   } catch (joinErr: any) {
     console.error(`${TAG} join failed:`, joinErr);
     // Clean up the created call so it doesn't leave a phantom ringing state
@@ -109,13 +136,25 @@ export async function startDirectCall(
     throw new Error(classifyCallError(joinErr, "join"));
   }
 
+  // Ensure correct camera state after join
+  try {
+    if (cameraOn) {
+      await call.camera.enable();
+    } else {
+      await call.camera.disable();
+    }
+  } catch {
+    // Non-fatal — camera state may already be correct
+  }
+
   console.log(`${TAG} Call ${callId} started (${mode}) → ${calleeId}`);
   return call;
 }
 
 /**
  * Accept an incoming ringing call.
- * Passes settings_override to ensure audio-only calls don't enable camera.
+ * Camera/mic state is set programmatically after join to avoid
+ * settings_override validation issues (target_resolution).
  */
 export async function acceptDirectCall(
   call: Call,
@@ -124,17 +163,21 @@ export async function acceptDirectCall(
   const config = callSettingsService.getCallConfig();
   const cameraOn = mode === "video" && config.video.startEnabled;
 
-  await call.join({
-    data: {
-      settings_override: {
-        audio: {
-          mic_default_on: true,
-          default_device: toStreamDevice(config.audio.defaultOutput),
-        },
-        video: { camera_default_on: cameraOn },
-      },
-    },
-  });
+  // Join without settings_override — the call settings were established
+  // at creation time by the caller. We set camera/mic after join.
+  await call.join();
+
+  // Apply camera/mic preferences after joining
+  try {
+    if (cameraOn) {
+      await call.camera.enable();
+    } else {
+      await call.camera.disable();
+    }
+    await call.microphone.enable();
+  } catch {
+    // Non-fatal — defaults are usually acceptable
+  }
 }
 
 /**

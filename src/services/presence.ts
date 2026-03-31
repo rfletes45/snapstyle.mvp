@@ -19,8 +19,8 @@
  */
 
 import { CHAT_FEATURES } from "@/constants/featureFlags";
+import { getAuthInstance } from "@/services/firebase";
 import { createLogger } from "@/utils/log";
-import { getAuth } from "firebase/auth";
 import {
   DatabaseReference,
   get,
@@ -227,7 +227,7 @@ export function cleanupPresence(): void {
  * @param online - Whether to show as online
  */
 export async function setPresenceOnline(online: boolean): Promise<void> {
-  const auth = getAuth();
+  const auth = getAuthInstance();
   const uid = auth.currentUser?.uid;
 
   if (!uid) {

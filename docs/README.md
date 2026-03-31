@@ -1,103 +1,87 @@
-# SnapStyle Documentation
+# Vibe Documentation
 
-Last verified: 2026-03-27
+Last verified: 2026-03-30
 
-This is the documentation map for how the app currently works in code.
-For messaging and notification work, prefer the canonical docs below over the older migration checkpoint docs.
+This folder is organized around current runtime truth first. Treat the files below as canonical unless a document is explicitly marked historical.
 
-## Read Order
+## Recommended Read Order
 
-If you are new to the repo, read in this order:
+1. [system-overview.md](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/docs/architecture/system-overview.md)
+2. [runbook.md](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/docs/operations/runbook.md)
+3. [configuration-and-security.md](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/docs/operations/configuration-and-security.md)
+4. subsystem docs for the area you are changing
 
-1. `docs/architecture/system-overview.md`
-2. `docs/operations/runbook.md`
-3. `docs/operations/testing.md`
-4. Feature/backend docs for the subsystem you are changing
+## Canonical Current-State Docs
 
-For the **Profile system** specifically, start at `docs/profile/PROFILE_SYSTEM_OVERVIEW.md`.
+### Architecture
 
-## Documentation Map
+- [system-overview.md](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/docs/architecture/system-overview.md)
+  - app bootstrap, provider tree, navigation, active subsystem map, source-of-truth boundaries
+- [firebase-and-functions.md](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/docs/backend/firebase-and-functions.md)
+  - Firebase topology, Cloud Functions exports, Firestore families, Stream and Colyseus boundaries
 
-- `docs/architecture/system-overview.md`
-  - App bootstrap, provider stack, navigation topology, data boundaries, invariants.
-- `docs/backend/firebase-and-functions.md`
-  - Firestore/Storage contracts, callable + trigger topology, deploy and schema safety.
-- `docs/features/messaging.md`
-  - Canonical DM/group architecture, inbox ownership, message requests, realtime runtime split, and notification routing.
-- `docs/operations/configuration-and-security.md`
-  - Current flag defaults, trust boundaries, and security-sensitive config notes.
-- `docs/chat-system-audit/00_INBOX_CHAT_SYSTEM_MASTER_REFERENCE.md`
-  - Historical checkpoint document from the pre-2026-03-18 messaging migration. Not canonical.
-- `docs/chat-system-audit/01_INBOX_CHAT_TECHNICAL_OVERVIEW.md`
-  - Historical checkpoint document. Not canonical.
-- `docs/chat-system-audit/02_INBOX_CHAT_DATA_CONTRACTS.md`
-  - Historical contract snapshot. Validate against current code before reuse.
-- `docs/chat-system-audit/03_INBOX_CHAT_KNOWN_ISSUES_RISKS.md`
-  - Historical risk ledger. Not canonical.
-- `docs/chat-system-audit/04_INBOX_CHAT_REFACTOR_PLAN.md`
-  - Historical refactor plan. Not canonical.
-- `docs/chat-system-audit/05_PHASE2_CHECKPOINTS.md`
-  - Historical checkpoint log. Not canonical.
-- `docs/features/profile-economy.md`
-  - Profile data/privacy contracts, relationship/moderation flows, wallet/tasks/shop behavior.
+### Features
 
-### Profile System (Canonical)
+- [auth-and-social.md](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/docs/features/auth-and-social.md)
+  - auth bootstrap, onboarding gate, friends, contacts discovery, profile viewing, camera/story status
+- [messaging.md](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/docs/features/messaging.md)
+  - DM/group runtime, local-first native path, inbox/unread model, requests, composer, attachments, notifications
+- [calls-and-audio.md](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/docs/features/calls-and-audio.md)
+  - Stream direct calls, group voice channels, history, settings, gating, known rough edges
+- [profile-economy.md](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/docs/features/profile-economy.md)
+  - widget-board profiles, cosmetics/customization, wallet, shop, tasks, achievements, appearance controls
+- [conversation-display-modes.md](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/docs/features/conversation-display-modes.md)
+  - bubble vs stacked chat rendering and persistence
+- [custom-font-color.md](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/docs/features/custom-font-color.md)
+  - chat font color cosmetics; audited and still aligned with the current chat appearance pipeline
 
-- `docs/profile/PROFILE_SYSTEM_OVERVIEW.md`
-  - **Start here.** Canonical entry point for the full profile system: widget board concept, terminology, documentation map.
-- `docs/profile/WIDGET_BOARD_ARCHITECTURE.md`
-  - Grid model, layout engine, drag/reflow, dwell timing, resize, animation, persistence model.
-- `docs/profile/PROFILE_HERO_CARD.md`
-  - Profile hero card size variants (wide/large/hero), content per size, settings placement, level bar.
-- `docs/profile/PROFILE_WIDGETS_REFERENCE.md`
-  - Every widget type: purpose, sizes, data source, interactions, states, removability.
-- `docs/profile/INTERACTIONS_AND_EDIT_MODE.md`
-  - View mode vs customize mode, drag/dwell, resize, sheets/modals, gestures, gotchas.
-- `docs/profile/DATA_AND_PERSISTENCE.md`
-  - Firestore layout storage, data sources per widget, source-of-truth rules, hooks.
-- `docs/profile/SOCIAL_WIDGETS_AND_STREAKS.md`
-  - Streak system integration, social widgets, friend streaks, activity feed, canonical vs derived data.
-- `docs/profile/MIGRATION_NOTES.md`
-  - What changed from the old profile system, deprecated components, how to interpret old references.
-- `docs/PROFILE_SYSTEM.md`
-  - Cosmetic ownership, entitlements, equip flows, rendering pipeline. (Scope narrowed; see profile/ docs for widget board.)
+### Profile Deep Reference
 
-### Other Subsystems
+- [PROFILE_SYSTEM.md](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/docs/PROFILE_SYSTEM.md)
+  - cosmetics ownership, entitlements, equip flows, rendering contracts
+- [PROFILE_SYSTEM_OVERVIEW.md](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/docs/profile/PROFILE_SYSTEM_OVERVIEW.md)
+  - profile doc entrypoint and terminology
+- [WIDGET_BOARD_ARCHITECTURE.md](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/docs/profile/WIDGET_BOARD_ARCHITECTURE.md)
+- [PROFILE_WIDGETS_REFERENCE.md](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/docs/profile/PROFILE_WIDGETS_REFERENCE.md)
+- [DATA_AND_PERSISTENCE.md](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/docs/profile/DATA_AND_PERSISTENCE.md)
+- [INTERACTIONS_AND_EDIT_MODE.md](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/docs/profile/INTERACTIONS_AND_EDIT_MODE.md)
+- [PROFILE_HERO_CARD.md](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/docs/profile/PROFILE_HERO_CARD.md)
+- [SOCIAL_WIDGETS_AND_STREAKS.md](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/docs/profile/SOCIAL_WIDGETS_AND_STREAKS.md)
+- [MIGRATION_NOTES.md](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/docs/profile/MIGRATION_NOTES.md)
 
-- `docs/operations/runbook.md`
-  - Local setup, startup sequence, health checks, deploy commands.
-- `docs/operations/testing.md`
-  - Test matrix and required verification per subsystem.
-- `docs/GAMES_V4_SYSTEM.md`
-  - Canonical reference for the Games V4 system: adapter architecture, resolution pipeline, Firestore schemas, solo/1v1 flows.
-- `docs/GAMES_V4_RUNBOOK.md`
-  - Operational runbook for Games V4: deploy, rollback, watchdog, incident response.
-- `docs/GAME_INTEGRATION_GUIDE_V4.md`
-  - **Exhaustive AI-ready guide** for implementing a new game end-to-end: adapter contract, backend wiring, achievements, leaderboards, notifications, security, testing. Includes copy-paste templates in `docs/templates/new-game-v4/`.
-- `docs/QA_GAME_DETAIL_LEADERBOARD.md`
-  - QA playbook for game detail page & leaderboard subsystem.
-- `docs/QA_GAME_OVER_ACHIEVEMENTS.md`
-  - QA playbook for game over screen & achievement unlock flows.
-- `docs/QA_IN_APP_NOTIFICATIONS.md`
-  - QA playbook for in-app notification system (turn, achievement, invite).
+### Operations
 
-## Critical Cross-Subsystem Invariants
+- [runbook.md](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/docs/operations/runbook.md)
+- [testing.md](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/docs/operations/testing.md)
+- [configuration-and-security.md](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/docs/operations/configuration-and-security.md)
+- [NOTIFICATION_SYSTEM.md](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/docs/NOTIFICATION_SYSTEM.md)
+- [STREAM_SETUP_GUIDE.md](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/docs/STREAM_SETUP_GUIDE.md)
 
-These are the most important things to preserve when changing the app:
+### Games
 
-1. Messaging ordering is server-authoritative (`serverReceivedAt`), not client clock order.
-2. Messaging sends are idempotent (`messageId` + `clientId`), and retries must not create duplicates.
-3. Profile writes must stay aligned across:
-   - `src/services/profile/profileContract.ts`
-   - `src/services/profileService.ts`
-   - `firebase-backend/firestore.rules`
-4. Economy/shop/task writes should remain server-authoritative via Functions.
-5. Feature flags must be safe both enabled and disabled, especially migration flags.
+The Games V4 docs were audited during this pass and remain the canonical source for game architecture:
 
-## Documentation Maintenance Rules
+- [GAMES_V4_SYSTEM.md](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/docs/GAMES_V4_SYSTEM.md)
+- [GAMES_V4_RUNBOOK.md](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/docs/GAMES_V4_RUNBOOK.md)
+- [GAME_INTEGRATION_GUIDE_V4.md](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/docs/GAME_INTEGRATION_GUIDE_V4.md)
+- [REALTIME_FRAMEWORK.md](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/docs/REALTIME_FRAMEWORK.md)
 
-- Keep docs inside this structure; do not reintroduce one-off root-level plan docs.
-- Update docs in the same PR/commit as behavior changes.
-- Prefer contract and invariant documentation over historical implementation narrative.
-- Link to source files for deep details; avoid duplicating entire code paths.
-- If a subsystem materially changes and no doc changes are needed, state why in the PR notes.
+## Historical / Non-Canonical Docs
+
+These files may still be useful as audits, plans, or incident notes, but they are not the source of truth for current behavior:
+
+- `docs/chat-system-audit/*`
+- `docs/CALL_SYSTEM_AUDIT_REFERENCE.md`
+- `docs/QA_*`
+- `docs/*AUDIT*.md`
+- `docs/*PLAN*.md`
+- `docs/*OVERHAUL*.md`
+
+Use them only for background context, then reconcile against the current-state docs and the code.
+
+## Maintenance Rules
+
+- Update the matching doc in the same change as behavior or contract changes.
+- Prefer current-state descriptions over roadmap language.
+- Call out partial, experimental, dormant, or legacy systems explicitly.
+- When two docs disagree, the code and the current-state docs win.

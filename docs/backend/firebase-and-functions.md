@@ -1,112 +1,85 @@
 # Firebase and Functions
 
-Last verified: 2026-03-18
+Last verified: 2026-03-30
 
 ## Backend Topology
 
-Configured by `firebase.json`:
+`firebase.json` currently configures:
 
 - Functions source: `firebase-backend/functions`
 - Firestore rules: `firebase-backend/firestore.rules`
 - Firestore indexes: `firebase-backend/firestore.indexes.json`
-- Realtime DB rules: `firebase-backend/database.rules.json`
+- Realtime Database rules: `firebase-backend/database.rules.json`
 - Storage rules: `firebase-backend/storage.rules`
 
-Client bootstrap:
+Client Firebase bootstrap lives in:
 
-- `src/services/firebase.ts`
-- `src/services/firebaseConfig.local.ts`
+- [firebase.ts](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/src/services/firebase.ts)
+- [firebaseConfig.ts](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/src/services/firebaseConfig.ts)
+- [firebaseConfig.local.ts](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/src/services/firebaseConfig.local.ts)
 
-## Functions Entry And Build
+Important current-state note:
 
-- entry: `firebase-backend/functions/src/index.ts`
-- runtime target: Node 20
-- build command:
+- the client Firebase config is checked into the repo
+- `firebaseConfig.ts` and `firebaseConfig.local.ts` currently contain the same public client config
+- docs should not describe client Firebase bootstrapping as environment-variable-driven
 
-```bash
-npm --prefix firebase-backend/functions run build
-```
+## Functions Entry Surface
 
-## Messaging Functions
+The deployed Functions entrypoint is [index.ts](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/firebase-backend/functions/src/index.ts).
 
-Primary callable and trigger files:
+Major exported domains:
 
-- `firebase-backend/functions/src/messaging.ts`
-- `firebase-backend/functions/src/messageRequests.ts`
-- `firebase-backend/functions/src/inboxTriggers.ts`
-- `firebase-backend/functions/src/notifications.ts`
-- `firebase-backend/functions/src/notificationCenter.ts`
-- `firebase-backend/functions/src/privacyPublish.ts`
-- `firebase-backend/functions/src/rateLimiter.ts`
-- `firebase-backend/functions/src/chatMedia.ts`
+- messaging, reactions, message requests, inbox triggers, privacy publish APIs
+- notifications and notification cleanup
+- social and friend request notifications
+- economy, tasks, gifts, shop, cosmetic entitlements, IAP validation
+- profile views
+- Stream token issuance and call history webhook
+- Games V4 callables, triggers, and watchdog
+- contacts matching callable
+- admin/moderation helpers
 
-Important callables:
+Notable non-exported / legacy detail:
 
-- `sendMessageV2`
-- `editMessageV2`
-- `deleteMessageForAllV2`
-- `toggleReactionV2`
-- `markInboxRead`
-- `publishTypingIndicator`
-- `publishReadReceipt`
-- `publishDeliveryReceipt`
-- `acceptMessageRequest`
-- `declineMessageRequest`
-- `getRateLimitStatus`
+- `firebase-backend/functions/src/calls.ts` still exists in the repo, but it is not exported by the active Functions entrypoint and is not the current call runtime
 
-`markInboxRead` only updates the derived `Users/{uid}/Inbox/{threadId}` unread hint. It does not replace `MembersPrivate.lastSeenAtPrivate` as the canonical unread/read source of truth.
+## Authoritative Write Areas
 
-## Server Guarantees For Messaging
+These areas are intentionally server-authoritative and should not be moved into client-owned writes:
 
-`sendMessageV2` is the authoritative write path for DM and group messages.
+- canonical DM/group message writes
+- notification routing and delivery choice
+- wallet balances and transactions
+- task reward claims
+- purchases, entitlements, and grants
+- Games V4 resolution, XP, achievements, PBs, and leaderboards
+- Stream token issuance and call history persistence
 
-It enforces:
+## Key Firestore Families
 
-1. authenticated sender
-2. DM/group membership validation
-3. DM block checks
-4. DM request gating through `checkDmAcceptance`
-5. rate limiting
-6. idempotent writes using `messageId` and `clientId:messageId`
-7. canonical timestamps and conversation summary updates
-8. attachment staging/finalization when the staged media flow is used
+### Users and app settings
 
-Message requests are always enforced server-side. They are not rollout-gated by a client flag anymore.
+- `Users/{uid}`
+- `Users/{uid}/Notifications/{notificationId}`
+- `Users/{uid}/NotificationDevices/{deviceId}`
+- `Users/{uid}/NotificationSessions/{deviceId}`
+- `Users/{uid}/MessageRequests/{chatId}`
+- `Users/{uid}/Inbox/{threadId}`
+- `Users/{uid}/Entitlements/{cosmeticId}`
+- `Users/{uid}/ProfileLayout/board`
+- `Users/{uid}/TaskProgress/{taskId}`
+- `Users/{uid}/StreamCallHistory/{entryId}`
+- `Users/{uid}/GamePB/{gameId}`
+- `Users/{uid}/Achievements/{achievementId}`
+- `Users/{uid}/AchievementSections/{sectionId}`
 
-## Notification Topology
+### Social
 
-All modern app notifications route through the shared notification center:
+- `FriendRequests/{requestId}`
+- `Friends/{friendshipId}`
 
-- selector and writer: `firebase-backend/functions/src/notificationCenter.ts`
-- chat event producers: `firebase-backend/functions/src/notifications.ts`
-- game event producers: `firebase-backend/functions/src/gamesV4/notifications.ts`
-- social, gifting, and other producers call the same `notifyUser(...)` surface
-
-Canonical notification collections:
-
-- `Users/{uid}/Notifications`
-- `Users/{uid}/NotificationDevices`
-- `Users/{uid}/NotificationSessions`
-
-Routing rules:
-
-1. read user inbox preferences
-2. suppress muted conversations where applicable
-3. inspect fresh active sessions
-4. suppress when the user is already viewing the target surface
-5. choose exactly one channel: `in_app`, `push`, or `none`
-6. persist a canonical notification document
-7. send Expo push only when the chosen channel is `push`
-
-Chat notification records carry both `conversationId` and `conversationScope`. Client read-marking should use both fields together rather than assuming `conversationId` alone is sufficient.
-
-There is no backend `CHAT_LEGACY_PUSH_ENABLED` contract in the current code.
-
-## Firestore Contract Summary
-
-Use `firebase-backend/firestore.rules` as the final client-access contract.
-
-Important messaging families:
+### Messaging
 
 - `Chats/{chatId}`
 - `Chats/{chatId}/Messages/{messageId}`
@@ -116,43 +89,137 @@ Important messaging families:
 - `Groups/{groupId}/Messages/{messageId}`
 - `Groups/{groupId}/Members/{uid}`
 - `Groups/{groupId}/MembersPrivate/{uid}`
-- `Users/{uid}/Inbox/{threadId}`
-- `Users/{uid}/MessageRequests/{chatId}`
-- `Users/{uid}/Notifications/{notificationId}`
-- `Users/{uid}/NotificationDevices/{deviceId}`
-- `Users/{uid}/NotificationSessions/{deviceId}`
 
-Legacy note:
+### Economy and shop
 
-- `deleteAccount.ts` still cleans up old `Conversations`, root `Notifications`, and `InAppNotificationsV4` data via the Admin SDK so older stored data can still be removed safely.
+- `Wallets/{uid}`
+- `Transactions/{transactionId}`
+- `Tasks/{taskId}`
+- `ShopCatalog/{itemId}` and purchase-history collections used by shop services
 
-## Storage Contract Summary
+### Games V4
 
-Defined by `firebase-backend/storage.rules`.
+- `GameInvitesV4/{inviteId}`
+- `GameSessionsV4/{sessionId}`
+- `GameResultsV4/{sessionId}`
+- `LeaderboardsV4/*`
 
-Messaging-relevant path families:
+Use the rules file as the final statement of client access. These lists are a navigation aid, not a replacement for rules.
 
-- DM media: `pictures/{chatId}/...`, `dm-voice/{chatId}/...`
-- group media: `groups/{groupId}/messages|attachments|voice/...`
-- staged uploads: `chat-staging/...`
-- finalized server-managed media: `chat-media/...`
+## Messaging Functions
 
-## Rules And Deployment Safety
+Main messaging-related files:
 
-When query or write shapes change:
+- [messaging.ts](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/firebase-backend/functions/src/messaging.ts)
+- [messageRequests.ts](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/firebase-backend/functions/src/messageRequests.ts)
+- [inboxTriggers.ts](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/firebase-backend/functions/src/inboxTriggers.ts)
+- [privacyPublish.ts](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/firebase-backend/functions/src/privacyPublish.ts)
+- [chatMedia.ts](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/firebase-backend/functions/src/chatMedia.ts)
+- [notificationCenter.ts](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/firebase-backend/functions/src/notificationCenter.ts)
 
-1. update the client service layer
-2. update `firestore.rules` if client access changed
-3. update indexes for new compound queries
-4. build functions before deploy
-5. update docs in the same change
+Important behavior:
 
-## Deployment Commands
+- `sendMessageV2` is the canonical DM/group write path
+- message requests are enforced server-side
+- `markInboxRead` only updates aggregated inbox hints; `MembersPrivate` watermarks remain the canonical unread/read authority
+- backend aggregation writes to `Users/{uid}/Inbox/*` are live even though the client still defaults to fan-out inbox reads
+
+## Notifications
+
+The current notification center is the single routing authority:
+
+- [notificationCenter.ts](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/firebase-backend/functions/src/notificationCenter.ts)
+
+It:
+
+1. reads per-user notification preferences
+2. checks mute and active-session state
+3. chooses exactly one delivery channel: `in_app`, `push`, or `none`
+4. writes the canonical notification document
+5. sends Expo push only when `push` wins
+
+There is no active `CHAT_LEGACY_PUSH_ENABLED` environment contract in the current repo.
+
+## Stream Boundaries
+
+Stream-specific backend files:
+
+- [streamToken.ts](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/firebase-backend/functions/src/streamToken.ts)
+- [streamCallHistory.ts](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/firebase-backend/functions/src/streamCallHistory.ts)
+
+Current responsibilities:
+
+- mint Stream video tokens via `getStreamVideoToken`
+- best-effort Stream user upserts via `ensureStreamUsers`
+- verify Stream webhook signatures with `STREAM_API_SECRET`
+- write call history entries to `Users/{uid}/StreamCallHistory/{entryId}`
+
+## Colyseus Boundaries
+
+Realtime game server code lives outside Firebase in `colyseus-server/`.
+
+Current room registration:
+
+- `knockout_game`
+- `sketch_party`
+- `pong_game`
+
+The client resolves the Colyseus URL in this order:
+
+1. `extra.colyseusUrl` from `app.config.ts`
+2. Expo dev-host auto-detection
+3. localhost fallback for dev
+
+Firebase still owns invite/session docs, resolution, XP, achievements, and leaderboards.
+
+## Environment and Secret Surfaces
+
+### App / EAS
+
+- `COLYSEUS_URL`
+  - consumed by `app.config.ts`
+  - populated for `preview` and `production` in `eas.json`
+
+### Firebase Functions
+
+Variables referenced in current source:
+
+- `STREAM_API_KEY`
+- `STREAM_API_SECRET`
+- `APPLE_SHARED_SECRET`
+- `ANDROID_PACKAGE_NAME`
+- `ADMIN_SETUP_KEY`
+- `FUNCTIONS_EMULATOR` (behavior flag in some flows)
+
+### Colyseus server
+
+Variables referenced in current source:
+
+- `FIREBASE_PROJECT_ID`
+- `GOOGLE_APPLICATION_CREDENTIALS`
+- `FIREBASE_SERVICE_ACCOUNT_BASE64`
+- `COLYSEUS_DEV_BYPASS`
+- `HOST`
+- `PORT`
+
+## Build and Deploy Commands
 
 ```bash
+# Functions build
+npm --prefix firebase-backend/functions run build
+
+# Functions deploy
 firebase deploy --only functions
+
+# Rules and indexes
 firebase deploy --only firestore:rules
 firebase deploy --only firestore:indexes
 firebase deploy --only storage
-firebase deploy
 ```
+
+## Change Checklist
+
+1. Keep client types, function payloads, rules, and indexes aligned.
+2. When query shapes change, update indexes and the relevant docs together.
+3. Do not document dormant or non-exported backend files as live runtime.
+4. When changing Stream or Games V4 integrations, verify both the Firebase and non-Firebase boundaries in the same change.

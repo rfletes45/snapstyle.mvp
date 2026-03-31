@@ -37,6 +37,7 @@ import { StackedReplyReference } from "@/components/chat/StackedReplyReference";
 import { ThreadIndicator } from "@/components/chat/ThreadIndicator";
 import { VoiceMessagePlayer } from "@/components/chat/VoiceMessagePlayer";
 import type { MessageWithProfile } from "@/components/DMMessageItem";
+import { ProfilePictureWithDecoration } from "@/components/profile/ProfilePicture";
 import type { ChatAppearance } from "@/cosmetics/types";
 import { useLinkPreviews } from "@/hooks/useLinkPreviews";
 import { extractUrls, hasUrls } from "@/services/linkPreview";
@@ -78,6 +79,10 @@ export interface StackedMessageRendererProps {
     displayName?: string;
     username?: string;
     avatarConfig?: { baseColor: string };
+    profilePicture?: { url?: string | null } | null;
+    profilePictureUrl?: string | null;
+    avatarDecoration?: { decorationId?: string | null } | null;
+    decorationId?: string | null;
   } | null;
   chatAppearance?: ChatAppearance | null;
   onReply: (replyMetadata: ReplyToMetadata) => void;
@@ -94,6 +99,10 @@ export interface StackedMessageRendererProps {
   onOptimisticReaction?: (messageId: string, emoji: string) => void;
   vm: MessageViewModel;
   senderDisplayName: string;
+  /** Resolved sender profile picture URL (null for initials fallback) */
+  senderProfilePictureUrl?: string | null;
+  /** Resolved sender decoration ID */
+  senderDecorationId?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -118,6 +127,8 @@ export const StackedMessageRenderer: React.FC<StackedMessageRendererProps> =
       onOptimisticReaction,
       vm,
       senderDisplayName,
+      senderProfilePictureUrl,
+      senderDecorationId,
     }) => {
       const theme = useTheme();
       const navigation = useNavigation<NativeStackNavigationProp<any>>();
@@ -351,14 +362,7 @@ export const StackedMessageRenderer: React.FC<StackedMessageRendererProps> =
         idempotencyKey: "",
       };
 
-      // ── Avatar color ──────────────────────────────────────────────────
-      const avatarBg = isSentByMe
-        ? theme.colors.primaryContainer
-        : friendProfile?.avatarConfig?.baseColor ||
-          theme.colors.secondaryContainer;
-      const avatarFg = isSentByMe
-        ? theme.colors.onPrimaryContainer
-        : theme.colors.onSecondaryContainer;
+      // ── Author name color ─────────────────────────────────────────────
       const authorColor = isSentByMe
         ? theme.colors.primary
         : theme.colors.secondary;
@@ -405,11 +409,12 @@ export const StackedMessageRenderer: React.FC<StackedMessageRendererProps> =
                 {/* Gutter: avatar at group-start, spacer for within-group */}
                 {vm.isGroupStart ? (
                   <View style={s.gutter}>
-                    <View style={[s.avatar, { backgroundColor: avatarBg }]}>
-                      <Text style={[s.avatarText, { color: avatarFg }]}>
-                        {senderDisplayName.charAt(0).toUpperCase()}
-                      </Text>
-                    </View>
+                    <ProfilePictureWithDecoration
+                      pictureUrl={senderProfilePictureUrl ?? null}
+                      name={senderDisplayName}
+                      decorationId={senderDecorationId}
+                      size={F.avatarSize}
+                    />
                   </View>
                 ) : (
                   <View style={s.gutterSpacer} />
@@ -535,17 +540,6 @@ const s = StyleSheet.create({
     marginRight: F.gutterGap,
     alignItems: "center",
     paddingTop: 2,
-  },
-  avatar: {
-    width: F.avatarSize,
-    height: F.avatarSize,
-    borderRadius: F.avatarSize / 2,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  avatarText: {
-    fontSize: F.avatarSize * 0.44,
-    fontWeight: "600",
   },
   authorName: {
     fontSize: F.authorNameFontSize,

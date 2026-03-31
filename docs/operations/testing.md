@@ -1,14 +1,10 @@
 # Testing Guide
 
-Last verified: 2026-02-22
+Last verified: 2026-03-30
 
-## Purpose
+## Baseline Validation
 
-This matrix is the minimum verification bar for this repository. Use it to avoid regressions across app, backend functions, realtime server, and embedded Starforge components.
-
-## Core App Validation
-
-From repository root:
+Run these from the repository root for almost every meaningful change:
 
 ```bash
 npm run type-check
@@ -16,60 +12,99 @@ npm run lint
 npm run test
 ```
 
-High-value targeted checks:
-
-```bash
-npm run smoke
-```
-
-## Backend Validation
-
-Firebase functions:
+Backend build:
 
 ```bash
 npm --prefix firebase-backend/functions run build
 ```
 
-## Required Matrix by Change Type
+Realtime server validation:
 
-Messaging changes:
+```bash
+npm --prefix colyseus-server run lint
+npm --prefix colyseus-server run test
+npm --prefix colyseus-server run build
+```
 
-1. Root app checks
+## Change Matrix
+
+### Messaging
+
+Minimum:
+
+1. root app checks
 2. Functions build
-3. Smoke test
 
-Game/invite/runtime changes:
+Recommended targeted focus:
 
-1. Root app checks
-2. `verify:registry` + `smoke`
-3. Colyseus lint/test/build
+- chat services and hooks under `__tests__/services/`
+- notification interactions if message routing changed
 
-Profile/economy/shop changes:
+### Auth, social, profile, wallet, tasks, shop
 
-1. Root app checks
+Minimum:
+
+1. root app checks
+2. Functions build when contracts or rewards changed
+
+Recommended targeted focus:
+
+- profile widget tests
+- services tests touching entitlements, wallet, or tasks
+
+### Stream calls
+
+Minimum:
+
+1. root app checks
 2. Functions build
-3. Any relevant integration tests under `__tests__/services/`
 
-Rules/index/query changes:
+Manual verification matters most here because device/build environment affects behavior.
 
-1. Root app checks
+### Games V4
+
+Minimum:
+
+1. root app checks
 2. Functions build
-3. Manual query/write sanity in emulator or staging
+3. Colyseus checks for realtime game work
 
-## High-Value Test Areas
+Use the deeper game-specific test and runbook docs for scenario coverage:
 
-Use these paths as a quick guide for impact-focused validation:
+- [GAMES_V4_RUNBOOK.md](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/docs/GAMES_V4_RUNBOOK.md)
+- [REALTIME_FRAMEWORK.md](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/docs/REALTIME_FRAMEWORK.md)
 
-- Messaging contracts and outbox behavior: `__tests__/services/` (messaging-related files)
-- Smoke harness: `__tests__/integration/smokeTestHarness.test.ts`
+### Rules, indexes, or query-shape changes
 
-## Manual Smoke Scenarios (Recommended)
+Minimum:
 
-1. DM send/edit/delete/reaction and unread behavior.
-2. Group chat send + typing + read watermark behavior.
-3. Profile update + privacy-sensitive viewed profile behavior.
+1. root app checks
+2. Functions build
+3. manual sanity against the affected Firestore shape
 
-## Test Placement Rules
+## High-Value Test Areas In This Repo
 
-- App tests: `__tests__/`
-- Keep tests near the contract they protect; avoid detached generic tests with unclear ownership.
+- `__tests__/services/`
+- `__tests__/profile/`
+- `__tests__/notifications/`
+- `__tests__/gamesV4/`
+- rules/index-related tests under `__tests__/`
+
+## Manual Scenarios Worth Repeating
+
+- DM send/read/reaction/attachment flow
+- group chat send and unread behavior
+- onboarding safety for returning users versus true new users
+- profile board render and customization save/reload
+- wallet/tasks/shop read and claim flows
+- direct call and voice-channel entry on a native build
+
+## Explicit Non-Truths From Older Docs
+
+The following older test guidance is not valid for the current repo:
+
+- `npm run smoke`
+- `npm run verify:registry`
+- `__tests__/integration/smokeTestHarness.test.ts`
+
+If those commands or files are reintroduced later, document them when they actually land.

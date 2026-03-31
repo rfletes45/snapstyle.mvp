@@ -1,355 +1,233 @@
-# Messaging System
+# Messaging
 
-Last verified: 2026-03-22
+Last verified: 2026-03-30
 
 ## Scope
 
-This is the canonical reference for DM chat, group chat, inbox state, message requests, message features (edit/delete, reactions, voice, scheduled, mentions, attachments), realtime subscriptions, and message-driven notifications.
+This is the current-state reference for:
 
-Historical migration notes still exist under `docs/chat-system-audit/`, but they are no longer the source of truth.
+- DM chat
+- group chat
+- inbox and unread behavior
+- message requests
+- reactions, voice notes, mentions, attachments, and scheduled messages
+- notification interactions that are directly tied to chat
+
+## Current Status
+
+- native messaging runtime: implemented and primary
+- web messaging runtime: implemented as a compatibility path
+- inbox aggregation backend: implemented
+- inbox aggregation client default: not yet switched on
+- threads: implemented, but still a specialized screen
+
+## Main Files
+
+Screens:
+
+- [ChatListScreenV2.tsx](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/src/screens/chat/ChatListScreenV2.tsx)
+- [ChatScreen.tsx](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/src/screens/chat/ChatScreen.tsx)
+- [GroupChatScreen.tsx](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/src/screens/groups/GroupChatScreen.tsx)
+- [ThreadScreen.tsx](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/src/screens/chat/ThreadScreen.tsx)
+- [ScheduledMessagesScreen.tsx](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/src/screens/chat/ScheduledMessagesScreen.tsx)
+- [InboxSettingsScreen.tsx](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/src/screens/chat/InboxSettingsScreen.tsx)
+- [ChatSettingsScreen.tsx](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/src/screens/chat/ChatSettingsScreen.tsx)
+
+Hooks and services:
+
+- [useChat.ts](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/src/hooks/useChat.ts)
+- [useLocalMessages.ts](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/src/hooks/useLocalMessages.ts)
+- [useUnifiedMessages.ts](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/src/hooks/useUnifiedMessages.ts)
+- [useInboxData.ts](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/src/hooks/useInboxData.ts)
+- [useUnifiedInboxRequests.ts](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/src/hooks/useUnifiedInboxRequests.ts)
+- `src/services/messaging/*`
+- `src/services/chatV2.ts`
+- `src/services/sync/syncEngine.ts`
+
+Backend:
+
+- [messaging.ts](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/firebase-backend/functions/src/messaging.ts)
+- [messageRequests.ts](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/firebase-backend/functions/src/messageRequests.ts)
+- [inboxTriggers.ts](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/firebase-backend/functions/src/inboxTriggers.ts)
+- [chatMedia.ts](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/firebase-backend/functions/src/chatMedia.ts)
+- [notificationCenter.ts](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/firebase-backend/functions/src/notificationCenter.ts)
 
 ## Runtime Architecture
 
-Primary screen orchestration:
+### Native
 
-- `src/hooks/useChat.ts`
-- `src/hooks/useUnifiedChatScreen.ts`
-- `src/screens/chat/ChatScreen.tsx`
-- `src/screens/groups/GroupChatScreen.tsx`
-- `src/screens/chat/ThreadScreen.tsx`
+Native devices run the local-first path:
 
-Supporting screens:
+- `USE_LOCAL_STORAGE = true`
+- `useChat` delegates to `useLocalMessages`
+- SQLite is the immediate UI cache
+- sync and reconciliation come from the sync engine
+- `useUnifiedMessages` is disabled so the Firestore-first runtime does not double-own the screen
 
-- `src/screens/chat/ChatListScreenV2.tsx` (inbox)
-- `src/screens/chat/InboxSearchScreen.tsx` (conversation search)
-- `src/screens/chat/InboxSettingsScreen.tsx` (global inbox preferences)
-- `src/screens/chat/ChatSettingsScreen.tsx` (per-conversation notification overrides)
-- `src/screens/chat/ScheduledMessagesScreen.tsx` (manage scheduled messages)
-- `src/screens/groups/GroupChatInfoScreen.tsx` (group details and member management)
-- `src/screens/groups/GroupChatCreateScreen.tsx` (group creation wizard)
+### Web
 
-Runtime ownership is now explicit:
+Web uses the Firestore-first compatibility path:
 
-- Native (`USE_LOCAL_STORAGE=true`):
-  - `useChat` uses `src/hooks/useLocalMessages.ts`
-  - SQLite is the immediate UI cache via `src/services/database/*`
-  - realtime and resync come from `src/services/sync/syncEngine.ts`
-  - `useUnifiedMessages` is mounted with `enabled: false`, so the Firestore-first runtime does not create duplicate listeners
-- Web (`USE_LOCAL_STORAGE=false`):
-  - `useChat` uses `src/hooks/useUnifiedMessages.ts`
-  - this path still depends on `src/services/messaging/send.ts`, `src/services/messaging/subscribe.ts`, `src/services/chatV2.ts`, and `src/services/messageList.ts`
+- `USE_LOCAL_STORAGE = false`
+- `useChat` delegates to `useUnifiedMessages`
+- this path still relies on older compatibility services such as `chatV2.ts`
 
-The local-first path is the primary native implementation. The Firestore-first path remains a compatibility runtime for web.
+### Important invariant
 
-## Source Of Truth By Concern
+One conversation screen should have one active message owner. The current `useChat` implementation enforces that split.
 
-- DM conversation identity:
-  - `src/services/chat.ts:getOrCreateChat`
-  - Firestore `Chats/{chatId}` where `chatId` is the sorted user pair
-- Group identity and membership:
-  - `src/services/groups.ts:createGroup`
-  - Firestore `Groups/{groupId}`, `Groups/{groupId}/Members`, `Groups/{groupId}/MembersPrivate`
-- Message persistence:
-  - server-authoritative write path: `firebase-backend/functions/src/messaging.ts`
-  - client-local cache on native: SQLite `messages` table via `src/services/database/messageRepository.ts`
-- Inbox membership state:
-  - primary read path today: `src/hooks/useInboxData.ts` fan-out reads from `Chats` and `Groups`
-  - backend also maintains `Users/{uid}/Inbox/*` through `firebase-backend/functions/src/inboxTriggers.ts`
-- Unread/read state:
-  - source of truth: `MembersPrivate.lastSeenAtPrivate` and related member-private watermarks
-  - aggregated inbox `unreadCount` is a derived hint, not the canonical authority
-- Notifications:
-  - source of truth: `Users/{uid}/Notifications/{notificationId}`
-  - delivery selection: `firebase-backend/functions/src/notificationCenter.ts`
-  - device/session coordination: `Users/{uid}/NotificationDevices`, `Users/{uid}/NotificationSessions`
+## Conversation and Message Authority
 
-## Conversation Lifecycle
+### Conversation identity
 
-DM creation and lookup:
+- DM identity is deterministic and tied to `Chats/{chatId}`
+- groups live under `Groups/{groupId}`
 
-1. UI resolves the peer user.
-2. `getOrCreateChat()` builds the deterministic chat ID from the two UIDs.
-3. The service validates blocks before creating `Chats/{chatId}`.
-4. Membership, member-private state, and messages live under the `Chats/{chatId}` subtree.
+### Canonical write path
 
-Group creation:
+`sendMessageV2` in the Functions backend is the authoritative DM/group write path.
 
-1. `createGroup()` writes `Groups/{groupId}`.
-2. The creator is inserted into `Members`.
-3. Group membership and per-user private state are stored under the group document.
-4. Group message writes flow through the same server messaging callable as DMs, but with group membership checks.
+Server-side guarantees include:
 
-Thread replies:
-
-- `ThreadScreen` is still a separate local-thread surface.
-- It reads replies from SQLite and relies on `syncEngine.subscribeToConversation(...)` plus `syncPendingMessages()`.
-- It is not yet unified into `useChat`, so thread behavior should be treated as a specialized screen on top of the same local-first storage.
-
-## Message Lifecycle
-
-Native local-first send flow:
-
-1. `useChat.sendMessage(...)` inserts an optimistic row into SQLite.
-2. Attachments and reply metadata are stored locally in the same transaction.
-3. `syncPendingMessages()` pushes pending rows through the sync engine.
-4. The authoritative backend write still lands through `sendMessageV2`.
-5. Realtime sync writes the canonical server message back into SQLite, and normalization reconciles optimistic versus authoritative state.
-
-Native local-first read flow:
-
-1. `useChat` now owns automatic read watermark writes for both DM and group screens.
-2. DM public read receipts still respect the effective setting supplied by `useReadReceipts`.
-3. Screen-specific fallback read effects should not fork this behavior anymore.
-4. Inbox optimistic read updates remain UI sugar; canonical unread state is still member-private.
-
-Web fallback send flow:
-
-1. `useChat.sendMessage(...)` delegates to `src/services/messaging/send.ts`.
-2. That wrapper still routes through `src/services/chatV2.ts`.
-3. The server callable `sendMessageV2` performs the same authoritative validation and write steps.
-4. `useUnifiedMessages` merges realtime snapshots with outbox items for optimistic state.
-
-Authoritative server guarantees in `sendMessageV2`:
-
-- auth required
-- DM or group membership enforcement
+- authenticated sender
+- DM/group membership validation
 - DM block checks
 - message request gating
-- rate limiting (global bucketed limiter defined but currently disabled via `ENABLE_GLOBAL_RATE_LIMIT=false`)
-- group settings enforcement (slow mode, announcement-only, media restrictions defined but currently disabled via `ENABLE_GROUP_SETTINGS_ENFORCEMENT=false`)
-- idempotency via `messageId` and `idempotencyKey`
-- canonical `serverReceivedAt` timestamps
-- staged attachment commit (staging → chat-media)
-- conversation preview updates
-- thread reply counter updates
+- idempotency using `messageId` and client identifiers
+- canonical `serverReceivedAt`
+- attachment commit from staging to final media storage
 
-## Inbox And Unread Model
+### Native local cache
 
-Current client inbox ownership:
+On native, optimistic rows land in SQLite first and then reconcile against the authoritative server message when sync completes.
 
-- `src/hooks/useInboxData.ts` is the active inbox reader because `CHAT_FEATURES.CHAT_INBOX_AGGREGATION` is still `false`
-- `src/hooks/useInboxAggregation.ts` exists for the aggregated inbox path but is not the default runtime today
-- the aggregated hook still hydrates `MembersPrivate` per conversation for archive, mute, pin, and private watermark parity, so it is not yet a pure single-listener client design
+## Inbox and Unread Model
 
-Current backend inbox behavior:
+Current state is a partial migration:
 
-- `firebase-backend/functions/src/inboxTriggers.ts` always maintains aggregated inbox docs under `Users/{uid}/Inbox`
-- `markInboxRead` only resets the derived aggregated inbox unread hint
-- this means the codebase is in a partial migration state: backend aggregation writes are live, but the client still defaults to fan-out reads and member-private watermarks remain the canonical unread authority
+- backend always maintains `Users/{uid}/Inbox/*`
+- client still defaults to fan-out reads through `useInboxData`
+- `CHAT_FEATURES.CHAT_INBOX_AGGREGATION` is still `false`
 
-Unread semantics:
+Unread authority:
 
-- compute from member-private watermarks first
-- use `src/services/chat/normalizeInboxRow.ts` for normalization
-- treat aggregated unread fields as hints only
+- canonical source: `MembersPrivate` watermarks
+- aggregated inbox unread counts: derived hints only
+
+`markInboxRead` resets the aggregated inbox hint, but it does not replace member-private unread state.
 
 ## Message Requests
 
 Message requests are always on.
 
-- backend enforcement: `firebase-backend/functions/src/messageRequests.ts`
-- client subscription: `src/hooks/useMessageRequests.ts`
-- inbox merge surface: `src/hooks/useUnifiedInboxRequests.ts`
-- request actions: `acceptMessageRequest`, `declineMessageRequest`
+Active pieces:
 
-There is no longer a client feature flag for message requests. The previous gating was removed because the backend already enforced requests, which could otherwise hide legitimate pending requests from the UI.
+- backend enforcement: `messageRequests.ts`
+- client subscription: `useMessageRequests.ts`
+- merge surface: `useUnifiedInboxRequests.ts`
 
-## Realtime Ownership
-
-Native conversation screens:
-
-- realtime source: `src/services/sync/syncEngine.ts`
-- screen hook: `src/hooks/useLocalMessages.ts`
-- local cache reloads after sync notifications
-
-Web fallback conversation screens:
-
-- realtime source: `src/services/messaging/subscribe.ts`
-- hook: `src/hooks/useUnifiedMessages.ts`
-
-Important invariant:
-
-- only one message runtime should own a screen at a time
-- `useChat` now enforces that by disabling the Firestore-first hook whenever local-first mode is active
-
-## Notifications
-
-Notification event producers:
-
-- chat and message request events: `firebase-backend/functions/src/notifications.ts`
-- game events: `firebase-backend/functions/src/gamesV4/notifications.ts`
-- social and gifting events also route into the same center
-
-Notification routing center:
-
-- `firebase-backend/functions/src/notificationCenter.ts`
-
-Notification center behavior:
-
-1. read inbox notification preferences from `Users/{uid}/settings/inbox`
-2. suppress if the conversation is muted
-3. inspect fresh `NotificationSessions`
-4. suppress if the user is already viewing the target surface
-5. choose one channel: `in_app`, `push`, or `none`
-6. write the canonical notification record to `Users/{uid}/Notifications/{notificationId}`
-7. send Expo push only when the selected channel is `push`
-
-Client consumers:
-
-- feed and badge subscription: `src/services/userNotifications.ts`
-- foreground banners and session heartbeats: `src/store/InAppNotificationsContext.tsx`
-- push tap normalization and navigation: `src/store/AuthContext.tsx`
-- client conversation read-marking is scope-aware (`dm` vs `group`) when clearing notification records
-- in-app toast presses and “last viewed conversation” tracking now preserve conversation scope so group and DM notification flows use the same ownership model
-
-There is no `CHAT_LEGACY_PUSH_ENABLED` environment contract in the current implementation.
+There is no longer a client-side feature flag that hides message requests while the backend still enforces them.
 
 ## Message Features
 
-Edit and delete:
+### Reactions
 
-- client service: `src/services/messageActions.ts` (`editMessage`, `deleteMessage`)
-- server enforcement: `firebase-backend/functions/src/messaging.ts` (editMessage, deleteMessage callables)
-- edit window: 15 minutes from send time
-- delete modes: delete for self, delete for everyone
-- UI surface: `MessageActionsSheet` bottom sheet on message long-press
+- backed by `toggleReactionV2`
+- stored as both message summary data and reaction subcollection state
+- supported in both DM and group screens
 
-Reactions:
+### Voice messages
 
-- Denormalized on message: `reactionsSummary?: Record<string, number>` on `MessageV2`
-- Subcollection: `Messages/{messageId}/Reactions/{emoji}` stores `{ emoji, uids[], count, updatedAt }`
-- Toggle: Server-side Cloud Function `toggleReactionV2` (atomic transaction, rate-limited 10/min)
-- Client service: `src/services/reactions.ts` — `toggleReaction()`, `subscribeToReactions()`, `subscribeToMultipleMessageReactions()`
-- Full emoji support: Any Unicode emoji accepted (≤ 10 chars), no fixed whitelist
-- Quick reactions: 6 curated emojis in `MessageActionsSheet` tray (👍 ❤️ 😂 😮 😢 🔥)
-- Full emoji picker: `rn-emoji-keyboard` (categories, search, recent, skin tones)
-- UI — pills: `ReactionPills` component renders animated pills below message bubbles
-- UI — detail: `ReactionDetailSheet` shows who reacted with each emoji
-- DM support: `ChatScreen` subscribes to reactions via `subscribeToMultipleMessageReactions`
-- Group support: `GroupChatScreen` subscribes to reactions via `subscribeToMultipleMessageReactions`
-- Placement: Pills rendered inside `messageBubbleWrapper` (DM) / after `messageRow` with avatar indent (Group)
-- Haptic feedback: `expo-haptics` on pill tap and quick reaction selection
-- Animations: `react-native-reanimated` spring scale on tap, FadeIn/FadeOut, layout transitions
-- Theme-aware: Pill colors use `theme.colors.primaryContainer`, `primary`, `surfaceVariant`
-- Max: 20 unique emojis per message, 10 user IDs displayed per reaction
+- recorder: `useVoiceRecorder.ts`
+- send surface: composer path in chat screens
+- playback: `VoiceMessagePlayer.tsx`
 
-Voice messages:
+### Mentions
 
-- recorder hook: `src/hooks/useVoiceRecorder.ts`
-- playback component: `src/components/chat/VoiceMessagePlayer.tsx`
-- record button: `src/components/chat/VoiceRecordButton.tsx`
-- stored as audio attachment with duration and waveform metadata
+- stored on the message shape as `mentionUids` and `mentionSpans`
+- compose-time suggestions are handled in `MentionAutocomplete.tsx`
 
-Mentions:
+### Attachments
 
-- stored as `mentionUids: string[]` and `mentionSpans: MentionSpan[]` on `MessageV2`
-- `MentionSpan` defines `{ uid, start, end }` offsets into message text
-- UI: `src/components/chat/MentionAutocomplete.tsx` for `@name` suggestions while composing
-- separate unread mention counter from general unread in inbox
+Attachment flow is two-phase:
 
-Link previews:
+1. client uploads to `chat-staging/...`
+2. `sendMessageV2` finalizes into `chat-media/...`
 
-- type: `LinkPreviewV2` with Open Graph data
-- UI: `src/components/chat/LinkPreviewCard.tsx`
+Current constraints are enforced server-side in `chatMedia.ts`.
 
-Attachment pipeline:
-
-- two-phase upload model
-- Phase 1: client uploads to `chat-staging/{scope}/{conversationId}/{messageId}/` (public read, short-lived)
-- Phase 2: `sendMessageV2` Cloud Function moves staging → `chat-media/` (private)
-- orphan cleanup: `cleanupStagingOrphans` scheduled function removes abandoned files after 6 hours
-- server constraints: max 25 MB per file, max 10 attachments per message, MIME whitelist (image/_, video/_, audio/\*, PDF, Office docs, text)
-- backend service: `firebase-backend/functions/src/chatMedia.ts`
-- client hooks: `src/hooks/useAttachmentPicker.ts` (camera + gallery)
-- UI: `AttachmentTray` (send queue), `AttachmentGrid` (message display), `MediaViewerModal` (full-screen viewer)
-
-Image compression & bubble sizing:
-
-- `compressImage()` in `src/services/storage.ts` resizes images on upload. Native uses `expo-image-manipulator` with `resize: { width: maxSize }` (aspect-ratio-preserving); web uses canvas scaling.
-- Upload stores `AttachmentV2.width` and `AttachmentV2.height` metadata from the original image.
-- Image bubbles use `getImageBubbleSize(w, h)` to compute dynamic dimensions: max 240×320, min width 150, preserving aspect ratio.
-- DMs: `DMMessageItem` reads `message.imageWidth`/`imageHeight`; Groups: `GroupChatScreen` reads `imageAttachment.width`/`height` directly from `AttachmentV2`.
-- Fullscreen viewer (`MediaViewerModal`) uses `contentFit="contain"` with pinch-to-zoom.
-
-Scheduled messages:
+### Scheduled messages
 
 - client service: `src/services/scheduledMessages.ts`
-- backend: `firebase-backend/functions/src/scheduledMessages.ts` (legacy proxy to `processScheduledMessages`)
-- Firestore path: `Users/{uid}/scheduledMessages`
-- constraints: minimum 5 minutes, maximum 30 days in the future
-- management screen: `src/screens/chat/ScheduledMessagesScreen.tsx`
-- UI: `src/components/ScheduleMessageModal.tsx` (date/time picker)
+- management screen: `ScheduledMessagesScreen.tsx`
+- backend processing remains a legacy-style proxy but is still active
 
-Per-chat settings:
+### Per-chat settings
 
-- type: `ChatSettingsV3` (global) and `EffectiveChatSettings` (resolved per-conversation)
-- resolver: `src/services/messaging/resolveChatSettings.ts`
-- global settings: `src/services/inboxSettings.ts` (Firestore path `Users/{uid}/settings/inbox`)
-- per-chat overrides managed through `src/screens/chat/ChatSettingsScreen.tsx`
-- settings include: mute duration, notification level, read receipt toggles, archive
+Settings are split between:
 
-Group settings:
+- global inbox settings under `Users/{uid}/settings/inbox`
+- per-conversation overrides shown in `ChatSettingsScreen.tsx`
 
-- type: `GroupSettings` in `src/types/messaging.ts`
-- defined fields: `slowModeSeconds`, `announcementOnly`, `allowMediaFromMembers`, `allowMentionsAll`, `retentionMode`
-- server enforcement exists but is disabled (`ENABLE_GROUP_SETTINGS_ENFORCEMENT=false`)
-- no client UI currently renders or edits these settings
+### Conversation display mode
 
-Game invites:
+Rendering supports:
 
-- both ChatScreen and GroupChatScreen support creating game invites (V4 Games)
-- UI: `GamePickerModal` for game selection, `createGameInvite` service for invite creation
+- `bubbles`
+- `stacked`
 
-Group calls:
+That choice is viewer-side only. See [conversation-display-modes.md](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/docs/features/conversation-display-modes.md).
 
-- available in GroupChatScreen when `areNativeCallsAvailable=true`
-- excluded on web and Expo Go builds
-- lazy-loaded via `groupCallService`
+## Group Chat Notes
 
-## Chat Composer and Input
+Group chat currently includes:
 
-- unified hook: `src/hooks/useChatComposer.ts`
-- component: `src/components/chat/ChatComposer.tsx` (scope-aware for DM vs group)
-- features: text input, voice recording button, attachment picker, reply preview bar, mention autocomplete (groups), animal themes
-- keyboard tracking: `src/hooks/chat/useChatKeyboard.ts` (Reanimated animated values)
-- auto-scroll on new messages: `src/hooks/chat/useNewMessageAutoscroll.ts`
+- normal group messaging
+- typing and unread behavior
+- group-specific settings screens
+- voice-room occupancy and entry points for Stream voice channels
 
-## Conversation Display Modes
+Important correction from older docs:
 
-Users can switch between **Bubbles** (classic right-aligned outgoing) and **Stacked** (Discord-style dense feed) layouts. The setting is viewer-side only and does not affect message storage or other participants.
+- the active group voice implementation is Stream-based
+- old references to `groupCallService` are legacy and not the live runtime
 
-The stacked mode is a true feed layout — not "bubbles moved left." It uses a fixed gutter/content-column grid with no bubble chrome around text messages, content-column-anchored images and reactions, and self-message row tints instead of alignment changes.
+## Notification Relationship
 
-See [`docs/features/conversation-display-modes.md`](conversation-display-modes.md) for full documentation.
+Chat event producers feed the shared notification center. Messaging-specific notification types include:
 
-Key integration points:
+- `dm_message`
+- `group_message`
+- `message_request`
 
-- `src/chat/displayMode.ts` — types, `FeedLayoutTokens`, `ChatLayoutTokens`, view-model builder
-- `src/store/ConversationDisplayModeContext.tsx` — React context with AsyncStorage + Firestore persistence
-- `src/components/chat/ChatMessageRenderer.tsx` — unified DM renderer (delegates by mode)
-- `src/components/chat/StackedMessageRenderer.tsx` — DM feed-mode renderer
-- `src/components/chat/GroupStackedMessageRenderer.tsx` — group feed-mode renderer
-- `ChatScreen.tsx` and `GroupChatScreen.tsx` both consume `useConversationDisplayMode()` to select the active renderer
+The notification center chooses one channel only:
 
-## Live Compatibility Debt
+- `in_app`
+- `push`
+- `none`
 
-- The web fallback path still relies on wrapper services that delegate into older `chatV2` and `messageList` modules.
-- Backend inbox aggregation is already live even though the client default reader is still fan-out.
-- `ThreadScreen` remains a separate local-thread implementation instead of sharing the full `useChat` stack.
-- `firebase-backend/functions/src/deleteAccount.ts` still contains explicit cleanup for legacy `Conversations`, root `Notifications`, and `InAppNotificationsV4` data so old documents can still be scrubbed safely.
-- Group settings types and server enforcement code exist but are gated behind a disabled feature flag with no client UI.
-- Scheduled messages backend is still a legacy proxy.
+Client chat notification handling must preserve `conversationScope` so DM and group notifications do not collapse onto a bare conversation ID.
 
-## Validation
+## Known Current Rough Edges
 
-Targeted tests exercised during the 2026-03-18 cleanup:
+- backend inbox aggregation is live, but the client default still reads fan-out data
+- `ThreadScreen` remains a specialized local-first surface instead of using the full shared chat runtime
+- the web path still relies on older compatibility modules underneath the unified hook surface
+- group settings types and enforcement hooks exist, but the stricter server enforcement flags remain disabled
+
+## Explicit Non-Truths From Older Docs
+
+The following older claims are no longer accurate:
+
+- there is no active `InboxSearchScreen.tsx` in the current repo
+- the current group-call entry in chat is not powered by the old Firestore/WebRTC group call service
+- the old `CHAT_LEGACY_PUSH_ENABLED` contract is not part of the live implementation
+
+## Recommended Validation
 
 ```bash
-npm test -- --runInBand __tests__/services/chatV3Client.test.ts __tests__/services/resolveChatSettings.test.ts __tests__/services/outboxErrorClassification.test.ts
-```
-
-Recommended follow-up checks for messaging work:
-
-```bash
+npm run type-check
+npm run lint
+npm run test
 npm --prefix firebase-backend/functions run build
 ```

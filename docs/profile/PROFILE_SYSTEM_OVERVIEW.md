@@ -1,121 +1,101 @@
 # Profile System Overview
 
-Last verified: 2026-03-27
+Last verified: 2026-03-30
 
-This is the **canonical entry point** for all Profile system documentation. Start here, then follow links to deeper docs.
+This is the canonical entry point for the current profile system docs.
 
-## What the Profile System Is
+## What The Profile System Is Today
 
-The Profile system is how users express identity and view others within SnapStyle. It has two major surfaces:
+The profile system has two live surfaces built on the same board infrastructure:
 
-1. **Own Profile** (`OwnProfileScreen`) — a fully customizable **widget board** where the user arranges profile widgets on a 4-column grid. Widgets can be dragged, resized, added, removed, and reordered.
-2. **Other User Profile** (`UserProfileScreen`) — a read-only profile view with relationship-aware actions (add friend, message, call, block, report) and privacy-evaluated content.
+1. own profile
+   - editable widget board
+   - drag, resize, add, hide, and restore widgets
+2. viewed profile
+   - target user’s saved board rendered in read-only mode
+   - synthetic viewer-actions widget appended at the bottom
 
-The own-profile surface was rebuilt from a static card layout into a **dynamic widget board** in early 2026. The other-user profile remains a traditional scrollable card layout.
+This is the biggest correction from older docs: `UserProfileScreen` is no longer a separate traditional card-stack architecture.
 
 ## Core Concepts
 
-| Concept               | Description                                                                                                                                                                               |
-| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Widget Board**      | A 4-column grid layout engine that hosts movable, resizable profile widgets. Persisted per-user in Firestore.                                                                             |
-| **Profile Hero Card** | The mandatory, non-removable widget at the top of the board. Supports 3 sizes: wide (4×1), large (4×2), hero (4×4). Contains identity, level, status, and action buttons.                 |
-| **Customize Mode**    | Entered via long-press on any widget. Enables drag-to-reorder, resize, add/remove widgets. Exited via Done (saves) or Cancel (reverts).                                                   |
-| **Widget Gallery**    | A bottom sheet in customize mode listing all available widgets by category. Users add new widgets or restore hidden ones.                                                                 |
-| **Widget Registry**   | Central metadata store defining every widget type: supported sizes, removability, category, max instances.                                                                                |
-| **Cosmetic Layer**    | PFP, decorations, backgrounds, themes, badges, chat appearance — owned via entitlements, equipped via profile writes. Documented separately in [PROFILE_SYSTEM.md](../PROFILE_SYSTEM.md). |
+### Widget board
 
-## Major Surfaces
+A 4-column board of widget instances persisted per user at `Users/{uid}/ProfileLayout/board`.
 
-### Own Profile (Widget Board)
+### Widget instance
 
-**Entry:** Profile tab → `OwnProfileScreen`
+A placed widget with:
 
-The own profile renders a `WidgetBoardContainer` that manages the full widget lifecycle:
+- widget type
+- size
+- grid position
+- visibility flag
+- timestamps
 
-- View mode: read-only, scrollable, widgets respond to taps (navigate to friends, badges, etc.)
-- Customize mode: drag/drop reorder, resize handles, remove buttons, add-widget gallery
+### Read-only board mode
 
-Default widget layout on first load:
+The same board system running without customization controls. This is how viewed profiles work today.
 
-1. Profile Hero Card (4×4 hero)
-2. Social Proof / Streak Widget (4×1 wide)
-3. Friends Card (2×2 medium)
-4. Badges Card (2×2 medium)
-5. Achievements Card (4×1 wide)
+### Synthetic viewer-actions widget
 
-### Other User Profile (Traditional Layout)
+A non-persisted widget injected on viewed profiles to show relationship and action controls.
 
-**Entry:** Tap user avatar/name anywhere → `UserProfileScreen`
+## Current Widget Types
 
-Traditional scrollable layout:
-
-1. Profile header (avatar, name, bio, status, level, friendship info)
-2. Relationship action bar (message, call, add friend, etc.)
-3. Social proof section (streak + activity rows)
-4. Overview cards (Friends, Badges, Achievements) — privacy-evaluated
-5. Mutual friends section
-
-### Customization & Shopping
-
-- **Customization Hub** (`CustomizationHubScreen`) — equip-only, browse/equip owned cosmetics
-- **Cosmetics Shop** (`CosmeticsShopScreen`) — purchase-only, buy new cosmetics with tokens
-- Both are accessible from the hero card (Shop and Customize buttons) and via navigation
-
-## Canonical Terminology
-
-Use these terms consistently across all docs and code:
-
-| Term              | Meaning                                    | Do NOT use                                                          |
-| ----------------- | ------------------------------------------ | ------------------------------------------------------------------- |
-| Widget Board      | The 4-column grid layout system            | "profile layout", "card grid"                                       |
-| Profile Hero Card | The main profile identity widget           | "profile header widget", "main card"                                |
-| Customize Mode    | The drag/resize/add editing state          | "edit mode" (ambiguous with bio/picture editing)                    |
-| View Mode         | The non-editing default state              | "read mode", "normal mode"                                          |
-| Widget Gallery    | The add-widget bottom sheet                | "widget picker", "add widget modal"                                 |
-| Streak Widget     | Social Proof widget showing friend streaks | "social proof card" (legacy name, widget type ID is `social-proof`) |
-| Wide              | 4×1 widget size (88px tall)                | "horizontal", "banner"                                              |
-| Large             | 4×2 widget size (184px tall)               | "big"                                                               |
-| Hero              | 4×4 widget size (376px tall)               | "extra large", "full"                                               |
-| Small             | 2×1 widget size (88px tall)                | "mini", "compact"                                                   |
-| Medium            | 2×2 widget size (184px tall)               | "square"                                                            |
+- `profile-header`
+- `social-proof`
+- `friends`
+- `badges`
+- `achievements`
+- `mutual-friends`
+- `favorite-game`
+- `profile-stats`
+- `recent-activity`
+- `viewer-actions`
+- `tasks-overview`
+- `wallet-balance`
+- `theme-mode`
+- `chat-layout-mode`
 
 ## Documentation Map
 
-| Document                                                           | Covers                                                                   |
-| ------------------------------------------------------------------ | ------------------------------------------------------------------------ |
-| **[WIDGET_BOARD_ARCHITECTURE.md](WIDGET_BOARD_ARCHITECTURE.md)**   | Grid model, layout engine, drag/reflow, resize, persistence, animation   |
-| **[PROFILE_HERO_CARD.md](PROFILE_HERO_CARD.md)**                   | Hero card size variants, content per size, settings/actions, level bar   |
-| **[PROFILE_WIDGETS_REFERENCE.md](PROFILE_WIDGETS_REFERENCE.md)**   | Every widget type: purpose, sizes, data, interactions, states            |
-| **[INTERACTIONS_AND_EDIT_MODE.md](INTERACTIONS_AND_EDIT_MODE.md)** | View vs customize mode, drag, dwell, resize, sheets, gestures, gotchas   |
-| **[DATA_AND_PERSISTENCE.md](DATA_AND_PERSISTENCE.md)**             | Firestore paths, widget layout storage, data sources per widget, privacy |
-| **[SOCIAL_WIDGETS_AND_STREAKS.md](SOCIAL_WIDGETS_AND_STREAKS.md)** | Streak system integration, social data sources, activity feed            |
-| **[MIGRATION_NOTES.md](MIGRATION_NOTES.md)**                       | What changed from old profile, deprecated docs/components                |
+- [WIDGET_BOARD_ARCHITECTURE.md](WIDGET_BOARD_ARCHITECTURE.md)
+  - grid model, layout engine, persistence, read-only behavior
+- [PROFILE_WIDGETS_REFERENCE.md](PROFILE_WIDGETS_REFERENCE.md)
+  - widget inventory, visibility, sizing, and data notes
+- [DATA_AND_PERSISTENCE.md](DATA_AND_PERSISTENCE.md)
+  - Firestore layout storage and widget data sources
+- [INTERACTIONS_AND_EDIT_MODE.md](INTERACTIONS_AND_EDIT_MODE.md)
+  - gestures, customize mode, dwell timing, viewer restrictions
+- [PROFILE_HERO_CARD.md](PROFILE_HERO_CARD.md)
+  - `profile-header` widget behavior
+- [SOCIAL_WIDGETS_AND_STREAKS.md](SOCIAL_WIDGETS_AND_STREAKS.md)
+  - streaks, friends, mutual friends, recent activity, viewer actions
+- [MIGRATION_NOTES.md](MIGRATION_NOTES.md)
+  - how to interpret older profile references
 
-## Related Documents (Outside Profile Scope)
+Related docs outside this folder:
 
-| Document                                                      | Relevance                                                         |
-| ------------------------------------------------------------- | ----------------------------------------------------------------- |
-| [PROFILE_SYSTEM.md](../PROFILE_SYSTEM.md)                     | Cosmetic ownership, entitlements, equip flows, rendering pipeline |
-| [features/profile-economy.md](../features/profile-economy.md) | Privacy model, economy contracts, relationship/moderation         |
-| [NOTIFICATION_SYSTEM.md](../NOTIFICATION_SYSTEM.md)           | Streak reminders, friend request notifications                    |
-| [GAMES_V4_SYSTEM.md](../GAMES_V4_SYSTEM.md)                   | Achievement system, leaderboards (feeds profile widgets)          |
+- [../PROFILE_SYSTEM.md](../PROFILE_SYSTEM.md)
+- [../features/profile-economy.md](../features/profile-economy.md)
+- [../features/custom-font-color.md](../features/custom-font-color.md)
+- [../features/conversation-display-modes.md](../features/conversation-display-modes.md)
 
-## Key Implementation Files
+## Key Files
 
-| File                                                          | Purpose                                          |
-| ------------------------------------------------------------- | ------------------------------------------------ |
-| `src/screens/profile/OwnProfileScreen.tsx`                    | Own profile entry point, widget data assembly    |
-| `src/screens/profile/UserProfileScreen.tsx`                   | Other user profile entry point                   |
-| `src/components/profile/WidgetBoard/WidgetBoardContainer.tsx` | Root board component                             |
-| `src/components/profile/WidgetBoard/WidgetWrapper.tsx`        | Per-widget wrapper (drag, resize, edit controls) |
-| `src/components/profile/WidgetBoard/BoardLayoutEngine.ts`     | Grid packing, conflict resolution, compaction    |
-| `src/components/profile/WidgetBoard/useBoardState.ts`         | Mode management, dwell logic, layout actions     |
-| `src/components/profile/WidgetBoard/useBoardPersistence.ts`   | Firestore load/save/sync                         |
-| `src/components/profile/WidgetBoard/WidgetRegistry.ts`        | Widget type definitions and metadata             |
-| `src/components/profile/WidgetBoard/WidgetGallery.tsx`        | Add/restore widget sheet                         |
-| `src/components/profile/WidgetBoard/adapters.tsx`             | Widget content renderers per type and size       |
-| `src/components/profile/WidgetBoard/types.ts`                 | TypeScript types, grid constants, size presets   |
-| `src/hooks/useTopStreaks.ts`                                  | Real-time Firestore streak data subscription     |
-| `src/components/profile/ProfileHeader/OwnProfileHeader.tsx`   | Standalone editable profile header               |
-| `src/components/profile/ProfileHeader/UserProfileHeader.tsx`  | Read-only profile header for other users         |
-| `src/components/profile/OverviewCards/`                       | Card components (Friends, Badges, Achievements)  |
+- [OwnProfileScreen.tsx](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/src/screens/profile/OwnProfileScreen.tsx)
+- [UserProfileScreen.tsx](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/src/screens/profile/UserProfileScreen.tsx)
+- `src/components/profile/WidgetBoard/WidgetBoardContainer.tsx`
+- `src/components/profile/WidgetBoard/WidgetWrapper.tsx`
+- `src/components/profile/WidgetBoard/useBoardState.ts`
+- `src/components/profile/WidgetBoard/useBoardPersistence.ts`
+- `src/components/profile/WidgetBoard/WidgetRegistry.ts`
+- `src/components/profile/WidgetBoard/BoardLayoutEngine.ts`
+
+## Current-State Rules To Preserve
+
+1. The board document is the saved layout source of truth.
+2. Viewed profiles must stay read-only; they should not write defaults or persist changes to another user’s layout.
+3. `viewer-actions` is synthetic and should not be persisted into the target user’s layout.
+4. The profile header widget is non-removable.

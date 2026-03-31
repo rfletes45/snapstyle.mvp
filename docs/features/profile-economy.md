@@ -1,142 +1,206 @@
 # Profile and Economy
 
-Last verified: 2026-02-22
+Last verified: 2026-03-30
 
 ## Scope
 
-This doc covers profile data contracts, privacy and relationship behavior, moderation touchpoints, and the wallet/tasks/shop economy pipeline.
+This doc is the feature-level overview for:
 
-## Profile Data Contract
+- profile surfaces and viewer/owner behavior
+- cosmetics, customization, and appearance settings
+- wallet, shop, tasks, achievements, and related progression data
 
-Primary profile document path:
+Use the deeper docs under `docs/profile/` for widget-board mechanics.
 
-- `Users/{uid}`
+## Current Status
 
-Client contract and hydration:
+- own profile widget board: implemented
+- viewed profile board: implemented in read-only mode
+- cosmetics ownership and equip flows: implemented
+- wallet, transactions, tasks, shop, and purchase history: implemented
+- achievements and game-driven progression: implemented
+- several legacy ownership fields remain for back-compat: still present
 
-- `src/services/profile/profileContract.ts`
-- `src/services/profileService.ts`
+## Main Files
 
-Hydrated profile includes key fields such as:
+Profiles:
 
-- Identity/display: `uid`, `username`, `usernameLower`, `displayName`
-- Visual identity: `avatarConfig`, `profilePicture`, `avatarDecoration`, `theme`
-- Social/profile: `bio`, `status`, `featuredBadges`
-- Privacy: `privacy`
-- Metadata: `createdAt`, `lastActive`, `lastProfileUpdate`
+- [OwnProfileScreen.tsx](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/src/screens/profile/OwnProfileScreen.tsx)
+- [UserProfileScreen.tsx](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/src/screens/profile/UserProfileScreen.tsx)
+- `src/components/profile/WidgetBoard/*`
 
-## Profile Validation and Limits
+Customization and cosmetics:
 
-Client validation (profileContract):
+- [CustomizationHubScreen.tsx](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/src/screens/customization/CustomizationHubScreen.tsx)
+- [PROFILE_SYSTEM.md](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/docs/PROFILE_SYSTEM.md)
+- [entitlements.ts](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/src/services/entitlements.ts)
+- `src/cosmetics/*`
 
-- `displayName`: 1-50 chars
-- `bio.text`: <= 200 chars
-- `status.text`: <= 50 chars
-- privacy visibility fields must be one of: `everyone`, `friends`, `nobody`
+Economy and progression:
 
-Rules in Firestore enforce related constraints; keep client + rules aligned whenever field limits or schema change.
+- [economy.ts](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/src/services/economy.ts)
+- [tasks.ts](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/src/services/tasks.ts)
+- [ShopHubScreen.tsx](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/src/screens/shop/ShopHubScreen.tsx)
+- [WalletScreen.tsx](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/src/screens/wallet/WalletScreen.tsx)
+- [TasksScreen.tsx](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/src/screens/tasks/TasksScreen.tsx)
+- `src/screens/shop/CosmeticsShopScreen.tsx`
+- `src/screens/shop/PurchaseHistoryScreen.tsx`
 
-## Privacy Model
-
-Visibility enum:
-
-- `everyone`
-- `friends`
-- `nobody`
-
-Defaults are defined in:
-
-- `src/types/userProfile.ts` (`DEFAULT_PRIVACY_SETTINGS`)
-
-Privacy controls cover:
-
-- profile visibility
-- status/badge visibility
-- friends list and mutual friend display
-- contact permissions (messages/calls/friend requests)
-- discovery toggles (search/sharing/suggestions)
-
-## Relationship and Moderation Flow
-
-Relationship resolution path:
-
-- `getRelationship(...)` in `src/services/profileService.ts`
-
-Possible relationship outcomes include:
-
-- self
-- friend
-- pending sent/received
-- blocked by you
-- blocked by them
-- stranger
-
-Moderation-adjacent services:
-
-- `src/services/blocking.ts`
-- `src/services/reporting.ts`
-- `src/services/moderation.ts`
-
-## Profile UI Entry Points
-
-Main screens:
-
-- `src/screens/profile/OwnProfileScreen.tsx`
-- `src/screens/profile/UserProfileScreen.tsx`
-- `src/screens/profile/BadgeCollectionScreen.tsx`
-- `src/screens/settings/PrivacySettingsScreen.tsx`
-
-## Economy Contract
-
-Primary data collections and services:
-
-- Wallet:
-  - collection: `Wallets`
-  - client: `src/services/economy.ts`
-- Transactions:
-  - collection: `Transactions`
-  - client: `src/services/economy.ts`
-- Tasks/rewards:
-  - collections: `Tasks`, `Users/{uid}/TaskProgress`
-  - client: `src/services/tasks.ts`
-- Shop/purchases:
-  - collections: `ShopCatalog`, purchase history collections
-  - client: `src/services/shop.ts`, `src/services/purchaseHistory.ts`
-
-Server-authoritative write paths:
+Backend:
 
 - `firebase-backend/functions/src/economy.ts`
 - `firebase-backend/functions/src/shop.ts`
 - `firebase-backend/functions/src/cosmeticEntitlements.ts`
 - `firebase-backend/functions/src/iap.ts`
 
-## Feature Flags
+## Profile Surfaces
 
-Relevant rollout groups in `constants/featureFlags.ts`:
+### Own profile
 
-- `PROFILE_V2_FEATURES`
+Own profile is no longer a fixed stack of cards. It is an editable widget board backed by `useBoardState(currentUid)`.
 
-Treat these as runtime gates that may intentionally leave compatibility paths active.
+### Viewed profile
 
-## Critical Invariants
+Viewed profiles are no longer described accurately by older docs that talk about a traditional card layout. The current `UserProfileScreen`:
 
-1. Profile schema changes must update client validators and Firestore rules together.
-2. `usernameLower` normalization must remain consistent with username changes.
-3. Privacy filtering must be applied before exposing non-owner profile data.
-4. Economy balance and purchase writes must stay server-authoritative.
-5. Client-side convenience writes should not bypass rules/contracts for money-like state.
+- loads the target user’s saved board through `useBoardState(userId, { readOnly: true })`
+- filters and adapts data for a non-owner viewer
+- injects a synthetic `viewer-actions` widget at the bottom
 
-## Change Checklist
+That means both owner and viewer profiles are board-driven now, but only the owner surface is editable.
 
-1. For new profile fields:
-   - add to `src/types/userProfile.ts`
-   - hydrate/validate in `profileContract`
-   - support update/read paths in `profileService`
-   - update rules/indexes if needed
-2. For privacy changes:
-   - verify UI behavior in both own-profile and viewed-profile screens
-   - verify rules and relationship-based visibility assumptions
-3. For economy/shop changes:
-   - verify callable contract and server validation
-   - verify wallet + transaction consistency in UI subscriptions
-4. Update this doc when schema/limits/visibility semantics change.
+## Widget Inventory Snapshot
+
+Current widget types in the registry:
+
+- `profile-header`
+- `social-proof`
+- `friends`
+- `badges`
+- `achievements`
+- `mutual-friends`
+- `favorite-game`
+- `profile-stats`
+- `recent-activity`
+- `viewer-actions`
+- `tasks-overview`
+- `wallet-balance`
+- `theme-mode`
+- `chat-layout-mode`
+
+Current default owner layout includes:
+
+- profile header
+- social proof
+- friends
+- badges
+- achievements
+- tasks overview
+- wallet balance
+
+## Layout Persistence
+
+Board persistence lives at:
+
+- `Users/{uid}/ProfileLayout/board`
+
+Current behavior:
+
+- owner mode validates, migrates, and persists layouts
+- read-only viewer mode subscribes to the target user’s board but does not persist defaults or edits
+
+See [PROFILE_SYSTEM_OVERVIEW.md](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/docs/profile/PROFILE_SYSTEM_OVERVIEW.md) and [WIDGET_BOARD_ARCHITECTURE.md](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/docs/profile/WIDGET_BOARD_ARCHITECTURE.md) for details.
+
+## Appearance and Personalization
+
+The current appearance model is split across:
+
+- app theme and theme mode
+- chat conversation display mode
+- profile cosmetics and equipped visuals
+- chat cosmetics such as bubble color, font, font color, and animal theme
+
+Relevant docs:
+
+- [PROFILE_SYSTEM.md](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/docs/PROFILE_SYSTEM.md)
+- [conversation-display-modes.md](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/docs/features/conversation-display-modes.md)
+- [custom-font-color.md](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/docs/features/custom-font-color.md)
+
+## Cosmetics and Customization
+
+Current ownership model:
+
+- canonical path: `Users/{uid}/Entitlements/{cosmeticId}`
+- canonical service: `entitlements.ts`
+
+Back-compat writes still exist for:
+
+- `ownedDecorations`
+- `ownedThemes`
+- legacy inventory-style paths
+
+Customization Hub behavior today:
+
+- equip-only, not purchase-first
+- split into profile and chat sections
+- owned-only browsing
+- live previews for profile/chat appearance
+- special categories for bubble colors, fonts, font colors, animal themes, and themes
+
+Shop behavior today:
+
+- Shop Hub routes into cosmetics, premium, and purchase history surfaces
+- wallet balance is visible from the hub
+- cosmetics purchasing remains separate from equipping
+
+## Economy and Progression
+
+### Wallet
+
+Wallet authority:
+
+- canonical document: `Wallets/{uid}`
+- transaction feed: `Transactions`
+
+The client subscribes to wallet and transaction reads, but writes remain server-authoritative.
+
+### Tasks
+
+Task authority:
+
+- task definitions: `Tasks`
+- per-user progress: `Users/{uid}/TaskProgress`
+- claims: callable `claimTaskReward`
+
+Current UI behavior:
+
+- `TasksScreen` separates daily and monthly tasks
+- it calls `recordDailyLogin` on mount
+- the default client timezone constant in `tasks.ts` is `America/Indiana/Indianapolis`
+
+### Achievements
+
+Achievements are fed primarily by Games V4. Profile surfaces then render featured subsets and achievement summaries.
+
+## Important Runtime Truths
+
+- viewer profiles use the board system now
+- entitlements are the canonical cosmetic ownership source
+- wallet and reward state should still be treated as server-authoritative
+- tasks and shop flows are live and connected to production-facing data contracts, not just placeholder UI
+
+## Known Current Rough Edges
+
+- legacy ownership fields still exist alongside the canonical entitlements path
+- some older docs still describe viewed profiles as a separate card-stack architecture
+- mutual-friends is meaningful on viewed profiles, but mostly not useful on your own board
+- parts of the customization and shop code still carry older naming or plan references even though the live behavior has moved on
+
+## Recommended Validation
+
+```bash
+npm run type-check
+npm run lint
+npm run test
+npm --prefix firebase-backend/functions run build
+```

@@ -1,42 +1,61 @@
 # Developer Runbook
 
-Last verified: 2026-02-22
+Last verified: 2026-03-30
 
 ## Prerequisites
 
-- Node.js 20 (recommended; functions runtime target is Node 20)
+- Node.js 20
 - npm
 - Firebase CLI
-- Expo CLI tooling
+- EAS CLI for device builds
+
+Optional, depending on what you are changing:
+
+- Android Studio / Xcode for native runs
+- a native dev client if you need Stream calls or VisionCamera behavior
 
 ## First-Time Install
 
 ```bash
 npm install
 npm --prefix firebase-backend/functions install
+npm --prefix colyseus-server install
 ```
 
-## Daily Startup (Recommended Terminal Split)
+## Daily Startup
 
-Terminal 1 - app:
+App:
 
 ```bash
 npm run start
 ```
 
-Terminal 2 - optional Firebase functions emulator:
+Optional functions emulator:
 
 ```bash
 npm --prefix firebase-backend/functions run serve
 ```
 
-Optional native/web launches:
+Optional Colyseus server for realtime game work:
+
+```bash
+npm --prefix colyseus-server run dev
+```
+
+Platform launches:
 
 ```bash
 npm run ios
 npm run android
 npm run web
 ```
+
+## Current Development Reality
+
+- the app currently points at the configured Firebase project by default; there is no repo-wide Firestore/Functions emulator wiring in the client app
+- `firebase.json` does not define emulator ports
+- realtime game local development is the main reason to run `colyseus-server` locally
+- calls are disabled automatically in Expo Go because Stream native modules are unavailable there
 
 ## Build and Validation Commands
 
@@ -45,12 +64,17 @@ npm run web
 npm run type-check
 npm run lint
 npm run test
-npm run verify:registry
-npm run smoke
 
 # Firebase functions
 npm --prefix firebase-backend/functions run build
+
+# Colyseus server
+npm --prefix colyseus-server run lint
+npm --prefix colyseus-server run test
+npm --prefix colyseus-server run build
 ```
+
+There is no verified `npm run smoke` or `npm run verify:registry` script in the current repo.
 
 ## Deploy Commands
 
@@ -58,7 +82,7 @@ npm --prefix firebase-backend/functions run build
 # Functions
 firebase deploy --only functions
 
-# Firestore + indexes
+# Firestore rules + indexes
 firebase deploy --only firestore:rules
 firebase deploy --only firestore:indexes
 
@@ -66,21 +90,33 @@ firebase deploy --only firestore:indexes
 firebase deploy --only storage
 ```
 
-## Common Diagnostics
+## High-Value Diagnostics
 
 Messaging issues:
 
-- Verify Firebase client bootstrap config: `src/services/firebaseConfig.local.ts`
-- Verify callable export presence in `firebase-backend/functions/src/index.ts`
-- Check function logs: `firebase functions:log`
+- verify Firebase initialization and client config files
+- verify callable exports in `firebase-backend/functions/src/index.ts`
+- build Functions after contract changes
 
-Profile/economy write issues:
+Call issues:
 
-- Verify Firestore rules allow current write shape
-- Verify corresponding callable path exists for server-authoritative writes
+- verify you are using a native build, not Expo Go
+- verify Stream credentials are present in Functions env
+- verify Stream dashboard provider names match `vibe-firebase` and `vibe-apn`
 
-## Pre-Merge Quick Checklist
+Realtime game issues:
 
-1. Run subsystem-appropriate test matrix from `docs/operations/testing.md`.
-2. Validate any changed contracts (rules, types, function payloads).
-3. Update docs for behavior or contract changes in the same branch.
+- verify `COLYSEUS_URL` in the build profile or local dev resolution
+- run the local Colyseus server when testing against localhost
+
+Profile/economy issues:
+
+- verify rules and callable contracts, not just UI code
+- check wallet/task/entitlement reads against real Firestore paths
+
+## Pre-Merge Checklist
+
+1. Run the subsystem-appropriate matrix from [testing.md](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/docs/operations/testing.md).
+2. Build Functions for any backend, callable, or schema-adjacent change.
+3. Run Colyseus checks for realtime game changes.
+4. Update the matching current-state docs in the same branch.

@@ -1,411 +1,143 @@
 # Widget Board Architecture
 
-Last verified: 2026-03-29
+Last verified: 2026-03-30
 
-← Back to [Profile System Overview](PROFILE_SYSTEM_OVERVIEW.md)
+## Board Model
 
-This document describes the grid layout engine, drag/reorder/reflow behavior, resize system, animation model, and persistence layer of the profile widget board.
+The profile board is a fixed 4-column grid.
 
-## Grid Model
+Current layout constants:
 
-The widget board is a 4-column grid with fixed cell dimensions.
+- `GRID_COLUMNS = 4`
+- `GRID_GUTTER = 8`
+- `CELL_HEIGHT = 88`
 
-**Constants** (defined in `src/components/profile/WidgetBoard/types.ts`):
+Defined in `src/components/profile/WidgetBoard/types.ts`.
 
-| Constant       | Value | Purpose                                         |
-| -------------- | ----- | ----------------------------------------------- |
-| `GRID_COLUMNS` | 4     | Number of columns in portrait mode              |
-| `GRID_GUTTER`  | 8px   | Horizontal and vertical spacing between widgets |
-| `CELL_HEIGHT`  | 88px  | Height of one grid row                          |
+## Size Presets
 
-**Size Presets:**
+Current size keys:
 
-| Size Key | Grid Span | Pixel Width | Pixel Height | Notes                                          |
-| -------- | --------- | ----------- | ------------ | ---------------------------------------------- |
-| `small`  | 2×1       | ~176px      | 88px         | Half-width, single row                         |
-| `medium` | 2×2       | ~176px      | 184px        | Half-width, two rows                           |
-| `wide`   | 4×1       | ~388px      | 88px         | Full-width, single row                         |
-| `large`  | 4×2       | ~388px      | 184px        | Full-width, two rows                           |
-| `hero`   | 4×4       | ~388px      | 376px        | Full-width, four rows. Profile hero card only. |
+- `small` = 2x1
+- `medium` = 2x2
+- `wide` = 4x1
+- `large` = 4x2
+- `hero` = 4x4
 
-> Pixel heights: `rows × CELL_HEIGHT + (rows − 1) × GRID_GUTTER` → 1 row = 88, 2 rows = 184, 4 rows = 376.
+Not every widget supports every size. The registry is the source of truth for supported sizes.
 
-Widget pixel widths depend on the measured board width: `(boardWidth - (GRID_COLUMNS - 1) × GRID_GUTTER) / GRID_COLUMNS × colSpan + (colSpan - 1) × GRID_GUTTER`.
+## Registry Snapshot
 
-## Widget Types
+Registry metadata lives in `WidgetRegistry.ts`.
 
-Ten registered widget types (defined in `WidgetRegistry.ts`, union in `types.ts`):
+Categories currently in use:
 
-| Widget Type       | Default Size | Supported Sizes     | Removable | Resizable | Category | Notes                            |
-| ----------------- | ------------ | ------------------- | --------- | --------- | -------- | -------------------------------- |
-| `profile-header`  | hero         | wide, large, hero   | No        | Yes       | profile  | Mandatory; max 1 instance        |
-| `social-proof`    | wide         | wide, large         | Yes       | Yes       | activity | Streaks & activity summary       |
-| `friends`         | medium       | small, medium, wide | Yes       | Yes       | social   | Friend list preview              |
-| `badges`          | medium       | small, medium, wide | Yes       | Yes       | gaming   | Featured badges                  |
-| `achievements`    | medium       | small, medium, wide | Yes       | Yes       | gaming   | Trophy case preview              |
-| `mutual-friends`  | medium       | small, medium, wide | Yes       | Yes       | social   | Mutual friends with the viewer   |
-| `favorite-game`   | medium       | small, medium, wide | Yes       | Yes       | gaming   | Most-played game stats           |
-| `profile-stats`   | wide         | medium, wide        | Yes       | Yes       | gaming   | Games played, wins, hours        |
-| `recent-activity` | wide         | wide, large         | Yes       | Yes       | activity | Latest events timeline           |
-| `viewer-actions`  | wide         | wide, large         | No        | No        | social   | Viewer-only; injected at runtime |
+- `profile`
+- `social`
+- `gaming`
+- `activity`
+- `appearance`
 
-Each widget type has `maxInstances: 1`.
+Important widget-specific visibility rules:
 
-### Viewer-Actions Widget
-
-The `viewer-actions` widget is a **synthetic, non-persisted widget** used only on the viewer profile screen (`UserProfileScreen`). It is:
-
-- **Not included in the default layout** (never persisted to Firestore)
-- **Not shown in the Widget Gallery** (filtered by `canRemove: false`)
-- **Injected at runtime** by `UserProfileScreen` via the `augmentedVisibleWidgets` memo
-- Positioned at the bottom of whichever board layout the target user has saved
-- Renders: muted badge, friendship duration pill, last active label, and the `ProfileActionsBar`
-
-Instance details:
-
-- `instanceId: "__viewer-actions__"`
-- `size: "large"` (4×2)
-- `pinned: true`
-
-## Board Container
-
-**File:** `src/components/profile/WidgetBoard/WidgetBoardContainer.tsx`
-
-The container:
-
-1. Measures available width on layout
-2. Calculates board height from the maximum bottom edge of all visible widgets
-3. In customize mode, adds `CUSTOMIZE_EXTRA_ROWS = 6` extra rows of workspace below the last widget (provides breathing room for dragging)
-4. Renders widgets as absolutely-positioned `WidgetWrapper` components
-5. Renders the `CustomizeModeToolbar` and `WidgetGallery` when in customize mode
-
-Board height is dynamic — it grows/shrinks as widgets are added, removed, or rearranged.
-
-### Read-Only / Viewer Mode
-
-When the `readOnly` prop is `true`:
-
-- `CustomizeModeToolbar` is suppressed
-- `WidgetSizeSelector` and `WidgetGallery` are suppressed
-- Each `WidgetWrapper` receives `readOnly={true}`, disabling long-press-to-customize
-- `onEnterCustomize` is set to `undefined`
-
-## Occupancy Map
-
-**File:** `src/components/profile/WidgetBoard/BoardLayoutEngine.ts`
-
-The layout engine maintains a 2D occupancy grid:
-
-- Stored as a 1D array indexed by `row × GRID_COLUMNS + col`
-- Each cell records the `instanceId` of the widget occupying it, or `null`
-- Built only from visible widgets (hidden widgets are excluded)
-- Used for placement validation and conflict detection
-
-**Placement validation** (`canPlace()`): Checks that a rectangle fits within grid bounds and does not overlap any occupied cell (optionally ignoring a specific widget).
-
-## Widget Positioning
-
-Widgets are positioned on the board using their `(x, y)` grid coordinates:
-
-- `x` = column (0 to `GRID_COLUMNS - 1`)
-- `y` = row (0-based, unbounded downward)
-
-Pixel position is computed as:
-
-- `left = x × (cellWidth + GRID_GUTTER)`
-- `top = y × (CELL_HEIGHT + GRID_GUTTER)`
-
-Position changes are animated using Reanimated shared values (see [Animation Model](#animation-model)).
-
-## Layout Engine: Compaction & Conflict Resolution
-
-### Compaction (Gravity)
-
-**Function:** `compactWidgets()` / `stableCompact()` in `BoardLayoutEngine.ts`
-
-After any layout change, widgets compact upward (gravity pulls everything to the top):
-
-1. Sort visible widgets by visual order: y ascending, x ascending, instanceId tiebreaker
-2. For each widget in order: place at the topmost valid position at the widget's preferred X
-3. If X-preserving placement fails: scan all columns in row-major order
-4. Absolute fallback: place at grid bottom
-5. Deterministic: same input always produces same output
-
-### Conflict Resolution (Stable Repack)
-
-**Function:** `resolveConflicts()` / `stableRepack()` in `BoardLayoutEngine.ts`
-
-When a widget is dragged or resized into a position that overlaps other widgets:
-
-1. Place the dragged widget (pinned) at its target grid position, clamped to bounds
-2. Compute affected region: `min(oldY, newY)` determines the start row
-3. Partition non-pinned widgets into **fixed prefix** (bottom edge ≤ affected start, no overlap with pinned rect) and **affected suffix** (everything else)
-4. Fixed prefix is preserved in place
-5. Affected suffix is repacked in visual order from the top of the affected zone:
-   - Each widget is placed at the topmost valid position at its preferred X
-   - No current-position preservation — widgets that can move upward into vacancies **do** move (vacancy healing)
-   - `minRow` constraint prevents later widgets from leapfrogging earlier ones
-   - No spiral search, no distance-based relocation
-
-**Vacancy healing:** When the active widget leaves its origin, the affected suffix is repacked from the top of the affected zone. This means widgets below the vacated space automatically move upward to fill it during the preview.
-
-### Resize Resolution
-
-**Function:** `resolveResize()` in `BoardLayoutEngine.ts`
-
-When a widget is resized:
-
-1. Apply the new size
-2. Clamp X position if the widget now exceeds grid width
-3. Delegate to `stableRepack()` to handle any overlaps and compact the affected region
-4. Returns updated layout or `null` if the resize is invalid
-
-### Coupled Post-Drop Settlement
-
-**Function:** `settleBoardAfterDrop()` in `BoardLayoutEngine.ts`
-
-After a widget is dropped, the board runs a **coupled settlement pass** on the entire layout:
-
-1. Run `stableRepack()` to resolve conflicts and heal vacancies (phases 1–4)
-2. Run `stableCompact()` to compact the entire board upward (phase 5)
-
-Phase 5 is the critical addition: it compacts the **active widget AND the affected suffix together** — the active widget settles from its drop position to the highest valid row, and all widgets below it settle upward with it.
-
-Properties:
-
-- **Coupled:** The active widget never moves upward alone; the suffix moves with it
-- **No dead gaps:** The final layout has no unnecessary vertical space between the active widget and the widgets below it
-- **Stable order:** Visual order (y → x → instanceId) is always preserved
-- **Deterministic:** Same input always produces the same output
-- **Animated:** Active widget uses `snap` spring; passive widgets use `reflow` spring
-
-Wired into `commitPreview()` in `useBoardState.ts`:
-
-- If a dwell-confirmed preview exists: runs `stableCompact()` on the preview
-- If no preview: runs `settleBoardAfterDrop()` from scratch
-
-## Drag-and-Drop System
-
-### Architecture Overview
-
-**File:** `src/components/profile/WidgetBoard/WidgetWrapper.tsx`
-
-The drag system uses a **teleport-proof** design:
-
-- Widget visual position is driven by `transform: [{translateX}, {translateY}]` (GPU-composited)
-- Base position (`animLeft`, `animTop`) is frozen at pickup time
-- Gesture translation is added as a delta
-- This prevents React Native layout system from interfering during drag
-
-### Drag Flow
-
-1. **Pickup:** User long-presses (200ms) a widget in customize mode → capture stable origin coordinates, trigger haptic (`ImpactFeedbackStyle.Light`)
-2. **Move:** Continuous pan updates compute the hover target grid cell from `origin + rawTranslation`. Calls `onDragUpdate(col, row)` on each change.
-3. **Drop:** Gesture ends → call `commitPreview()`, which animates the widget to its final grid position via spring animation
-
-### Dwell-Before-Reflow
-
-**Constant:** `DWELL_MS = 500` (in `useBoardState.ts`)
-
-To prevent jittery repositioning during rapid drag movement, the board uses a **dwell timer**:
-
-1. As the user drags, `updateDragPreview()` is called continuously (~50ms throttle)
-2. If the hover target cell changes, the dwell timer resets
-3. Only after the widget hovers over the **same candidate slot for 500ms** does the board reflow (other widgets slide out of the way)
-4. On drop: if a dwell-based reflow already fired, commit that preview. Otherwise, compute final layout from the latest hover position.
-
-This ensures smooth, intentional reflows rather than chaotic shuffling during fast drags.
-
-### Passive Widget Sliding
-
-When a dwell fires and the board reflows, displaced widgets **spring-animate** to their new positions using the `reflow` spring config. This creates a fluid "sliding into place" effect while the dragged widget is still held.
-
-## Resize System
-
-### Gesture
-
-**File:** `src/components/profile/WidgetBoard/WidgetWrapper.tsx`
-
-Resize is driven by a pan gesture from the bottom-right corner handle:
-
-- Handle size: `RESIZE_HANDLE_SIZE = 28px` (visual), `RESIZE_HANDLE_HIT = 16px` (expanded hit area)
-- Pan delta is mapped to grid delta (column/row changes)
-- The system finds the best matching supported size using a distance metric
-- Haptic feedback fires on each size change (`ImpactFeedbackStyle.Medium`)
-
-### Size Constraints
-
-Each widget type declares:
-
-- `supportedSizes[]` — array of valid size keys
-- The resize gesture snaps to the nearest supported size
-- Invalid sizes are rejected
-
-On resize commit, `resolveResize()` in the layout engine handles any resulting conflicts.
-
-## Animation Model
-
-**Spring Configs** (defined in `WidgetWrapper.tsx`):
-
-| Config   | Damping | Stiffness | Mass | Used For                                             |
-| -------- | ------- | --------- | ---- | ---------------------------------------------------- |
-| `reflow` | 20      | 90        | 1.0  | Displaced widgets sliding to new positions           |
-| `snap`   | 15      | 150       | 0.5  | Dragged widget snapping to final position after drop |
-
-Both configs use `ReduceMotion.Never` to ensure animations always run on the native compositor, even if the user has enabled reduced motion system-wide. This is required for layout correctness (positions must animate to their final values).
-
-### Position Sync
-
-- **During drag:** `animLeft`/`animTop` are frozen; gesture drives `translateX`/`translateY`
-- **After drop:** Base position springs to committed grid coordinates via `snap` config; translation resets to 0
-- **Normal updates (reflow):** Widgets spring to new positions via `reflow` config
-- **Resize:** Width/height spring to new pixel dimensions
-
-### Edit Controls Visibility
-
-Edit overlays (remove button, resize handle, drag handle) fade in/out with opacity animation (`DURATIONS.normal`, typically ~200ms). Pointer events are disabled when opacity < 0.5.
-
-### Haptic Feedback
-
-| Action             | Feedback Type                      |
-| ------------------ | ---------------------------------- |
-| Drag start         | `ImpactFeedbackStyle.Light`        |
-| Drag end           | `ImpactFeedbackStyle.Light`        |
-| Resize size change | `ImpactFeedbackStyle.Medium`       |
-| Done (save)        | `NotificationFeedbackType.Success` |
-| Cancel             | `ImpactFeedbackStyle.Light`        |
-
-## State Management
-
-### Hook Hierarchy
-
-**Own profile (editable):**
-
-```
-OwnProfileScreen
-  └─ useBoardState(userId)
-       └─ useBoardPersistence(userId)
-            └─ Firestore: Users/{userId}/ProfileLayout/board
-```
-
-**Viewer profile (read-only):**
-
-```
-UserProfileScreen
-  └─ useBoardState(userId, { readOnly: true })
-       └─ useBoardPersistence(userId, { readOnly: true })
-            └─ Firestore: Users/{userId}/ProfileLayout/board (read-only subscription)
-  └─ augmentedVisibleWidgets   ← injects synthetic viewer-actions widget
-```
-
-When `readOnly` is `true`: `save()` is a no-op, default layout is not persisted, and `onSnapshot` still subscribes (so the viewer sees live layout changes).
-
-### State Layers
-
-| Layer         | Source                 | Lifetime           | Purpose                                                |
-| ------------- | ---------------------- | ------------------ | ------------------------------------------------------ |
-| **Persisted** | Firestore `onSnapshot` | Permanent          | Canonical saved layout                                 |
-| **Working**   | Local state            | Customize session  | In-progress edits (before Done/Cancel)                 |
-| **Preview**   | Local state            | During drag/resize | Live reflow preview                                    |
-| **Active**    | Computed               | Render frame       | `preview ?? working ?? persisted` — what the user sees |
-
-### Mode Transitions
-
-**Enter customize:**
-
-1. Snapshot current persisted widgets → `snapshotRef`
-2. Create working copy
-3. Set mode to `"customize"`
-
-**Done (save):**
-
-1. Save the exact working layout to Firestore (no re-compaction — every operation already produces a valid settled layout)
-2. Clear working/preview state
-3. Set mode to `"view"`
-
-**Cancel (discard):**
-
-1. Clear working/preview state (reverts to persisted)
-2. Set mode to `"view"`
+- `viewer-actions` is synthetic and not persisted
+- `tasks-overview` is owner-only
+- `wallet-balance`, `theme-mode`, and `chat-layout-mode` exist on both own and viewed boards, but interaction remains owner-only
 
 ## Default Layout
 
-Generated when no saved layout exists (first profile load):
+`generateDefaultLayout()` currently creates:
 
-| Widget         | Size         | Position (x, y) |
-| -------------- | ------------ | --------------- |
-| profile-header | hero (4×4)   | (0, 0)          |
-| social-proof   | wide (4×1)   | (0, 4)          |
-| friends        | medium (2×2) | (0, 5)          |
-| badges         | medium (2×2) | (2, 5)          |
-| achievements   | wide (4×1)   | (0, 7)          |
+| Widget | Size | Position |
+| --- | --- | --- |
+| `profile-header` | `hero` | `(0, 0)` |
+| `social-proof` | `wide` | `(0, 4)` |
+| `friends` | `medium` | `(0, 5)` |
+| `badges` | `medium` | `(2, 5)` |
+| `achievements` | `wide` | `(0, 7)` |
+| `tasks-overview` | `wide` | `(0, 8)` |
+| `wallet-balance` | `small` | `(0, 9)` |
 
-Additional widgets (favorite-game, profile-stats, recent-activity, mutual-friends) are available in the Widget Gallery but not placed by default.
+Widgets such as `favorite-game`, `profile-stats`, `recent-activity`, `theme-mode`, and `chat-layout-mode` are available through the gallery but not placed by default.
 
-> The `viewer-actions` widget is **never** included in the default layout. It is injected synthetically at runtime on the viewer profile screen only.
+## Persistence
 
-## Key Files
+Board persistence lives at:
 
-| File                       | Purpose                                                  |
-| -------------------------- | -------------------------------------------------------- |
-| `WidgetBoardContainer.tsx` | Root board rendering, toolbar/gallery coordination       |
-| `WidgetWrapper.tsx`        | Per-widget drag/resize gestures, edit controls           |
-| `BoardLayoutEngine.ts`     | Grid packing, occupancy, conflict resolution, compaction |
-| `useBoardState.ts`         | Mode management, dwell logic, layout actions             |
-| `useBoardPersistence.ts`   | Firestore load/save/sync, validation, migration          |
-| `WidgetRegistry.ts`        | Widget type definitions and metadata                     |
-| `WidgetGallery.tsx`        | Add/restore widget bottom sheet                          |
-| `CustomizeModeToolbar.tsx` | Top toolbar: Cancel, Done, Add buttons                   |
-| `WidgetSizeSelector.tsx`   | Resize size preset selection UI                          |
-| `adapters.tsx`             | Widget content renderers per type and size               |
-| `types.ts`                 | Types, constants, size presets, schema version           |
+- `Users/{uid}/ProfileLayout/board`
 
-## Persistence & Firestore Rules
+The saved document currently stores:
 
-**Document path:** `Users/{userId}/ProfileLayout/board`
+- `schemaVersion`
+- `widgets`
+- `updatedAt`
 
-**Schema version:** `1` (stored in `schemaVersion` field; validated on read)
+`useBoardPersistence.ts` is responsible for:
 
-**Firestore security rules:**
+- validating saved layouts
+- migrating or repairing invalid widget entries
+- inserting the profile header if it is somehow missing
+- writing defaults for owners
+- suppressing persistence for read-only viewers
 
-| Operation         | Rule                                          |
-| ----------------- | --------------------------------------------- |
-| **Read**          | `isAuth()` — any authenticated user           |
-| **Create/Update** | `isAuth() && isOwner(uid)` + field validation |
-| **Delete**        | `isAuth() && isOwner(uid)`                    |
+## Working-State Layers
 
-Write validation enforces required fields (`schemaVersion`, `widgets`) and type constraints.
+The board has several state layers:
 
-## Widget Adapters
+- persisted layout from Firestore
+- working layout during customize mode
+- preview layout during drag/resize dwell
+- active render layout, derived from preview or working state
 
-**File:** `src/components/profile/WidgetBoard/adapters.tsx`
+This split is why older docs that describe the board as a single mutable array are incomplete.
 
-Each widget type has a corresponding adapter component in the `WIDGET_ADAPTERS` map. Adapters receive `{ widget, boardContext }` and render the widget content.
+## Read-Only Viewer Mode
 
-| Widget Type       | Adapter               | Renders                                                      |
-| ----------------- | --------------------- | ------------------------------------------------------------ |
-| `profile-header`  | ProfileHeaderAdapter  | Avatar, display name, username, bio (3 size variants)        |
-| `social-proof`    | SocialProofAdapter    | Streaks, activity summary                                    |
-| `friends`         | FriendsAdapter        | Friend list preview grid                                     |
-| `badges`          | BadgesAdapter         | Featured badge display                                       |
-| `achievements`    | AchievementsAdapter   | Trophy case preview                                          |
-| `mutual-friends`  | MutualFriendsAdapter  | Mutual friends with the viewer                               |
-| `favorite-game`   | FavoriteGameAdapter   | Most-played game stats                                       |
-| `profile-stats`   | ProfileStatsAdapter   | Games played, wins, hours                                    |
-| `recent-activity` | RecentActivityAdapter | Latest events timeline                                       |
-| `viewer-actions`  | ViewerActionsAdapter  | Muted badge, friendship pill, last active, ProfileActionsBar |
+Viewed profiles use:
 
-### Profile Header Size Variants
+- `useBoardState(userId, { readOnly: true })`
+- `useBoardPersistence(userId, { readOnly: true })`
 
-The `ProfileHeaderAdapter` renders different layouts based on the current widget size:
+Current read-only behavior:
 
-- **hero (4×4):** Full layout — large avatar, display name, username, bio, edit button
-- **large (4×2):** Compact — medium avatar, name, username, truncated bio
-- **wide (4×1):** Minimal — small avatar, name, username inline
+- loads and subscribes to the target user’s board
+- does not persist defaults
+- hides customize toolbar, gallery, and size controls
+- disables long-press entry into customization
 
-## See Also
+## Layout Engine
 
-- [Profile System Overview](PROFILE_SYSTEM_OVERVIEW.md) — entry point and terminology
-- [Profile Hero Card](PROFILE_HERO_CARD.md) — hero card size variants
-- [Interactions and Edit Mode](INTERACTIONS_AND_EDIT_MODE.md) — user-facing interaction details
-- [Data and Persistence](DATA_AND_PERSISTENCE.md) — Firestore storage and data sources
+`BoardLayoutEngine.ts` owns:
+
+- occupancy map construction
+- placement checks
+- stable repack during drag/resize
+- upward compaction
+- default layout generation
+
+The current engine is deterministic and preserves visual order while healing gaps after moves or size changes.
+
+## Key Interaction Timing
+
+The most important board timing constants are:
+
+- enter customize from view mode: long press `400ms`
+- activate drag in customize mode: long press `200ms`
+- dwell before preview reflow: `500ms`
+- extra workspace rows in customize mode: `6`
+
+The board docs used to drift here. These values now match the checked-in code.
+
+## Files To Read Together
+
+- `WidgetBoardContainer.tsx`
+- `WidgetWrapper.tsx`
+- `useBoardState.ts`
+- `useBoardPersistence.ts`
+- `BoardLayoutEngine.ts`
+- `WidgetRegistry.ts`
+
+## Current Rough Edges
+
+- some widgets are meaningful mainly in owner mode even when their definitions exist in the shared registry
+- older docs may still imply that the viewer profile bypasses this board system; it does not

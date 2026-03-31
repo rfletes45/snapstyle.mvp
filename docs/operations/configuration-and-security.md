@@ -1,68 +1,158 @@
 # Configuration and Security
 
-Last verified: 2026-03-18
+Last verified: 2026-03-30
 
-## Configuration Surfaces
+## Main Configuration Surfaces
 
-Primary runtime config files:
+- [featureFlags.ts](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/constants/featureFlags.ts)
+- [app.config.ts](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/app.config.ts)
+- [eas.json](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/eas.json)
+- [firebase.json](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/firebase.json)
+- [firebaseConfig.ts](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/src/services/firebaseConfig.ts)
+- [firebaseConfig.local.ts](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/src/services/firebaseConfig.local.ts)
 
-- feature flags: `constants/featureFlags.ts`
-- Expo/native config: `app.config.ts`
-- Firebase wiring: `firebase.json`
-- client Firebase config: `src/services/firebaseConfig.local.ts`
+## Active Feature Flags
 
-## Active Feature Flag Groups
+### Storage and camera
 
-- `USE_LOCAL_STORAGE`
-- `USE_VISION_CAMERA`
-- `PROFILE_V2_FEATURES`
-- `CALL_FEATURES`
-- `CHAT_FEATURES`
+- `USE_LOCAL_STORAGE = !IS_WEB`
+- `USE_VISION_CAMERA = true`
 
-High-impact defaults:
+Important nuance:
 
-- `USE_LOCAL_STORAGE`: enabled on native, disabled on web
-- `USE_VISION_CAMERA`: true
-- `CALL_FEATURES.CALLS_ENABLED`: true with rollout percentage still `0`
-- `CHAT_FEATURES`: settings/media/rate-limit/inbox/delivery/privacy rollout flags remain mostly false
+- `USE_VISION_CAMERA` being `true` does not mean Expo Go supports it
+- the camera surface still performs runtime fallback behavior when native modules are unavailable
 
-Important chat note:
+### Games
 
-- message requests are not a client feature flag anymore
-- the backend enforces DM request gating directly
+- `GAMES_V4_ENABLED = true`
+
+### Calls
+
+- `CALL_FEATURES.CALLS_ENABLED = isStreamNativeAvailable()`
+- `CALL_FEATURES.DIRECT_CALLS_ENABLED = true`
+
+Important correction from older docs:
+
+- there is no rollout-percentage gate in the current call feature flags
+- the main call gate is native-module availability, not a percentage rollout variable
+
+### Profile
+
+`PROFILE_V2_FEATURES` still exists as a named flag group, but most of those toggles are effectively enabled in the current profile runtime. The naming is legacy; the shipped profile surfaces are already the V2-style system.
+
+### Chat
+
+Important current chat flags:
+
+- `CHAT_SETTINGS_V3 = false`
+- `CHAT_SIGNED_MEDIA_URLS = false`
+- `CHAT_STAGED_UPLOADS = false`
+- `CHAT_GLOBAL_RATE_LIMIT = false`
+- `CHAT_INBOX_AGGREGATION = false`
+- `CHAT_DELIVERY_ACKS = false`
+- `CHAT_PRIVACY_SERVER_ENFORCED = false`
+- `CHAT_DEBUG_HUD = __DEV__`
+
+Reality note:
+
+- some backend infrastructure for these migrations already exists even while the client flags remain off
 
 ## Environment Variables
 
-Current app and backend code reviewed for this audit do not expose an active `CHAT_LEGACY_PUSH_ENABLED` environment contract.
+### App / build profiles
 
-Any new env var must be documented here when introduced.
+- `COLYSEUS_URL`
+
+Used by:
+
+- `app.config.ts`
+- `src/gamesV4/realtime/realtimeClient.ts`
+
+Current `eas.json` state:
+
+- `preview` sets `COLYSEUS_URL`
+- `production` sets `COLYSEUS_URL`
+
+### Firebase Functions
+
+Current source references:
+
+- `STREAM_API_KEY`
+- `STREAM_API_SECRET`
+- `APPLE_SHARED_SECRET`
+- `ANDROID_PACKAGE_NAME`
+- `ADMIN_SETUP_KEY`
+- `FUNCTIONS_EMULATOR`
+
+### Colyseus server
+
+Current source references:
+
+- `FIREBASE_PROJECT_ID`
+- `GOOGLE_APPLICATION_CREDENTIALS`
+- `FIREBASE_SERVICE_ACCOUNT_BASE64`
+- `COLYSEUS_DEV_BYPASS`
+- `HOST`
+- `PORT`
+
+## Platform Configuration
+
+### iOS
+
+Current `app.config.ts` state:
+
+- bundle ID: `com.vibeapp.mobile`
+- `googleServicesFile` is configured
+- background modes: `audio`, `remote-notification`, `fetch`
+- APS entitlement is present
+
+Important correction from older docs:
+
+- the current config does not declare `voip` background mode
+
+### Android
+
+Current `app.config.ts` state includes permissions for:
+
+- camera and microphone
+- network
+- Bluetooth audio
+- foreground service
+- vibration and wake lock
+- post notifications
 
 ## Security Boundaries
 
-Primary trust boundaries:
+Authoritative trust boundaries:
 
-- Firestore rules: `firebase-backend/firestore.rules`
-- Storage rules: `firebase-backend/storage.rules`
-- Cloud Functions for canonical writes and moderation-sensitive operations
+- Firestore rules
+- Storage rules
+- Cloud Functions for sensitive writes
 
-Server-authoritative areas include:
+The client should not become the authority for:
 
-- canonical messaging writes
-- notification channel selection
-- wallet, purchase, reward, and other money-like state
-- moderation-sensitive actions
+- canonical message writes
+- notification routing
+- wallet or transaction writes
+- purchases and entitlement grants
+- task reward claims
+- Games V4 results and rewards
+- Stream token issuance
 
-## Sensitive Files
+## Sensitive Files and Secrets
 
-- `src/services/firebaseConfig.local.ts`
-- backend package `.env` files
+Be careful with:
 
-Do not commit private keys or service-account material.
+- `firebase-backend/functions/.env`
+- service-account material used by Colyseus
+- App Store / Play billing credentials
+
+Do not paste live secret values into documentation. The previous Stream setup guide exposed real credential values; that is explicitly corrected in the current docs.
 
 ## Secure Change Checklist
 
-1. keep client types, backend contracts, and rules aligned
-2. do not bypass callable guards for canonical message or notification flows
-3. sanitize logs that could capture user content or PII
-4. rebuild functions after rule/auth/backend changes
-5. update this file when flags, env vars, or trust boundaries change
+1. Keep client types, backend contracts, rules, and indexes aligned.
+2. Do not document inactive flags or removed rollout behavior as live runtime.
+3. Rebuild Functions after backend or environment-contract changes.
+4. Rebuild native apps when `app.config.ts` changes affect plugins, permissions, or background behavior.

@@ -1,359 +1,166 @@
-# Profile System — Cosmetics, Ownership & Equip Flows
+# Profile System - Cosmetics, Ownership, and Equip Flows
 
-> **⚠️ SCOPE NOTICE (2026-03-27):** This document covers **cosmetic ownership, equip flows, and rendering**. It does NOT cover the Widget Board, profile hero card size variants, or social widgets. For the full Profile system documentation, start at **[docs/profile/PROFILE_SYSTEM_OVERVIEW.md](profile/PROFILE_SYSTEM_OVERVIEW.md)**.
+Last verified: 2026-03-30
 
-Last verified: 2026-03-27 (scope narrowed; cosmetics/equip content confirmed current)
+## Scope
 
-## 1) Overview
+This document covers the cosmetic and ownership layer of the profile system:
 
-This document covers the cosmetic and ownership layer of the Profile system:
+- cosmetic ownership and entitlements
+- equip flows
+- profile/chat appearance writes
+- rendering contracts that depend on equipped profile or chat cosmetics
 
-- profile identity and visuals (PFP, decoration, profile background, theme)
-- featured badges/master badges
-- chat appearance (bubble color, font, animal)
-- tokens/wallet and cosmetic ownership plumbing
-- granular privacy controls (23 fields across visibility and boolean toggles)
+It does not try to be the board-layout source of truth. For board mechanics and widget behavior, start at [docs/profile/PROFILE_SYSTEM_OVERVIEW.md](profile/PROFILE_SYSTEM_OVERVIEW.md).
 
-For these topics, see the new canonical profile docs at `docs/profile/`:
+## Current Status
 
-- **Widget board architecture** → [WIDGET_BOARD_ARCHITECTURE.md](profile/WIDGET_BOARD_ARCHITECTURE.md)
-- **Profile hero card & size variants** → [PROFILE_HERO_CARD.md](profile/PROFILE_HERO_CARD.md)
-- **Widget inventory & reference** → [PROFILE_WIDGETS_REFERENCE.md](profile/PROFILE_WIDGETS_REFERENCE.md)
-- **Edit/customize mode & interactions** → [INTERACTIONS_AND_EDIT_MODE.md](profile/INTERACTIONS_AND_EDIT_MODE.md)
-- **Widget data sources & persistence** → [DATA_AND_PERSISTENCE.md](profile/DATA_AND_PERSISTENCE.md)
-- **Social & streak widgets** → [SOCIAL_WIDGETS_AND_STREAKS.md](profile/SOCIAL_WIDGETS_AND_STREAKS.md)
+- canonical ownership model: implemented
+- customization/equip flow: implemented
+- shop and purchase integrations: implemented
+- legacy ownership shims: still present for back-compat
 
-Separation of concerns (non-negotiable):
+## Main Files
 
-- Customization Hub is equip-only
-- Cosmetics Shop is purchase-only
+Client:
 
-## 2) Architecture
+- [CustomizationHubScreen.tsx](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/src/screens/customization/CustomizationHubScreen.tsx)
+- [entitlements.ts](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/src/services/entitlements.ts)
+- [profileService.ts](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/src/services/profileService.ts)
+- `src/cosmetics/catalog.ts`
+- `src/cosmetics/chatCatalog.ts`
+- `src/cosmetics/themeRegistry.ts`
+- `src/cosmetics/assetRegistry.ts`
 
-Primary client files (cosmetics/ownership scope):
+Backend:
 
-- Navigation: `src/navigation/RootNavigator.tsx`, `src/types/navigation/root.ts`
-- Profile screens: `src/screens/profile/OwnProfileScreen.tsx`, `src/screens/profile/UserProfileScreen.tsx`
-- Profile sub-screens: `src/screens/profile/BadgeCollectionScreen.tsx`, `src/screens/profile/ProfileAchievementsScreen.tsx`
-- Overview cards: `src/components/profile/OverviewCards/` (OverviewCard, FriendsCard, BadgesCard, AchievementsTrophyCaseCard)
-- Profile achievements service: `src/services/profileAchievementsService.ts`
-- Social proof (UserProfileScreen only): `src/components/profile/SocialProof/SocialProofSection.tsx`
-- Privacy settings: `src/screens/settings/PrivacySettingsScreen.tsx`
-- Privacy contract: `src/services/profile/profileContract.ts` (validation + hydration)
-- Privacy types: `src/types/userProfile.ts` (`ProfilePrivacySettings`)
-- Customization: `src/screens/customization/CustomizationHubScreen.tsx`, `src/hooks/useCustomizationHub.ts`
-- Shop: `src/screens/shop/CosmeticsShopScreen.tsx`, `src/hooks/useCosmeticsShop.ts`
-- Profile writes: `src/services/profileService.ts`
-- Ownership reads: `src/services/entitlements.ts`
-- Hydration/contract checks: `src/services/profile/profileContract.ts`
-- Catalog/assets: `src/cosmetics/catalog.ts`, `src/cosmetics/assetRegistry.ts`, `src/cosmetics/chatCatalog.ts`, `src/cosmetics/themeRegistry.ts`
+- `firebase-backend/functions/src/cosmeticEntitlements.ts`
+- `firebase-backend/functions/src/shop.ts`
+- `firebase-backend/functions/src/messaging.ts`
 
-> **Widget Board files** are documented separately in [docs/profile/WIDGET_BOARD_ARCHITECTURE.md](profile/WIDGET_BOARD_ARCHITECTURE.md). Key directory: `src/components/profile/WidgetBoard/`.
+## Canonical Ownership Model
 
-Primary backend files:
-
-- purchases and grants: `firebase-backend/functions/src/cosmeticEntitlements.ts`
-- chat sender style and animal entitlement checks: `firebase-backend/functions/src/messaging.ts`
-
-## 3) Data Model (Exact)
-
-### 3.1 User profile document
-
-Path:
-
-- `Users/{uid}`
-
-Core profile/customization fields:
-
-- `username`
-- `usernameLower`
-- `displayName`
-- `avatarConfig`
-- `profilePicture.{url, thumbnailUrl, updatedAt}`
-- `avatarDecoration.decorationId`
-- `equippedBackgroundId`
-- `theme.equippedThemeId`
-- `featuredBadges.badgeIds`
-- `featuredAchievements.achievementIds`
-- `chatAppearance.bubbleColorId`
-- `chatAppearance.fontId`
-- `chatAppearance.animalThemeId`
-- `lastProfileUpdate`
-
-Legacy compatibility fields still in use:
-
-- `ownedDecorations`
-- `ownedThemes`
-- `cosmeticPoints`
-
-### 3.2 Entitlements ownership
-
-Path:
+Canonical entitlement path:
 
 - `Users/{uid}/Entitlements/{cosmeticId}`
 
-Entitlement doc fields:
+Canonical entitlement fields:
 
 - `cosmeticId`
 - `type`
 - `grantedAt`
 - `source`
-- `metadata?`
 
-### 3.3 Wallet/tokens
+The entitlements subcollection is the source of truth for whether a user owns a cosmetic item.
 
-Path:
+## Current Back-Compat State
 
-- `Wallets/{uid}`
+The repo still writes or reads some older ownership fields and compatibility paths:
 
-Fields:
+- `Users/{uid}.ownedDecorations`
+- `Users/{uid}.ownedThemes`
+- legacy owned subcollections
+- older inventory-style documents in some flows
 
-- `tokensBalance` (canonical)
-- `tokens` (legacy/back-compat)
-- `totalEarned`
-- `totalSpent`
+These exist to keep older reads or migration-era paths working. They should not be re-documented as the canonical ownership model.
 
-### 3.4 Purchase and transaction history
+## Equip Surfaces
 
-Paths:
+Customization is currently equip-only.
 
-- `Transactions/{transactionId}`
-- `Users/{uid}/PurchaseHistory/{transactionId}`
+Current behavior in `CustomizationHubScreen`:
 
-### 3.5 Badges
+- profile/chat section toggle
+- owned-only browsing
+- search/filter over owned cosmetics
+- live profile preview or chat preview
+- direct equip actions
 
-Legacy badge path still active:
+Current chat appearance categories include:
 
-- `Users/{uid}/Badges/{badgeId}`
+- bubble colors
+- fonts
+- font colors
+- animal themes
 
-### 3.6 Featured Achievements (Profile Trophy Case)
+Current profile appearance categories include:
 
-Field on user profile document:
+- decorations
+- backgrounds
+- badges
+- themes
 
-- `featuredAchievements.achievementIds` — string[] (max 2, de-duplicated)
-- `featuredAchievements.updatedAt` — number
+## Profile Fields Touched By Equip Flows
 
-Backward-compatible: optional/nullable, defaults to empty array in hydration.
+Common equipped fields on `Users/{uid}` include:
 
-Achievement source of truth: `Users/{uid}/Achievements` subcollection
-(written by Games V4 achievement system, read by profile service).
+- `avatarDecoration`
+- `equippedBackgroundId`
+- `theme`
+- `featuredBadges`
+- `chatAppearance`
 
-## 4) Cosmetics Catalog
+These profile fields drive both owner and viewer rendering because:
 
-Canonical catalog:
+- own profile uses them in board widget data
+- viewed profiles use the same underlying user data in read-only board widgets
+- outgoing chat messages stamp the relevant chat appearance fields into sender style
 
-- `src/cosmetics/catalog.ts`
+## Rendering Contracts
 
-Asset registry:
+### Profile rendering
 
-- `src/cosmetics/assetRegistry.ts`
+Profile visuals depend on:
 
-Related generated catalogs:
+- avatar/picture data
+- equipped decoration
+- equipped background
+- theme metadata
 
-- themes: `src/cosmetics/themeRegistry.ts`
-- chat cosmetics: `src/cosmetics/chatCatalog.ts`
+The widget board and profile adapters consume these fields, but the board docs own layout behavior.
 
-Catalog contract:
+### Chat rendering
 
-- `id`: canonical cosmetic ID (must match entitlement doc ID)
-- `type`: slot/category (`background`, `decoration`, `badge`, `theme`, chat types)
-- `source`: acquisition route (`free`, `starter`, `shop`, `milestone`, etc.)
-- `priceTokens`: required for shop items
-- `metadata`: value payloads for non-image cosmetics (chat colors/fonts, etc.)
+Outgoing chat rendering resolves:
 
-Inventory filtering:
+- bubble color
+- font
+- font color
+- animal theme
 
-- `getOwnedCosmeticsByType(...)` in `catalog.ts` is the canonical owned-only selector for Customization Hub.
+Messaging then stamps the sender style so recipients can render the sender’s chosen chat appearance without performing profile lookups for every message.
 
-## 5) Ownership / Entitlements
+## Purchase and Grant Flows
 
-Purchase path:
+Current write model:
 
-1. client calls callable `purchaseCosmeticWithTokens`
-2. backend validates pricing/ownership
-3. backend debits wallet
-4. backend writes entitlement doc
-5. backend writes transaction/purchase history
+- purchases and most grants should go through Functions
+- the client service can still grant free/starter items as a convenience path
+- the client entitlement service is read-heavy; it is not the money-like authority
 
-Claim path:
+## Relationship To Profile Board Docs
 
-- free/starter client claim path: `grantFreeEntitlement(...)` in `src/services/entitlements.ts`
-- master-badge grants: backend + service flows write entitlement docs
+Important current-state truth:
 
-Owned-only rule:
+- owner profile and viewed profile are both board-driven now
+- this document does not describe those screens as fixed card stacks
 
-- Customization Hub renders owned items only (entitled items + free/starter defaults)
-- equip attempts validate ownership before writing profile equip fields
+Use these docs for the board system:
 
-## 6) Equip Flow (Customization Hub)
+- [PROFILE_SYSTEM_OVERVIEW.md](profile/PROFILE_SYSTEM_OVERVIEW.md)
+- [WIDGET_BOARD_ARCHITECTURE.md](profile/WIDGET_BOARD_ARCHITECTURE.md)
+- [PROFILE_WIDGETS_REFERENCE.md](profile/PROFILE_WIDGETS_REFERENCE.md)
 
-UI entry:
+## Known Rough Edges
 
-- `src/screens/customization/CustomizationHubScreen.tsx`
+- legacy ownership shims still exist and can mislead code readers into thinking multiple ownership stores are equally canonical
+- some older docs and comments still talk about profile/header cards rather than board widgets
 
-Sections:
+## Recommended Validation
 
-- Profile section tabs: decoration/background/badge/theme
-- Chat section tabs: bubble color/font/animal
-
-Flow:
-
-1. subscribe entitlements (`subscribeEntitlements`)
-2. build owned set
-3. filter catalog by active tab + search (owned-only)
-4. preview locally in header/chat preview
-5. equip writes to `Users/{uid}` through profile services
-
-Equip field writes:
-
-- decoration -> `avatarDecoration.decorationId`
-- background -> `equippedBackgroundId`
-- theme -> `theme.equippedThemeId`
-- badges -> `featuredBadges.badgeIds`
-- chat bubble -> `chatAppearance.bubbleColorId`
-- chat font -> `chatAppearance.fontId`
-- chat animal -> `chatAppearance.animalThemeId`
-
-## 7) Profile Overview UI
-
-### 7.1 Layout Structure
-
-## 7) Profile Overview UI
-
-> **⚠️ NOTE:** The own-profile screen now uses a **Widget Board** system. Overview cards (Friends, Badges, Achievements) and the Social Proof streak widget are now rendered as board widgets, not as a fixed layout. See [PROFILE_SYSTEM_OVERVIEW.md](profile/PROFILE_SYSTEM_OVERVIEW.md) for the current architecture. The UserProfileScreen still uses a traditional card layout.
-
-### 7.1 Privacy Model
-
-`ProfilePrivacySettings` (16 fields total):
-
-Visibility fields (`PrivacyVisibility`: "everyone" | "friends" | "nobody"):
-
-- `showProfilePicture`, `showBio`, `showStatus`, `showOnlineStatus`
-- `showFriendsList`, `showMutualFriends`, `showBadges`, `showAchievements`
-- `showDecorations`, `showChatAppearance`
-- `showStreaks`, `showRecentActivity`
-
-Boolean toggles:
-
-- `allowFriendRequests`, `showInSearch`
-- `showLastActive`
-
-Presets (public / friendsOnly / private) defined in `src/types/userProfile.ts`.
-Validation array: `VISIBILITY_FIELDS` in `src/services/profile/profileContract.ts`.
-
-Privacy evaluation on UserProfileScreen:
-
-- Each card/section derives a `*PrivacyHidden` flag from the setting + viewer relationship
-- Pattern: `privacy.showX === "nobody" || (privacy.showX === "friends" && !isFriend)`
-
-## 8) Rendering Pipeline
-
-### 8.1 Profile screen header
-
-Files:
-
-- `OwnProfileHeader.tsx`
-- `UserProfileHeader.tsx`
-- `ProfileHeaderVisual.tsx`
-
-Rules:
-
-- background image is resolved by equipped background ID
-- background is clipped to header region (from top through level bar)
-- area below header falls back to theme/page background color
-- decoration overlays render on top of PFP via `ProfilePictureWithDecoration`
-
-### 8.2 Chat rendering
-
-Files:
-
-- `src/cosmetics/chatAppearanceResolver.ts`
-- backend sender-style stamping: `firebase-backend/functions/src/messaging.ts`
-
-Rules:
-
-- outgoing bubble/font resolved from equipped chatAppearance IDs
-- sender style is stamped onto message payload for recipient rendering
-- animal send path validates entitlement and equipped state
-
-## 9) Navigation Map
-
-Routes relevant to profile system:
-
-- Profile tab stack:
-  - `ProfileMain`
-  - `Customization`
-  - `Wallet`
-  - `BadgeCollection` (params: `{ userId?: string }`)
-- Root stack:
-  - `Customization`
-  - `CosmeticsShop`
-  - `UserProfile`
-  - `SetStatus`
-  - `ProfileAchievements` (params: `{ userId: string; displayName?: string; featuredIds?: string[] }`)
-
-Cross-tab navigation:
-
-- BadgeCollection from UserProfile → `navigate("MainTabs", { screen: "Profile", params: { screen: "BadgeCollection", params: { userId } } })`
-
-Deep-link behaviors fixed:
-
-- customization route supports `initialTab` + `initialSection`
-
-## 10) Cookbook: Add New Cosmetic Type or Equipped Slot
-
-### 10.1 New cosmetic type checklist
-
-1. Define/extend type in `src/cosmetics/types.ts`.
-2. Add catalog entries in the canonical source (`catalog.ts` or generated registry module).
-3. Add asset mapping in `assetRegistry.ts` if image-backed.
-4. Add shop pricing entry in `shared/cosmetics/shopPricingTable.json` if purchasable.
-5. Ensure backend purchase validation recognizes the new type.
-6. Add entitlement grant paths (milestone/admin) as needed.
-7. Add Customization Hub tab/filter UI if user-equipable.
-8. Add rendering resolver logic for the target surface(s).
-9. Add/extend ownership checks in equip service methods.
-10. Update docs in this file and run validation commands.
-
-### 10.2 New equipped slot checklist
-
-1. Add field to `Users/{uid}` profile schema (backward-compatible, optional/null default).
-2. Hydrate field in `profileContract.hydrateProfileData()`.
-3. Add dev validation checks for catalog/type/asset (if image-backed).
-4. Add equip/unequip writer(s) in `profileService.ts`.
-5. Wire Customization Hub state and actions for the slot.
-6. Render slot in profile and any secondary surfaces (chat/etc.).
-7. Add backend validation if slot affects server-authored payloads.
-8. Keep existing fields intact; never rename/remove production fields without migration/fallback.
-
-## 11) Troubleshooting
-
-### "You do not own this"
-
-- check `Users/{uid}/Entitlements/{cosmeticId}` exists
-- verify item `source` and entitlement type in catalog
-- verify free/starter items are correctly marked in catalog
-
-### Equipped ID does not render
-
-- check catalog entry exists for ID
-- check type matches slot
-- check `assetRegistry` mapping exists for image-backed types
-- in dev, inspect `profileContract` warnings in console
-
-### Slow/missing image loads
-
-- verify static `require(...)` mapping in `assetRegistry.ts`
-- verify source image actually exists in assets path
-
-### Widget board issues
-
-See [INTERACTIONS_AND_EDIT_MODE.md](profile/INTERACTIONS_AND_EDIT_MODE.md#troubleshooting--gotchas) for widget board troubleshooting.
-
-## 12) Validation Commands
-
-Run after profile-system changes:
-
-1. `npm run type-check`
-2. `npm run lint`
-3. `npm run build` (from `firebase-backend/functions`)
+```bash
+npm run type-check
+npm run lint
+npm run test
+npm --prefix firebase-backend/functions run build
+```
