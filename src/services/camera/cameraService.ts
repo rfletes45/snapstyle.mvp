@@ -11,8 +11,8 @@ import {
   CapturedMedia,
   PermissionStatus,
 } from "@/types/camera";
+import * as FileSystem from "@/utils/fileSystem";
 import { Camera as ExpoCamera } from "expo-camera";
-import * as FileSystem from "expo-file-system/legacy";
 import * as ImageManipulator from "expo-image-manipulator";
 
 import { createLogger } from "@/utils/log";

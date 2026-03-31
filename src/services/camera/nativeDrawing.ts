@@ -7,8 +7,8 @@
  * PRODUCTION UPGRADE: Use react-native-skia for GPU-accelerated rendering
  */
 
-import * as FileSystem from "expo-file-system/legacy";
 import { DrawingElement, DrawingPath, Point } from "@/types/camera";
+import * as FileSystem from "@/utils/fileSystem";
 
 
 import { createLogger } from "@/utils/log";

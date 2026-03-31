@@ -306,16 +306,6 @@ export const QuickReactionBar = memo(function QuickReactionBar({
 });
 
 // =============================================================================
-// Legacy exports (kept for barrel-file compatibility)
-// =============================================================================
-
-/** @deprecated Use ReactionPills instead */
-export const ReactionBar = ReactionPills;
-
-/** @deprecated Use ReactionPills instead */
-export const ReactionsSummary = ReactionPills;
-
-// =============================================================================
 // Styles
 // =============================================================================
 

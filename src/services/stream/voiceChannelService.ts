@@ -7,21 +7,29 @@
  * Key behaviors:
  * - Deterministic channel IDs: `voice_channel_{groupId}`
  * - No ringing — users join/leave freely
- * - Audio-only by default
+ * - Audio-only by default (camera disabled via settings_override)
  * - Persistent room identity (room exists as a join target even when empty)
  * - Real-time participant/occupancy updates via Stream
+ *
+ * Uses the "default" call type rather than "audio_room" because:
+ * - "audio_room" enables backstage by default and restricts SEND_AUDIO to hosts
+ * - "default" grants send-audio to all participants with no backstage gate
+ * - This matches a Discord-style free-talk model, not a Clubhouse-style moderated room
  */
 
 import { callSettingsService } from "@/services/calls";
 import type { Call } from "@stream-io/video-react-native-sdk";
 import { getStreamClient } from "./streamClient";
+import { ensureStreamUsersExist } from "./streamUserProvisioning";
 import { toStreamDevice } from "./streamUtils";
 
 /**
  * Stream call type for voice channels.
- * Uses "audio_room" type which is non-ringing, audio-only.
+ * Uses "default" type — all participants can send audio without
+ * host approval.  ("audio_room" restricts SEND_AUDIO to hosts and
+ * requires goLive(), which is not what Discord-style channels want.)
  */
-const VOICE_CHANNEL_TYPE = "audio_room";
+const VOICE_CHANNEL_TYPE = "default";
 
 /**
  * Generate a deterministic voice channel ID for a group.
@@ -39,14 +47,30 @@ export function getVoiceChannelId(groupId: string): string {
  *
  * @param groupId   The group/chat ID
  * @param groupName Display name for the channel
+ * @param userId    The current user's ID (for Stream user provisioning)
  * @returns The Stream Call object
  */
 export async function joinVoiceChannel(
   groupId: string,
   groupName: string,
+  userId?: string,
 ): Promise<Call> {
   const client = getStreamClient();
   const channelId = getVoiceChannelId(groupId);
+
+  // Ensure the joining user exists in Stream with up-to-date profile data.
+  // Without this, participants show as "Participant" with a generic avatar.
+  if (userId) {
+    try {
+      await ensureStreamUsersExist([userId]);
+    } catch (err) {
+      console.warn(
+        "[VoiceChannelService] User provisioning failed (non-fatal):",
+        err,
+      );
+    }
+  }
+
   const call = client.call(VOICE_CHANNEL_TYPE, channelId);
 
   // getOrCreate will create if missing, or return existing
@@ -59,9 +83,7 @@ export async function joinVoiceChannel(
     },
   });
 
-  // Join with mic on, audio-only. Do NOT pass video settings_override for
-  // audio_room — sending video overrides triggers Stream validation of
-  // target_resolution which fails with 0-dimension defaults.
+  // Join with mic on, audio-only, camera explicitly disabled.
   const config = callSettingsService.getCallConfig();
   await call.join({
     create: false,
@@ -71,6 +93,7 @@ export async function joinVoiceChannel(
           mic_default_on: true,
           default_device: toStreamDevice(config.audio.defaultOutput),
         },
+        video: { camera_default_on: false },
       },
     },
   });

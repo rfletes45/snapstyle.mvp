@@ -110,6 +110,9 @@ export function ThemeProvider({
   const [profileReady, setProfileReady] = useState(false);
   // Track whether stored prefs have been loaded (gates persistence to avoid overwriting)
   const [prefsLoaded, setPrefsLoaded] = useState(false);
+  // Ref: true once valid local prefs were found in AsyncStorage.
+  // Used by syncProfileTheme to avoid overriding with stale Firestore data.
+  const localPrefsFoundRef = useRef(false);
 
   // Helper: get the per-user storage key
   const getStorageKey = useCallback(
@@ -142,12 +145,14 @@ export function ThemeProvider({
           setUseSystemThemeState(false);
           setProfileReady(false);
           setPrefsLoaded(false);
+          localPrefsFoundRef.current = false;
         } else if (nowAuthenticated) {
           // User signed in — store UID and reset prefs-loaded flag so the
           // correct user's prefs will be read once profileReady is set.
           const uid = user.uid;
           setCurrentUid(uid);
           setPrefsLoaded(false);
+          localPrefsFoundRef.current = false;
         }
         // NOTE: We deliberately do NOT load stored prefs here on login.
         // Prefs are loaded only once profileReady is set (see effect below).
@@ -176,6 +181,7 @@ export function ThemeProvider({
         if (stored) {
           const parsed = JSON.parse(stored);
           if (parsed.themeId && THEME_METADATA[parsed.themeId as ThemeId]) {
+            localPrefsFoundRef.current = true;
             const isAuto = parsed.useSystemTheme ?? false;
             if (isAuto) {
               setUseSystemThemeState(true);
@@ -324,12 +330,18 @@ export function ThemeProvider({
     setProfileReady(true);
   }, []);
 
-  // Sync theme from Firestore profile data (authoritative remote source).
-  // Called by ProfileReadySignal when profile loads. If the profile has a
-  // saved themeId, it overrides the local cache (same pattern as displayMode).
+  // Sync theme from Firestore profile data (remote source).
+  // Called by ProfileReadySignal when profile loads. Only applies when no
+  // local prefs exist in AsyncStorage (e.g. first login on a new device).
+  // When local prefs are present, they take priority — this prevents stale
+  // Firestore data from overwriting a recent theme change that hasn't
+  // synced to the server yet.
   const syncProfileTheme = useCallback(
     (profile: { themeId?: string; useSystemTheme?: boolean } | null) => {
       if (!profile) return;
+      // Local prefs take priority over remote — skip if we already loaded
+      // valid prefs from AsyncStorage for the current user.
+      if (localPrefsFoundRef.current) return;
       const remoteThemeId = profile.themeId as ThemeId | undefined;
       if (remoteThemeId && THEME_METADATA[remoteThemeId]) {
         const remoteUseSystem = profile.useSystemTheme ?? false;

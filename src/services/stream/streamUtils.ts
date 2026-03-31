@@ -2,7 +2,7 @@
  * Stream utility helpers shared across call services.
  */
 
-import type { AudioOutput } from "@/types/call";
+import type { AudioOutput } from "@/types/callSettings";
 
 /** Map app AudioOutput values to Stream-compatible default_device. */
 export function toStreamDevice(output: AudioOutput): "speaker" | "earpiece" {

@@ -7,7 +7,6 @@
  * @file src/services/mediaCache.ts
  */
 
-// Using legacy API for compatibility with expo-file-system v19+
 import {
   copyAsync,
   createDownloadResumable,
@@ -21,7 +20,7 @@ import {
   readAsStringAsync,
   readDirectoryAsync,
   writeAsStringAsync,
-} from "expo-file-system/legacy";
+} from "@/utils/fileSystem";
 import { Platform } from "react-native";
 import { getDatabase } from "./database";
 import { updateAttachmentLocalUri } from "./database/messageRepository";

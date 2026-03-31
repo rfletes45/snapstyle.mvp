@@ -13,6 +13,7 @@
 
 import { CALL_FEATURES } from "@/constants/featureFlags";
 import { useAuth } from "@/store/AuthContext";
+import { useUser } from "@/store/UserContext";
 import type { ActiveMediaSession, DirectCallMode } from "@/types/streamCall";
 import { generateUUID } from "@/utils/uuid";
 import type {
@@ -327,7 +328,7 @@ function StreamCallInnerProvider({
       busyRef.current = true;
 
       try {
-        const call = await joinVoiceChannel(groupId, groupName);
+        const call = await joinVoiceChannel(groupId, groupName, userId);
         activeCallRef.current = call;
         setActiveCall(call);
         setActiveSession({
@@ -347,7 +348,7 @@ function StreamCallInnerProvider({
         throw err;
       }
     },
-    [],
+    [userId],
   );
 
   const leaveChannelAction = useCallback(async () => {
@@ -406,6 +407,7 @@ export function StreamCallProvider({
   children: React.ReactNode;
 }) {
   const { currentFirebaseUser } = useAuth();
+  const { profile } = useUser();
   const [client, setClient] = useState<StreamVideoClient | null>(null);
 
   useEffect(() => {
@@ -420,13 +422,27 @@ export function StreamCallProvider({
       return;
     }
 
+    // Wait for Firestore profile so we can pass real displayName/image to
+    // the Stream SDK.  initStreamClient short-circuits on same userId, so
+    // the first call wins — we must not call it with undefined name/image
+    // when the real profile is about to arrive.
+    // UserContext hydrates from AsyncStorage cache nearly instantly, so this
+    // adds negligible delay.
+    if (!profile) return;
+
     let cancelled = false;
 
-    initStreamClient(
-      user.uid,
-      user.displayName ?? undefined,
-      user.photoURL ?? undefined,
-    )
+    // Use Firestore profile data (displayName, profilePicture) instead of
+    // Firebase Auth fields which are typically null in this app.
+    // The profile picture is at profilePicture.url on the raw Firestore doc,
+    // even though the narrow TypeScript User type doesn't declare it.
+    const displayName = profile.displayName ?? undefined;
+    const profilePicUrl =
+      (profile as any)?.profilePicture?.url ??
+      (profile as any)?.profilePicture?.thumbnailUrl ??
+      undefined;
+
+    initStreamClient(user.uid, displayName, profilePicUrl)
       .then((c: StreamVideoClient) => {
         if (!cancelled) setClient(c);
       })
@@ -440,7 +456,7 @@ export function StreamCallProvider({
     return () => {
       cancelled = true;
     };
-  }, [currentFirebaseUser?.uid]);
+  }, [currentFirebaseUser?.uid, profile]);
 
   // If calls are disabled, client not ready, or user logged out, render noop
   if (!CALL_FEATURES.CALLS_ENABLED || !client || !currentFirebaseUser?.uid) {

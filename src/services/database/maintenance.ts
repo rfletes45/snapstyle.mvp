@@ -14,7 +14,7 @@ import {
   getInfoAsync,
   makeDirectoryAsync,
   writeAsStringAsync,
-} from "expo-file-system/legacy";
+} from "@/utils/fileSystem";
 import { MEDIA_PATHS } from "@/services/mediaCache";
 import { getDatabase } from "./index";
 

@@ -228,21 +228,6 @@ export const CALL_FEATURES = {
 
   /** Enable 1:1 direct calls (audio + video, with ringing) */
   DIRECT_CALLS_ENABLED: true,
-
-  /** Enable Discord-style voice channels in group chats */
-  VOICE_CHANNELS_ENABLED: true,
-
-  /** Enable call history screen */
-  CALL_HISTORY_ENABLED: true,
-
-  /** Enable call settings screen */
-  CALL_SETTINGS_ENABLED: true,
-
-  /** Show missed calls badge in tab bar */
-  MISSED_CALL_BADGE_ENABLED: true,
-
-  /** Debug: Log Stream call events to console */
-  DEBUG_CALLS: __DEV__,
 } as const;
 
 // =============================================================================

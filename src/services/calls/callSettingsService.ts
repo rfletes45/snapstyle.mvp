@@ -16,7 +16,7 @@ import {
   DEFAULT_CALL_SETTINGS,
   DNDSchedule,
   RingtoneOption,
-} from "@/types/call";
+} from "@/types/callSettings";
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("services/calls/callSettingsService");

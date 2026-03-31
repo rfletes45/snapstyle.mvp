@@ -8,7 +8,7 @@
  * - expo-av (video playback and metadata)
  */
 
-import * as FileSystem from "expo-file-system/legacy";
+import * as FileSystem from "@/utils/fileSystem";
 
 
 import { createLogger } from "@/utils/log";

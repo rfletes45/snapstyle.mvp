@@ -19,7 +19,7 @@
 
 import React, { forwardRef, useCallback } from "react";
 import type { ScrollViewProps } from "react-native";
-import { ScrollView, UIManager, View } from "react-native";
+import { ScrollView, UIManager } from "react-native";
 import {
   KeyboardStickyView,
   useReanimatedKeyboardAnimation,
@@ -76,10 +76,11 @@ export const isKCSVAvailable = _kcsvAvailable;
 
 export interface ChatScrollViewConfig {
   /**
-   * Distance (px) between the bottom of the scroll view and the bottom of
-   * the screen. Typically: composerHeight + safeAreaBottom.
-   * KCSV subtracts this from the keyboard height so only the *net* lift is
-   * applied to content.
+   * Offset subtracted from keyboard height for content-inset calculation.
+   *
+   * With the footer inside a KeyboardStickyView (offset={closed:0,opened:0})
+   * the footer moves with the keyboard 1:1, so no static footer height needs
+   * to be accounted for.  Set to 0 for the standard chat layout.
    */
   offset: number;
   /**
@@ -156,18 +157,17 @@ export function useRenderChatScrollComponent() {
  * Keyboard-aware footer wrapper for chat screens.
  *
  * PRIMARY (KCSV available): Wraps children in KeyboardStickyView with
- * `offset.opened = insets.bottom` so the safe-area spacer slides behind
- * the keyboard, leaving the composer flush against the keyboard top.
+ * `offset={{ closed: 0, opened: 0 }}` so the footer tracks the keyboard
+ * 1:1 on both open and close. The collapsing AnimatedSafeAreaSpacer
+ * handles the safe-area gap.
  *
  * FALLBACK (Expo Go, no KCSV): Renders children directly. The screen wraps
  * the entire layout in KeyboardAvoidingView to handle keyboard avoidance.
  */
 export function ChatFooterWrapper({ children }: { children: React.ReactNode }) {
-  const insets = useSafeAreaInsets();
-
   if (_kcsvAvailable) {
     return (
-      <KeyboardStickyView offset={{ closed: 0, opened: insets.bottom }}>
+      <KeyboardStickyView offset={{ closed: 0, opened: 0 }}>
         {children}
       </KeyboardStickyView>
     );
@@ -182,11 +182,9 @@ export function ChatFooterWrapper({ children }: { children: React.ReactNode }) {
 /**
  * Safe-area bottom spacer for chat footer.
  *
- * KCSV path: Plain View — KSV `offset.opened` handles sliding it behind
- * the keyboard.
- *
- * Fallback path: Animated View — height interpolates from insets.bottom → 0
- * as keyboard opens, eliminating the gap between composer and keyboard.
+ * Animated View — height interpolates from insets.bottom → 0
+ * as keyboard opens, collapsing the gap so the composer sits
+ * flush against the keyboard top.
  */
 export function KeyboardSafeAreaSpacer({
   backgroundColor,
@@ -197,19 +195,20 @@ export function KeyboardSafeAreaSpacer({
 
   if (insets.bottom === 0) return null;
 
-  if (_kcsvAvailable) {
-    return <View style={{ height: insets.bottom, backgroundColor }} />;
-  }
-
+  // Both KCSV and fallback paths use the animated spacer so the safe-area
+  // gap collapses in sync with the keyboard. With KSV offset={closed:0,
+  // opened:0} the footer tracks the keyboard 1:1 and this collapsing
+  // spacer removes the gap that would otherwise appear between keyboard and
+  // composer.
   return (
-    <FallbackAnimatedSpacer
+    <AnimatedSafeAreaSpacer
       height={insets.bottom}
       backgroundColor={backgroundColor}
     />
   );
 }
 
-function FallbackAnimatedSpacer({
+function AnimatedSafeAreaSpacer({
   height,
   backgroundColor,
 }: {

@@ -183,10 +183,29 @@ export function AnimalPickerBubble({
   // Stem position relative to bubble
   const stemLeftRelative = anchorCenterX - bubbleLeft - STEM_SIZE;
 
-  // Bubble bottom sits above the anchor — generous gap so it clears the composer.
+  // Bubble bottom sits above the anchor.
   // The parent re-measures anchorLayout when the keyboard state changes,
   // so this calculation stays correct regardless of keyboard transitions.
   const bubbleBottom = SCREEN_HEIGHT - anchorLayout.y + 12;
+
+  // Cap bubble height so it doesn't float near the top of the screen when
+  // the keyboard pushes the anchor high up.  The header + stem + a small
+  // margin define the minimum clearance from the top edge.
+  const TOP_CLEARANCE = 60; // min gap from screen top
+  const availableHeight = anchorLayout.y - TOP_CLEARANCE - STEM_SIZE - 12; // space above anchor
+  const effectiveBubbleHeight = Math.max(
+    BUBBLE_HEADER_HEIGHT +
+      BUBBLE_PADDING_TOP +
+      BUBBLE_PADDING_BOTTOM +
+      TILE_SIZE +
+      TILE_GAP * 2,
+    Math.min(BUBBLE_HEIGHT, availableHeight),
+  );
+  const effectiveGridHeight =
+    effectiveBubbleHeight -
+    BUBBLE_PADDING_TOP -
+    BUBBLE_PADDING_BOTTOM -
+    BUBBLE_HEADER_HEIGHT;
 
   const bubbleBg = theme.dark ? theme.colors.elevation.level2 : "#FFFFFF";
   const stemColor = bubbleBg;
@@ -236,11 +255,15 @@ export function AnimalPickerBubble({
 
           {/* Grid */}
           {loading ? (
-            <View style={styles.loadingContainer}>
+            <View
+              style={[styles.loadingContainer, { height: effectiveGridHeight }]}
+            >
               <ActivityIndicator size="small" color={theme.colors.primary} />
             </View>
           ) : ownedAnimals.length === 0 ? (
-            <View style={styles.emptyContainer}>
+            <View
+              style={[styles.emptyContainer, { height: effectiveGridHeight }]}
+            >
               <Text
                 variant="bodySmall"
                 style={{ color: theme.colors.onSurfaceVariant }}
@@ -250,7 +273,7 @@ export function AnimalPickerBubble({
             </View>
           ) : (
             <ScrollView
-              style={styles.gridScroll}
+              style={{ maxHeight: effectiveGridHeight }}
               contentContainerStyle={styles.gridContent}
               showsVerticalScrollIndicator={true}
               nestedScrollEnabled
@@ -363,17 +386,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   loadingContainer: {
-    height: GRID_HEIGHT,
     alignItems: "center",
     justifyContent: "center",
   },
   emptyContainer: {
-    height: GRID_HEIGHT,
     alignItems: "center",
     justifyContent: "center",
-  },
-  gridScroll: {
-    maxHeight: GRID_HEIGHT,
   },
   gridContent: {
     paddingHorizontal: TILE_GAP,

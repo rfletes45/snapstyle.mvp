@@ -10,7 +10,10 @@
 
 import { CALL_FEATURES } from "@/constants/featureFlags";
 import { useStreamCall } from "@/contexts/StreamCallContext";
-import { navigationRef } from "@/services/navigationRef";
+import {
+  navigate as globalNavigate,
+  navigationRef,
+} from "@/services/navigationRef";
 import { useAppTheme } from "@/store/ThemeContext";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { useCallback, useEffect, useState } from "react";
@@ -74,24 +77,25 @@ function ActiveCallBannerInner() {
   const isVoiceRoom = activeSession?.type === "voice_channel";
   const timeStr = `${Math.floor(elapsed / 60)}:${(elapsed % 60).toString().padStart(2, "0")}`;
 
-  const handlePress = () => {
+  const handlePress = useCallback(() => {
     if (!navigationRef.isReady()) return;
+    if (!activeSession) return;
 
-    if (activeSession?.type === "direct_call") {
-      navigationRef.navigate("DirectCall" as any, {
+    if (activeSession.type === "direct_call") {
+      globalNavigate("DirectCall" as any, {
         callId: activeSession.callId,
         recipientName: activeSession.recipientName ?? "",
         mode: activeSession.mode ?? "audio",
         isOutgoing: true,
       });
-    } else if (activeSession?.type === "voice_channel") {
-      navigationRef.navigate("VoiceChannel" as any, {
+    } else if (activeSession.type === "voice_channel") {
+      globalNavigate("VoiceChannel" as any, {
         channelId: activeSession.channelId,
         channelName: activeSession.channelName ?? "Voice Room",
         groupId: activeSession.groupId ?? "",
       });
     }
-  };
+  }, [activeSession]);
 
   return (
     <View

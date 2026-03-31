@@ -5,12 +5,12 @@
  * Each call gets a unique ID and uses Stream's built-in ringing mechanism.
  *
  * Bootstrap sequence:
- *  1. Best-effort user provisioning (soft-fail — token endpoint already upserts caller)
+ *  1. Blocking user provisioning (caller + callee must exist in Stream)
  *  2. getOrCreate the call with ringing + members
  *  3. Join with media settings
  *
- * If step 1 fails, the call is still attempted. Stream's getOrCreate will create
- * users that don't exist from the members list.
+ * Step 1 is BLOCKING — Stream requires all referenced users to exist before
+ * call creation. If provisioning fails, the call is NOT attempted.
  */
 
 import { callSettingsService } from "@/services/calls";
@@ -46,18 +46,21 @@ export async function startDirectCall(
   const client = getStreamClient();
   const config = callSettingsService.getCallConfig();
 
-  // Step 1: Best-effort user provisioning.
-  // The getStreamVideoToken Cloud Function already upserts the caller on
-  // every token fetch, so the caller almost certainly exists. The callee
-  // should also exist from their own token fetch. If this fails (e.g.
-  // function not deployed yet), we log and proceed — getOrCreate below
-  // handles members that don't yet exist in most cases.
+  // Step 1: Ensure both caller and callee exist as Stream users.
+  // Stream REQUIRES all users to exist before they are referenced as call
+  // members.  This call is BLOCKING — if provisioning fails the call must
+  // not proceed, otherwise getOrCreate will fail with
+  // "users … don't exist" (stream error code 4).
   try {
     await ensureStreamUsersExist([callerId, calleeId]);
   } catch (provisionErr: any) {
-    console.warn(
-      `${TAG} User provisioning failed (non-fatal, proceeding):`,
+    console.error(
+      `${TAG} User provisioning failed (blocking):`,
       provisionErr?.message ?? provisionErr,
+    );
+    throw new Error(
+      "Unable to start call: could not provision call participants. " +
+        "Please check your connection and try again.",
     );
   }
 

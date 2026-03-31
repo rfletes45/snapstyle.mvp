@@ -1097,7 +1097,7 @@ const CameraScreen: React.FC = () => {
           if (snapshot) {
             const bytes = snapshot.encodeToBytes();
             if (bytes) {
-              const FileSystem = await import("expo-file-system/legacy");
+              const FileSystem = await import("@/utils/fileSystem");
               const tmpPath = `${FileSystem.cacheDirectory}skia_save_${Date.now()}.jpg`;
               const base64 = btoa(
                 String.fromCharCode(...new Uint8Array(bytes)),
@@ -1179,7 +1179,7 @@ const CameraScreen: React.FC = () => {
           if (snapshot) {
             const bytes = snapshot.encodeToBytes();
             if (bytes) {
-              const FileSystem = await import("expo-file-system/legacy");
+              const FileSystem = await import("@/utils/fileSystem");
               const tmpPath = `${FileSystem.cacheDirectory}skia_export_${Date.now()}.jpg`;
               const base64 = btoa(
                 String.fromCharCode(...new Uint8Array(bytes)),

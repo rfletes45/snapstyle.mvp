@@ -1760,8 +1760,10 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     (messages.length > 0 && memberBootstrapPending);
 
   // Keyboard-sync: configure KCSV and get stable renderScrollComponent
+  // offset=0 because the footer (KSV) moves with the keyboard — KCSV needs
+  // the full keyboard height as content inset to keep messages visible.
   setChatScrollViewConfig({
-    offset: 60 + insets.bottom,
+    offset: 0,
     keyboardLiftBehavior: "whenAtEnd",
   });
   const renderScrollComponent = useRenderChatScrollComponent();

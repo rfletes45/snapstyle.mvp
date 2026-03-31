@@ -1037,7 +1037,7 @@ The `streamTokenProvider` auto-refresh should handle this. If it doesn't:
 1. Verify `INTERNET` and `ACCESS_NETWORK_STATE` permissions (already configured in `app.config.ts`)
 2. Check that `RECORD_AUDIO` and `MODIFY_AUDIO_SETTINGS` permissions are granted at runtime
 3. Stream uses its own TURN/STUN infrastructure — no additional ICE server configuration needed
-4. On Android: ensure `react-native-incall-manager` is installed (it is — `^4.2.1`)
+4. On Android: use a dev build or production build so the Stream native modules are available; Expo Go will not provide full call behavior
 
 ---
 

@@ -28,9 +28,9 @@ config.resolver.resolverMainFields = ["react-native", "browser", "main"];
 // Set condition names so package.json "exports" maps resolve correctly.
 // This ensures packages that offer both Node.js and browser entry points
 // resolve to the browser/RN build (which avoids importing 'https', 'http',
-// 'url' — unavailable in React Native).
+// 'url' - unavailable in React Native).
 // NOTE: "default" is used instead of "import" to avoid pulling ESM-only
-// entry points for CJS helpers like @babel/runtime/helpers/* — using
+// entry points for CJS helpers like @babel/runtime/helpers/* - using
 // "import" causes `_interopRequireDefault is not a function (it is Object)`.
 config.resolver.unstable_conditionNames = [
   "react-native",
@@ -61,34 +61,10 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
       };
     }
 
-    // Shim react-native-callkeep on web
-    if (moduleName === "react-native-callkeep") {
-      return {
-        filePath: path.resolve(__dirname, "src/shims/react-native-callkeep.js"),
-        type: "sourceFile",
-      };
-    }
-
     // Shim @shopify/react-native-skia on web
     if (moduleName === "@shopify/react-native-skia") {
       return {
         filePath: path.resolve(__dirname, "src/shims/react-native-skia.js"),
-        type: "sourceFile",
-      };
-    }
-
-    // Shim expo-gl on web (Three.js canvas — native only)
-    if (moduleName === "expo-gl") {
-      return {
-        filePath: path.resolve(__dirname, "src/shims/expo-gl.js"),
-        type: "sourceFile",
-      };
-    }
-
-    // Shim expo-three on web (Three.js renderer bridge — native only)
-    if (moduleName === "expo-three") {
-      return {
-        filePath: path.resolve(__dirname, "src/shims/expo-three.js"),
         type: "sourceFile",
       };
     }

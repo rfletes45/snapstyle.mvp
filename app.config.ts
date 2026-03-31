@@ -23,17 +23,8 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       // Photo library permission (required for App Store)
       NSPhotoLibraryUsageDescription:
         "Vibe needs photo library access to save and share photos",
-      // Location (required by WebRTC / CallKeep dependencies)
-      NSLocationWhenInUseUsageDescription:
-        "Vibe uses your location to connect you with nearby friends",
-      // Background modes for calls
-      UIBackgroundModes: ["audio", "voip", "remote-notification", "fetch"],
-      // CallKit configuration
-      CFBundleURLTypes: [
-        {
-          CFBundleURLSchemes: ["vibe-call"],
-        },
-      ],
+      // Background modes used by Stream calls and notifications
+      UIBackgroundModes: ["audio", "remote-notification", "fetch"],
     },
     entitlements: {
       "aps-environment": "production",
@@ -66,10 +57,6 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       "android.permission.FOREGROUND_SERVICE_PHONE_CALL",
       "android.permission.FOREGROUND_SERVICE_MICROPHONE",
       "android.permission.FOREGROUND_SERVICE_CAMERA",
-      // CallKeep / Connection Service
-      "android.permission.BIND_TELECOM_CONNECTION_SERVICE",
-      "android.permission.READ_PHONE_STATE",
-      "android.permission.CALL_PHONE",
       // Vibration & wake
       "android.permission.VIBRATE",
       "android.permission.WAKE_LOCK",

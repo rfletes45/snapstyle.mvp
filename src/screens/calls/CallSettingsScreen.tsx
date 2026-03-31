@@ -27,7 +27,7 @@ import {
   CameraPosition,
   DEFAULT_CALL_SETTINGS,
   RingtoneOption,
-} from "@/types/call";
+} from "@/types/callSettings";
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("screens/calls/CallSettingsScreen");
