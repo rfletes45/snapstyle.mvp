@@ -13,14 +13,13 @@
 
 import * as Haptics from "expo-haptics";
 import React, { memo, useCallback, useMemo, useState } from "react";
-import { LayoutChangeEvent, StyleSheet, View } from "react-native";
+import { LayoutChangeEvent, ScrollView, StyleSheet, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 
 import { Spacing } from "@/constants/theme";
 import { useColors } from "@/store/ThemeContext";
 
 import { getWidgetPixelSize } from "./BoardLayoutEngine";
-import { CustomizeModeToolbar } from "./CustomizeModeToolbar";
 import { WidgetGallery } from "./WidgetGallery";
 import { WidgetSizeSelector } from "./WidgetSizeSelector";
 import { WidgetWrapper } from "./WidgetWrapper";
@@ -58,6 +57,14 @@ export interface WidgetBoardContainerProps {
   widgetData: Record<string, Record<string, any>>;
   /** The instanceId of the widget currently being dragged (for highlighting). */
   dragActiveId: string | null;
+  /** Ref to the parent ScrollView for auto-scrolling during drag. */
+  scrollRef?: React.RefObject<ScrollView>;
+  /** Ref tracking the current scroll offset (updated from onScroll). */
+  scrollOffsetRef?: React.RefObject<number>;
+  /** Controlled gallery visibility (lifted to parent for overlay toolbar). */
+  galleryVisible?: boolean;
+  /** Callback to close the gallery. */
+  onCloseGallery?: () => void;
   /** Board actions. */
   onMoveWidget: (instanceId: string, x: number, y: number) => boolean;
   onResizeWidget: (instanceId: string, newSize: WidgetSizeKey) => boolean;
@@ -87,6 +94,10 @@ function WidgetBoardContainerBase({
   saving,
   widgetData,
   dragActiveId,
+  scrollRef,
+  scrollOffsetRef,
+  galleryVisible: galleryVisibleProp,
+  onCloseGallery: onCloseGalleryProp,
   onMoveWidget,
   onResizeWidget,
   onHideWidget,
@@ -130,16 +141,22 @@ function WidgetBoardContainerBase({
   }, []);
 
   // ── Gallery State ─────────────────────────────────────────────────────
+  // Use controlled props when available (lifted to parent for overlay toolbar),
+  // otherwise fall back to internal state for backwards compatibility.
 
-  const [galleryVisible, setGalleryVisible] = useState(false);
+  const [galleryVisibleInternal, setGalleryVisibleInternal] = useState(false);
+  const galleryVisible = galleryVisibleProp ?? galleryVisibleInternal;
 
   const handleOpenGallery = useCallback(() => {
-    setGalleryVisible(true);
+    setGalleryVisibleInternal(true);
   }, []);
 
   const handleCloseGallery = useCallback(() => {
-    setGalleryVisible(false);
-  }, []);
+    if (onCloseGalleryProp) {
+      onCloseGalleryProp();
+    }
+    setGalleryVisibleInternal(false);
+  }, [onCloseGalleryProp]);
 
   // ── Drag Handlers ─────────────────────────────────────────────────────
 
@@ -248,6 +265,8 @@ function WidgetBoardContainerBase({
           mode={mode}
           readOnly={readOnly}
           isDragActive={dragActiveId === widget.instanceId}
+          scrollRef={scrollRef}
+          scrollOffsetRef={scrollOffsetRef}
           onDragStart={handleDragStart}
           onDragUpdate={handleDragUpdate}
           onDragEnd={handleDragEnd}
@@ -267,6 +286,8 @@ function WidgetBoardContainerBase({
     widgetData,
     mode,
     dragActiveId,
+    scrollRef,
+    scrollOffsetRef,
     handleDragStart,
     handleDragUpdate,
     handleDragEnd,
@@ -282,16 +303,6 @@ function WidgetBoardContainerBase({
 
   return (
     <GestureHandlerRootView style={styles.root}>
-      {/* Customize Toolbar — suppressed in readOnly / viewer mode */}
-      {isCustomizing && !readOnly && (
-        <CustomizeModeToolbar
-          saving={saving}
-          onDone={onDone}
-          onCancel={onCancel}
-          onAddWidget={handleOpenGallery}
-        />
-      )}
-
       {/* Board Surface */}
       <View
         style={[

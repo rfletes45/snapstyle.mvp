@@ -40,6 +40,12 @@ export interface LiveFilterCameraProps {
   zoom?: number;
   /** Exposure bias in EV. Passed through directly to VisionCamera. */
   exposure?: number;
+  /**
+   * Whether the camera session should be active.  Set to `false` when the
+   * screen loses focus or the app is backgrounded to release the hardware
+   * and avoid GPU work while invisible.
+   */
+  isActive?: boolean;
   style?: StyleProp<ViewStyle>;
   /**
    * Called once the camera hardware is initialised.
@@ -79,6 +85,7 @@ export const LiveFilterCamera = forwardRef<
     flashMode = "off",
     zoom = 0,
     exposure = 0,
+    isActive = true,
     style,
     onInitialized,
     onError,
@@ -174,7 +181,7 @@ export const LiveFilterCamera = forwardRef<
     <Camera
       ref={vcRef}
       device={device}
-      isActive={true}
+      isActive={isActive}
       photo={true}
       video={true}
       audio={true}

@@ -1,10 +1,9 @@
 /**
  * ChatHeader — Shared custom header for DM and Group chat screens.
  *
- * Replaces the React Navigation native header on the DM screen so that
- * both DM and group chats use the same custom Paper Appbar approach.
- * The group screen already used Appbar.Header; this component extracts
- * the common structure into a reusable layer.
+ * Shared Paper-based header used by both DM and group chat screens so the
+ * platform has one consistent top-level scaffold for navigation, identity,
+ * presence/member metadata, and right-side actions.
  *
  * Features:
  * - Back button via Appbar.BackAction

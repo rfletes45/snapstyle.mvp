@@ -46,7 +46,7 @@ function getImageBubbleSize(w?: number, h?: number) {
   return { width: Math.round(bw), height: Math.round(bh) };
 }
 
-import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import { Ionicons } from "@expo/vector-icons";
 import React, {
   useCallback,
   useEffect,
@@ -54,16 +54,9 @@ import React, {
   useRef,
   useState,
 } from "react";
-import {
-  Alert,
-  Platform,
-  StyleSheet,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { Alert, StyleSheet, TouchableOpacity, View } from "react-native";
 import {
   ActivityIndicator,
-  Appbar,
   IconButton,
   Snackbar,
   Text,
@@ -98,6 +91,7 @@ import {
   AttachmentTray,
   CameraLongPressButton,
   ChatComposer,
+  ChatHeader,
   ChatMessageList,
   LinkPreviewCard,
   MediaViewerModal,
@@ -109,6 +103,7 @@ import {
   ReplyBubble,
   ScrollReturnButton,
   SwipeableMessage,
+  SystemMessageChip,
   ThreadIndicator,
   TypingBar,
   TypingBubble,
@@ -123,6 +118,13 @@ import ScheduleMessageModal from "@/components/ScheduleMessageModal";
 import { ErrorState } from "@/components/ui";
 
 // Services
+import {
+  sendAnimalSignalMessage,
+  sendChatDraft,
+  sendMediaAttachmentMessage,
+  sendVoiceRecordingMessage,
+} from "@/chat/sendDraft";
+import { safeSystemText } from "@/services/chat/normalizeMessage";
 import {
   cachePreparedGroupMembers,
   getPreparedGroupMembers,
@@ -148,10 +150,7 @@ import {
   subscribeToMultipleMessageReactions,
   toggleReaction,
 } from "@/services/reactions";
-import {
-  getScheduledMessagesForChat,
-  scheduleMessage,
-} from "@/services/scheduledMessages";
+import { scheduleMessage } from "@/services/scheduledMessages";
 import { markConversationNotificationsRead } from "@/services/userNotifications";
 
 // Animal feature
@@ -187,7 +186,7 @@ import {
   MessageV2,
   ReplyToMetadata,
 } from "@/types/messaging";
-import { Group, GroupMember, ScheduledMessage } from "@/types/models";
+import { Group, GroupMember } from "@/types/models";
 
 // Games V4
 import { GamePickerModal } from "@/gamesV4/components/GamePickerModal";
@@ -206,7 +205,6 @@ import {
   useRenderChatScrollComponent,
 } from "@/components/chat/ChatKeyboardScrollView";
 import { createLogger } from "@/utils/log";
-import { buildRemoteImageSource } from "@/utils/remoteImageSource";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 const logger = createLogger("screens/groups/GroupChatScreen");
 // =============================================================================
@@ -214,9 +212,6 @@ const logger = createLogger("screens/groups/GroupChatScreen");
 // =============================================================================
 
 const NOOP = () => {};
-const PAGINATION_PAGE_SIZE = 25;
-const LOAD_OLDER_DEBOUNCE_MS = 500;
-
 interface Props {
   route: any;
   navigation: any;
@@ -355,9 +350,6 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   // Scheduled messages state (UNI-09)
   const [scheduleModalVisible, setScheduleModalVisible] = useState(false);
   const [animalPickerVisible, setAnimalPickerVisible] = useState(false);
-  const [scheduledMessages, setScheduledMessages] = useState<
-    ScheduledMessage[]
-  >([]);
 
   // Games V4 state
   const [gamePickerVisible, setGamePickerVisible] = useState(false);
@@ -548,23 +540,20 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   const handleDirectCameraSend = useCallback(
     async (imageUri: string) => {
       if (!uid || screen.sending) return;
-      try {
-        const id = `cam_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
-        await screen.chat.sendMessage("", {
-          kind: "media",
-          attachments: [
-            {
-              id,
-              uri: imageUri,
-              kind: "image",
-              mime: "image/jpeg",
-            },
-          ],
-        });
-      } catch (error: any) {
+      const result = await sendMediaAttachmentMessage({
+        chat: screen.chat,
+        attachment: {
+          id: `cam_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+          uri: imageUri,
+          kind: "image",
+          mime: "image/jpeg",
+        },
+      });
+
+      if (!result.success) {
         setSnackbar({
           visible: true,
-          message: error.message || "Failed to send photo",
+          message: result.error || "Failed to send photo",
         });
       }
     },
@@ -576,16 +565,20 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     async (imageUris: string[]) => {
       if (!uid || screen.sending) return;
       for (const uri of imageUris) {
-        try {
-          const id = `gal_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
-          await screen.chat.sendMessage("", {
-            kind: "media",
-            attachments: [{ id, uri, kind: "image", mime: "image/jpeg" }],
-          });
-        } catch (error: any) {
+        const result = await sendMediaAttachmentMessage({
+          chat: screen.chat,
+          attachment: {
+            id: `gal_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+            uri,
+            kind: "image",
+            mime: "image/jpeg",
+          },
+        });
+
+        if (!result.success) {
           setSnackbar({
             visible: true,
-            message: error.message || "Failed to send photo",
+            message: result.error || "Failed to send photo",
           });
         }
       }
@@ -698,14 +691,6 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   // NOTE: Tab bar visibility is now handled at the navigator level
   // in RootNavigator.tsx using getFocusedRouteNameFromRoute.
   // This eliminates flicker during navigation transitions.
-
-  // Load scheduled messages (UNI-09)
-  useEffect(() => {
-    if (!uid || !groupId) return;
-    getScheduledMessagesForChat(uid, groupId)
-      .then(setScheduledMessages)
-      .catch((e) => logger.error("Failed to load scheduled messages:", e));
-  }, [uid, groupId]);
 
   // ==========================================================================
   // Link Previews (H12)
@@ -1049,14 +1034,12 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     } catch (e) {
       logger.warn("❌ [GroupChatScreen] Animal sound error:", e);
     }
-    try {
-      // Send structured animal signal message (kind: "animal", animalId)
-      await screen.chat.sendMessage("", {
-        kind: "animal",
-        animalId: equippedAnimalId,
-      });
-    } catch (error) {
-      logger.error("❌ [GroupChatScreen] Animal send error:", error);
+    const result = await sendAnimalSignalMessage({
+      chat: screen.chat,
+      animalId: equippedAnimalId,
+    });
+    if (!result.success) {
+      logger.error("❌ [GroupChatScreen] Animal send error:", result.error);
     }
   }, [uid, groupId, animalEntitlement, screen.chat]);
 
@@ -1071,12 +1054,6 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     [refreshProfile],
   );
 
-  // Compute eligible user IDs from group members
-  const groupMemberIds = useMemo(
-    () => groupMembers.map((m) => m.uid),
-    [groupMembers],
-  );
-
   // ==========================================================================
   // Schedule Message (UNI-09)
   // ==========================================================================
@@ -1086,10 +1063,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
       const text = screen.composer.text.trim();
       if (!uid || !groupId || !text) return;
 
-      const { mentionUids, mentionSpans } = extractMentionsExact(
-        text,
-        mentionableMembers,
-      );
+      const { mentionUids } = extractMentionsExact(text, mentionableMembers);
 
       try {
         const result = await scheduleMessage({
@@ -1104,7 +1078,6 @@ export default function GroupChatScreen({ route, navigation }: Props) {
 
         if (result) {
           screen.composer.clearText();
-          setScheduledMessages((prev) => [...prev, result]);
           setScheduleModalVisible(false);
           Alert.alert(
             "Message Scheduled! ⏰",
@@ -1134,93 +1107,44 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   );
 
   const handleSendMessage = useCallback(async () => {
-    const hasText = screen.composer.text.trim().length > 0;
-    const hasAttachments = attachmentPicker.attachments.length > 0;
-
-    if (!uid || (!hasText && !hasAttachments) || screen.sending) return;
-
-    // Clear typing state immediately on send
-    typing.setTyping(false);
-
-    const text = screen.composer.text.trim();
-    const { mentionUids, mentionSpans } = extractMentionsExact(
-      text,
-      mentionableMembers,
-    );
-    const currentReplyTo = screen.chat.replyTo;
-
-    screen.composer.clearText();
-
-    if (hasText && !hasAttachments) {
-      try {
-        const result = await screen.chat.sendMessage(text, {
-          replyTo: currentReplyTo || undefined,
-          mentionUids,
-          mentionSpans: mentionSpans.length > 0 ? mentionSpans : undefined,
-        });
-        if (!result.success) {
-          setSnackbar({
-            visible: true,
-            message: result.error || "Failed to send",
-          });
-          screen.composer.setText(text);
-        }
-      } catch (error: any) {
-        screen.composer.setText(text);
+    await sendChatDraft({
+      currentUid: uid,
+      conversationId: groupId,
+      isSending: screen.sending,
+      chat: screen.chat,
+      composer: screen.composer,
+      attachmentPicker,
+      onBeforeSend: () => typing.setTyping(false),
+      onError: (message) =>
         setSnackbar({
           visible: true,
-          message: error.message || "Failed to send",
-        });
-      }
-      return;
-    }
+          message,
+        }),
+      buildTextOptions: ({ text, replyTo }) => {
+        const { mentionUids, mentionSpans } = extractMentionsExact(
+          text,
+          mentionableMembers,
+        );
 
-    screen.chat.clearReplyTo();
-
-    try {
-      if (hasAttachments) {
-        // Get local attachments before clearing
-        const localAttachments = [...attachmentPicker.attachments];
-        attachmentPicker.clearAttachments();
-
-        // Send each attachment as a media message with local URI
-        // The sync engine will handle uploading
-        for (const attachment of localAttachments) {
-          await screen.chat.sendMessage("", {
-            replyTo: currentReplyTo || undefined,
-            mentionUids,
-            kind: "media",
-            attachments: [
-              {
-                id: attachment.id,
-                uri: attachment.uri,
-                kind: attachment.kind,
-                mime: attachment.mime || "image/jpeg",
-              },
-            ],
-          });
-        }
-
-        // Send text if present (separate message)
-        if (hasText) {
-          await screen.chat.sendMessage(text, {
-            replyTo: currentReplyTo || undefined,
-            mentionUids,
-          });
-        }
-      }
-    } catch (error: any) {
-      if (hasText) screen.composer.setText(text);
-      setSnackbar({
-        visible: true,
-        message: error.message || "Failed to send",
-      });
-    }
+        return {
+          replyTo: replyTo || undefined,
+          mentionUids,
+          mentionSpans: mentionSpans.length > 0 ? mentionSpans : undefined,
+        };
+      },
+      buildAttachmentOptions: ({ text, replyTo }) => {
+        const { mentionUids } = extractMentionsExact(text, mentionableMembers);
+        return {
+          replyTo: replyTo || undefined,
+          mentionUids,
+        };
+      },
+    });
   }, [
     uid,
     groupId,
-    screen.composer,
     screen.chat,
+    screen.composer,
     screen.sending,
     typing,
     attachmentPicker,
@@ -1239,24 +1163,16 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     async (recording: VoiceRecording) => {
       if (!uid || screen.sending) return;
 
-      try {
-        // Send voice message via unified path
-        await screen.chat.sendMessage("", {
-          kind: "voice",
-          attachments: [
-            {
-              id: `voice_${Date.now()}_${uid}`,
-              uri: recording.uri,
-              kind: "audio",
-              mime: "audio/m4a",
-              durationMs: recording.durationMs,
-            },
-          ],
-        });
-      } catch (error: any) {
+      const result = await sendVoiceRecordingMessage({
+        chat: screen.chat,
+        currentUid: uid,
+        recording,
+      });
+
+      if (!result.success) {
         setSnackbar({
           visible: true,
-          message: error.message || "Failed to send voice",
+          message: result.error || "Failed to send voice",
         });
       }
     },
@@ -1453,37 +1369,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
       const resolvedBubbleTextColor = bubbleFontColorHex ?? bubbleTextColor;
 
       if (item.kind === "system") {
-        // Defensive: extract displayText from legacy JSON-encoded system
-        // payloads that may still exist in local DB from older builds.
-        let displayText = item.text ?? "";
-        if (displayText.startsWith("{")) {
-          try {
-            const parsed = JSON.parse(displayText);
-            displayText =
-              parsed.displayText ?? parsed.content ?? parsed.text ?? "";
-          } catch {
-            // Not valid JSON – show as-is (last resort)
-          }
-        }
-        // If displayText is still empty or looks like raw data, hide it
-        if (!displayText || displayText.startsWith("{")) {
-          return null;
-        }
-        return (
-          <View style={styles.systemMessage}>
-            <Text
-              style={[
-                styles.systemMessageText,
-                {
-                  color: colors.textMuted,
-                  backgroundColor: colors.surfaceVariant,
-                },
-              ]}
-            >
-              {displayText}
-            </Text>
-          </View>
-        );
+        return <SystemMessageChip text={safeSystemText(item.text)} />;
       }
 
       // Get image attachment if present
@@ -1679,22 +1565,23 @@ export default function GroupChatScreen({ route, navigation }: Props) {
                   })()}
                 </TouchableOpacity>
 
-                <View
-                  style={[
-                    styles.timestampRow,
-                    isOwnMessage
-                      ? styles.timestampRowSent
-                      : styles.timestampRowReceived,
-                    !showTimestamp && styles.timestampRowHidden,
-                  ]}
-                  pointerEvents="none"
-                >
-                  <Text
-                    style={[styles.messageTime, { color: colors.textMuted }]}
+                {showTimestamp && (
+                  <View
+                    style={[
+                      styles.timestampRow,
+                      isOwnMessage
+                        ? styles.timestampRowSent
+                        : styles.timestampRowReceived,
+                    ]}
+                    pointerEvents="none"
                   >
-                    {formatTime(item.createdAt)}
-                  </Text>
-                </View>
+                    <Text
+                      style={[styles.messageTime, { color: colors.textMuted }]}
+                    >
+                      {formatTime(item.createdAt)}
+                    </Text>
+                  </View>
+                )}
               </View>
             </View>
 
@@ -1774,6 +1661,67 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     keyboardLiftBehavior: "whenAtEnd",
   });
   const renderScrollComponent = useRenderChatScrollComponent();
+  const groupHeaderSubtitle = typing.isOtherUserTyping
+    ? typingUserNames.length === 1
+      ? `${typingUserNames[0]} is typing...`
+      : `${typingUserNames.length} people are typing...`
+    : `${groupMembers.length} ${groupMembers.length === 1 ? "member" : "members"}`;
+  const groupHeaderSubtitleColor =
+    typing.isOtherUserTyping && typing.typingIndicatorsEnabled
+      ? colors.primary
+      : undefined;
+  const renderHeaderRight = useCallback(
+    () => (
+      <View style={styles.headerRightRow}>
+        {CALL_FEATURES.CALLS_ENABLED && voiceRoom.isActive && (
+          <VoiceRoomAvatarStack
+            occupants={voiceRoom.occupants}
+            onPress={handleJoinVoiceChannel}
+          />
+        )}
+        {CALL_FEATURES.CALLS_ENABLED && (
+          <TouchableOpacity
+            onPress={handleJoinVoiceChannel}
+            style={styles.callButton}
+            accessibilityLabel={
+              isCurrentUserInThisVoiceRoom
+                ? "Return to voice room"
+                : voiceRoom.isActive
+                  ? "Join voice room"
+                  : "Start voice room"
+            }
+            accessibilityRole="button"
+          >
+            <Ionicons
+              name="headset"
+              size={22}
+              color={
+                isCurrentUserInThisVoiceRoom
+                  ? "#43A047"
+                  : voiceRoom.isActive
+                    ? colors.primary
+                    : colors.textMuted
+              }
+            />
+          </TouchableOpacity>
+        )}
+        <IconButton
+          icon="information-outline"
+          onPress={() => navigation.navigate("GroupChatInfo", { groupId })}
+        />
+      </View>
+    ),
+    [
+      colors.primary,
+      colors.textMuted,
+      groupId,
+      handleJoinVoiceChannel,
+      isCurrentUserInThisVoiceRoom,
+      navigation,
+      voiceRoom.isActive,
+      voiceRoom.occupants,
+    ],
+  );
 
   if (error) {
     return (
@@ -1781,29 +1729,14 @@ export default function GroupChatScreen({ route, navigation }: Props) {
         style={[styles.container, { backgroundColor: colors.background }]}
         edges={[]}
       >
-        <Appbar.Header
-          style={[styles.header, { backgroundColor: colors.background }]}
-        >
-          <TouchableOpacity
-            onPress={() => navigation.goBack()}
-            style={[
-              styles.backButton,
-              { backgroundColor: colors.surfaceVariant },
-            ]}
-            activeOpacity={0.6}
-            accessibilityLabel="Back"
-            accessibilityRole="button"
-            hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
-          >
-            <MaterialCommunityIcons
-              name={Platform.OS === "ios" ? "chevron-left" : "arrow-left"}
-              size={22}
-              color={colors.text}
-              style={Platform.OS === "ios" ? styles.backIconiOS : undefined}
-            />
-          </TouchableOpacity>
-          <Appbar.Content title="Error" />
-        </Appbar.Header>
+        <ChatHeader
+          onBack={() => navigation.goBack()}
+          chatType="group"
+          title={group?.name || initialGroupName || "Group Chat"}
+          subtitle="Unavailable"
+          avatarUrl={group?.avatarUrl}
+          avatarFallbackName={group?.name || initialGroupName || "Group Chat"}
+        />
         <ErrorState
           message={error}
           onRetry={() => navigation.goBack()}
@@ -1824,100 +1757,17 @@ export default function GroupChatScreen({ route, navigation }: Props) {
         behavior="padding"
         enabled={!isKCSVAvailable}
       >
-        <Appbar.Header
-          style={[styles.header, { backgroundColor: colors.background }]}
-        >
-          {/* Custom back button with optical centering */}
-          <TouchableOpacity
-            onPress={() => navigation.goBack()}
-            style={[
-              styles.backButton,
-              { backgroundColor: colors.surfaceVariant },
-            ]}
-            activeOpacity={0.6}
-            accessibilityLabel="Back"
-            accessibilityRole="button"
-            hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
-          >
-            <MaterialCommunityIcons
-              name={Platform.OS === "ios" ? "chevron-left" : "arrow-left"}
-              size={22}
-              color={colors.text}
-              style={Platform.OS === "ios" ? styles.backIconiOS : undefined}
-            />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.headerTitle}
-            onPress={() => navigation.navigate("GroupChatInfo", { groupId })}
-          >
-            {group?.avatarUrl ? (
-              <AppImage
-                source={buildRemoteImageSource(group.avatarUrl)}
-                style={[
-                  styles.groupIcon,
-                  { width: 36, height: 36, borderRadius: 18 },
-                ]}
-                transition={0}
-                debugLabel="GroupAvatar"
-              />
-            ) : (
-              <View
-                style={[
-                  styles.groupIcon,
-                  { backgroundColor: colors.surfaceVariant },
-                ]}
-              >
-                <MaterialCommunityIcons
-                  name="account-group"
-                  size={20}
-                  color={colors.primary}
-                />
-              </View>
-            )}
-            <Text
-              style={[styles.headerTitleText, { color: colors.text }]}
-              numberOfLines={1}
-            >
-              {group?.name}
-            </Text>
-          </TouchableOpacity>
-          {CALL_FEATURES.CALLS_ENABLED && voiceRoom.isActive && (
-            <VoiceRoomAvatarStack
-              occupants={voiceRoom.occupants}
-              onPress={handleJoinVoiceChannel}
-            />
-          )}
-          {CALL_FEATURES.CALLS_ENABLED && (
-            <TouchableOpacity
-              onPress={handleJoinVoiceChannel}
-              style={styles.callButton}
-              accessibilityLabel={
-                isCurrentUserInThisVoiceRoom
-                  ? "Return to voice room"
-                  : voiceRoom.isActive
-                    ? "Join voice room"
-                    : "Start voice room"
-              }
-              accessibilityRole="button"
-            >
-              <Ionicons
-                name="headset"
-                size={22}
-                color={
-                  isCurrentUserInThisVoiceRoom
-                    ? "#43A047"
-                    : voiceRoom.isActive
-                      ? colors.primary
-                      : colors.textMuted
-                }
-              />
-            </TouchableOpacity>
-          )}
-          <Appbar.Action
-            icon="information-outline"
-            onPress={() => navigation.navigate("GroupChatInfo", { groupId })}
-          />
-        </Appbar.Header>
+        <ChatHeader
+          onBack={() => navigation.goBack()}
+          chatType="group"
+          title={group?.name || initialGroupName || "Group Chat"}
+          subtitle={groupHeaderSubtitle}
+          subtitleColor={groupHeaderSubtitleColor}
+          avatarUrl={group?.avatarUrl}
+          avatarFallbackName={group?.name || initialGroupName || "Group Chat"}
+          onTitlePress={() => navigation.navigate("GroupChatInfo", { groupId })}
+          renderRight={renderHeaderRight}
+        />
 
         {/* Games V4: Pinned invite bar at top of chat */}
         {GAMES_V4_ENABLED && groupId && (
@@ -2165,43 +2015,17 @@ export default function GroupChatScreen({ route, navigation }: Props) {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: {
-    elevation: 0,
-    height: 46,
-  },
-  backButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    justifyContent: "center",
-    alignItems: "center",
-    marginLeft: 8,
-  },
-  backIconiOS: {
-    marginLeft: -1,
-  },
-  headerTitle: {
-    flex: 1,
+  headerRightRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
-    marginLeft: 8,
   },
-  groupIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  headerTitleText: { fontSize: 18, fontWeight: "700" },
   callButton: {
     padding: 8,
     marginRight: 4,
   },
   messageContainer: { marginBottom: 14, width: "100%" },
   groupedMessageContainer: {}, // Visual grouping (hides some elements) — no spacing change
-  groupedMessageContainerTight: { marginBottom: 4 }, // Tight spacing when grouped with next
+  groupedMessageContainerTight: { marginBottom: 6 }, // Tight spacing when grouped with next
   ownMessageContainer: {},
   replyBubbleIndent: { marginLeft: 40 }, // 32px avatar + 8px margin
   messageRow: { maxWidth: "80%", flexDirection: "row", alignItems: "flex-end" },
@@ -2233,14 +2057,6 @@ const styles = StyleSheet.create({
   timestampRow: { flexDirection: "row", alignItems: "center", marginTop: 6 },
   timestampRowSent: { alignSelf: "flex-end", marginRight: 4 },
   timestampRowReceived: { alignSelf: "flex-start", marginLeft: 4 },
-  timestampRowHidden: { opacity: 0 },
-  systemMessage: { alignItems: "center", marginVertical: 12 },
-  systemMessageText: {
-    fontSize: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
-  },
   loadMoreContainer: {
     alignItems: "center",
     paddingVertical: 16,

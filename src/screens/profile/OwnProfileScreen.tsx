@@ -13,7 +13,13 @@
  * @module screens/profile/OwnProfileScreen
  */
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -23,8 +29,8 @@ import {
   WidgetBoardContainer,
   useBoardState,
 } from "@/components/profile/WidgetBoard";
+import { CustomizeModeToolbar } from "@/components/profile/WidgetBoard/CustomizeModeToolbar";
 import { LoadingState } from "@/components/ui";
-import { Spacing } from "@/constants/theme";
 import { prefetchCriticalProfileAssets } from "@/services/cosmeticsAssetCache";
 
 import { useGameStatsV4 } from "@/gamesV4/hooks/useGameStatsV4";
@@ -103,6 +109,12 @@ export default function OwnProfileScreen({
 
   const board = useBoardState(currentFirebaseUser?.uid);
   const isCustomizing = board.mode === "customize";
+  const scrollViewRef = useRef<ScrollView>(null);
+  const scrollOffsetRef = useRef(0);
+
+  const handleScroll = useCallback((e: any) => {
+    scrollOffsetRef.current = e.nativeEvent.contentOffset.y;
+  }, []);
 
   // Prefetch equipped cosmetic assets so profile renders instantly
   useEffect(() => {
@@ -285,6 +297,11 @@ export default function OwnProfileScreen({
   // Edit mode is now entered by long-pressing any widget (RNGH long-press
   // in WidgetWrapper). No board-level Pressable needed.
 
+  // Gallery state — lifted here so the overlay toolbar can trigger it
+  const [galleryVisible, setGalleryVisible] = useState(false);
+  const handleOpenGallery = useCallback(() => setGalleryVisible(true), []);
+  const handleCloseGallery = useCallback(() => setGalleryVisible(false), []);
+
   // ==========================================================================
   // Widget Data Payloads
   // ==========================================================================
@@ -445,16 +462,19 @@ export default function OwnProfileScreen({
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <ScrollView
+        ref={scrollViewRef}
         style={styles.scrollView}
         contentContainerStyle={[
           styles.content,
           {
-            paddingTop: isCustomizing ? insets.top + Spacing.xs : insets.top,
+            paddingTop: insets.top,
             paddingBottom: insets.bottom + 32,
           },
         ]}
         showsVerticalScrollIndicator={false}
         scrollEnabled={true}
+        scrollEventThrottle={16}
+        onScroll={handleScroll}
         refreshControl={
           !isCustomizing ? (
             <RefreshControl
@@ -473,6 +493,10 @@ export default function OwnProfileScreen({
           saving={board.saving}
           widgetData={widgetData}
           dragActiveId={board.dragActiveId}
+          scrollRef={scrollViewRef}
+          scrollOffsetRef={scrollOffsetRef}
+          galleryVisible={galleryVisible}
+          onCloseGallery={handleCloseGallery}
           onMoveWidget={board.actions.moveWidget}
           onResizeWidget={board.actions.resizeWidget}
           onHideWidget={board.actions.hideWidget}
@@ -487,6 +511,21 @@ export default function OwnProfileScreen({
           onCancel={board.actions.cancelCustomize}
         />
       </ScrollView>
+
+      {/* Customize Toolbar — Overlay above scroll content */}
+      {isCustomizing && (
+        <View
+          style={[styles.toolbarOverlay, { paddingTop: insets.top }]}
+          pointerEvents="box-none"
+        >
+          <CustomizeModeToolbar
+            saving={board.saving}
+            onDone={board.actions.exitCustomize}
+            onCancel={board.actions.cancelCustomize}
+            onAddWidget={handleOpenGallery}
+          />
+        </View>
+      )}
 
       {/* Profile Picture Editor Modal */}
       <ProfilePictureEditor
@@ -536,5 +575,12 @@ const styles = StyleSheet.create({
   },
   content: {
     flexGrow: 1,
+  },
+  toolbarOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 100,
   },
 });

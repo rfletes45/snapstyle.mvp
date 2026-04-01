@@ -1,6 +1,6 @@
 # Widget Board Architecture
 
-Last verified: 2026-03-30
+Last verified: 2026-04-01
 
 ## Board Model
 
@@ -23,6 +23,7 @@ Current size keys:
 - `wide` = 4x1
 - `large` = 4x2
 - `hero` = 4x4
+- `mega` = 4x6 (expanded hero — profile header only)
 
 Not every widget supports every size. The registry is the source of truth for supported sizes.
 
@@ -48,15 +49,15 @@ Important widget-specific visibility rules:
 
 `generateDefaultLayout()` currently creates:
 
-| Widget | Size | Position |
-| --- | --- | --- |
-| `profile-header` | `hero` | `(0, 0)` |
-| `social-proof` | `wide` | `(0, 4)` |
-| `friends` | `medium` | `(0, 5)` |
-| `badges` | `medium` | `(2, 5)` |
-| `achievements` | `wide` | `(0, 7)` |
-| `tasks-overview` | `wide` | `(0, 8)` |
-| `wallet-balance` | `small` | `(0, 9)` |
+| Widget           | Size     | Position |
+| ---------------- | -------- | -------- |
+| `profile-header` | `hero`   | `(0, 0)` |
+| `social-proof`   | `wide`   | `(0, 4)` |
+| `friends`        | `medium` | `(0, 5)` |
+| `badges`         | `medium` | `(2, 5)` |
+| `achievements`   | `wide`   | `(0, 7)` |
+| `tasks-overview` | `wide`   | `(0, 8)` |
+| `wallet-balance` | `small`  | `(0, 9)` |
 
 Widgets such as `favorite-game`, `profile-stats`, `recent-activity`, `theme-mode`, and `chat-layout-mode` are available through the gallery but not placed by default.
 
@@ -125,6 +126,9 @@ The most important board timing constants are:
 - activate drag in customize mode: long press `200ms`
 - dwell before preview reflow: `500ms`
 - extra workspace rows in customize mode: `6`
+- auto-scroll edge threshold: `80px` from viewport edge
+- auto-scroll tick rate: `16ms` (~60fps)
+- auto-scroll max speed: `12px` per tick (scales with edge proximity)
 
 The board docs used to drift here. These values now match the checked-in code.
 

@@ -591,7 +591,6 @@ export function useChatComposer(
 
     try {
       // Upload attachments if we have them and an upload handler
-      let uploadedAttachments: AttachmentV2[] | undefined;
       if (attachmentSnapshot.length > 0 && onUploadAttachments) {
         setUploadProgress({ current: 0, total: attachmentSnapshot.length });
 
@@ -602,7 +601,7 @@ export function useChatComposer(
           });
         }
 
-        uploadedAttachments = await onUploadAttachments(attachmentSnapshot);
+        await onUploadAttachments(attachmentSnapshot);
         setUploadProgress(null);
       }
 
@@ -631,7 +630,11 @@ export function useChatComposer(
         await chatHook.sendMessage(textSnapshot, {
           replyTo: replySnapshot ?? undefined,
           mentionUids: mentionSnapshot.length > 0 ? mentionSnapshot : undefined,
-          attachments: uploadedAttachments ? attachmentSnapshot : undefined,
+          // Integrated chatHook.sendMessage() expects local attachments so the
+          // local-first runtime can stage + sync them itself. The upload hook is
+          // only meaningful for the non-integrated callback path.
+          attachments:
+            attachmentSnapshot.length > 0 ? attachmentSnapshot : undefined,
         });
         // chatHook.sendMessage auto-clears replyTo when clearReplyOnSend is true (default)
       } else {

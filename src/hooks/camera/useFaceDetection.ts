@@ -127,6 +127,12 @@ export function useFaceDetection(
 
   const [detectedFaces, setDetectedFaces] = useState<DetectedFace[]>([]);
 
+  // Track whether faces are currently detected via a ref so the callback
+  // dependency array stays stable (prevents VisionCamera from restarting
+  // the face detection pipeline on every face-count change).
+  const hasFacesRef = useRef(false);
+  hasFacesRef.current = detectedFaces.length > 0;
+
   // History buffer per face trackingId for smoothing
   const faceHistory = useRef<Map<number, DetectedFace[]>>(new Map());
 
@@ -156,7 +162,7 @@ export function useFaceDetection(
       lastUpdateTime.current = now;
 
       if (!faces || faces.length === 0) {
-        if (detectedFaces.length > 0) {
+        if (hasFacesRef.current) {
           setDetectedFaces([]);
           faceHistory.current.clear();
         }
@@ -190,7 +196,7 @@ export function useFaceDetection(
 
       setDetectedFaces(smoothedFaces);
     },
-    [enabled, smoothingWindow, detectedFaces.length],
+    [enabled, smoothingWindow],
   );
 
   // ─── Clear faces (e.g., when disabling detection) ────────────────────

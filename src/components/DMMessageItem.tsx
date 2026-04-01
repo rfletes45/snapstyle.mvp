@@ -34,11 +34,11 @@ import {
   resolveIncomingBubbleStyle,
   resolveOutgoingChatStyle,
 } from "@/cosmetics/chatAppearanceResolver";
-import type { ChatAppearance, SenderStyle } from "@/cosmetics/types";
+import type { ChatAppearance } from "@/cosmetics/types";
 import { useLinkPreviews } from "@/hooks/useLinkPreviews";
 import { extractUrls, hasUrls } from "@/services/linkPreview";
 import type { ReactionSummary } from "@/services/reactions";
-import type { ReplyToMetadata } from "@/types/messaging";
+import type { MessageV2, ReplyToMetadata } from "@/types/messaging";
 import { formatChatTimestamp } from "@/utils/chatTimestamp";
 
 const IMAGE_MAX_WIDTH = 240;
@@ -61,38 +61,9 @@ function getImageBubbleSize(w?: number, h?: number) {
   return { width: Math.round(bw), height: Math.round(bh) };
 }
 
-export interface MessageWithProfile {
-  id: string;
-  sender: string;
-  content: string;
-  type: "text" | "image" | "voice" | "animal";
-  createdAt: Date;
-  status?: "sending" | "sent" | "delivered" | "read" | "failed";
-  /** Server received timestamp for read receipt calculation */
-  serverReceivedAt?: number;
-  replyTo?: ReplyToMetadata;
-  /** Voice message URL */
-  voiceUrl?: string;
-  /** Voice message duration in milliseconds */
-  voiceDurationMs?: number;
-  /** Image attachment URL (for media messages) */
-  imageUrl?: string;
-  /** Image dimensions from upload metadata */
-  imageWidth?: number;
-  imageHeight?: number;
-  /** Sender's chat style snapshot (bubble color, font, etc.) */
-  senderStyle?: SenderStyle | null;
-  /** Thread reply count (for thread indicator) */
-  replyCount?: number;
-  /** Animal theme ID (for animal signal messages) */
-  animalId?: string;
-  /** Denormalized reaction counts from the message document */
-  reactionsSummary?: Record<string, number>;
-}
-
 interface DMMessageItemProps {
   /** The message to render */
-  message: MessageWithProfile;
+  message: MessageV2;
   /** Current user's UID */
   currentUid: string | undefined;
   /** Chat/conversation ID */
@@ -108,11 +79,11 @@ interface DMMessageItemProps {
   /** Callback when user swipes to reply */
   onReply: (replyMetadata: ReplyToMetadata) => void;
   /** Callback when user long-presses the message */
-  onLongPress: (message: MessageWithProfile) => void;
+  onLongPress: (message: MessageV2) => void;
   /** Callback to scroll to a specific message (for reply navigation) */
   onScrollToMessage: (messageId: string) => void;
   /** Callback to retry sending a failed message */
-  onRetry: (message: MessageWithProfile) => Promise<void>;
+  onRetry: (message: MessageV2) => Promise<void>;
   /** Callback to open the media viewer for an image message */
   onImagePress?: (
     imageUrl: string,
@@ -154,7 +125,14 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
   }) => {
     const theme = useTheme();
     const navigation = useNavigation<NativeStackNavigationProp<any>>();
-    const isSentByMe = message.sender === currentUid;
+    const isSentByMe = message.senderId === currentUid;
+    const messageText = message.text || "";
+    const imageAttachment = message.attachments?.find(
+      (attachment) => attachment.kind === "image",
+    );
+    const voiceAttachment = message.attachments?.find(
+      (attachment) => attachment.kind === "audio",
+    );
 
     // Resolve outgoing chat cosmetics (bubble color, text color, font)
     const chatStyle = React.useMemo(
@@ -178,8 +156,6 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
     }, [
       isSentByMe,
       message.senderStyle,
-      message.id,
-      message.sender,
       theme.dark,
       theme.colors.surfaceVariant,
       theme.colors.onSurface,
@@ -204,10 +180,10 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
     // Link preview support for text messages
     const messagesForPreview = React.useMemo(
       () =>
-        message.type === "text" && hasUrls(message.content)
-          ? [{ id: message.id, content: message.content, type: message.type }]
+        message.kind === "text" && hasUrls(messageText)
+          ? [{ id: message.id, content: messageText, type: "text" as const }]
           : [],
-      [message.id, message.content, message.type],
+      [message.id, message.kind, messageText],
     );
     const { linkPreviews, loadingPreviews } =
       useLinkPreviews(messagesForPreview);
@@ -245,14 +221,25 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
         onRetry(message);
         return;
       }
-      if (message.type === "image" && message.imageUrl && onImagePress) {
+      if (message.kind === "media" && imageAttachment && onImagePress) {
         const senderName = isSentByMe
           ? "You"
           : friendProfile?.displayName || friendProfile?.username || "Friend";
-        onImagePress(message.imageUrl, senderName, message.createdAt);
+        onImagePress(
+          imageAttachment.url,
+          senderName,
+          new Date(message.createdAt),
+        );
         return;
       }
-    }, [message, isSentByMe, friendProfile, onImagePress, navigation, onRetry]);
+    }, [
+      message,
+      imageAttachment,
+      isSentByMe,
+      friendProfile,
+      onImagePress,
+      onRetry,
+    ]);
 
     // Render message status indicator
     const renderStatus = () => {
@@ -341,7 +328,7 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
     // Render message content
     const renderContent = () => {
       // Animal message — check kind-based animal signal
-      if (message.type === "animal") {
+      if (message.kind === "animal") {
         if (message.animalId) {
           return (
             <AnimalBubble animalId={message.animalId} isMine={isSentByMe} />
@@ -355,25 +342,25 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
         );
       }
 
-      if (message.type === "voice") {
+      if (message.kind === "voice" && voiceAttachment) {
         return (
           <VoiceMessagePlayer
-            url={message.voiceUrl || message.content}
-            durationMs={message.voiceDurationMs || 0}
+            url={voiceAttachment.url}
+            durationMs={voiceAttachment.durationMs || 0}
             isOwn={isSentByMe}
           />
         );
       }
 
-      if (message.type === "image") {
-        if (message.imageUrl) {
+      if (message.kind === "media") {
+        if (imageAttachment) {
           const imgSize = getImageBubbleSize(
-            message.imageWidth,
-            message.imageHeight,
+            imageAttachment.width,
+            imageAttachment.height,
           );
           return (
             <AppImage
-              source={{ uri: message.imageUrl }}
+              source={{ uri: imageAttachment.url }}
               style={[styles.standaloneImage, imgSize]}
               contentFit="cover"
               debugLabel="DMMessageImage"
@@ -395,13 +382,13 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
               },
             ]}
           >
-            {message.content}
+            {messageText}
           </Text>
-          {hasUrls(message.content) && (
+          {hasUrls(messageText) && (
             <LinkPreviewCard
               preview={
                 linkPreviews.get(message.id) || {
-                  url: extractUrls(message.content)[0] || "",
+                  url: extractUrls(messageText)[0] || "",
                   fetchedAt: Date.now(),
                 }
               }
@@ -414,38 +401,11 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
     };
 
     // Is this an animal message?
-    const isAnimal = message.type === "animal" && !!message.animalId;
-
-    // Create SwipeableMessage format - convert Date to timestamp
-    const createdAtTimestamp =
-      message.createdAt instanceof Date
-        ? message.createdAt.getTime()
-        : typeof message.createdAt === "number"
-          ? message.createdAt
-          : Date.now();
-
-    const swipeableMessage = {
-      id: message.id,
-      scope: "dm" as const,
-      conversationId: chatId || "",
-      senderId: message.sender,
-      senderName: isSentByMe ? "You" : friendProfile?.displayName,
-      kind:
-        message.type === "image"
-          ? ("media" as const)
-          : message.type === "voice"
-            ? ("voice" as const)
-            : ("text" as const),
-      text: message.type === "text" ? message.content : undefined,
-      createdAt: createdAtTimestamp,
-      serverReceivedAt: createdAtTimestamp,
-      clientId: "",
-      idempotencyKey: "",
-    };
+    const isAnimal = message.kind === "animal" && !!message.animalId;
 
     return (
       <SwipeableMessage
-        message={swipeableMessage}
+        message={message}
         onReply={onReply}
         enabled={message.status !== "failed"}
         currentUid={currentUid}
@@ -490,11 +450,11 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
                   onPress={handlePress}
                   delayLongPress={300}
                   accessibilityLabel={
-                    message.type === "voice"
+                    message.kind === "voice"
                       ? `${isSentByMe ? "You sent" : `${friendProfile?.displayName || "Friend"} sent`} a voice message`
-                      : message.type === "image"
+                      : message.kind === "media"
                         ? `${isSentByMe ? "You sent" : `${friendProfile?.displayName || "Friend"} sent`} a picture`
-                        : `${isSentByMe ? "You" : friendProfile?.displayName || "Friend"}: ${message.content}`
+                        : `${isSentByMe ? "You" : friendProfile?.displayName || "Friend"}: ${messageText}`
                   }
                   accessibilityRole="button"
                   accessibilityHint="Long press for message options, swipe right to reply"
@@ -518,8 +478,8 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
                         padding: 0,
                         backgroundColor: "transparent",
                       },
-                      message.type === "image" &&
-                        message.imageUrl &&
+                      message.kind === "media" &&
+                        imageAttachment &&
                         styles.imageOnlyBubble,
                       message.status === "sending" && styles.sendingBubble,
                       message.status === "failed" && [
@@ -535,26 +495,27 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
                   </View>
                 </TouchableOpacity>
 
-                <View
-                  style={[
-                    styles.timestampStatusRow,
-                    isSentByMe
-                      ? styles.timestampStatusRowSent
-                      : styles.timestampStatusRowReceived,
-                    !showTimestamp && styles.timestampStatusRowHidden,
-                  ]}
-                  pointerEvents="none"
-                >
-                  {renderStatus()}
-                  <Text
+                {showTimestamp && (
+                  <View
                     style={[
-                      styles.timestamp,
-                      { color: theme.colors.onSurface + "99" },
+                      styles.timestampStatusRow,
+                      isSentByMe
+                        ? styles.timestampStatusRowSent
+                        : styles.timestampStatusRowReceived,
                     ]}
+                    pointerEvents="none"
                   >
-                    {formatChatTimestamp(message.createdAt)}
-                  </Text>
-                </View>
+                    {renderStatus()}
+                    <Text
+                      style={[
+                        styles.timestamp,
+                        { color: theme.colors.onSurface + "99" },
+                      ]}
+                    >
+                      {formatChatTimestamp(message.createdAt)}
+                    </Text>
+                  </View>
+                )}
               </View>
             </View>
 
@@ -605,7 +566,7 @@ const styles = StyleSheet.create({
     // Visual grouping (hides some elements) — no spacing override here
   },
   groupedMessageContainerTight: {
-    marginBottom: 3,
+    marginBottom: 6,
   },
   messageBubbleWrapper: {
     flexDirection: "column",
@@ -631,13 +592,16 @@ const styles = StyleSheet.create({
     padding: 10,
     borderRadius: 20,
     maxWidth: "100%",
-    alignSelf: "flex-start",
   },
   sentBubble: {
     borderBottomRightRadius: 6,
+    // Keep outgoing bubbles anchored to the trailing edge even when the
+    // timestamp/status footer is wider than the bubble itself.
+    alignSelf: "flex-end",
   },
   receivedBubble: {
     borderBottomLeftRadius: 6,
+    alignSelf: "flex-start",
   },
   messageText: {
     fontSize: 17,
@@ -657,9 +621,6 @@ const styles = StyleSheet.create({
   },
   timestampStatusRowReceived: {
     alignSelf: "flex-start",
-  },
-  timestampStatusRowHidden: {
-    opacity: 0,
   },
   statusContainer: {},
   statusLabel: {

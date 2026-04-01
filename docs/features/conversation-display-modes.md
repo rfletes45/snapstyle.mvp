@@ -136,7 +136,13 @@ The stacked renderer uses `FEED_LAYOUT` — a dedicated token set for the gutter
 | `selfTintOpacity`    | 0     | Deprecated — self-messages no longer tinted                |
 | `selfAccentWidth`    | 0     | Deprecated — self-messages no longer have accent           |
 
-Bubble mode continues to use `BUBBLE_LAYOUT` (type `ChatLayoutTokens`), which is unchanged.
+Bubble mode continues to use `BUBBLE_LAYOUT` (type `ChatLayoutTokens`), with one important anchoring rule for DM bubbles:
+
+- Outgoing DM bubbles must align to the trailing edge of their bubble/footer column
+- This prevents short sent bubbles from drifting inward when the delivery-status + timestamp footer is wider than the bubble body
+- The fix belongs on the bubble alignment layer, not as extra right margin or list padding
+
+Group bubble mode does not currently hit this issue because its footer row is timestamp-only and does not widen the sender column the same way DM delivery/read labels do.
 
 ## Content-Column Anchoring
 
@@ -330,6 +336,7 @@ In bubble mode (`DMMessageItem`, `GroupChatScreen`), custom font color overrides
 ### DM Chat
 
 - [ ] Text messages render cleanly in both modes
+- [ ] Short outgoing DM bubbles stay flush with the right gutter even when status labels are wider than the message body
 - [ ] Image messages properly left-oriented in stacked mode
 - [ ] Voice messages render with playback controls
 - [ ] Animal theme messages render correctly and left-oriented

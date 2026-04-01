@@ -5,8 +5,9 @@
  * consecutive messages. Dividers are NOT stored — they are computed at render
  * time from real message timestamps.
  *
- * Works with both DM (MessageWithProfile) and group (MessageV2) message types
- * by accepting a generic type + a timestamp accessor.
+ * Works with any chat message shape by accepting a generic type plus
+ * timestamp + grouping accessors. DM and group screens both pass canonical
+ * `MessageV2` rows after the unification refactor.
  *
  * Compatible with:
  * - Initial load

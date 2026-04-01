@@ -14,19 +14,18 @@ import React from "react";
 
 import type { ConversationDisplayMode } from "@/chat/displayMode";
 import { buildMessageViewModel } from "@/chat/displayMode";
-import type { MessageWithProfile } from "@/components/DMMessageItem";
 import { DMMessageItem } from "@/components/DMMessageItem";
 import { StackedMessageRenderer } from "@/components/chat/StackedMessageRenderer";
 import type { ChatAppearance } from "@/cosmetics/types";
 import type { ReactionSummary } from "@/services/reactions";
-import type { ReplyToMetadata } from "@/types/messaging";
+import type { MessageV2, ReplyToMetadata } from "@/types/messaging";
 
 // ---------------------------------------------------------------------------
 // Props
 // ---------------------------------------------------------------------------
 
 export interface ChatMessageRendererProps {
-  message: MessageWithProfile;
+  message: MessageV2;
   currentUid: string | undefined;
   chatId: string | null;
   friendProfile: {
@@ -40,9 +39,9 @@ export interface ChatMessageRendererProps {
   } | null;
   chatAppearance?: ChatAppearance | null;
   onReply: (replyMetadata: ReplyToMetadata) => void;
-  onLongPress: (message: MessageWithProfile) => void;
+  onLongPress: (message: MessageV2) => void;
   onScrollToMessage: (messageId: string) => void;
-  onRetry: (message: MessageWithProfile) => Promise<void>;
+  onRetry: (message: MessageV2) => Promise<void>;
   onImagePress?: (
     imageUrl: string,
     senderName: string,
@@ -96,7 +95,7 @@ export const ChatMessageRenderer: React.FC<ChatMessageRendererProps> =
       currentUserProfilePictureUrl,
       currentUserDecorationId,
     }) => {
-      const isSentByMe = message.sender === currentUid;
+      const isSentByMe = message.senderId === currentUid;
 
       // Build the view-model once for both renderers
       const vm = React.useMemo(
@@ -106,7 +105,7 @@ export const ChatMessageRenderer: React.FC<ChatMessageRendererProps> =
             isGroupChat,
             isGroupedWithPrevious,
             isGroupedWithNext,
-            isSystemMessage: false,
+            isSystemMessage: message.kind === "system",
             hasReactions: reactions.length > 0,
             hasReplyPreview: !!message.replyTo,
             hasThread: !!message.replyCount && message.replyCount > 0,
@@ -120,6 +119,7 @@ export const ChatMessageRenderer: React.FC<ChatMessageRendererProps> =
           reactions.length,
           message.replyTo,
           message.replyCount,
+          message.kind,
           displayMode,
         ],
       );
@@ -127,12 +127,15 @@ export const ChatMessageRenderer: React.FC<ChatMessageRendererProps> =
       // Resolve the sender name for display
       const senderDisplayName = React.useMemo(() => {
         if (isSentByMe) {
-          return currentUserDisplayName || "You";
+          return currentUserDisplayName || message.senderName || "You";
         }
         return (
-          friendProfile?.displayName || friendProfile?.username || "Friend"
+          friendProfile?.displayName ||
+          friendProfile?.username ||
+          message.senderName ||
+          "Friend"
         );
-      }, [isSentByMe, friendProfile, currentUserDisplayName]);
+      }, [isSentByMe, friendProfile, currentUserDisplayName, message.senderName]);
 
       // Resolve sender-level profile picture (matches group chat pattern)
       const senderProfilePictureUrl = React.useMemo(() => {

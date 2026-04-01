@@ -1,6 +1,6 @@
 # Profile Header Widget
 
-Last verified: 2026-03-30
+Last verified: 2026-04-01
 
 ## Identity
 
@@ -10,7 +10,7 @@ Current registry metadata:
 
 - widget type: `profile-header`
 - default size: `hero`
-- supported sizes: `wide`, `large`, `hero`
+- supported sizes: `wide`, `large`, `hero`, `mega`
 - removable: no
 - resizable: yes
 
@@ -51,9 +51,10 @@ This is another place older docs drifted by describing the viewed profile as if 
 
 Current supported sizes:
 
-- `wide`
-- `large`
-- `hero`
+- `wide` (4x1, 88px) — compact bar with PFP (56px), name, level
+- `large` (4x2, 184px) — medium card with PFP (76px), name (21px), username, status, level bar
+- `hero` (4x4, 376px) — full rich header with PFP (96px), name (26px), username, status, bio (2 lines), actions, level bar (flex child, not absolute)
+- `mega` (4x6, 568px) — expanded hero with PFP (128px), name (30px), username (18px), status, bio (5 lines), actions, rich level bar
 
 The exact visual density changes by size, but the verified truth to preserve is:
 

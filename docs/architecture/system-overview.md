@@ -156,7 +156,7 @@ Economy writes stay server-authoritative:
 ## Known Current-State Rough Edges
 
 - backend inbox aggregation is live, but the client default inbox reader still uses fan-out chat/group reads
-- `ThreadScreen` remains a specialized local-first implementation rather than sharing the full `useChat` stack
+- DM and group detail screens now share the same `MessageV2`-based chat surface, but `ThreadScreen` remains a specialized local-first implementation rather than sharing the full `useChat` stack
 - stories and moments screens exist in code but are not a current navigation surface
 - `src/services/calls/` mostly represents old infrastructure now that Stream powers the live call stack; `callSettingsService` remains active
 - call settings include DND scheduling, but time selection UI is still placeholder-only in `CallSettingsScreen`

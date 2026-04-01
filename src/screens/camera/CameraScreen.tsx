@@ -18,7 +18,9 @@
  *   - DraggableItem uses Animated.ValueXY for real-time 60 fps dragging
  */
 
-import CameraFilterOverlay from "@/components/camera/CameraFilterOverlay";
+import CameraFilterOverlay, {
+  filterToOverlayColor,
+} from "@/components/camera/CameraFilterOverlay";
 import DrawingCanvas, {
   type DrawnPath,
 } from "@/components/camera/DrawingCanvas";
@@ -57,7 +59,11 @@ import type {
 import { generateUUID } from "@/utils/uuid";
 import { Ionicons } from "@expo/vector-icons";
 import Slider from "@react-native-community/slider";
-import { useNavigation, useRoute } from "@react-navigation/native";
+import {
+  useIsFocused,
+  useNavigation,
+  useRoute,
+} from "@react-navigation/native";
 import * as Haptics from "expo-haptics";
 import React, {
   useCallback,
@@ -68,6 +74,7 @@ import React, {
 } from "react";
 import {
   ActivityIndicator,
+  AppState,
   Dimensions,
   FlatList,
   KeyboardAvoidingView,
@@ -143,6 +150,8 @@ if (!LiveFilterCamera) {
 }
 
 const useFallbackCameraDevice = () => null;
+/** Resolved once at module load — hook identity never changes inside components. */
+const useCameraDeviceResolved = useCameraDevice ?? useFallbackCameraDevice;
 
 const logger = createLogger("screens/camera/CameraScreen");
 // =============================================================================
@@ -386,9 +395,20 @@ const CameraScreen: React.FC = () => {
   const params = (route.params || {}) as CameraScreenParams;
   const mode: CameraMode = params.mode || "full";
 
+  // -- Focus & app-state – camera must only be active when visible ------------
+  const isFocused = useIsFocused();
+  const [appActive, setAppActive] = useState(true);
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (status) => {
+      setAppActive(status === "active");
+    });
+    return () => sub.remove();
+  }, []);
+
   // -- Context state ----------------------------------------------------------
   const {
     setCameraFacing,
+    setCameraReady,
     setFlashMode,
     setZoom,
     selectFilter,
@@ -428,8 +448,7 @@ const CameraScreen: React.FC = () => {
     useRecording(cameraRef);
 
   // -- AR Face Detection (VisionCamera + MLKit) -------------------------------
-  const useVisionCameraDeviceHook = useCameraDevice ?? useFallbackCameraDevice;
-  const visionDevice = useVisionCameraDeviceHook(
+  const visionDevice = useCameraDeviceResolved(
     settings.facing === "front" ? "front" : "back",
   );
   const visionCameraRef = useRef<any>(null);
@@ -454,15 +473,6 @@ const CameraScreen: React.FC = () => {
   const [countdown, setCountdown] = useState<number | null>(null);
   const [isBusy, setIsBusy] = useState(false);
 
-  // Preview frame for live filter thumbnails
-  // Captured silently from the camera so the carousel can show accurate Skia-
-  // filtered previews of what each filter will actually look like.
-  const [previewFrameUri, setPreviewFrameUri] = useState<string | null>(null);
-
-  // Temporarily suppress flash while capturing the silent preview frame so the
-  // user is never blinded by a flash they didn't trigger.
-  const [flashSuppressed, setFlashSuppressed] = useState(false);
-
   // ==========================================================================
   // LOCAL STATE - Editor mode
   // ==========================================================================
@@ -471,61 +481,18 @@ const CameraScreen: React.FC = () => {
     null,
   );
 
-  // One-shot preview capture when the camera first becomes ready (and on
-  // facing change).  Flash is forced off for the duration of the capture.
-  // We intentionally avoid periodic re-capture — one frame is enough for the
-  // filter carousel thumbnails and avoids repeated shutter / flash artefacts.
+  // -- Camera isActive computation ---------------------------------------------
+  // Camera should be active ONLY when the screen is focused, the app is in
+  // the foreground, and we are NOT in editor mode (viewing a captured image).
+  const isActive = isFocused && appActive && !isEditorMode;
+
+  // Reset camera-ready when the session becomes inactive so onInitialized
+  // fires again when the camera restarts.
   useEffect(() => {
-    if (!cameraReady || capturedMedia !== null) {
-      return;
+    if (!isActive) {
+      setCameraReady(false);
     }
-
-    let cancelled = false;
-
-    const capture = async () => {
-      // Force flash off before taking the silent preview picture
-      if (settings.flashMode !== "off") {
-        setFlashSuppressed(true);
-        // Give the native camera enough time to apply flash='off'
-        await new Promise((r) => setTimeout(r, 350));
-      }
-      if (cancelled || !cameraRef.current) {
-        setFlashSuppressed(false);
-        return;
-      }
-      try {
-        const photo = await cameraRef.current.takePictureAsync({
-          quality: 0.1, // Very low quality — just for thumbnails
-          base64: false,
-          skipProcessing: true,
-          flash: "off", // Explicit no-flash — honoured by LiveFilterCamera adapter
-        });
-        if (!cancelled && photo?.uri) {
-          setPreviewFrameUri(photo.uri);
-        }
-      } catch {
-        // Silently fail — preview frame is non-critical
-      } finally {
-        if (!cancelled) setFlashSuppressed(false);
-      }
-    };
-
-    // Wait for camera to stabilise before the silent capture
-    const timeout = setTimeout(capture, 800);
-
-    return () => {
-      cancelled = true;
-      clearTimeout(timeout);
-      setFlashSuppressed(false);
-    };
-    // Re-run when facing changes so thumbnails reflect the new camera
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cameraReady, capturedMedia, settings.facing]);
-
-  // Reset preview frame when facing changes
-  useEffect(() => {
-    setPreviewFrameUri(null);
-  }, [settings.facing]);
+  }, [isActive, setCameraReady]);
 
   // Video recording timer display (seconds)
   const [recordingSeconds, setRecordingSeconds] = useState(0);
@@ -901,42 +868,50 @@ const CameraScreen: React.FC = () => {
     }
   }, [handleFlipCamera]);
 
-  // Filter carousel item — shows accurate Skia-rendered thumbnails
+  // Filter carousel item — uses colour indicators derived from each filter's
+  // colour matrix.  Avoids the need for a captured preview frame, which was
+  // previously causing the camera to freeze.
   const renderFilterItem = useCallback(
-    ({ item, index }: { item: FilterConfig; index: number }) => (
-      <TouchableOpacity
-        style={[
-          styles.filterChip,
-          selectedFilterIndex === index && styles.filterChipActive,
-        ]}
-        onPress={() => {
-          setSelectedFilterIndex(index);
-          triggerHaptic();
-        }}
-        activeOpacity={0.7}
-      >
-        {previewFrameUri ? (
-          <SkiaFilterThumbnail
-            uri={previewFrameUri}
-            filter={item}
-            width={56}
-            height={48}
-          />
-        ) : (
-          <View style={styles.filterThumbPlaceholder} />
-        )}
-        <Text
-          style={[
-            styles.filterChipText,
-            selectedFilterIndex === index && styles.filterChipTextActive,
-          ]}
-          numberOfLines={1}
+    ({ item, index }: { item: FilterConfig; index: number }) => {
+      const isSelected = selectedFilterIndex === index;
+      const tintColor =
+        item.id === "none" ? null : filterToOverlayColor(item, 1.0);
+      return (
+        <TouchableOpacity
+          style={[styles.filterChip, isSelected && styles.filterChipActive]}
+          onPress={() => {
+            setSelectedFilterIndex(index);
+            triggerHaptic();
+          }}
+          activeOpacity={0.7}
         >
-          {item.name}
-        </Text>
-      </TouchableOpacity>
-    ),
-    [selectedFilterIndex, triggerHaptic, previewFrameUri],
+          <View
+            style={[
+              styles.filterThumbColor,
+              tintColor ? { backgroundColor: tintColor } : undefined,
+            ]}
+          >
+            {item.id === "none" && (
+              <Ionicons
+                name="ban-outline"
+                size={18}
+                color="rgba(255,255,255,0.5)"
+              />
+            )}
+          </View>
+          <Text
+            style={[
+              styles.filterChipText,
+              isSelected && styles.filterChipTextActive,
+            ]}
+            numberOfLines={1}
+          >
+            {item.name}
+          </Text>
+        </TouchableOpacity>
+      );
+    },
+    [selectedFilterIndex, triggerHaptic],
   );
   const filterKeyExtractor = useCallback((item: FilterConfig) => item.id, []);
 
@@ -1614,7 +1589,7 @@ const CameraScreen: React.FC = () => {
                 ref={visionCameraRef}
                 style={styles.camera}
                 device={visionDevice}
-                isActive={true}
+                isActive={isActive}
                 photo={true}
                 video={true}
                 faceDetectionCallback={handleFacesDetected}
@@ -1735,19 +1710,20 @@ const CameraScreen: React.FC = () => {
                   ref={cameraRef}
                   facing={settings.facing}
                   filter={activeFilter}
-                  flashMode={flashSuppressed ? "off" : settings.flashMode}
+                  flashMode={settings.flashMode}
                   zoom={settings.zoom}
                   exposure={exposureValue}
+                  isActive={isActive}
                   style={styles.camera}
                   onInitialized={onCameraReady}
                   onError={onCameraError}
                 />
-              ) : (
+              ) : isActive && CameraView ? (
                 <CameraView
                   ref={cameraRef}
                   style={styles.camera}
                   facing={settings.facing}
-                  flash={flashSuppressed ? "off" : settings.flashMode}
+                  flash={settings.flashMode}
                   zoom={settings.zoom}
                   exposure={exposureValue}
                   onCameraReady={onCameraReady}
@@ -1756,6 +1732,8 @@ const CameraScreen: React.FC = () => {
                   {/* Tint-overlay filter approximation for expo-camera */}
                   <CameraFilterOverlay filter={activeFilter} />
                 </CameraView>
+              ) : (
+                <View style={styles.camera} />
               )}
 
               {/* --- Shared camera-mode overlays (render on top of camera) --- */}
@@ -2197,7 +2175,12 @@ const CameraScreen: React.FC = () => {
 
       {/* --- CAMERA: Control Bar (only in camera mode) -------------------- */}
       {!isEditorMode && (
-        <View style={styles.controlBar}>
+        <View
+          style={[
+            styles.controlBar,
+            { paddingBottom: Math.max(28, insets.bottom + 12) },
+          ]}
+        >
           <TouchableOpacity
             style={styles.controlButton}
             onPress={handleFlashToggle}
@@ -2624,15 +2607,15 @@ const styles = StyleSheet.create({
   // -- Filter Carousel (camera mode) ------------------------------------------
   filterCarouselContainer: {
     position: "absolute",
-    bottom: 120,
+    bottom: 118,
     left: 0,
     right: 0,
-    height: 90,
+    height: 84,
     zIndex: 15,
   },
   faceEffectPickerContainer: {
     position: "absolute",
-    bottom: 110,
+    bottom: 118,
     left: 0,
     right: 0,
     zIndex: 15,
@@ -2642,22 +2625,25 @@ const styles = StyleSheet.create({
     marginRight: 8,
     width: 64,
     alignItems: "center",
-    backgroundColor: "rgba(0,0,0,0.4)",
+    backgroundColor: "rgba(0,0,0,0.45)",
     borderRadius: 12,
     overflow: "hidden",
     paddingBottom: 4,
+    borderWidth: 1.5,
+    borderColor: "transparent",
   },
   filterChipActive: {
-    backgroundColor: "rgba(0,122,255,0.3)",
-    borderWidth: 2,
+    backgroundColor: "rgba(0,122,255,0.25)",
     borderColor: "#007AFF",
   },
-  filterThumbPlaceholder: {
+  filterThumbColor: {
     width: 56,
-    height: 48,
-    backgroundColor: "rgba(255,255,255,0.1)",
-    borderRadius: 6,
+    height: 44,
+    borderRadius: 8,
     margin: 4,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    justifyContent: "center",
+    alignItems: "center",
   },
   filterChipText: {
     color: "#fff",
@@ -2673,18 +2659,19 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    height: 100,
-    backgroundColor: "rgba(0,0,0,0.6)",
+    height: 110,
+    backgroundColor: "rgba(0,0,0,0.65)",
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-around",
-    paddingBottom: 20,
+    justifyContent: "space-evenly",
+    paddingBottom: 28,
+    paddingTop: 8,
   },
   controlButton: {
     alignItems: "center",
     justifyContent: "center",
-    width: 50,
-    height: 50,
+    width: 52,
+    height: 52,
   },
   controlButtonLabel: {
     color: "#fff",
@@ -2695,9 +2682,9 @@ const styles = StyleSheet.create({
 
   // -- Capture Button ---------------------------------------------------------
   captureButton: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
+    width: 76,
+    height: 76,
+    borderRadius: 38,
     backgroundColor: "transparent",
     justifyContent: "center",
     alignItems: "center",
@@ -2705,9 +2692,9 @@ const styles = StyleSheet.create({
     borderColor: "#fff",
   },
   captureButtonInner: {
-    width: 58,
-    height: 58,
-    borderRadius: 29,
+    width: 62,
+    height: 62,
+    borderRadius: 31,
     backgroundColor: "#fff",
   },
   captureButtonRecording: {

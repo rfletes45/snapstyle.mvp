@@ -22,7 +22,13 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import React, { memo, useCallback, useMemo, useRef } from "react";
-import { Pressable, StyleSheet, View } from "react-native";
+import {
+  Dimensions,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  View,
+} from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
   ReduceMotion,
@@ -62,6 +68,10 @@ export interface WidgetWrapperProps {
    */
   readOnly?: boolean;
   isDragActive: boolean;
+  /** Ref to the parent ScrollView for auto-scrolling during drag. */
+  scrollRef?: React.RefObject<ScrollView>;
+  /** Ref tracking the current scroll offset from the parent's onScroll. */
+  scrollOffsetRef?: React.RefObject<number>;
   children: React.ReactNode;
   onDragStart?: (instanceId: string) => void;
   onDragUpdate?: (instanceId: string, gridX: number, gridY: number) => void;
@@ -119,6 +129,8 @@ function WidgetWrapperBase({
   mode,
   readOnly = false,
   isDragActive,
+  scrollRef,
+  scrollOffsetRef,
   children,
   onDragStart,
   onDragUpdate,
@@ -167,6 +179,74 @@ function WidgetWrapperBase({
   const prevDragActiveRef = useRef(false);
   // Stable pickup origin — captured at drag start, used for hover computation
   const pickupOriginRef = useRef({ x: 0, y: 0 });
+
+  // ── Scroll-Delta Tracking During Drag ─────────────────────────────────
+  // Captures the scroll offset at drag start so we can compute the delta
+  // during auto-scroll. The shared value is readable on the UI thread so
+  // the pan gesture worklet can compensate translateY in real time.
+  const scrollOffsetAtDragStartRef = useRef(0);
+  const scrollDeltaSV = useSharedValue(0);
+
+  // ── Auto-Scroll During Drag ───────────────────────────────────────────
+  // When the finger approaches viewport edges during a drag, smoothly
+  // auto-scroll the parent ScrollView. Uses an interval-based approach
+  // on the JS thread with velocity that scales with proximity to the edge.
+
+  const AUTO_SCROLL_EDGE = 80; // px from viewport edge to trigger
+  const AUTO_SCROLL_MAX_SPEED = 12; // max px per tick at very edge
+  const AUTO_SCROLL_INTERVAL = 16; // ~60fps tick rate
+  const autoScrollTimerRef = useRef<ReturnType<typeof setInterval> | null>(
+    null,
+  );
+  const autoScrollSpeedRef = useRef(0); // negative = up, positive = down
+
+  const startAutoScroll = useCallback(() => {
+    if (autoScrollTimerRef.current || !scrollRef?.current) return;
+    autoScrollTimerRef.current = setInterval(() => {
+      const speed = autoScrollSpeedRef.current;
+      if (speed === 0 || !scrollRef?.current || !scrollOffsetRef) return;
+      const newOffset = Math.max(0, scrollOffsetRef.current + speed);
+      scrollOffsetRef.current = newOffset;
+      scrollRef.current.scrollTo({ y: newOffset, animated: false });
+      // Keep the shared value in sync so the UI-thread worklet can
+      // compensate translateY and keep the widget under the finger.
+      scrollDeltaSV.value = newOffset - scrollOffsetAtDragStartRef.current;
+    }, AUTO_SCROLL_INTERVAL);
+  }, [scrollRef, scrollOffsetRef, scrollDeltaSV]);
+
+  const stopAutoScroll = useCallback(() => {
+    if (autoScrollTimerRef.current) {
+      clearInterval(autoScrollTimerRef.current);
+      autoScrollTimerRef.current = null;
+    }
+    autoScrollSpeedRef.current = 0;
+  }, []);
+
+  const updateAutoScroll = useCallback(
+    (absoluteY: number) => {
+      if (!scrollRef?.current) return;
+      const screenHeight = Dimensions.get("window").height;
+      if (absoluteY < AUTO_SCROLL_EDGE) {
+        // Near top edge — scroll up; closer = faster
+        const ratio = 1 - absoluteY / AUTO_SCROLL_EDGE;
+        autoScrollSpeedRef.current = -AUTO_SCROLL_MAX_SPEED * ratio;
+        startAutoScroll();
+      } else if (absoluteY > screenHeight - AUTO_SCROLL_EDGE) {
+        // Near bottom edge — scroll down; closer = faster
+        const ratio = 1 - (screenHeight - absoluteY) / AUTO_SCROLL_EDGE;
+        autoScrollSpeedRef.current = AUTO_SCROLL_MAX_SPEED * ratio;
+        startAutoScroll();
+      } else {
+        autoScrollSpeedRef.current = 0;
+      }
+    },
+    [scrollRef, startAutoScroll],
+  );
+
+  // Clean up auto-scroll timer on unmount
+  React.useEffect(() => {
+    return () => stopAutoScroll();
+  }, [stopAutoScroll]);
 
   // ── Position/Size Sync ────────────────────────────────────────────────
   // When NOT dragging, spring-animate to the latest committed position.
@@ -231,27 +311,47 @@ function WidgetWrapperBase({
   const handleDragStart = useCallback(() => {
     // Capture stable pickup origin — used for all hover computations
     pickupOriginRef.current = { x: pixelPos.x, y: pixelPos.y };
+    // Snapshot the scroll offset so we can compute auto-scroll delta
+    scrollOffsetAtDragStartRef.current = scrollOffsetRef?.current ?? 0;
+    scrollDeltaSV.value = 0;
     onDragStart?.(widget.instanceId);
-  }, [onDragStart, widget.instanceId, pixelPos.x, pixelPos.y]);
+  }, [
+    onDragStart,
+    widget.instanceId,
+    pixelPos.x,
+    pixelPos.y,
+    scrollOffsetRef,
+    scrollDeltaSV,
+  ]);
 
   const handleDragUpdate = useCallback(
-    (rawTranslationX: number, rawTranslationY: number) => {
-      // Compute hover target from stable pickup origin + raw gesture translation
-      const hoverPixelX = pickupOriginRef.current.x + rawTranslationX;
-      const hoverPixelY = pickupOriginRef.current.y + rawTranslationY;
+    (
+      compensatedTranslationX: number,
+      compensatedTranslationY: number,
+      absoluteY: number,
+    ) => {
+      // Compute hover target from stable pickup origin + scroll-compensated gesture translation
+      const hoverPixelX = pickupOriginRef.current.x + compensatedTranslationX;
+      const hoverPixelY = pickupOriginRef.current.y + compensatedTranslationY;
       const slot = pixelToGrid(hoverPixelX, hoverPixelY, boardWidth);
       onDragUpdate?.(widget.instanceId, slot.col, slot.row);
+      // Auto-scroll when near viewport edges
+      updateAutoScroll(absoluteY);
     },
-    [onDragUpdate, widget.instanceId, boardWidth],
+    [onDragUpdate, widget.instanceId, boardWidth, updateAutoScroll],
   );
 
   const handleDragEnd = useCallback(() => {
+    stopAutoScroll();
+    scrollDeltaSV.value = 0;
     onDragEnd?.(widget.instanceId);
-  }, [onDragEnd, widget.instanceId]);
+  }, [onDragEnd, widget.instanceId, stopAutoScroll, scrollDeltaSV]);
 
   const handleDragCancel = useCallback(() => {
+    stopAutoScroll();
+    scrollDeltaSV.value = 0;
     onDragCancel?.(widget.instanceId);
-  }, [onDragCancel, widget.instanceId]);
+  }, [onDragCancel, widget.instanceId, stopAutoScroll, scrollDeltaSV]);
 
   const panGesture = useMemo(() => {
     return Gesture.Pan()
@@ -267,11 +367,17 @@ function WidgetWrapperBase({
       })
       .onUpdate((e) => {
         "worklet";
-        // Set raw gesture translation — visual position = frozen animLeft/animTop + translate
+        // Compensate translation for any scroll-offset change since drag start.
+        // scrollDeltaSV is kept in sync by the auto-scroll interval timer.
+        const scrollComp = scrollDeltaSV.value;
         translateX.value = e.translationX;
-        translateY.value = e.translationY;
-        // Compute hover target on JS thread using stable pickup origin
-        runOnJS(handleDragUpdate)(e.translationX, e.translationY);
+        translateY.value = e.translationY + scrollComp;
+        // Pass scroll-compensated translation to JS for hover/reorder calculation
+        runOnJS(handleDragUpdate)(
+          e.translationX,
+          e.translationY + scrollComp,
+          e.absoluteY,
+        );
       })
       .onEnd(() => {
         "worklet";
@@ -291,6 +397,7 @@ function WidgetWrapperBase({
     widget.pinned,
     translateX,
     translateY,
+    scrollDeltaSV,
     scale,
     zIndex,
     shadowOpacity,
@@ -305,6 +412,10 @@ function WidgetWrapperBase({
 
   const currentSizeRef = useRef(widget.size);
   currentSizeRef.current = widget.size;
+  // Captures the widget size at the START of a resize gesture.
+  // Using this fixed base prevents threshold compression when the preview
+  // updates widget.size mid-gesture (which shifts the computation base).
+  const resizeInitialSizeRef = useRef<WidgetSizeKey>(widget.size);
 
   const triggerMediumHaptic = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -324,21 +435,29 @@ function WidgetWrapperBase({
     onResizeEnd?.(widget.instanceId);
   }, [onResizeEnd, widget.instanceId]);
 
+  const captureResizeInitialSize = useCallback(() => {
+    resizeInitialSizeRef.current = widget.size;
+  }, [widget.size]);
+
   const computeResizeSize = useCallback(
     (deltaX: number, deltaY: number): WidgetSizeKey | null => {
       if (!definition) return null;
       const supported = definition.supportedSizes;
       if (supported.length <= 1) return null;
 
-      const currentSpan = SIZE_PRESETS[widget.size];
+      // Use the INITIAL size captured at gesture start, not the current
+      // preview size. This prevents the base from shifting mid-gesture
+      // when a preview size change updates widget.size, which would
+      // compress the threshold between adjacent sizes.
+      const initialSpan = SIZE_PRESETS[resizeInitialSizeRef.current];
       const cellW = (boardWidth - 3 * GRID_GUTTER) / 4;
       const stepX = cellW + GRID_GUTTER;
       const stepY = CELL_HEIGHT + GRID_GUTTER;
 
-      const targetW = currentSpan.w + Math.round(deltaX / stepX);
-      const targetH = currentSpan.h + Math.round(deltaY / stepY);
+      const targetW = initialSpan.w + Math.round(deltaX / stepX);
+      const targetH = initialSpan.h + Math.round(deltaY / stepY);
 
-      let bestSize: WidgetSizeKey = widget.size;
+      let bestSize: WidgetSizeKey = resizeInitialSizeRef.current;
       let bestDist = Infinity;
 
       for (const sizeKey of supported) {
@@ -353,7 +472,7 @@ function WidgetWrapperBase({
 
       return bestSize;
     },
-    [definition, widget.size, boardWidth],
+    [definition, boardWidth],
   );
 
   const handleResizeGestureUpdate = useCallback(
@@ -375,6 +494,7 @@ function WidgetWrapperBase({
       .enabled(isCustomizing)
       .onStart(() => {
         "worklet";
+        runOnJS(captureResizeInitialSize)();
         runOnJS(handleDragStart)();
         runOnJS(triggerLightHaptic)();
       })
@@ -396,6 +516,7 @@ function WidgetWrapperBase({
   }, [
     canResize,
     isCustomizing,
+    captureResizeInitialSize,
     handleDragStart,
     handleResizeGestureUpdate,
     handleResizeEnd,

@@ -39,8 +39,15 @@ export const CELL_HEIGHT = 88;
  * - wide:   4 × 1
  * - large:  4 × 2
  * - hero:   4 × 4  (profile header only)
+ * - mega:   4 × 6  (expanded hero — profile header only)
  */
-export type WidgetSizeKey = "small" | "medium" | "wide" | "large" | "hero";
+export type WidgetSizeKey =
+  | "small"
+  | "medium"
+  | "wide"
+  | "large"
+  | "hero"
+  | "mega";
 
 export interface WidgetSpan {
   /** Columns occupied (1-4). */
@@ -55,6 +62,7 @@ export const SIZE_PRESETS: Record<WidgetSizeKey, WidgetSpan> = {
   wide: { w: 4, h: 1 },
   large: { w: 4, h: 2 },
   hero: { w: 4, h: 4 },
+  mega: { w: 4, h: 6 },
 } as const;
 
 // =============================================================================

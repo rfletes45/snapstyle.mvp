@@ -28,6 +28,73 @@ type NotifyLevel = "all" | "mentions" | "none";
 const getDb = () => getFirestoreInstance();
 
 const log = createLogger("groupMembers");
+const GROUP_TYPING_TIMEOUT_MS = 5000;
+
+function normalizeGroupTypingAt(data: Record<string, unknown>): number | undefined {
+  if (typeof data.typingAt === "number" && data.typingAt > 0) {
+    return data.typingAt;
+  }
+
+  const typingExpiresAt =
+    typeof data.typingExpiresAt === "number" ? data.typingExpiresAt : 0;
+  if (typingExpiresAt > Date.now()) {
+    return typingExpiresAt - GROUP_TYPING_TIMEOUT_MS;
+  }
+
+  return undefined;
+}
+
+function isGroupMemberTyping(
+  data: Record<string, unknown>,
+  now: number = Date.now(),
+): boolean {
+  const typingAt = normalizeGroupTypingAt(data);
+  if (typingAt && now - typingAt < GROUP_TYPING_TIMEOUT_MS) {
+    return true;
+  }
+
+  const typingExpiresAt =
+    typeof data.typingExpiresAt === "number" ? data.typingExpiresAt : 0;
+  return typingExpiresAt > now;
+}
+
+function normalizeGroupMemberPublic(
+  uid: string,
+  data: Record<string, unknown>,
+): MemberStatePublic {
+  return {
+    uid: typeof data.uid === "string" ? data.uid : uid,
+    role:
+      data.role === "owner" || data.role === "admin" || data.role === "member"
+        ? data.role
+        : undefined,
+    joinedAt: typeof data.joinedAt === "number" ? data.joinedAt : Date.now(),
+    lastReadAtPublic:
+      typeof data.lastReadAtPublic === "number"
+        ? data.lastReadAtPublic
+        : undefined,
+    lastDeliveredAtPublic:
+      typeof data.lastDeliveredAtPublic === "number"
+        ? data.lastDeliveredAtPublic
+        : undefined,
+    typingAt: normalizeGroupTypingAt(data),
+  };
+}
+
+async function setGroupMemberPrivateFields(
+  groupId: string,
+  uid: string,
+  fields: Partial<MemberStatePrivate>,
+): Promise<void> {
+  await setDoc(
+    getMemberPrivateRef(groupId, uid),
+    {
+      uid,
+      ...fields,
+    },
+    { merge: true },
+  );
+}
 
 // =============================================================================
 // Collection References
@@ -75,7 +142,7 @@ export async function getGroupMemberPublic(
   try {
     const docSnap = await getDoc(getMemberPublicRef(groupId, uid));
     if (!docSnap.exists()) return null;
-    return docSnap.data() as MemberStatePublic;
+    return normalizeGroupMemberPublic(uid, docSnap.data());
   } catch (error) {
     log.error("Failed to get group member public state", error);
     throw error;
@@ -93,7 +160,7 @@ export async function getAllGroupMembersPublic(
     const members = new Map<string, MemberStatePublic>();
 
     snapshot.forEach((doc) => {
-      members.set(doc.id, doc.data() as MemberStatePublic);
+      members.set(doc.id, normalizeGroupMemberPublic(doc.id, doc.data()));
     });
 
     return members;
@@ -195,7 +262,7 @@ export async function updateGroupReadWatermark(
   try {
     // Use the max of serverReceivedAt and Date.now() to ensure
     // lastSeenAtPrivate >= lastMessageAt (see chatMembers.ts for details)
-    await updateDoc(getMemberPrivateRef(groupId, uid), {
+    await setGroupMemberPrivateFields(groupId, uid, {
       lastSeenAtPrivate: Math.max(serverReceivedAt, Date.now()),
       lastMarkedUnreadAt: null, // Clear manual unread marker
     });
@@ -251,10 +318,17 @@ export async function updateGroupTypingIndicator(
   isTyping: boolean,
 ): Promise<void> {
   try {
-    const expiresAt = isTyping ? Date.now() + 5000 : 0;
-    await updateDoc(getMemberPublicRef(groupId, uid), {
-      typingExpiresAt: expiresAt,
-    });
+    const now = Date.now();
+    await setDoc(
+      getMemberPublicRef(groupId, uid),
+      {
+        uid,
+        typingAt: isTyping ? now : 0,
+        // Transitional compatibility for older group typing readers.
+        typingExpiresAt: isTyping ? now + GROUP_TYPING_TIMEOUT_MS : 0,
+      },
+      { merge: true },
+    );
   } catch (error) {
     log.error("Failed to update typing indicator", error);
     throw error;
@@ -264,8 +338,9 @@ export async function updateGroupTypingIndicator(
 /**
  * Subscribe to typing status of all members in a group.
  *
- * Watches the Members subcollection and emits an array of UIDs
- * whose `typingExpiresAt` is still in the future.
+ * Watches the Members subcollection and emits an array of UIDs whose
+ * canonical `typingAt` watermark is still fresh. Legacy `typingExpiresAt`
+ * rows are still supported during migration.
  * The current user is always excluded.
  *
  * @param groupId - Group document ID
@@ -293,10 +368,7 @@ export function subscribeToGroupTyping(
         // Skip current user
         if (uid === currentUid) return;
 
-        // Check typingExpiresAt (group format)
-        const expiresAt =
-          typeof data.typingExpiresAt === "number" ? data.typingExpiresAt : 0;
-        if (expiresAt > now) {
+        if (isGroupMemberTyping(data, now)) {
           typingUids.push(uid);
         }
       });
@@ -323,13 +395,12 @@ export async function setGroupMuted(
   mutedUntil?: number,
 ): Promise<void> {
   try {
-    await updateDoc(getMemberPrivateRef(groupId, uid), {
-      muted,
-      mutedUntil: mutedUntil || null,
+    await setGroupMemberPrivateFields(groupId, uid, {
+      mutedUntil: muted ? (mutedUntil ?? -1) : null,
     });
     log.info("Set group muted", {
       operation: "setMuted",
-      data: { groupId, muted },
+      data: { groupId, muted, mutedUntil: muted ? (mutedUntil ?? -1) : null },
     });
   } catch (error) {
     log.error("Failed to set group muted", error);
@@ -346,7 +417,7 @@ export async function setGroupArchived(
   archived: boolean,
 ): Promise<void> {
   try {
-    await updateDoc(getMemberPrivateRef(groupId, uid), { archived });
+    await setGroupMemberPrivateFields(groupId, uid, { archived });
     log.info("Set group archived", {
       operation: "setArchived",
       data: { groupId, archived },
@@ -366,7 +437,7 @@ export async function setGroupNotifyLevel(
   notifyLevel: NotifyLevel,
 ): Promise<void> {
   try {
-    await updateDoc(getMemberPrivateRef(groupId, uid), { notifyLevel });
+    await setGroupMemberPrivateFields(groupId, uid, { notifyLevel });
     log.info("Set group notify level", {
       operation: "setNotifyLevel",
       data: { groupId, notifyLevel },
@@ -387,7 +458,7 @@ export async function setGroupReadReceipts(
   sendReadReceipts: boolean,
 ): Promise<void> {
   try {
-    await updateDoc(getMemberPrivateRef(groupId, uid), { sendReadReceipts });
+    await setGroupMemberPrivateFields(groupId, uid, { sendReadReceipts });
     log.info("Set group read receipts", {
       operation: "setReadReceipts",
       data: { groupId, sendReadReceipts },
@@ -407,7 +478,7 @@ export async function setGroupPinned(
   pinned: boolean,
 ): Promise<void> {
   try {
-    await updateDoc(getMemberPrivateRef(groupId, uid), {
+    await setGroupMemberPrivateFields(groupId, uid, {
       pinnedAt: pinned ? Date.now() : null,
     });
     log.info("Set group pinned", {
@@ -430,7 +501,7 @@ export async function setGroupShowMemberChatStyles(
   showMemberChatStyles: boolean,
 ): Promise<void> {
   try {
-    await updateDoc(getMemberPrivateRef(groupId, uid), {
+    await setGroupMemberPrivateFields(groupId, uid, {
       showMemberChatStyles,
     });
     log.info("Set group showMemberChatStyles", {
@@ -461,7 +532,7 @@ export function subscribeToGroupMembers(
     (snapshot) => {
       const members = new Map<string, MemberStatePublic>();
       snapshot.forEach((doc) => {
-        members.set(doc.id, doc.data() as MemberStatePublic);
+        members.set(doc.id, normalizeGroupMemberPublic(doc.id, doc.data()));
       });
       callback(members);
     },
@@ -507,11 +578,10 @@ export async function getTypingMembers(groupId: string): Promise<string[]> {
   try {
     const now = Date.now();
     const members = await getAllGroupMembersPublic(groupId);
-    const TYPING_TIMEOUT_MS = 5000;
 
     const typingUids: string[] = [];
     members.forEach((state, uid) => {
-      if (state.typingAt && now - state.typingAt < TYPING_TIMEOUT_MS) {
+      if (state.typingAt && now - state.typingAt < GROUP_TYPING_TIMEOUT_MS) {
         typingUids.push(uid);
       }
     });

@@ -1,6 +1,6 @@
 # Interactions and Edit Mode
 
-Last verified: 2026-03-30
+Last verified: 2026-04-01
 
 ## View Mode
 
@@ -31,8 +31,17 @@ When customize mode starts:
 - the board snapshots the saved layout
 - working state becomes editable
 - remove and resize controls appear where allowed
-- the customize toolbar appears
+- the customize toolbar appears as an overlay above the scroll content
 - the board adds `6` extra workspace rows below the current content
+- scroll position is preserved (no reset to top)
+- the transition is in-place with no flicker or screen swap
+
+Current toolbar behavior:
+
+- the customize toolbar is rendered as a fixed overlay above the scroll content in `OwnProfileScreen`
+- it does not push content down and stays visible regardless of scroll position
+- it includes cancel, done, and add/gallery actions
+- the gallery visible state is lifted to `OwnProfileScreen` so the overlay toolbar can trigger it
 
 Current toolbar actions:
 
@@ -47,6 +56,15 @@ Current drag behavior:
 - drag activation requires a long press of `200ms` while already in customize mode
 - preview reflow is dwell-based instead of instant
 - dwell threshold is `500ms`
+- auto-scroll activates when the dragged widget approaches the top or bottom viewport edge
+- auto-scroll trigger zone is `80px` from each viewport edge
+- scroll speed scales with proximity to the edge (closer = faster, max `12px` per 16ms tick)
+- auto-scroll stops when the finger moves away from the edge or the drag ends
+- during auto-scroll, the dragged widget stays visually locked under the finger
+- a `scrollDeltaSV` shared value tracks the cumulative scroll offset change since drag start
+- the pan gesture worklet compensates `translateY` by adding the scroll delta each frame
+- the hover/reorder calculation also uses the scroll-compensated translation
+- this prevents drift, lag, or jumps when auto-scroll starts, runs, or stops
 
 This dwell timing is important because it keeps the board from rapidly shuffling while the user moves across the grid.
 
@@ -57,6 +75,10 @@ Current resize behavior:
 - uses the bottom-right resize handle
 - snaps to the nearest supported size for that widget type
 - uses the same stable reflow engine as drag settlement
+- the resize base size is captured at gesture start and stays fixed for the entire gesture
+- this prevents threshold compression when the preview updates the widget size mid-gesture
+- thresholds are determined by the midpoint between adjacent supported size heights
+- each size occupies a consistent range of drag distance from the initial size
 
 ## Hide and Restore
 
@@ -86,9 +108,15 @@ This is the main reason older docs that described `UserProfileScreen` as a total
 - activate drag in customize mode: `200ms`
 - dwell before reflow: `500ms`
 - extra workspace rows while customizing: `6`
+- auto-scroll edge zone: `80px`
+- auto-scroll max speed: `12px` per tick
+- auto-scroll tick rate: `16ms`
 
 ## Current Truths To Preserve
 
 1. Read-only viewer boards must stay non-editable.
 2. Owner edits work against a working layout first, then save to Firestore.
 3. Drag and resize settlement depend on the stable board engine, not ad hoc per-widget logic.
+4. The customize toolbar is an overlay and must not push scroll content.
+5. Entering edit mode must preserve the user's scroll position.
+6. Auto-scroll during drag must feel smooth and controlled, not jittery.

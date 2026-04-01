@@ -94,6 +94,8 @@ export interface UseAttachmentPickerReturn {
   removeAttachment: (id: string) => void;
   /** Clear all attachments */
   clearAttachments: () => void;
+  /** Replace the current attachment tray contents */
+  setAttachments: (attachments: LocalAttachment[]) => void;
   /** Upload all attachments and return results */
   uploadAttachments: (basePath: string) => Promise<{
     successful: AttachmentV2[];
@@ -395,6 +397,13 @@ export function useAttachmentPicker(
     setUploadProgress({});
   }, [updateAttachments]);
 
+  const setAttachmentsState = useCallback(
+    (nextAttachments: LocalAttachment[]) => {
+      updateAttachments(nextAttachments);
+    },
+    [updateAttachments],
+  );
+
   const setCaption = useCallback(
     (id: string, caption: string) => {
       const updated = attachments.map((a) =>
@@ -487,6 +496,7 @@ export function useAttachmentPicker(
     captureFromCamera,
     removeAttachment,
     clearAttachments,
+    setAttachments: setAttachmentsState,
     uploadAttachments,
     setCaption,
     toggleViewOnce,

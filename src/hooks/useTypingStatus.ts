@@ -5,7 +5,9 @@
  * Also provides a function to update the current user's typing status.
  *
  * For DMs: watches a single member doc for `typingAt`.
- * For Groups: watches the Members subcollection for `typingExpiresAt`.
+ * For Groups: watches the Members subcollection using the shared `typingAt`
+ * contract, while still tolerating legacy `typingExpiresAt` rows during
+ * migration.
  *
  * Returns the list of currently-typing user UIDs so the UI can decide
  * how to render (single "is typing" vs "N people are typing").

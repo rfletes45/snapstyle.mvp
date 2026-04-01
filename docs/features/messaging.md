@@ -1,6 +1,6 @@
 # Messaging
 
-Last verified: 2026-03-30
+Last verified: 2026-04-01
 
 ## Scope
 
@@ -19,6 +19,7 @@ This is the current-state reference for:
 - web messaging runtime: implemented as a compatibility path
 - inbox aggregation backend: implemented
 - inbox aggregation client default: not yet switched on
+- DM and group detail screens: unified around a shared `MessageV2` screen foundation
 - threads: implemented, but still a specialized screen
 
 ## Main Files
@@ -38,8 +39,13 @@ Hooks and services:
 - [useChat.ts](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/src/hooks/useChat.ts)
 - [useLocalMessages.ts](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/src/hooks/useLocalMessages.ts)
 - [useUnifiedMessages.ts](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/src/hooks/useUnifiedMessages.ts)
+- [useUnifiedChatScreen.ts](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/src/hooks/useUnifiedChatScreen.ts)
 - [useInboxData.ts](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/src/hooks/useInboxData.ts)
 - [useUnifiedInboxRequests.ts](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/src/hooks/useUnifiedInboxRequests.ts)
+- [ChatHeader.tsx](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/src/components/chat/ChatHeader.tsx)
+- [ChatMessageRenderer.tsx](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/src/components/chat/ChatMessageRenderer.tsx)
+- [sendDraft.ts](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/src/chat/sendDraft.ts)
+- [groupMembers.ts](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/src/services/groupMembers.ts)
 - `src/services/messaging/*`
 - `src/services/chatV2.ts`
 - `src/services/sync/syncEngine.ts`
@@ -53,6 +59,8 @@ Backend:
 - [notificationCenter.ts](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/firebase-backend/functions/src/notificationCenter.ts)
 
 ## Runtime Architecture
+
+Detailed shared-surface documentation lives in [chat-platform.md](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/docs/architecture/chat-platform.md).
 
 ### Native
 
@@ -101,6 +109,14 @@ Server-side guarantees include:
 
 On native, optimistic rows land in SQLite first and then reconcile against the authoritative server message when sync completes.
 
+### Screen-level canonical model
+
+The DM and group detail screens now converge at the `MessageV2` boundary:
+
+- both screens derive timeline rows from `MessageV2`
+- both screens use the shared header/list/composer/action-sheet scaffold
+- DM-specific behavior is now layered on top of the shared model instead of converting into a separate legacy message shape
+
 ## Inbox and Unread Model
 
 Current state is a partial migration:
@@ -139,7 +155,7 @@ There is no longer a client-side feature flag that hides message requests while 
 ### Voice messages
 
 - recorder: `useVoiceRecorder.ts`
-- send surface: composer path in chat screens
+- send surface: shared send helpers in `src/chat/sendDraft.ts`
 - playback: `VoiceMessagePlayer.tsx`
 
 ### Mentions
@@ -155,6 +171,12 @@ Attachment flow is two-phase:
 2. `sendMessageV2` finalizes into `chat-media/...`
 
 Current constraints are enforced server-side in `chatMedia.ts`.
+
+The top-level DM and group screens now share the same attachment send orchestration for:
+
+- tray attachments
+- direct camera sends
+- direct gallery sends
 
 ### Scheduled messages
 
@@ -192,6 +214,13 @@ Important correction from older docs:
 - the active group voice implementation is Stream-based
 - old references to `groupCallService` are legacy and not the live runtime
 
+Group-specific behavior that still intentionally differs from DM:
+
+- mentions
+- group permissions and moderation
+- member-style toggles
+- voice-room header actions
+
 ## Notification Relationship
 
 Chat event producers feed the shared notification center. Messaging-specific notification types include:
@@ -214,6 +243,7 @@ Client chat notification handling must preserve `conversationScope` so DM and gr
 - `ThreadScreen` remains a specialized local-first surface instead of using the full shared chat runtime
 - the web path still relies on older compatibility modules underneath the unified hook surface
 - group settings types and enforcement hooks exist, but the stricter server enforcement flags remain disabled
+- group typing writes still stamp legacy `typingExpiresAt` alongside canonical `typingAt` during migration compatibility
 
 ## Explicit Non-Truths From Older Docs
 

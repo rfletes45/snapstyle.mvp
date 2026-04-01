@@ -67,6 +67,7 @@ export const ProfileHeaderAdapter = memo(function ProfileHeaderAdapter({
 }: WidgetAdapterProps) {
   if (size === "wide") return <ProfileHeaderWide data={data} />;
   if (size === "large") return <ProfileHeaderLarge data={data} />;
+  if (size === "mega") return <ProfileHeaderMega data={data} />;
   return <ProfileHeaderHero data={data} />;
 });
 
@@ -85,7 +86,7 @@ const ProfileHeaderWide = memo(function ProfileHeaderWide({
         pictureUrl={data.pictureUrl}
         name={data.displayName}
         decorationId={data.decorationId}
-        size={48}
+        size={56}
         onPress={data.onEditPicturePress}
       />
       <View style={headerStyles.wideInfo}>
@@ -208,7 +209,7 @@ const ProfileHeaderLarge = memo(function ProfileHeaderLarge({
           pictureUrl={data.pictureUrl}
           name={data.displayName}
           decorationId={data.decorationId}
-          size={64}
+          size={76}
           onPress={data.onEditPicturePress}
         />
         <View style={headerStyles.largeTextCol}>
@@ -482,7 +483,7 @@ const ProfileHeaderHero = memo(function ProfileHeaderHero({
             pictureUrl={data.pictureUrl}
             name={data.displayName}
             decorationId={data.decorationId}
-            size={88}
+            size={96}
             onPress={data.onEditPicturePress}
           />
         </View>
@@ -568,7 +569,7 @@ const ProfileHeaderHero = memo(function ProfileHeaderHero({
           >
             <Text
               style={[headerStyles.heroBioText, { color: textColor }]}
-              numberOfLines={3}
+              numberOfLines={2}
             >
               {data.bio.text}
             </Text>
@@ -702,6 +703,332 @@ const ProfileHeaderHero = memo(function ProfileHeaderHero({
         {/* Bottom hint */}
         <Text
           style={[headerStyles.heroLevelHint, { color: subTextColor }]}
+          numberOfLines={1}
+        >
+          {(data.unclaimedRewards ?? 0) > 0
+            ? `${data.unclaimedRewards} reward${data.unclaimedRewards !== 1 ? "s" : ""} ready to claim!`
+            : (data.level?.current ?? 1) >= MAX_REWARD_LEVEL
+              ? "All tiers unlocked — claim your rewards!"
+              : `${Math.max(0, (data.level?.xpToNextLevel ?? 100) - (data.level?.xp ?? 0)).toLocaleString()} XP to next level`}
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
+});
+
+// ── mega (4×6) — Expanded hero header ───────────────────────────────────
+
+const ProfileHeaderMega = memo(function ProfileHeaderMega({
+  data,
+}: {
+  data: Record<string, any>;
+}) {
+  const colors = useColors();
+  const backgroundSource = useMemo(() => {
+    if (!data.backgroundId) return null;
+    return getCosmeticAsset("background", data.backgroundId);
+  }, [data.backgroundId]);
+  const status = data.status;
+  const isStatusActive =
+    status && (!status.expiresAt || status.expiresAt > Date.now());
+  const moodConfig = status?.mood ? MOOD_CONFIG[status.mood as MoodType] : null;
+  const textColor = backgroundSource ? "#FFFFFF" : colors.text;
+  const subTextColor = backgroundSource
+    ? "rgba(255,255,255,0.85)"
+    : colors.textSecondary;
+  const textShadow = backgroundSource
+    ? {
+        textShadowColor: "rgba(0,0,0,0.6)",
+        textShadowOffset: { width: 0, height: 1 } as const,
+        textShadowRadius: 3,
+      }
+    : {};
+
+  return (
+    <View style={[headerStyles.megaRoot, { backgroundColor: colors.surface }]}>
+      {backgroundSource && (
+        <CosmeticImage
+          source={backgroundSource}
+          style={headerStyles.bgImage}
+          debugLabel="profile-bg-mega"
+          transition={0}
+        />
+      )}
+      {backgroundSource && (
+        <LinearGradient
+          colors={["transparent", "rgba(0,0,0,0.6)"]}
+          locations={[0.25, 1]}
+          style={headerStyles.bgGradient}
+        />
+      )}
+      {/* Settings — top-right corner */}
+      {data.onSettingsPress && (
+        <TouchableOpacity
+          onPress={data.onSettingsPress}
+          activeOpacity={0.7}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          style={[
+            headerStyles.heroSettingsBtn,
+            {
+              backgroundColor: backgroundSource
+                ? "rgba(0,0,0,0.25)"
+                : colors.surfaceVariant + "90",
+            },
+          ]}
+        >
+          <MaterialCommunityIcons
+            name="cog-outline"
+            size={18}
+            color={backgroundSource ? "#fff" : colors.textSecondary}
+          />
+        </TouchableOpacity>
+      )}
+      <View style={headerStyles.megaForeground}>
+        {/* Avatar — extra large */}
+        <View style={headerStyles.megaPictureSection}>
+          <ProfilePictureWithDecoration
+            pictureUrl={data.pictureUrl}
+            name={data.displayName}
+            decorationId={data.decorationId}
+            size={128}
+            onPress={data.onEditPicturePress}
+          />
+        </View>
+
+        {/* Name + Username */}
+        <Text
+          style={[headerStyles.megaName, { color: textColor }, textShadow]}
+          numberOfLines={1}
+        >
+          {data.displayName}
+        </Text>
+        <Text
+          style={[
+            headerStyles.megaUsername,
+            { color: subTextColor },
+            textShadow,
+          ]}
+          numberOfLines={1}
+        >
+          @{data.username}
+        </Text>
+
+        {/* Status */}
+        {(isStatusActive || data.onEditStatusPress) && (
+          <TouchableOpacity
+            onPress={data.onEditStatusPress}
+            activeOpacity={data.onEditStatusPress ? 0.7 : 1}
+            disabled={!data.onEditStatusPress}
+            style={[
+              headerStyles.megaStatusChip,
+              {
+                backgroundColor: backgroundSource
+                  ? "rgba(255,255,255,0.2)"
+                  : colors.surfaceVariant,
+              },
+            ]}
+          >
+            {isStatusActive && moodConfig ? (
+              <>
+                <Text style={{ fontSize: 16 }}>{moodConfig.emoji}</Text>
+                <Text
+                  style={[headerStyles.megaStatusText, { color: textColor }]}
+                  numberOfLines={1}
+                >
+                  {status.text || moodConfig.label}
+                </Text>
+              </>
+            ) : (
+              <>
+                <MaterialCommunityIcons
+                  name="emoticon-happy-outline"
+                  size={18}
+                  color={subTextColor}
+                />
+                <Text
+                  style={[
+                    headerStyles.megaStatusText,
+                    { color: subTextColor, fontStyle: "italic" },
+                  ]}
+                  numberOfLines={1}
+                >
+                  Set your status
+                </Text>
+              </>
+            )}
+          </TouchableOpacity>
+        )}
+
+        {/* Bio — larger region */}
+        {data.bio?.text ? (
+          <TouchableOpacity
+            onPress={data.onEditBioPress}
+            activeOpacity={data.onEditBioPress ? 0.7 : 1}
+            disabled={!data.onEditBioPress}
+            style={[
+              headerStyles.megaBio,
+              {
+                backgroundColor: backgroundSource
+                  ? "rgba(0,0,0,0.3)"
+                  : colors.surfaceVariant,
+              },
+            ]}
+          >
+            <Text
+              style={[headerStyles.megaBioText, { color: textColor }]}
+              numberOfLines={5}
+            >
+              {data.bio.text}
+            </Text>
+          </TouchableOpacity>
+        ) : data.onEditBioPress ? (
+          <TouchableOpacity
+            onPress={data.onEditBioPress}
+            activeOpacity={0.7}
+            style={[
+              headerStyles.megaBio,
+              {
+                backgroundColor: backgroundSource
+                  ? "rgba(0,0,0,0.3)"
+                  : colors.surfaceVariant,
+              },
+            ]}
+          >
+            <Text
+              style={[
+                headerStyles.megaBioText,
+                { color: subTextColor, fontStyle: "italic" },
+              ]}
+            >
+              Tap to add a bio...
+            </Text>
+          </TouchableOpacity>
+        ) : null}
+
+        {/* Action Row — Shop + Customize */}
+        <View style={headerStyles.megaActionRow}>
+          {data.onShopPress && (
+            <TouchableOpacity
+              onPress={data.onShopPress}
+              activeOpacity={0.7}
+              style={[
+                headerStyles.megaActionButton,
+                { backgroundColor: colors.primary },
+              ]}
+            >
+              <MaterialCommunityIcons
+                name="shopping-outline"
+                size={18}
+                color="#fff"
+              />
+              <Text style={[headerStyles.megaActionText, { color: "#fff" }]}>
+                Shop
+              </Text>
+            </TouchableOpacity>
+          )}
+          {data.onCustomizePress && (
+            <TouchableOpacity
+              onPress={data.onCustomizePress}
+              activeOpacity={0.7}
+              style={[
+                headerStyles.megaActionButton,
+                { backgroundColor: colors.secondary ?? colors.primary + "CC" },
+              ]}
+            >
+              <MaterialCommunityIcons
+                name="palette-outline"
+                size={18}
+                color="#fff"
+              />
+              <Text style={[headerStyles.megaActionText, { color: "#fff" }]}>
+                Customize
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+
+      {/* Rich Level & Rewards Bar — expanded */}
+      <TouchableOpacity
+        onPress={data.onLevelPress}
+        activeOpacity={0.7}
+        disabled={!data.onLevelPress}
+        style={[
+          headerStyles.megaLevelBar,
+          {
+            backgroundColor: backgroundSource
+              ? "rgba(0,0,0,0.45)"
+              : `${colors.surfaceVariant}D9`,
+          },
+        ]}
+      >
+        <View style={headerStyles.heroLevelTopRow}>
+          <View
+            style={[
+              headerStyles.megaLevelBadge,
+              { backgroundColor: colors.primary },
+            ]}
+          >
+            <Text style={headerStyles.megaLevelBadgeText}>
+              {data.level?.current ?? 1}
+            </Text>
+          </View>
+          <View style={headerStyles.heroLevelXpInfo}>
+            <Text
+              style={[headerStyles.megaLevelLabel, { color: textColor }]}
+              numberOfLines={1}
+            >
+              Level {data.level?.current ?? 1}
+              {(data.level?.current ?? 1) >= MAX_REWARD_LEVEL ? " (MAX)" : ""}
+            </Text>
+            <Text
+              style={[headerStyles.megaLevelXpText, { color: subTextColor }]}
+            >
+              {(data.level?.current ?? 1) >= MAX_REWARD_LEVEL
+                ? "MAX LEVEL"
+                : `${(data.level?.xp ?? 0).toLocaleString()}/${(data.level?.xpToNextLevel ?? 100).toLocaleString()} XP`}
+            </Text>
+          </View>
+          {(data.unclaimedRewards ?? 0) > 0 && (
+            <View style={headerStyles.heroUnclaimedPill}>
+              <MaterialCommunityIcons name="gift" size={14} color="#FFF" />
+              <Text style={headerStyles.heroUnclaimedText}>
+                {data.unclaimedRewards}
+              </Text>
+            </View>
+          )}
+          <MaterialCommunityIcons
+            name="chevron-right"
+            size={22}
+            color={subTextColor}
+          />
+        </View>
+        <View style={headerStyles.megaLevelBarRow}>
+          <ProgressBar
+            progress={
+              (data.level?.current ?? 1) >= MAX_REWARD_LEVEL
+                ? 1
+                : (data.level?.xpToNextLevel ?? 100) > 0
+                  ? Math.min(
+                      1,
+                      (data.level?.xp ?? 0) /
+                        (data.level?.xpToNextLevel ?? 100),
+                    )
+                  : 1
+            }
+            color={colors.primary}
+            style={[
+              headerStyles.megaProgressBar,
+              {
+                backgroundColor: backgroundSource
+                  ? "rgba(255,255,255,0.15)"
+                  : colors.surfaceVariant,
+              },
+            ]}
+          />
+        </View>
+        <Text
+          style={[headerStyles.megaLevelHint, { color: subTextColor }]}
           numberOfLines={1}
         >
           {(data.unclaimedRewards ?? 0) > 0
@@ -2653,7 +2980,7 @@ const headerStyles = StyleSheet.create({
     justifyContent: "center",
   },
   wideName: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: "700",
   },
   wideMetaRow: {
@@ -2722,11 +3049,11 @@ const headerStyles = StyleSheet.create({
     zIndex: 2,
   },
   largeName: {
-    fontSize: 18,
+    fontSize: 21,
     fontWeight: "700",
   },
   largeUsername: {
-    fontSize: 13,
+    fontSize: 14,
     marginTop: 1,
   },
   largeStatusChip: {
@@ -2824,8 +3151,8 @@ const headerStyles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.md,
-    paddingBottom: 60,
+    paddingTop: Spacing.sm,
+    paddingBottom: Spacing.xs,
   },
   heroSettingsBtn: {
     position: "absolute",
@@ -2839,15 +3166,15 @@ const headerStyles = StyleSheet.create({
     justifyContent: "center",
   },
   heroPictureSection: {
-    marginBottom: Spacing.sm,
+    marginBottom: Spacing.xs,
   },
   heroName: {
-    fontSize: 22,
+    fontSize: 26,
     fontWeight: "800",
     textAlign: "center",
   },
   heroUsername: {
-    fontSize: 14,
+    fontSize: 16,
     textAlign: "center",
     marginTop: 2,
   },
@@ -2856,18 +3183,18 @@ const headerStyles = StyleSheet.create({
     alignItems: "center",
     gap: 6,
     paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingVertical: 5,
     borderRadius: 999,
-    marginTop: Spacing.sm,
+    marginTop: 6,
   },
   heroStatusText: {
     fontSize: 13,
     fontWeight: "500",
   },
   heroBio: {
-    marginTop: Spacing.sm,
+    marginTop: 6,
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingVertical: 5,
     borderRadius: BorderRadius.md,
     maxWidth: "90%",
   },
@@ -2879,7 +3206,7 @@ const headerStyles = StyleSheet.create({
   heroActionRow: {
     flexDirection: "row",
     gap: Spacing.sm,
-    marginTop: Spacing.sm,
+    marginTop: 6,
   },
   heroActionButton: {
     flexDirection: "row",
@@ -2894,15 +3221,13 @@ const headerStyles = StyleSheet.create({
     fontWeight: "600",
   },
   heroLevelBar: {
-    position: "absolute",
-    bottom: Spacing.md,
-    left: Spacing.md,
-    right: Spacing.md,
+    marginHorizontal: Spacing.md,
+    marginBottom: Spacing.sm,
     borderRadius: BorderRadius.md,
     paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingVertical: 8,
     overflow: "hidden",
-    gap: 6,
+    gap: 4,
   },
   heroLevelTopRow: {
     flexDirection: "row",
@@ -2956,6 +3281,118 @@ const headerStyles = StyleSheet.create({
   heroLevelHint: {
     fontSize: 11,
     paddingLeft: 42,
+  },
+
+  // -- mega (4×6) --
+  megaRoot: {
+    flex: 1,
+    borderRadius: BorderRadius.lg,
+    overflow: "hidden",
+  },
+  megaForeground: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.lg,
+    paddingBottom: 80,
+  },
+  megaPictureSection: {
+    marginBottom: Spacing.md,
+  },
+  megaName: {
+    fontSize: 30,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+  megaUsername: {
+    fontSize: 18,
+    textAlign: "center",
+    marginTop: 3,
+  },
+  megaStatusChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    marginTop: Spacing.md,
+  },
+  megaStatusText: {
+    fontSize: 15,
+    fontWeight: "500",
+  },
+  megaBio: {
+    marginTop: Spacing.md,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: BorderRadius.md,
+    maxWidth: "90%",
+  },
+  megaBioText: {
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: "center",
+  },
+  megaActionRow: {
+    flexDirection: "row",
+    gap: Spacing.md,
+    marginTop: Spacing.md,
+  },
+  megaActionButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: BorderRadius.full,
+  },
+  megaActionText: {
+    fontSize: 15,
+    fontWeight: "600",
+  },
+  megaLevelBar: {
+    position: "absolute",
+    bottom: Spacing.md,
+    left: Spacing.md,
+    right: Spacing.md,
+    borderRadius: BorderRadius.md,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    overflow: "hidden",
+    gap: 8,
+  },
+  megaLevelBadge: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  megaLevelBadgeText: {
+    color: "#FFF",
+    fontSize: 15,
+    fontWeight: "800",
+  },
+  megaLevelLabel: {
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  megaLevelXpText: {
+    fontSize: 12,
+    marginTop: 1,
+  },
+  megaLevelBarRow: {
+    paddingLeft: 48,
+  },
+  megaProgressBar: {
+    height: 7,
+    borderRadius: 3.5,
+  },
+  megaLevelHint: {
+    fontSize: 12,
+    paddingLeft: 48,
   },
 });
 

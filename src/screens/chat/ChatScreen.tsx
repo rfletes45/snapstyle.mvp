@@ -4,10 +4,10 @@
  * This screen handles direct message conversations between two users.
  * Refactored to use unified abstractions achieving ~400 lines from ~1,700.
  *
- * Extractions Made:
+ * Shared foundation:
  * - useAttachmentPicker: Camera capture + gallery attachment management
- * - DMMessageItem: Message rendering component
- * - messageAdapters: V1↔V2 message conversion utilities
+ * - MessageV2-native render path shared with the broader chat platform
+ * - Shared send orchestration and shared ChatHeader / ChatMessageList / ChatComposer
  *
  * Enhanced Features:
  * - In-app camera captures send directly to chat (via handleDirectCameraSend)
@@ -73,6 +73,7 @@ import {
   ChatMessageList,
   MediaViewerModal,
   MessageActionsSheet,
+  SystemMessageChip,
   TypingBar,
   TypingBubble,
 } from "@/components/chat";
@@ -89,7 +90,6 @@ import { VoiceRecordButton } from "@/components/chat/VoiceRecordButton";
 import BlockUserModal from "@/components/BlockUserModal";
 import { ChatHeader } from "@/components/chat/ChatHeader";
 import { ChatMessageRenderer } from "@/components/chat/ChatMessageRenderer";
-import { MessageWithProfile } from "@/components/DMMessageItem";
 import ReportUserModal from "@/components/ReportUserModal";
 import ScheduleMessageModal from "@/components/ScheduleMessageModal";
 import { GamePickerModal } from "@/gamesV4/components/GamePickerModal";
@@ -111,13 +111,17 @@ import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 // Services
 import { blockUser } from "@/services/blocking";
 import { getOrCreateChat } from "@/services/chat";
+import {
+  sendAnimalSignalMessage,
+  sendChatDraft,
+  sendMediaAttachmentMessage,
+  sendVoiceRecordingMessage,
+} from "@/chat/sendDraft";
+import { safeSystemText } from "@/services/chat/normalizeMessage";
 import { getUserProfileByUid } from "@/services/friends";
 import { retryMessage } from "@/services/messaging";
 import { submitReport } from "@/services/reporting";
-import {
-  getScheduledMessagesForChat,
-  scheduleMessage,
-} from "@/services/scheduledMessages";
+import { scheduleMessage } from "@/services/scheduledMessages";
 import { markConversationNotificationsRead } from "@/services/userNotifications";
 
 // Call buttons
@@ -129,12 +133,8 @@ import { Spacing } from "@/constants/theme";
 import { buildSenderStyle } from "@/cosmetics/chatAppearanceResolver";
 import { useAnimalEntitlement } from "@/hooks/useAnimalEntitlement";
 import { playAnimalSound } from "@/services/chat/animalSoundService";
-import type { AttachmentV2, ReplyToMetadata } from "@/types/messaging";
-import type { ReportReason, ScheduledMessage } from "@/types/models";
-import {
-  messageV2ToWithProfile,
-  messageWithProfileToV2,
-} from "@/utils/messageAdapters";
+import type { AttachmentV2, MessageV2, ReplyToMetadata } from "@/types/messaging";
+import type { ReportReason } from "@/types/models";
 import * as Haptics from "expo-haptics";
 
 import { clearLastOpenChat, saveLastOpenChat } from "@/services/lastOpenChat";
@@ -325,8 +325,9 @@ export default function ChatScreen({
 
   // Message actions state
   const [actionsSheetVisible, setActionsSheetVisible] = useState(false);
-  const [selectedMessage, setSelectedMessage] =
-    useState<MessageWithProfile | null>(null);
+  const [selectedMessage, setSelectedMessage] = useState<MessageV2 | null>(
+    null,
+  );
   const [fullEmojiPickerOpen, setFullEmojiPickerOpen] = useState(false);
 
   // Media viewer state
@@ -339,11 +340,6 @@ export default function ChatScreen({
     string | undefined
   >();
   const [viewerTimestamp, setViewerTimestamp] = useState<Date | undefined>();
-
-  // Scheduled messages
-  const [scheduledMessages, setScheduledMessages] = useState<
-    ScheduledMessage[]
-  >([]);
 
   // Reply navigation state (highlight + jump-back)
   const [highlightedMessageId, setHighlightedMessageId] = useState<
@@ -419,22 +415,18 @@ export default function ChatScreen({
   const handleDirectCameraSend = useCallback(
     async (imageUri: string) => {
       if (!uid || !chatId || screen.sending) return;
-      try {
-        const id = `cam_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
-        await screen.chat.sendMessage("", {
-          kind: "media",
-          attachments: [
-            {
-              id,
-              uri: imageUri,
-              kind: "image",
-              mime: "image/jpeg",
-            },
-          ],
-        });
-      } catch (error: any) {
-        logger.error("❌ [ChatScreen] Camera send error:", error);
-        Alert.alert("Error", error.message || "Failed to send photo");
+      const result = await sendMediaAttachmentMessage({
+        chat: screen.chat,
+        attachment: {
+          id: `cam_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+          uri: imageUri,
+          kind: "image",
+          mime: "image/jpeg",
+        },
+      });
+
+      if (!result.success) {
+        Alert.alert("Error", result.error || "Failed to send photo");
       }
     },
     [uid, chatId, screen.chat, screen.sending],
@@ -445,15 +437,18 @@ export default function ChatScreen({
     async (imageUris: string[]) => {
       if (!uid || !chatId || screen.sending) return;
       for (const uri of imageUris) {
-        try {
-          const id = `gal_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
-          await screen.chat.sendMessage("", {
-            kind: "media",
-            attachments: [{ id, uri, kind: "image", mime: "image/jpeg" }],
-          });
-        } catch (error: any) {
-          logger.error("❌ [ChatScreen] Gallery send error:", error);
-          Alert.alert("Error", error.message || "Failed to send photo");
+        const result = await sendMediaAttachmentMessage({
+          chat: screen.chat,
+          attachment: {
+            id: `gal_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+            uri,
+            kind: "image",
+            mime: "image/jpeg",
+          },
+        });
+
+        if (!result.success) {
+          Alert.alert("Error", result.error || "Failed to send photo");
         }
       }
     },
@@ -500,52 +495,37 @@ export default function ChatScreen({
   // Derived State
   // ==========================================================================
 
-  const displayMessages: MessageWithProfile[] = useMemo(
+  const displayMessages: MessageV2[] = useMemo(
     () =>
       chatId
         ? screen.messages.map((msg) => {
-            const converted = messageV2ToWithProfile(
-              msg,
-              friendUid,
-              friendProfile,
-            );
             // Apply read receipt status for messages sent by current user
-            if (msg.senderId === uid && converted.serverReceivedAt) {
+            if (msg.senderId === uid && msg.serverReceivedAt) {
               // Exclude "read" from status check since getMessageStatus will determine it
               const baseStatus =
-                converted.status !== "read" ? converted.status : "delivered";
-              converted.status = readReceipts.getMessageStatus(
-                converted.serverReceivedAt,
-                baseStatus,
-              );
+                msg.status !== "read" ? msg.status : "delivered";
+              return {
+                ...msg,
+                status: readReceipts.getMessageStatus(
+                  msg.serverReceivedAt,
+                  baseStatus,
+                ),
+              };
             }
-            return converted;
+            return msg;
           })
         : [],
-    [chatId, screen.messages, friendUid, friendProfile, uid, readReceipts],
+    [chatId, screen.messages, uid, readReceipts],
   );
 
-  // ==========================================================================
-  // Message Grouping Logic (for inverted FlatList)
-  // ==========================================================================
-
   const areMessagesGrouped = useCallback(
-    (
-      msg1: MessageWithProfile | null,
-      msg2: MessageWithProfile | null,
-    ): boolean => {
+    (msg1: MessageV2 | null, msg2: MessageV2 | null): boolean => {
       if (!msg1 || !msg2) return false;
       if (msg1.replyTo || msg2.replyTo) return false;
-      if (msg1.sender !== msg2.sender) return false;
-      const time1 =
-        msg1.createdAt instanceof Date
-          ? msg1.createdAt.getTime()
-          : msg1.createdAt;
-      const time2 =
-        msg2.createdAt instanceof Date
-          ? msg2.createdAt.getTime()
-          : msg2.createdAt;
-      return Math.abs(time1 - time2) < MESSAGE_GROUP_THRESHOLD_MS;
+      if (msg1.senderId !== msg2.senderId) return false;
+      return (
+        Math.abs(msg1.createdAt - msg2.createdAt) < MESSAGE_GROUP_THRESHOLD_MS
+      );
     },
     [],
   );
@@ -555,22 +535,14 @@ export default function ChatScreen({
   // ==========================================================================
 
   /** Derive timeline items (messages + day dividers) from displayMessages */
-  const timelineData: TimelineItem<MessageWithProfile>[] = useMemo(
+  const timelineData: TimelineItem<MessageV2>[] = useMemo(
     () =>
-      buildTimeline<MessageWithProfile>(
+      buildTimeline<MessageV2>(
         displayMessages,
-        (msg) =>
-          msg.createdAt instanceof Date
-            ? msg.createdAt.getTime()
-            : (msg.createdAt as unknown as number),
+        (msg) => msg.createdAt,
         areMessagesGrouped,
       ),
     [displayMessages, areMessagesGrouped],
-  );
-
-  const selectedMessageAsV2 = useMemo(
-    () => messageWithProfileToV2(selectedMessage, chatId, uid, friendProfile),
-    [selectedMessage, chatId, uid, friendProfile],
   );
 
   // ==========================================================================
@@ -806,14 +778,6 @@ export default function ChatScreen({
     }, [uid, friendUid, chatId, setCurrentChatId, navigation]),
   );
 
-  // Load scheduled messages
-  useEffect(() => {
-    if (!uid || !chatId) return;
-    getScheduledMessagesForChat(uid, chatId)
-      .then(setScheduledMessages)
-      .catch((e) => logger.error("Failed to load scheduled messages:", e));
-  }, [uid, chatId]);
-
   useEffect(() => {
     if (!uid || !chatId) return;
     markConversationNotificationsRead(uid, chatId, "dm").catch((error) => {
@@ -886,74 +850,22 @@ export default function ChatScreen({
   );
 
   const handleSendMessage = useCallback(async () => {
-    const hasText = screen.composer.text.trim().length > 0;
-    const hasAttachments = attachmentPicker.attachments.length > 0;
-
-    if (!uid || !chatId || (!hasText && !hasAttachments) || screen.sending)
-      return;
-
-    const text = screen.composer.text.trim();
-    const currentReplyTo = screen.chat.replyTo;
-
     triggerHaptic(Haptics.ImpactFeedbackStyle.Light);
-    typing.setTyping(false);
-    screen.composer.clearText();
-
-    // Text-only path (no attachments)
-    if (hasText && !hasAttachments) {
-      try {
-        const result = await screen.chat.sendMessage(text, {
-          replyTo: currentReplyTo || undefined,
-        });
-        if (!result.success) {
-          screen.composer.setText(text);
-          Alert.alert("Error", result.error || "Failed to send");
-        }
-      } catch (error: any) {
-        screen.composer.setText(text);
-        logger.error("❌ [ChatScreen] Send error:", error);
-      }
-      return;
-    }
-
-    // Attachment path (gallery picks via attachment tray)
-    screen.chat.clearReplyTo();
-    try {
-      if (hasAttachments) {
-        const localAttachments = [...attachmentPicker.attachments];
-        attachmentPicker.clearAttachments();
-
-        for (const attachment of localAttachments) {
-          await screen.chat.sendMessage("", {
-            replyTo: currentReplyTo || undefined,
-            kind: "media",
-            attachments: [
-              {
-                id: attachment.id,
-                uri: attachment.uri,
-                kind: attachment.kind,
-                mime: attachment.mime || "image/jpeg",
-              },
-            ],
-          });
-        }
-
-        // Send text separately if present
-        if (hasText) {
-          await screen.chat.sendMessage(text, {
-            replyTo: currentReplyTo || undefined,
-          });
-        }
-      }
-    } catch (error: any) {
-      logger.error("❌ [ChatScreen] Send error:", error);
-      Alert.alert("Error", error.message || "Failed to send");
-    }
+    await sendChatDraft({
+      currentUid: uid,
+      conversationId: chatId,
+      isSending: screen.sending,
+      chat: screen.chat,
+      composer: screen.composer,
+      attachmentPicker,
+      onBeforeSend: () => typing.setTyping(false),
+      onError: (message) => Alert.alert("Error", message),
+    });
   }, [
     uid,
     chatId,
-    screen.composer,
     screen.chat,
+    screen.composer,
     screen.sending,
     typing,
     attachmentPicker,
@@ -971,22 +883,14 @@ export default function ChatScreen({
     async (recording: VoiceRecording) => {
       if (!uid || !chatId || screen.sending) return;
 
-      try {
-        await screen.chat.sendMessage("", {
-          kind: "voice",
-          attachments: [
-            {
-              id: `voice_${Date.now()}_${uid}`,
-              uri: recording.uri,
-              kind: "audio",
-              mime: "audio/m4a",
-              durationMs: recording.durationMs,
-            },
-          ],
-        });
-      } catch (error: any) {
-        logger.error("❌ [ChatScreen] Voice send error:", error);
-        Alert.alert("Error", error.message || "Failed to send voice message");
+      const result = await sendVoiceRecordingMessage({
+        chat: screen.chat,
+        currentUid: uid,
+        recording,
+      });
+
+      if (!result.success) {
+        Alert.alert("Error", result.error || "Failed to send voice message");
       }
     },
     [uid, chatId, screen.chat, screen.sending],
@@ -1003,13 +907,13 @@ export default function ChatScreen({
     screen.chat.clearReplyTo();
   }, [screen.chat]);
 
-  const handleMessageLongPress = useCallback((message: MessageWithProfile) => {
+  const handleMessageLongPress = useCallback((message: MessageV2) => {
     triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
     setSelectedMessage(message);
     setActionsSheetVisible(true);
   }, []);
 
-  const handleRetryMessage = useCallback(async (msg: MessageWithProfile) => {
+  const handleRetryMessage = useCallback(async (msg: MessageV2) => {
     await retryMessage(msg.id);
   }, []);
 
@@ -1114,14 +1018,12 @@ export default function ChatScreen({
     } catch (e) {
       logger.warn("❌ [ChatScreen] Animal sound error:", e);
     }
-    try {
-      // Send structured animal signal message (kind: "animal", animalId)
-      await screen.chat.sendMessage("", {
-        kind: "animal",
-        animalId: equippedAnimalId,
-      });
-    } catch (error) {
-      logger.error("❌ [ChatScreen] Animal send error:", error);
+    const result = await sendAnimalSignalMessage({
+      chat: screen.chat,
+      animalId: equippedAnimalId,
+    });
+    if (!result.success) {
+      logger.error("❌ [ChatScreen] Animal send error:", result.error);
     }
   }, [uid, chatId, animalEntitlement, screen.chat]);
 
@@ -1231,13 +1133,12 @@ export default function ChatScreen({
       });
       if (result) {
         screen.composer.clearText();
-        setScheduledMessages((prev) => [...prev, result]);
         Alert.alert(
           "Message Scheduled! ⏰",
           `Your message will be sent ${scheduledFor.toLocaleString()}`,
         );
       }
-    } catch (error) {
+    } catch {
       Alert.alert("Error", "Failed to schedule message.");
     }
   };
@@ -1253,11 +1154,14 @@ export default function ChatScreen({
   const showSkeleton = isInitializing && !initialData?.chatId;
 
   const renderTimelineItem = useCallback(
-    ({ item }: { item: TimelineItem<MessageWithProfile>; index: number }) => {
+    ({ item }: { item: TimelineItem<MessageV2>; index: number }) => {
       if (item.type === "date-divider") {
         return <DateDivider label={item.label} />;
       }
       const msg = item.data;
+      if (msg.kind === "system") {
+        return <SystemMessageChip text={safeSystemText(msg.text)} />;
+      }
       return (
         <ChatMessageRenderer
           message={msg}
@@ -1549,7 +1453,7 @@ export default function ChatScreen({
 
       <MessageActionsSheet
         visible={actionsSheetVisible}
-        message={selectedMessageAsV2}
+        message={selectedMessage}
         currentUid={uid || ""}
         onClose={() => setActionsSheetVisible(false)}
         onReply={handleReply}

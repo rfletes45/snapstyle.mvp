@@ -1,27 +1,27 @@
 # Profile Widgets Reference
 
-Last verified: 2026-03-30
+Last verified: 2026-04-01
 
 This is the current widget inventory from `WidgetRegistry.ts`.
 
 ## Widget Inventory
 
-| Widget type | Default size | Supported sizes | Visibility | Notes |
-| --- | --- | --- | --- | --- |
-| `profile-header` | `hero` | `wide`, `large`, `hero` | all | non-removable |
-| `social-proof` | `wide` | `wide`, `large` | all | streak and activity summary |
-| `friends` | `medium` | `small`, `medium`, `wide` | all | friend list preview |
-| `badges` | `medium` | `small`, `medium`, `wide` | all | featured badges |
-| `achievements` | `medium` | `small`, `medium`, `wide` | all | trophy-case summary |
-| `mutual-friends` | `medium` | `small`, `medium`, `wide` | all | most useful on viewed profiles |
-| `favorite-game` | `medium` | `small`, `medium`, `wide` | all | derived from game stats |
-| `profile-stats` | `wide` | `medium`, `wide` | all | game/profile summary |
-| `recent-activity` | `wide` | `wide`, `large` | all | recent activity feed |
-| `viewer-actions` | `wide` | `wide`, `large` | viewed profile only | synthetic, not persisted |
-| `tasks-overview` | `wide` | `wide`, `large` | owner only | quick task summary |
-| `wallet-balance` | `small` | `small`, `medium`, `wide` | all | interaction is owner-only |
-| `theme-mode` | `small` | `small`, `medium`, `wide` | all | interaction is owner-only |
-| `chat-layout-mode` | `small` | `small`, `medium`, `wide` | all | interaction is owner-only |
+| Widget type        | Default size | Supported sizes                 | Visibility          | Notes                          |
+| ------------------ | ------------ | ------------------------------- | ------------------- | ------------------------------ |
+| `profile-header`   | `hero`       | `wide`, `large`, `hero`, `mega` | all                 | non-removable                  |
+| `social-proof`     | `wide`       | `wide`, `large`                 | all                 | streak and activity summary    |
+| `friends`          | `medium`     | `small`, `medium`, `wide`       | all                 | friend list preview            |
+| `badges`           | `medium`     | `small`, `medium`, `wide`       | all                 | featured badges                |
+| `achievements`     | `medium`     | `small`, `medium`, `wide`       | all                 | trophy-case summary            |
+| `mutual-friends`   | `medium`     | `small`, `medium`, `wide`       | all                 | most useful on viewed profiles |
+| `favorite-game`    | `medium`     | `small`, `medium`, `wide`       | all                 | derived from game stats        |
+| `profile-stats`    | `wide`       | `medium`, `wide`                | all                 | game/profile summary           |
+| `recent-activity`  | `wide`       | `wide`, `large`                 | all                 | recent activity feed           |
+| `viewer-actions`   | `wide`       | `wide`, `large`                 | viewed profile only | synthetic, not persisted       |
+| `tasks-overview`   | `wide`       | `wide`, `large`                 | owner only          | quick task summary             |
+| `wallet-balance`   | `small`      | `small`, `medium`, `wide`       | all                 | interaction is owner-only      |
+| `theme-mode`       | `small`      | `small`, `medium`, `wide`       | all                 | interaction is owner-only      |
+| `chat-layout-mode` | `small`      | `small`, `medium`, `wide`       | all                 | interaction is owner-only      |
 
 ## Data and Behavior Notes
 

@@ -36,13 +36,12 @@ import { ReactionPills } from "@/components/chat/ReactionBar";
 import { StackedReplyReference } from "@/components/chat/StackedReplyReference";
 import { ThreadIndicator } from "@/components/chat/ThreadIndicator";
 import { VoiceMessagePlayer } from "@/components/chat/VoiceMessagePlayer";
-import type { MessageWithProfile } from "@/components/DMMessageItem";
 import { ProfilePictureWithDecoration } from "@/components/profile/ProfilePicture";
 import type { ChatAppearance } from "@/cosmetics/types";
 import { useLinkPreviews } from "@/hooks/useLinkPreviews";
 import { extractUrls, hasUrls } from "@/services/linkPreview";
 import type { ReactionSummary } from "@/services/reactions";
-import type { ReplyToMetadata } from "@/types/messaging";
+import type { MessageV2, ReplyToMetadata } from "@/types/messaging";
 import { formatChatTimestamp } from "@/utils/chatTimestamp";
 
 // ---------------------------------------------------------------------------
@@ -72,7 +71,7 @@ function getImageSize(w?: number, h?: number) {
 // ---------------------------------------------------------------------------
 
 export interface StackedMessageRendererProps {
-  message: MessageWithProfile;
+  message: MessageV2;
   currentUid: string | undefined;
   chatId: string | null;
   friendProfile: {
@@ -86,9 +85,9 @@ export interface StackedMessageRendererProps {
   } | null;
   chatAppearance?: ChatAppearance | null;
   onReply: (replyMetadata: ReplyToMetadata) => void;
-  onLongPress: (message: MessageWithProfile) => void;
+  onLongPress: (message: MessageV2) => void;
   onScrollToMessage: (messageId: string) => void;
-  onRetry: (message: MessageWithProfile) => Promise<void>;
+  onRetry: (message: MessageV2) => Promise<void>;
   onImagePress?: (
     imageUrl: string,
     senderName: string,
@@ -132,7 +131,14 @@ export const StackedMessageRenderer: React.FC<StackedMessageRendererProps> =
     }) => {
       const theme = useTheme();
       const navigation = useNavigation<NativeStackNavigationProp<any>>();
-      const isSentByMe = message.sender === currentUid;
+      const isSentByMe = message.senderId === currentUid;
+      const messageText = message.text || "";
+      const imageAttachment = message.attachments?.find(
+        (attachment) => attachment.kind === "image",
+      );
+      const voiceAttachment = message.attachments?.find(
+        (attachment) => attachment.kind === "audio",
+      );
 
       // ── Font color ────────────────────────────────────────────────────
       // Stacked mode uses a single theme-adaptive text color for all
@@ -143,10 +149,10 @@ export const StackedMessageRenderer: React.FC<StackedMessageRendererProps> =
       // ── Link previews ─────────────────────────────────────────────────
       const messagesForPreview = React.useMemo(
         () =>
-          message.type === "text" && hasUrls(message.content)
-            ? [{ id: message.id, content: message.content, type: message.type }]
+          message.kind === "text" && hasUrls(messageText)
+            ? [{ id: message.id, content: messageText, type: "text" as const }]
             : [],
-        [message.id, message.content, message.type],
+        [message.id, message.kind, messageText],
       );
       const { linkPreviews, loadingPreviews } =
         useLinkPreviews(messagesForPreview);
@@ -182,10 +188,14 @@ export const StackedMessageRenderer: React.FC<StackedMessageRendererProps> =
           onRetry(message);
           return;
         }
-        if (message.type === "image" && message.imageUrl && onImagePress) {
-          onImagePress(message.imageUrl, senderDisplayName, message.createdAt);
+        if (message.kind === "media" && imageAttachment && onImagePress) {
+          onImagePress(
+            imageAttachment.url,
+            senderDisplayName,
+            new Date(message.createdAt),
+          );
         }
-      }, [message, senderDisplayName, onImagePress, onRetry]);
+      }, [message, imageAttachment, senderDisplayName, onImagePress, onRetry]);
 
       // ── Format timestamp ──────────────────────────────────────────────
       const formattedTime = React.useMemo(
@@ -263,7 +273,7 @@ export const StackedMessageRenderer: React.FC<StackedMessageRendererProps> =
 
       // ── Message content ───────────────────────────────────────────────
       const renderContent = () => {
-        if (message.type === "animal") {
+        if (message.kind === "animal") {
           if (message.animalId) {
             return <AnimalBubble animalId={message.animalId} isMine={false} />;
           }
@@ -280,7 +290,7 @@ export const StackedMessageRenderer: React.FC<StackedMessageRendererProps> =
           );
         }
 
-        if (message.type === "voice") {
+        if (message.kind === "voice" && voiceAttachment) {
           return (
             <View
               style={[
@@ -294,23 +304,23 @@ export const StackedMessageRenderer: React.FC<StackedMessageRendererProps> =
               ]}
             >
               <VoiceMessagePlayer
-                url={message.voiceUrl || message.content}
-                durationMs={message.voiceDurationMs || 0}
+                url={voiceAttachment.url}
+                durationMs={voiceAttachment.durationMs || 0}
                 isOwn={isSentByMe}
               />
             </View>
           );
         }
 
-        if (message.type === "image") {
-          if (message.imageUrl) {
+        if (message.kind === "media") {
+          if (imageAttachment) {
             const imgSize = getImageSize(
-              message.imageWidth,
-              message.imageHeight,
+              imageAttachment.width,
+              imageAttachment.height,
             );
             return (
               <AppImage
-                source={{ uri: message.imageUrl }}
+                source={{ uri: imageAttachment.url }}
                 style={[s.image, imgSize]}
                 contentFit="cover"
                 debugLabel="StackedFeedImage"
@@ -328,14 +338,14 @@ export const StackedMessageRenderer: React.FC<StackedMessageRendererProps> =
         return (
           <>
             <Text style={[s.messageText, { color: fontColor }]}>
-              {message.content}
+              {messageText}
             </Text>
-            {hasUrls(message.content) && (
+            {hasUrls(messageText) && (
               <View style={s.linkPreviewContainer}>
                 <LinkPreviewCard
                   preview={
                     linkPreviews.get(message.id) || {
-                      url: extractUrls(message.content)[0] || "",
+                      url: extractUrls(messageText)[0] || "",
                       fetchedAt: Date.now(),
                     }
                   }
@@ -349,32 +359,6 @@ export const StackedMessageRenderer: React.FC<StackedMessageRendererProps> =
       };
 
       // ── Swipeable message shell ───────────────────────────────────────
-      const createdAtTimestamp =
-        message.createdAt instanceof Date
-          ? message.createdAt.getTime()
-          : typeof message.createdAt === "number"
-            ? message.createdAt
-            : Date.now();
-
-      const swipeableMessage = {
-        id: message.id,
-        scope: "dm" as const,
-        conversationId: chatId || "",
-        senderId: message.sender,
-        senderName: senderDisplayName,
-        kind:
-          message.type === "image"
-            ? ("media" as const)
-            : message.type === "voice"
-              ? ("voice" as const)
-              : ("text" as const),
-        text: message.type === "text" ? message.content : undefined,
-        createdAt: createdAtTimestamp,
-        serverReceivedAt: createdAtTimestamp,
-        clientId: "",
-        idempotencyKey: "",
-      };
-
       // ── Author name color ─────────────────────────────────────────────
       const authorColor = isSentByMe
         ? theme.colors.primary
@@ -387,7 +371,7 @@ export const StackedMessageRenderer: React.FC<StackedMessageRendererProps> =
 
       return (
         <SwipeableMessage
-          message={swipeableMessage}
+          message={message}
           onReply={onReply}
           enabled={message.status !== "failed"}
           currentUid={currentUid}
@@ -409,11 +393,11 @@ export const StackedMessageRenderer: React.FC<StackedMessageRendererProps> =
               onPress={handlePress}
               delayLongPress={300}
               accessibilityLabel={
-                message.type === "voice"
+                message.kind === "voice"
                   ? `${isSentByMe ? "You sent" : `${senderDisplayName} sent`} a voice message`
-                  : message.type === "image"
+                  : message.kind === "media"
                     ? `${isSentByMe ? "You sent" : `${senderDisplayName} sent`} a picture`
-                    : `${isSentByMe ? "You" : senderDisplayName}: ${message.content}`
+                    : `${isSentByMe ? "You" : senderDisplayName}: ${messageText}`
               }
               accessibilityRole="button"
               accessibilityHint="Long press for message options, swipe right to reply"

@@ -1,6 +1,6 @@
 # Profile System Overview
 
-Last verified: 2026-03-30
+Last verified: 2026-04-01
 
 This is the canonical entry point for the current profile system docs.
 

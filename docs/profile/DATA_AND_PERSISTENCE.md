@@ -1,6 +1,6 @@
 # Data and Persistence
 
-Last verified: 2026-03-30
+Last verified: 2026-04-01
 
 ## Layout Storage
 

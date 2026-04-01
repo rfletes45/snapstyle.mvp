@@ -110,6 +110,7 @@ export {
 // Keyboard-aware Chat Components (ARCH-C04)
 export { ChatComposer, default as ChatComposerDefault } from "./ChatComposer";
 export type { ChatComposerProps, ChatScope } from "./ChatComposer";
+export { ChatHeader, default as ChatHeaderDefault } from "./ChatHeader";
 export {
   ChatMessageList,
   default as ChatMessageListDefault,
@@ -145,6 +146,10 @@ export { SeenBySheet } from "./SeenBySheet";
 // Unified Message Renderer (display-mode-aware)
 export { ChatMessageRenderer } from "./ChatMessageRenderer";
 export type { ChatMessageRendererProps } from "./ChatMessageRenderer";
+export {
+  SystemMessageChip,
+  default as SystemMessageChipDefault,
+} from "./SystemMessageChip";
 
 // Stacked Message Renderer (dense left-aligned mode)
 export { StackedMessageRenderer } from "./StackedMessageRenderer";

@@ -171,8 +171,8 @@ export interface MessageV2 {
   /** @deprecated Use `serverReceivedAt` for ordering */
   expiresAt?: number;
 
-  /** @deprecated Use MessageStatusV2 */
-  status?: "sending" | "sent" | "delivered" | "failed";
+  /** Delivery status used by local/outbox UI */
+  status?: MessageStatusV2;
 
   /** @deprecated Handled by outbox */
   isLocal?: boolean;
@@ -876,7 +876,7 @@ export interface MemberStatePrivate {
    * Manual "mark as unread" timestamp
    * If set, conversation shows as unread until next view
    */
-  lastMarkedUnreadAt?: number;
+  lastMarkedUnreadAt?: number | null;
 
   /**
    * Timestamp when conversation was pinned

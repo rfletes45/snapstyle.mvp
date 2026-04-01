@@ -94,7 +94,7 @@ export interface ChatLayoutTokens {
 /** Layout tokens for bubble mode (matches current design) */
 export const BUBBLE_LAYOUT: ChatLayoutTokens = {
   groupGap: 14,
-  withinGroupGap: 3,
+  withinGroupGap: 6,
   maxContentWidthPct: "80%",
   bubblePaddingH: 10,
   bubblePaddingV: 10,
@@ -172,7 +172,7 @@ export const FEED_LAYOUT: FeedLayoutTokens = {
   contentIndent: 46, // 0 + 34 + 12
   avatarSize: 34,
   groupGap: 14,
-  withinGroupGap: 2,
+  withinGroupGap: 6,
   rowPaddingV: 2,
   rowPaddingH: 8,
   mediaRadius: 8,
