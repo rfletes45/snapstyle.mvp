@@ -54,7 +54,13 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { Alert, StyleSheet, TouchableOpacity, View } from "react-native";
+import {
+  Alert,
+  Platform,
+  StyleSheet,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import {
   ActivityIndicator,
   Appbar,
@@ -1507,6 +1513,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
               styles.messageContainer,
               isOwnMessage && styles.ownMessageContainer,
               isGrouped && styles.groupedMessageContainer,
+              isGroupedWithNextMsg && styles.groupedMessageContainerTight,
             ]}
           >
             {/* Highlight overlay for reply navigation */}
@@ -1777,7 +1784,24 @@ export default function GroupChatScreen({ route, navigation }: Props) {
         <Appbar.Header
           style={[styles.header, { backgroundColor: colors.background }]}
         >
-          <Appbar.BackAction onPress={() => navigation.goBack()} />
+          <TouchableOpacity
+            onPress={() => navigation.goBack()}
+            style={[
+              styles.backButton,
+              { backgroundColor: colors.surfaceVariant },
+            ]}
+            activeOpacity={0.6}
+            accessibilityLabel="Back"
+            accessibilityRole="button"
+            hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
+          >
+            <MaterialCommunityIcons
+              name={Platform.OS === "ios" ? "chevron-left" : "arrow-left"}
+              size={22}
+              color={colors.text}
+              style={Platform.OS === "ios" ? styles.backIconiOS : undefined}
+            />
+          </TouchableOpacity>
           <Appbar.Content title="Error" />
         </Appbar.Header>
         <ErrorState
@@ -1803,7 +1827,25 @@ export default function GroupChatScreen({ route, navigation }: Props) {
         <Appbar.Header
           style={[styles.header, { backgroundColor: colors.background }]}
         >
-          <Appbar.BackAction onPress={() => navigation.goBack()} />
+          {/* Custom back button with optical centering */}
+          <TouchableOpacity
+            onPress={() => navigation.goBack()}
+            style={[
+              styles.backButton,
+              { backgroundColor: colors.surfaceVariant },
+            ]}
+            activeOpacity={0.6}
+            accessibilityLabel="Back"
+            accessibilityRole="button"
+            hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
+          >
+            <MaterialCommunityIcons
+              name={Platform.OS === "ios" ? "chevron-left" : "arrow-left"}
+              size={22}
+              color={colors.text}
+              style={Platform.OS === "ios" ? styles.backIconiOS : undefined}
+            />
+          </TouchableOpacity>
           <TouchableOpacity
             style={styles.headerTitle}
             onPress={() => navigation.navigate("GroupChatInfo", { groupId })}
@@ -1832,16 +1874,12 @@ export default function GroupChatScreen({ route, navigation }: Props) {
                 />
               </View>
             )}
-            <View>
-              <Text style={[styles.headerTitleText, { color: colors.text }]}>
-                {group?.name}
-              </Text>
-              <Text
-                style={[styles.headerSubtitle, { color: colors.textSecondary }]}
-              >
-                {group?.memberCount} members
-              </Text>
-            </View>
+            <Text
+              style={[styles.headerTitleText, { color: colors.text }]}
+              numberOfLines={1}
+            >
+              {group?.name}
+            </Text>
           </TouchableOpacity>
           {CALL_FEATURES.CALLS_ENABLED && voiceRoom.isActive && (
             <VoiceRoomAvatarStack
@@ -2127,7 +2165,21 @@ export default function GroupChatScreen({ route, navigation }: Props) {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: {},
+  header: {
+    elevation: 0,
+    height: 46,
+  },
+  backButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    justifyContent: "center",
+    alignItems: "center",
+    marginLeft: 8,
+  },
+  backIconiOS: {
+    marginLeft: -1,
+  },
   headerTitle: {
     flex: 1,
     flexDirection: "row",
@@ -2142,14 +2194,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  headerTitleText: { fontSize: 16, fontWeight: "600" },
-  headerSubtitle: { fontSize: 12 },
+  headerTitleText: { fontSize: 18, fontWeight: "700" },
   callButton: {
     padding: 8,
     marginRight: 4,
   },
   messageContainer: { marginBottom: 14, width: "100%" },
-  groupedMessageContainer: { marginBottom: 4 }, // Reduced spacing for grouped messages
+  groupedMessageContainer: {}, // Visual grouping (hides some elements) — no spacing change
+  groupedMessageContainerTight: { marginBottom: 4 }, // Tight spacing when grouped with next
   ownMessageContainer: {},
   replyBubbleIndent: { marginLeft: 40 }, // 32px avatar + 8px margin
   messageRow: { maxWidth: "80%", flexDirection: "row", alignItems: "flex-end" },

@@ -37,6 +37,23 @@ import React, {
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+// Lazy-load ringtone service for outgoing ring sound
+let ringtoneService: typeof import("@/services/calls/ringtoneService") | null =
+  null;
+try {
+  ringtoneService = require("@/services/calls/ringtoneService");
+} catch {
+  // Not available
+}
+
+// Lazy-load callManager for speaker toggle
+let callManager: any = null;
+try {
+  callManager = require("@stream-io/video-react-native-sdk").callManager;
+} catch {
+  // Not available in Expo Go
+}
+
 type Props = NativeStackScreenProps<MainStackParamList, "DirectCall">;
 
 export default function DirectCallScreen({ route, navigation }: Props) {
@@ -153,6 +170,12 @@ function DirectCallContent({
   const { isMute: isCameraOff, camera } = useCameraState();
   const isVideo = mode === "video";
 
+  // Speaker toggle state — tracked locally (SDK doesn't provide useSpeakerState on RN)
+  const [isSpeakerOn, setIsSpeakerOn] = useState(false);
+
+  // Screen share state
+  const [isScreenSharing, setIsScreenSharing] = useState(false);
+
   // Safe mic toggle — only allow when JOINED to prevent permanent track death
   const handleToggleMic = useCallback(async () => {
     if (callingState !== CallingState.JOINED) return;
@@ -172,6 +195,36 @@ function DirectCallContent({
       console.warn("[DirectCallScreen] camera toggle failed:", err);
     }
   }, [callingState, camera]);
+
+  // Speaker toggle using callManager.speaker.setForceSpeakerphoneOn
+  const handleToggleSpeaker = useCallback(async () => {
+    if (!callManager?.speaker?.setForceSpeakerphoneOn) return;
+    try {
+      const newState = !isSpeakerOn;
+      callManager.speaker.setForceSpeakerphoneOn(newState);
+      setIsSpeakerOn(newState);
+    } catch (err) {
+      console.warn("[DirectCallScreen] speaker toggle failed:", err);
+    }
+  }, [isSpeakerOn]);
+
+  // Screen share toggle
+  const handleToggleScreenShare = useCallback(async () => {
+    if (callingState !== CallingState.JOINED) return;
+    try {
+      const call = (microphone as any)?.call;
+      if (call?.screenShare) {
+        if (isScreenSharing) {
+          await call.screenShare.disable();
+        } else {
+          await call.screenShare.enable();
+        }
+        setIsScreenSharing(!isScreenSharing);
+      }
+    } catch (err) {
+      console.warn("[DirectCallScreen] screen share toggle failed:", err);
+    }
+  }, [callingState, isScreenSharing, microphone]);
 
   // Derive remote participant info from Stream state for enriched display
   const remoteParticipant = useMemo(() => {
@@ -195,6 +248,18 @@ function DirectCallContent({
     const interval = setInterval(() => setDuration((d) => d + 1), 1000);
     return () => clearInterval(interval);
   }, [isJoined]);
+
+  // Outgoing ring sound — play while waiting for callee to answer
+  useEffect(() => {
+    if (!ringtoneService) return;
+    const isRinging = isOutgoing && callingState === CallingState.RINGING;
+    if (isRinging) {
+      ringtoneService.startRingtone("outgoing", false, true);
+    }
+    return () => {
+      ringtoneService?.stopRingtone();
+    };
+  }, [isOutgoing, callingState]);
 
   const formatDuration = (secs: number) => {
     const m = Math.floor(secs / 60);
@@ -336,6 +401,12 @@ function DirectCallContent({
         onToggleCamera={handleToggleCamera}
         showFlipCamera={isVideo && !isCameraOff}
         onFlipCamera={() => camera.flip()}
+        showSpeaker={!!callManager?.speaker?.setForceSpeakerphoneOn}
+        isSpeakerOn={isSpeakerOn}
+        onToggleSpeaker={handleToggleSpeaker}
+        showScreenShare={isVideo}
+        isScreenSharing={isScreenSharing}
+        onToggleScreenShare={handleToggleScreenShare}
         onLeave={onEndCall}
         leaveLabel="End"
       />

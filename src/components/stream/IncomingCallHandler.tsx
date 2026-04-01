@@ -28,6 +28,11 @@ const streamSDK = CALL_FEATURES.CALLS_ENABLED
 const useCalls: () => Call[] = streamSDK?.useCalls ?? (() => []);
 const CallingState = streamSDK?.CallingState;
 
+// Lazy-load ringtone service for incoming call sound
+const ringtoneService = CALL_FEATURES.CALLS_ENABLED
+  ? (require("@/services/calls/ringtoneService") as typeof import("@/services/calls/ringtoneService"))
+  : null;
+
 // Lazy-load call settings for DND / privacy gating
 const callSettingsSvc = CALL_FEATURES.CALLS_ENABLED
   ? (require("@/services/calls") as { callSettingsService: any })
@@ -208,6 +213,22 @@ function IncomingCallHandlerInner({
       setPendingCall(null);
     }
   }, [isBusy, activeSession, pendingCall, rejectCall]);
+
+  // ── Incoming ringtone + vibration ──────────────────────────────────────
+  // Play the incoming call ringtone while the call overlay is displayed.
+  // Stops automatically when the call is answered, declined, or disappears.
+  useEffect(() => {
+    if (!pendingCall || callAllowed !== true || isBusy) {
+      ringtoneService?.stopRingtone();
+      return;
+    }
+
+    ringtoneService?.startRingtone("incoming", true, true);
+
+    return () => {
+      ringtoneService?.stopRingtone();
+    };
+  }, [pendingCall?.id, callAllowed, isBusy]);
 
   if (!pendingCall) return null;
 

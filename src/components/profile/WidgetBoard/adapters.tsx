@@ -23,7 +23,6 @@ import {
 import { ProgressBar, Text } from "react-native-paper";
 
 import { CosmeticImage } from "@/components/CosmeticImage";
-import { LevelProgress } from "@/components/profile/LevelProgress";
 import {
   AchievementsTrophyCaseCard,
   BadgesCard,
@@ -322,7 +321,51 @@ const ProfileHeaderLarge = memo(function ProfileHeaderLarge({
           activeOpacity={0.7}
           disabled={!data.onLevelPress}
         >
-          <LevelProgress level={data.level} compact />
+          <View style={headerStyles.largeLevelRow}>
+            <View
+              style={[
+                headerStyles.largeLevelBadge,
+                { backgroundColor: colors.primary },
+              ]}
+            >
+              <Text style={headerStyles.largeLevelBadgeText}>
+                {data.level?.current ?? 1}
+              </Text>
+            </View>
+            <Text
+              style={[
+                headerStyles.largeLevelLabel,
+                {
+                  color: backgroundSource ? "#fff" : colors.text,
+                  ...(backgroundSource
+                    ? {
+                        textShadowColor: "rgba(0,0,0,0.6)",
+                        textShadowOffset: { width: 0, height: 1 },
+                        textShadowRadius: 3,
+                      }
+                    : {}),
+                },
+              ]}
+              numberOfLines={1}
+            >
+              Lv. {data.level?.current ?? 1}
+            </Text>
+            <View style={headerStyles.largeLevelProgressWrap}>
+              <ProgressBar
+                progress={
+                  (data.level?.xpToNextLevel ?? 100) > 0
+                    ? Math.min(
+                        1,
+                        (data.level?.xp ?? 0) /
+                          (data.level?.xpToNextLevel ?? 100),
+                      )
+                    : 1
+                }
+                color={colors.primary}
+                style={headerStyles.largeLevelProgress}
+              />
+            </View>
+          </View>
         </TouchableOpacity>
         <View style={headerStyles.largeBottomActions}>
           {data.onShopPress && (
@@ -2723,6 +2766,34 @@ const headerStyles = StyleSheet.create({
   },
   largeBottomLevel: {
     flex: 1,
+  },
+  largeLevelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  largeLevelBadge: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  largeLevelBadgeText: {
+    color: "#fff",
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  largeLevelLabel: {
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  largeLevelProgressWrap: {
+    flex: 1,
+  },
+  largeLevelProgress: {
+    height: 4,
+    borderRadius: 2,
   },
   largeBottomActions: {
     flexDirection: "row",

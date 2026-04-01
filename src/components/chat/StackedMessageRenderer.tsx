@@ -201,10 +201,10 @@ export const StackedMessageRenderer: React.FC<StackedMessageRendererProps> =
           case "sending":
             return (
               <Text
-                style={[s.metaText, { color }]}
+                style={[s.metaText, s.statusLabel, { color }]}
                 accessibilityLabel="Sending"
               >
-                ○
+                Sending
               </Text>
             );
           case "failed":
@@ -214,33 +214,46 @@ export const StackedMessageRenderer: React.FC<StackedMessageRendererProps> =
                 accessibilityLabel="Message failed. Tap to retry"
                 accessibilityRole="button"
               >
-                <Text style={[s.metaText, { color: theme.colors.error }]}>
-                  ⚠️ Retry
+                <Text
+                  style={[
+                    s.metaText,
+                    s.statusLabel,
+                    { color: theme.colors.error },
+                  ]}
+                >
+                  Failed · Tap to retry
                 </Text>
               </TouchableOpacity>
             );
           case "sent":
             return (
-              <Text style={[s.metaText, { color }]} accessibilityLabel="Sent">
-                ✓
+              <Text
+                style={[s.metaText, s.statusLabel, { color }]}
+                accessibilityLabel="Sent"
+              >
+                Sent
               </Text>
             );
           case "delivered":
             return (
               <Text
-                style={[s.metaText, { color }]}
+                style={[s.metaText, s.statusLabel, { color }]}
                 accessibilityLabel="Delivered"
               >
-                ✓✓
+                Delivered
               </Text>
             );
           case "read":
             return (
               <Text
-                style={[s.metaText, { color: theme.colors.primary }]}
+                style={[
+                  s.metaText,
+                  s.statusLabel,
+                  { color: theme.colors.primary },
+                ]}
                 accessibilityLabel="Read"
               >
-                ✓✓
+                Read
               </Text>
             );
           default:
@@ -600,6 +613,9 @@ const s = StyleSheet.create({
   },
   metaText: {
     fontSize: F.timestampFontSize,
+  },
+  statusLabel: {
+    fontWeight: "700",
   },
 
   // ── Thread indicator row ────────────────────────────────────────────

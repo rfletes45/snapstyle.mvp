@@ -173,6 +173,7 @@ export const ChatMessageRenderer: React.FC<ChatMessageRendererProps> =
             onImagePress={onImagePress}
             isHighlighted={isHighlighted}
             isGrouped={isGroupedWithPrevious}
+            isGroupedWithNext={isGroupedWithNext}
             showTimestamp={vm.showTimestamp}
             reactions={reactions}
             onOptimisticReaction={onOptimisticReaction}

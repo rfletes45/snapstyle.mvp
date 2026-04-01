@@ -278,15 +278,24 @@ export function useInboxData(uid: string): UseInboxDataResult {
   // Track if we've loaded cached data (to avoid double-loading)
   const cacheLoadedRef = useRef(false);
 
+  // Track whether both live subscriptions have delivered at least once.
+  // This prevents the partial flash where groups appear before DMs.
+  const [bothLiveReady, setBothLiveReady] = useState(false);
+  const dmReadyRef = useRef(false);
+  const groupReadyRef = useRef(false);
+
   // Track recently-read conversation IDs to prevent Firestore snapshots from
   // resetting the optimistic unread state before the watermark write propagates.
   // Entries expire after 30 seconds (more than enough for the write to land).
   const recentlyReadRef = useRef<Map<string, number>>(new Map());
 
-  // Loading is false if we have cached data OR both subscriptions are done
+  // Loading: show loading state until we have EITHER cached data OR both live
+  // subscriptions have resolved. This prevents a partial list flash where
+  // groups appear before DMs or vice versa.
   const hasCachedData =
-    dmConversations.length > 0 || groupConversations.length > 0;
-  const loading = !hasCachedData && (dmLoading || groupLoading);
+    cacheLoadedRef.current &&
+    (dmConversations.length > 0 || groupConversations.length > 0);
+  const loading = !hasCachedData && !bothLiveReady;
 
   // =============================================================================
   // Load Cached Data on Mount (INSTANT LOAD)
@@ -393,8 +402,14 @@ export function useInboxData(uid: string): UseInboxDataResult {
   useEffect(() => {
     if (useAggregatedInbox || !uid) {
       setDmLoading(false);
+      dmReadyRef.current = true;
+      if (groupReadyRef.current) setBothLiveReady(true);
       return;
     }
+
+    // Reset ready state when subscriptions restart
+    dmReadyRef.current = false;
+    setBothLiveReady(false);
 
     let cancelled = false;
     const db = getFirestoreInstance();
@@ -517,12 +532,16 @@ export function useInboxData(uid: string): UseInboxDataResult {
           if (!cancelled) {
             setDmConversations(conversations);
             setDmLoading(false);
+            dmReadyRef.current = true;
+            if (groupReadyRef.current) setBothLiveReady(true);
           }
         } catch (e) {
           log.error("Error processing DM conversations", { error: e });
           if (!cancelled) {
             setError(e as Error);
             setDmLoading(false);
+            dmReadyRef.current = true;
+            if (groupReadyRef.current) setBothLiveReady(true);
           }
         }
       },
@@ -531,6 +550,8 @@ export function useInboxData(uid: string): UseInboxDataResult {
         if (!cancelled) {
           setError(err);
           setDmLoading(false);
+          dmReadyRef.current = true;
+          if (groupReadyRef.current) setBothLiveReady(true);
         }
       },
     );
@@ -548,8 +569,14 @@ export function useInboxData(uid: string): UseInboxDataResult {
   useEffect(() => {
     if (useAggregatedInbox || !uid) {
       setGroupLoading(false);
+      groupReadyRef.current = true;
+      if (dmReadyRef.current) setBothLiveReady(true);
       return;
     }
+
+    // Reset ready state when subscriptions restart
+    groupReadyRef.current = false;
+    setBothLiveReady(false);
 
     let cancelled = false;
 
@@ -648,12 +675,16 @@ export function useInboxData(uid: string): UseInboxDataResult {
           if (!cancelled) {
             setGroupConversations(conversations);
             setGroupLoading(false);
+            groupReadyRef.current = true;
+            if (dmReadyRef.current) setBothLiveReady(true);
           }
         } catch (e) {
           log.error("Error processing group conversations", { error: e });
           if (!cancelled) {
             setError(e as Error);
             setGroupLoading(false);
+            groupReadyRef.current = true;
+            if (dmReadyRef.current) setBothLiveReady(true);
           }
         }
       },
@@ -662,6 +693,8 @@ export function useInboxData(uid: string): UseInboxDataResult {
         if (!cancelled) {
           setError(err);
           setGroupLoading(false);
+          groupReadyRef.current = true;
+          if (dmReadyRef.current) setBothLiveReady(true);
         }
       },
     );

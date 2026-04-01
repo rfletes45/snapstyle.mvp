@@ -24,7 +24,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       NSPhotoLibraryUsageDescription:
         "Vibe needs photo library access to save and share photos",
       // Background modes used by Stream calls and notifications
-      UIBackgroundModes: ["audio", "remote-notification", "fetch"],
+      UIBackgroundModes: ["audio", "remote-notification", "fetch", "voip"],
     },
     entitlements: {
       "aps-environment": "production",
@@ -34,6 +34,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     },
   },
   android: {
+    googleServicesFile: "./google-services.json",
     adaptiveIcon: {
       foregroundImage: "./assets/images/android-icon-foreground.png",
       backgroundImage: "./assets/images/android-icon-background.png",
@@ -81,6 +82,12 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       {
         ios: {
           deploymentTarget: "16.0",
+          useFrameworks: "static",
+          forceStaticLinking: [
+            "RNFBApp",
+            "RNFBMessaging",
+            "stream-react-native-webrtc",
+          ],
         },
         android: {
           minSdkVersion: 24,
@@ -127,8 +134,23 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
         enableFrameProcessors: true,
       },
     ],
-    // Stream Video SDK (includes its own WebRTC fork)
-    "@stream-io/video-react-native-sdk",
+    // Stream Video SDK — ringing push notifications + CallKit/Notifee
+    [
+      "@stream-io/video-react-native-sdk",
+      {
+        ringingPushNotifications: {
+          disableVideoIos: false,
+          includesCallsInRecentsIos: false,
+          showWhenLockedAndroid: true,
+        },
+        androidKeepCallAlive: true,
+      },
+    ],
+    // Firebase messaging (Android push for incoming calls)
+    "@react-native-firebase/app",
+    "@react-native-firebase/messaging",
+    // CallKeep (iOS CallKit integration)
+    "@config-plugins/react-native-callkeep",
   ],
   experiments: {
     typedRoutes: true,

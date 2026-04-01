@@ -197,28 +197,40 @@ function ChatDMHeaderMenu({
   navigation: any;
 }) {
   const [visible, setVisible] = useState(false);
+  const closingRef = useRef(false);
   const theme = useTheme();
   const contentStyle = useMemo(
     () => ({ backgroundColor: theme.colors.surface }),
     [theme.colors.surface],
   );
 
+  const handleOpen = useCallback(() => {
+    // Prevent opening while a dismiss animation is still in progress
+    if (closingRef.current) return;
+    setVisible(true);
+  }, []);
+
+  const handleDismiss = useCallback(() => {
+    closingRef.current = true;
+    setVisible(false);
+    // Allow re-opening after Paper's dismiss animation completes (~300ms)
+    setTimeout(() => {
+      closingRef.current = false;
+    }, 350);
+  }, []);
+
   return (
     <Menu
       visible={visible}
-      onDismiss={() => setVisible(false)}
+      onDismiss={handleDismiss}
       anchor={
-        <IconButton
-          icon="dots-vertical"
-          size={24}
-          onPress={() => setVisible(true)}
-        />
+        <IconButton icon="dots-vertical" size={24} onPress={handleOpen} />
       }
       contentStyle={contentStyle}
     >
       <Menu.Item
         onPress={() => {
-          setVisible(false);
+          handleDismiss();
           navigation.navigate("ChatSettings", {
             chatId,
             chatType: "dm",
@@ -230,7 +242,7 @@ function ChatDMHeaderMenu({
       />
       <Menu.Item
         onPress={() => {
-          setVisible(false);
+          handleDismiss();
           onBlock();
         }}
         title="Block User"
@@ -238,7 +250,7 @@ function ChatDMHeaderMenu({
       />
       <Menu.Item
         onPress={() => {
-          setVisible(false);
+          handleDismiss();
           onReport();
         }}
         title="Report User"

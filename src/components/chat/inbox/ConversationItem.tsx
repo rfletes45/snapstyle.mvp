@@ -290,7 +290,7 @@ export const ConversationItem = memo(function ConversationItem({
                 isUnread && styles.previewUnread,
                 isUnread && { color: colors.text },
               ]}
-              numberOfLines={1}
+              numberOfLines={2}
             >
               {highlightText
                 ? highlightMatchingText(previewText, highlightText, colors)
@@ -328,8 +328,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 10,
-    paddingVertical: 3,
-    minHeight: 62,
+    paddingVertical: 6,
+    minHeight: 72,
   },
   avatarContainer: {
     position: "relative",
@@ -353,7 +353,6 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    justifyContent: "center",
   },
   topRow: {
     flexDirection: "row",
@@ -383,11 +382,12 @@ const styles = StyleSheet.create({
   },
   bottomRow: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     justifyContent: "space-between",
   },
   preview: {
     fontSize: 13,
+    lineHeight: 17,
     flex: 1,
     marginRight: Spacing.xs,
   },

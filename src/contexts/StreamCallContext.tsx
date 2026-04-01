@@ -52,6 +52,7 @@ const streamSvc = CALL_FEATURES.CALLS_ENABLED
 
 const CallingState = streamSDK?.CallingState;
 const StreamVideo = streamSDK?.StreamVideo;
+const StreamVideoRN = streamSDK?.StreamVideoRN;
 
 const startDirectCall = streamSvc?.startDirectCall;
 const acceptDirectCall = streamSvc?.acceptDirectCall;
@@ -102,6 +103,11 @@ interface StreamCallContextType {
   /** Leave the current voice channel */
   leaveChannel: () => Promise<void>;
 
+  /** Check if a channel was deliberately left (prevents auto-rejoin) */
+  wasChannelDeliberatelyLeft: (channelId: string) => boolean;
+  /** Clear the deliberate-leave flag for a channel (for manual rejoin) */
+  clearDeliberateLeave: (channelId: string) => void;
+
   /** The currently active Stream Call object (direct or voice), if any */
   activeCall: Call | null;
 }
@@ -126,11 +132,16 @@ function StreamCallInnerProvider({
   const [activeCall, setActiveCall] = useState<Call | null>(null);
   const busyRef = useRef(false);
 
+  // Tracks channel IDs the user deliberately left. Prevents auto-rejoin
+  // when VoiceChannelScreen remounts before navigation fully resolves.
+  const deliberatelyLeftChannelsRef = useRef<Set<string>>(new Set());
+
   // Track metadata for history recording
   const sessionMetaRef = useRef<{
     mode?: "audio" | "video";
     recipientId?: string;
     recipientName?: string;
+    recipientAvatar?: string | null;
     groupId?: string;
     groupName?: string;
     startedAt: number;
@@ -170,8 +181,16 @@ function StreamCallInnerProvider({
           });
           streamHistorySvc.recordCallHistory(entry).catch(() => {});
         } else if (meta.recipientId) {
-          // Direct call
+          // Direct call — try to get avatar from the active call's remote participant
           const callId = activeCallRef.current?.id ?? uuidv4();
+          const remoteParticipant =
+            activeCallRef.current?.state?.participants?.find(
+              (p: any) => p.userId !== userId,
+            );
+          const avatarUrl =
+            remoteParticipant?.image ?? meta.recipientAvatar ?? null;
+          const displayName =
+            remoteParticipant?.name ?? meta.recipientName ?? "Unknown";
           const entry = streamHistorySvc.buildDirectCallEntry({
             callId,
             mode: meta.mode ?? "audio",
@@ -180,7 +199,8 @@ function StreamCallInnerProvider({
             startedAt: meta.startedAt,
             endedAt: now,
             otherUserId: meta.recipientId,
-            otherUserName: meta.recipientName ?? "Unknown",
+            otherUserName: displayName,
+            otherUserAvatar: avatarUrl,
             initiatedBy: meta.isOutgoing ? userId : meta.recipientId,
           });
           streamHistorySvc.recordCallHistory(entry).catch(() => {});
@@ -248,6 +268,8 @@ function StreamCallInnerProvider({
         sessionMetaRef.current = {
           mode,
           recipientId,
+          recipientName,
+          recipientAvatar: null,
           startedAt: Date.now(),
           isOutgoing: true,
         };
@@ -277,6 +299,7 @@ function StreamCallInnerProvider({
         mode,
         recipientId: call.state.createdBy?.id,
         recipientName: call.state.createdBy?.name,
+        recipientAvatar: call.state.createdBy?.image ?? null,
         startedAt: Date.now(),
         isOutgoing: false,
       };
@@ -299,6 +322,7 @@ function StreamCallInnerProvider({
     if (streamHistorySvc) {
       const callerId = call.state.createdBy?.id ?? "";
       const callerName = call.state.createdBy?.name ?? "Unknown";
+      const callerAvatar = call.state.createdBy?.image ?? null;
       const mode = (call.state.custom?.mode as DirectCallMode) ?? "audio";
       const entry = streamHistorySvc.buildDirectCallEntry({
         callId: call.id,
@@ -309,6 +333,7 @@ function StreamCallInnerProvider({
         endedAt: Date.now(),
         otherUserId: callerId,
         otherUserName: callerName,
+        otherUserAvatar: callerAvatar,
         initiatedBy: callerId,
       });
       streamHistorySvc.recordCallHistory(entry).catch(() => {});
@@ -363,6 +388,11 @@ function StreamCallInnerProvider({
       }
       busyRef.current = true;
 
+      // Clear any deliberate-leave flag for this channel — user is
+      // explicitly joining, so they intend to be in the room.
+      const channelId = `voice_channel_${groupId}`;
+      deliberatelyLeftChannelsRef.current.delete(channelId);
+
       try {
         const call = await joinVoiceChannel(groupId, groupName, userId);
         activeCallRef.current = call;
@@ -397,6 +427,12 @@ function StreamCallInnerProvider({
       return;
     }
 
+    // Mark this channel as deliberately left BEFORE any cleanup.
+    // This prevents VoiceChannelScreen's auto-join effect from
+    // re-joining if the screen remounts during the async leave flow.
+    const channelId = call.id;
+    deliberatelyLeftChannelsRef.current.add(channelId);
+
     // Null the ref FIRST so the callingState$ subscription won't
     // double-reset state when leaveVoiceChannel triggers LEFT.
     activeCallRef.current = null;
@@ -407,19 +443,29 @@ function StreamCallInnerProvider({
       recordSessionHistory("left");
     }
 
-    // CRITICAL: Set state to null BEFORE the async leaveVoiceChannel.
-    // Same rationale as endCallAction — leaveVoiceChannel disposes the
-    // call object, and child components must be unmounted first to
-    // prevent SDK hooks from reading half-disposed state.
-    setActiveCall(null);
-    setActiveSession(null);
-
+    // Leave the call on the SDK side FIRST so the server knows we've
+    // disconnected. This prevents the SDK from auto-reconnecting.
     try {
       await leaveVoiceChannel(call);
     } catch {
       // Best-effort — channel may already be left
     }
+
+    // THEN clear state. Components will unmount cleanly after the SDK
+    // has fully released the call resources.
+    setActiveCall(null);
+    setActiveSession(null);
   }, [activeSession, recordSessionHistory]);
+
+  // ── Deliberate-leave helpers ─────────────────────────────────────────
+
+  const wasChannelDeliberatelyLeft = useCallback((channelId: string) => {
+    return deliberatelyLeftChannelsRef.current.has(channelId);
+  }, []);
+
+  const clearDeliberateLeave = useCallback((channelId: string) => {
+    deliberatelyLeftChannelsRef.current.delete(channelId);
+  }, []);
 
   // ── Context value ───────────────────────────────────────────────────────
 
@@ -434,6 +480,8 @@ function StreamCallInnerProvider({
       endCall: endCallAction,
       joinChannel: joinChannelAction,
       leaveChannel: leaveChannelAction,
+      wasChannelDeliberatelyLeft,
+      clearDeliberateLeave,
       activeCall,
     }),
     [
@@ -445,6 +493,8 @@ function StreamCallInnerProvider({
       endCallAction,
       joinChannelAction,
       leaveChannelAction,
+      wasChannelDeliberatelyLeft,
+      clearDeliberateLeave,
       activeCall,
     ],
   );
@@ -474,16 +524,22 @@ export function StreamCallProvider({
 
     const user = currentFirebaseUser;
     if (!user) {
-      // Destroy client on logout
-      destroyStreamClient()
-        .then(() => clearTokenCache())
-        .then(() => setClient(null))
-        .catch((err: any) => {
-          console.warn("[StreamCallProvider] Logout cleanup failed:", err);
-          // Still clear client state to prevent stale references
-          clearTokenCache();
-          setClient(null);
-        });
+      // Destroy client on logout and clear push notification state
+      const cleanup = async () => {
+        try {
+          await destroyStreamClient();
+        } catch (err: any) {
+          console.warn("[StreamCallProvider] destroyStreamClient failed:", err);
+        }
+        try {
+          StreamVideoRN?.onPushLogout();
+        } catch (err: any) {
+          console.warn("[StreamCallProvider] onPushLogout failed:", err);
+        }
+        clearTokenCache();
+        setClient(null);
+      };
+      cleanup();
       return;
     }
 
@@ -539,6 +595,8 @@ export function StreamCallProvider({
         throw new Error("Calls not available");
       },
       leaveChannel: async () => {},
+      wasChannelDeliberatelyLeft: () => false,
+      clearDeliberateLeave: () => {},
       activeCall: null,
     };
 

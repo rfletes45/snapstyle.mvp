@@ -2,9 +2,11 @@
  * useStreamCallHistory
  *
  * Provides real-time call history subscription with filtering.
- * Handles auth timing, empty data, and error states robustly.
+ * Enriches entries with resolved user names and profile pictures
+ * from Firestore when the stored values are missing or "Unknown".
  */
 
+import { getCachedProfile } from "@/services/cache/profileCache";
 import {
   getStreamCallHistory,
   subscribeToStreamCallHistory,
@@ -21,6 +23,63 @@ interface UseStreamCallHistoryResult {
   error: boolean;
   errorMessage: string | null;
   refresh: () => void;
+}
+
+/**
+ * Enrich call history entries with resolved profile data.
+ * For direct calls with "Unknown" names or missing avatars, looks up
+ * the user profile from the profile cache (which falls back to Firestore).
+ */
+async function enrichEntries(
+  entries: StreamCallHistoryEntry[],
+): Promise<StreamCallHistoryEntry[]> {
+  const needsEnrichment = entries.filter(
+    (e) =>
+      e.otherUserId &&
+      (!e.otherUserName || e.otherUserName === "Unknown" || !e.otherUserAvatar),
+  );
+
+  if (needsEnrichment.length === 0) return entries;
+
+  // Deduplicate user IDs
+  const userIds = [...new Set(needsEnrichment.map((e) => e.otherUserId!))];
+
+  // Resolve profiles in parallel
+  const profiles = await Promise.allSettled(
+    userIds.map(async (uid) => {
+      const profile = await getCachedProfile(uid);
+      return { uid, profile };
+    }),
+  );
+
+  // Build lookup map
+  const profileMap = new Map<
+    string,
+    { name?: string; avatar?: string | null }
+  >();
+  for (const result of profiles) {
+    if (result.status === "fulfilled" && result.value.profile) {
+      const p = result.value.profile;
+      profileMap.set(result.value.uid, {
+        name: p.displayName || p.username || undefined,
+        avatar: p.avatar ?? null,
+      });
+    }
+  }
+
+  // Merge resolved data into entries
+  return entries.map((entry) => {
+    if (!entry.otherUserId || !profileMap.has(entry.otherUserId)) return entry;
+    const resolved = profileMap.get(entry.otherUserId)!;
+    return {
+      ...entry,
+      otherUserName:
+        entry.otherUserName && entry.otherUserName !== "Unknown"
+          ? entry.otherUserName
+          : (resolved.name ?? entry.otherUserName),
+      otherUserAvatar: entry.otherUserAvatar ?? resolved.avatar ?? null,
+    };
+  });
 }
 
 export function useStreamCallHistory(
@@ -48,8 +107,9 @@ export function useStreamCallHistory(
     setErrorMessage(null);
     try {
       const data = await getStreamCallHistory({ filterType, maxResults });
+      const enriched = await enrichEntries(data);
       if (mountedRef.current) {
-        setEntries(data);
+        setEntries(enriched);
       }
     } catch (err: any) {
       console.error("[useStreamCallHistory] fetch error:", err);
@@ -79,12 +139,16 @@ export function useStreamCallHistory(
     // For "all" — use real-time subscription
     setLoading(true);
     const unsub = subscribeToStreamCallHistory(
-      (data) => {
+      async (data) => {
         if (mountedRef.current) {
-          setEntries(data);
-          setLoading(false);
-          setError(false);
-          setErrorMessage(null);
+          // Enrich with profile data before setting state
+          const enriched = await enrichEntries(data).catch(() => data);
+          if (mountedRef.current) {
+            setEntries(enriched);
+            setLoading(false);
+            setError(false);
+            setErrorMessage(null);
+          }
         }
       },
       maxResults,

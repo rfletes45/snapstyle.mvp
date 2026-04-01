@@ -780,6 +780,7 @@ export default function WalletScreen({ navigation }: any) {
         edges={["top"]}
       >
         <Appbar.Header
+          statusBarHeight={0}
           style={[styles.appbar, { backgroundColor: theme.colors.background }]}
         >
           <Appbar.BackAction onPress={() => navigation.goBack()} />
@@ -804,6 +805,7 @@ export default function WalletScreen({ navigation }: any) {
         edges={["top"]}
       >
         <Appbar.Header
+          statusBarHeight={0}
           style={[styles.appbar, { backgroundColor: theme.colors.background }]}
         >
           <Appbar.BackAction onPress={() => navigation.goBack()} />
@@ -832,6 +834,7 @@ export default function WalletScreen({ navigation }: any) {
       edges={["top"]}
     >
       <Appbar.Header
+        statusBarHeight={0}
         style={[styles.appbar, { backgroundColor: theme.colors.background }]}
       >
         <Appbar.BackAction onPress={() => navigation.goBack()} />

@@ -362,6 +362,7 @@ export default function TasksScreen({ navigation }: { navigation: any }) {
   // --- chrome (appbar) ---
   const renderAppbar = () => (
     <Appbar.Header
+      statusBarHeight={0}
       style={[styles.appbar, { backgroundColor: theme.colors.background }]}
     >
       <Appbar.BackAction onPress={() => navigation.goBack()} />

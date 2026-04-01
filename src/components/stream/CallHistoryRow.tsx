@@ -2,9 +2,11 @@
  * CallHistoryRow
  *
  * Renders a single call history entry in the Calls screen list.
+ * Shows real profile pictures for DM calls and group avatars for rooms.
  * Supports direct calls (audio/video) and voice room entries.
  */
 
+import { ProfilePicture } from "@/components/profile/ProfilePicture/ProfilePicture";
 import { useAppTheme } from "@/store/ThemeContext";
 import type { StreamCallHistoryEntry } from "@/types/streamCallHistory";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -117,18 +119,14 @@ export default function CallHistoryRow({
     [entry.createdAt],
   );
 
-  // Avatar content
-  const avatarBg = isRoom
-    ? colors.primary + "22"
-    : isMissed
-      ? colors.error + "18"
-      : colors.primary + "18";
-  const avatarIcon: IconName = isRoom ? "account-group" : "account";
-  const avatarColor = isRoom
-    ? colors.primary
-    : isMissed
-      ? colors.error
-      : colors.primary;
+  // Avatar content — use real profile pictures when available
+  const avatarUrl = isRoom ? entry.groupAvatar : entry.otherUserAvatar;
+  const avatarName = isRoom
+    ? entry.groupName || "Voice Room"
+    : entry.otherUserName || "Unknown";
+  const avatarBorderColor = isMissed
+    ? colors.error + "40"
+    : colors.primary + "30";
 
   return (
     <TouchableOpacity
@@ -136,14 +134,29 @@ export default function CallHistoryRow({
       onPress={handlePress}
       activeOpacity={0.6}
     >
-      {/* Left avatar */}
-      <View style={[styles.avatar, { backgroundColor: avatarBg }]}>
-        <MaterialCommunityIcons
-          name={avatarIcon}
-          size={22}
-          color={avatarColor}
-        />
-      </View>
+      {/* Left avatar — real profile picture or fallback */}
+      {isRoom && !avatarUrl ? (
+        <View
+          style={[styles.avatar, { backgroundColor: colors.primary + "22" }]}
+        >
+          <MaterialCommunityIcons
+            name="account-group"
+            size={22}
+            color={colors.primary}
+          />
+        </View>
+      ) : (
+        <View
+          style={[styles.avatarWrapper, { borderColor: avatarBorderColor }]}
+        >
+          <ProfilePicture
+            url={avatarUrl ?? null}
+            name={avatarName}
+            size={40}
+            showLoading={false}
+          />
+        </View>
+      )}
 
       {/* Center text */}
       <View style={styles.textBlock}>
@@ -236,6 +249,16 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     marginRight: 12,
+  },
+  avatarWrapper: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 12,
+    borderWidth: 1,
+    overflow: "hidden",
   },
   textBlock: {
     flex: 1,

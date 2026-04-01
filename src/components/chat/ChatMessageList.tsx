@@ -318,7 +318,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     // paddingTop = visual bottom gap on an inverted FlatList.
     // Provides space between the newest message and the composer.
-    paddingTop: 8,
+    paddingTop: 16,
   },
 });
 

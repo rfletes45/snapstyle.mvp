@@ -123,6 +123,8 @@ interface DMMessageItemProps {
   isHighlighted?: boolean;
   /** Whether this message is grouped with the one above (same sender, close time) */
   isGrouped?: boolean;
+  /** Whether this message is grouped with the one below (controls bottom spacing) */
+  isGroupedWithNext?: boolean;
   /** Whether to show the timestamp for this message */
   showTimestamp?: boolean;
   /** Live reactions for this message (from subscription) */
@@ -145,6 +147,7 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
     onImagePress,
     isHighlighted = false,
     isGrouped = false,
+    isGroupedWithNext = false,
     showTimestamp = true,
     reactions = [],
     onOptimisticReaction,
@@ -264,11 +267,11 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
             >
               <Text
                 style={[
-                  styles.sendingStatus,
+                  styles.statusLabel,
                   { color: theme.colors.onSurfaceVariant },
                 ]}
               >
-                ○
+                Sending
               </Text>
             </View>
           );
@@ -280,7 +283,9 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
               accessibilityLabel="Message failed to send. Tap to retry"
               accessibilityRole="button"
             >
-              <Text style={styles.failedStatus}>⚠️ Tap to retry</Text>
+              <Text style={[styles.statusLabel, { color: theme.colors.error }]}>
+                Failed · Tap to retry
+              </Text>
             </TouchableOpacity>
           );
         case "sent":
@@ -291,11 +296,11 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
             >
               <Text
                 style={[
-                  styles.sentStatus,
+                  styles.statusLabel,
                   { color: theme.colors.onSurfaceVariant },
                 ]}
               >
-                ✓
+                Sent
               </Text>
             </View>
           );
@@ -307,11 +312,11 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
             >
               <Text
                 style={[
-                  styles.deliveredStatus,
+                  styles.statusLabel,
                   { color: theme.colors.onSurfaceVariant },
                 ]}
               >
-                ✓✓
+                Delivered
               </Text>
             </View>
           );
@@ -322,7 +327,7 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
               accessibilityLabel="Message read"
             >
               <Text
-                style={[styles.readStatus, { color: theme.colors.primary }]}
+                style={[styles.statusLabel, { color: theme.colors.primary }]}
               >
                 Read
               </Text>
@@ -453,6 +458,7 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
               : styles.receivedMessageContainer,
             message.status === "failed" && styles.failedMessageContainer,
             isGrouped && styles.groupedMessageContainer,
+            isGroupedWithNext && styles.groupedMessageContainerTight,
           ]}
         >
           {/* Highlight overlay for reply navigation */}
@@ -596,6 +602,9 @@ const styles = StyleSheet.create({
   sentMessageContainer: {},
   receivedMessageContainer: {},
   groupedMessageContainer: {
+    // Visual grouping (hides some elements) — no spacing override here
+  },
+  groupedMessageContainerTight: {
     marginBottom: 3,
   },
   messageBubbleWrapper: {
@@ -653,24 +662,9 @@ const styles = StyleSheet.create({
     opacity: 0,
   },
   statusContainer: {},
-  sendingStatus: {
+  statusLabel: {
     fontSize: 10,
-    color: undefined, // Use theme.colors.onSurfaceVariant inline
-  },
-  sentStatus: {
-    fontSize: 10,
-    color: undefined, // Use theme.colors.onSurfaceVariant inline
-  },
-  deliveredStatus: {
-    fontSize: 10,
-  },
-  readStatus: {
-    fontSize: 10,
-    fontWeight: "600",
-    color: undefined, // Use theme.colors.primary inline for read receipts
-  },
-  failedStatus: {
-    fontSize: 10,
+    fontWeight: "700",
   },
   sendingBubble: {
     opacity: 0.7,

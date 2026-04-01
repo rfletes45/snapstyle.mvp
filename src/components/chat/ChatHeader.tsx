@@ -23,7 +23,13 @@ import { PresenceIndicator } from "@/components/ui";
 import { buildRemoteImageSource } from "@/utils/remoteImageSource";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React from "react";
-import { StyleSheet, TouchableOpacity, View, ViewStyle } from "react-native";
+import {
+  Platform,
+  StyleSheet,
+  TouchableOpacity,
+  View,
+  ViewStyle,
+} from "react-native";
 import { Appbar, Text, useTheme } from "react-native-paper";
 
 // =============================================================================
@@ -148,7 +154,22 @@ export function ChatHeader({
     <Appbar.Header
       style={[styles.header, { backgroundColor: colors.background }, style]}
     >
-      <Appbar.BackAction onPress={onBack} />
+      {/* Custom back button with optical centering */}
+      <TouchableOpacity
+        onPress={onBack}
+        style={[styles.backButton, { backgroundColor: colors.surfaceVariant }]}
+        activeOpacity={0.6}
+        accessibilityLabel="Back"
+        accessibilityRole="button"
+        hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
+      >
+        <MaterialCommunityIcons
+          name={Platform.OS === "ios" ? "chevron-left" : "arrow-left"}
+          size={22}
+          color={colors.onSurface}
+          style={Platform.OS === "ios" ? styles.backIconiOS : undefined}
+        />
+      </TouchableOpacity>
 
       <TouchableOpacity
         style={styles.titleTouchable}
@@ -195,7 +216,19 @@ export function ChatHeader({
 const styles = StyleSheet.create({
   header: {
     elevation: 0,
-    height: 52,
+    height: 46,
+  },
+  backButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    justifyContent: "center",
+    alignItems: "center",
+    marginLeft: 8,
+  },
+  backIconiOS: {
+    // Optical centering: iOS chevron-left glyph is visually heavy on the left
+    marginLeft: -1,
   },
   titleTouchable: {
     flex: 1,
