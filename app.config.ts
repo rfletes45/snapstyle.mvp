@@ -77,6 +77,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   },
   plugins: [
     "@react-native-community/datetimepicker",
+    "./plugins/withVisionCameraFix",
     [
       "expo-build-properties",
       {
