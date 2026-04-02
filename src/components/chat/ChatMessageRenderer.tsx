@@ -135,7 +135,12 @@ export const ChatMessageRenderer: React.FC<ChatMessageRendererProps> =
           message.senderName ||
           "Friend"
         );
-      }, [isSentByMe, friendProfile, currentUserDisplayName, message.senderName]);
+      }, [
+        isSentByMe,
+        friendProfile,
+        currentUserDisplayName,
+        message.senderName,
+      ]);
 
       // Resolve sender-level profile picture (matches group chat pattern)
       const senderProfilePictureUrl = React.useMemo(() => {

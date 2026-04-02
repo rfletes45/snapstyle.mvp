@@ -12,7 +12,7 @@ import { useAuth } from "@/store/AuthContext";
 import { useAppTheme } from "@/store/ThemeContext";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import type { Call } from "@stream-io/video-react-native-sdk";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Dimensions,
   StyleSheet,
@@ -77,6 +77,14 @@ function IncomingCallHandlerInner({
   const incomingCalls = allCalls.filter(
     (c) => c.state.callingState === CallingState.RINGING && !c.isCreatedByMe,
   );
+  const mostRecentIncomingCall = useMemo(() => {
+    if (incomingCalls.length === 0) return null;
+    return incomingCalls.reduce((latest, call) => {
+      const latestCreatedAt = latest.state.createdAt?.getTime?.() ?? 0;
+      const callCreatedAt = call.state.createdAt?.getTime?.() ?? 0;
+      return callCreatedAt > latestCreatedAt ? call : latest;
+    });
+  }, [incomingCalls]);
 
   const [pendingCall, setPendingCall] = useState<Call | null>(null);
   // null = checking, true = allowed, false = rejected (auto-handled)
@@ -91,12 +99,13 @@ function IncomingCallHandlerInner({
   // causing the auto-reject effect to fire and reject the call we just accepted.
   const acceptingRef = useRef(false);
 
-  // Always show the most recent incoming call
+  // Always show the most recent incoming call. Watching only the length can
+  // miss call replacement when one ringing call disappears and another takes
+  // its place in the same render frame.
   useEffect(() => {
-    if (incomingCalls.length > 0) {
-      const newCall = incomingCalls[0];
+    if (mostRecentIncomingCall) {
+      const newCall = mostRecentIncomingCall;
       setPendingCall(newCall);
-      // Reset permission state when a new call arrives
       if (checkedCallIdRef.current !== newCall.id) {
         setCallAllowed(null);
         checkedCallIdRef.current = null;
@@ -106,7 +115,7 @@ function IncomingCallHandlerInner({
       setCallAllowed(null);
       checkedCallIdRef.current = null;
     }
-  }, [incomingCalls.length]);
+  }, [mostRecentIncomingCall]);
 
   // Check DND / privacy settings when a new incoming call is detected
   useEffect(() => {
@@ -228,7 +237,7 @@ function IncomingCallHandlerInner({
     return () => {
       ringtoneService?.stopRingtone();
     };
-  }, [pendingCall?.id, callAllowed, isBusy]);
+  }, [pendingCall, callAllowed, isBusy]);
 
   if (!pendingCall) return null;
 

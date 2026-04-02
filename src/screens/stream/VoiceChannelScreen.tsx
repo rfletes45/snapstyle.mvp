@@ -4,13 +4,13 @@
  * Discord-style shared voice room UI. Replaces the legacy GroupCallScreen.
  *
  * Features:
- * - Participant grid with avatar tiles (supports video when enabled)
- * - Full control bar: mute, camera, speaker, screen share, disconnect
- * - Accurate speaking indicators (checks isSpeaking AND not muted)
+ * - Participant grid with avatar tiles (supports real video when published)
+ * - Full control bar: mute, camera, speaker, disconnect
+ * - Accurate speaking indicators (checks isSpeaking and published audio)
  * - Back navigation (minimize) while staying connected
- * - Leave button (does NOT end the room for others)
+ * - Leave button (does not end the room for others)
  * - No ringing, no incoming overlay needed
- * - Deliberate-leave tracking prevents auto-rejoin bug
+ * - Deliberate-leave flag auto-cleared on mount so user can rejoin
  */
 
 import { ProfilePicture } from "@/components/profile/ProfilePicture/ProfilePicture";
@@ -18,10 +18,13 @@ import { CallControlBar } from "@/components/stream/CallControlBar";
 import { useStreamCall } from "@/contexts/StreamCallContext";
 import { useAppTheme } from "@/store/ThemeContext";
 import type { MainStackParamList } from "@/types/navigation/root";
+import { requestCameraPermission } from "@/utils/permissions";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
+import { hasAudio, hasVideo } from "@stream-io/video-client";
 import {
   CallingState,
+  ParticipantView,
   StreamCall,
   useCallStateHooks,
 } from "@stream-io/video-react-native-sdk";
@@ -30,7 +33,6 @@ import {
   ActivityIndicator,
   Dimensions,
   FlatList,
-  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -39,7 +41,6 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-// Lazy-load ringtone service for room join sound
 let ringtoneService: typeof import("@/services/calls/ringtoneService") | null =
   null;
 try {
@@ -48,7 +49,6 @@ try {
   // Not available
 }
 
-// Lazy-load callManager for speaker toggle — avoid native module crash in Expo Go
 let callManager: any = null;
 try {
   callManager = require("@stream-io/video-react-native-sdk").callManager;
@@ -61,7 +61,6 @@ const SCREEN_WIDTH = Dimensions.get("window").width;
 type Props = NativeStackScreenProps<MainStackParamList, "VoiceChannel">;
 
 export default function VoiceChannelScreen({ route, navigation }: Props) {
-  // Normalize params once at the top — prevents undefined-driven re-renders
   const params = route.params as {
     channelId?: string;
     channelName?: string;
@@ -84,7 +83,6 @@ export default function VoiceChannelScreen({ route, navigation }: Props) {
   const joinAttemptedRef = useRef(false);
   const mountedRef = useRef(true);
 
-  // Cleanup on unmount
   useEffect(() => {
     mountedRef.current = true;
     return () => {
@@ -92,22 +90,17 @@ export default function VoiceChannelScreen({ route, navigation }: Props) {
     };
   }, []);
 
-  // Auto-join the voice channel on mount if not already in it.
-  // Skips join if the user deliberately left this channel to prevent
-  // the rejoin-after-disconnect bug.
   const isAlreadyInChannel =
     activeSession?.type === "voice_channel" &&
     activeSession.channelId === channelId;
 
   useEffect(() => {
     if (!groupId || isAlreadyInChannel || joinAttemptedRef.current) return;
-    // If the user deliberately left this channel, do NOT auto-rejoin.
-    // They must explicitly tap "Join Voice" again (which calls
-    // clearDeliberateLeave before joinChannel).
+
     if (wasChannelDeliberatelyLeft(channelId)) {
-      if (navigation.canGoBack()) navigation.goBack();
-      return;
+      clearDeliberateLeave(channelId);
     }
+
     joinAttemptedRef.current = true;
 
     joinChannel(groupId, channelName).catch((err: any) => {
@@ -117,20 +110,17 @@ export default function VoiceChannelScreen({ route, navigation }: Props) {
       }
     });
   }, [
-    groupId,
-    channelName,
     channelId,
+    channelName,
+    clearDeliberateLeave,
+    groupId,
     isAlreadyInChannel,
     joinChannel,
     wasChannelDeliberatelyLeft,
-    navigation,
   ]);
 
-  // Ref-gate prevents multiple leaveChannel dispatches. Avoids redundant
-  // state resets and rapid <StreamCall> mount/unmount during disconnection.
   const leavingRef = useRef(false);
 
-  // Leave = deliberate disconnect + navigate back
   const handleLeave = useCallback(async () => {
     if (leavingRef.current) return;
     leavingRef.current = true;
@@ -143,7 +133,6 @@ export default function VoiceChannelScreen({ route, navigation }: Props) {
     }
   }, [leaveChannel, navigation]);
 
-  // Back = minimize (stay in call, navigate back)
   const handleMinimize = useCallback(() => {
     if (navigation.canGoBack()) navigation.goBack();
   }, [navigation]);
@@ -162,7 +151,7 @@ export default function VoiceChannelScreen({ route, navigation }: Props) {
           <Text
             style={[styles.errorTitle, { color: colors.text, marginTop: 12 }]}
           >
-            Couldn't join voice channel
+            Could not join voice channel
           </Text>
           <Text
             style={[
@@ -208,7 +197,6 @@ export default function VoiceChannelScreen({ route, navigation }: Props) {
   return (
     <StreamCall call={activeCall}>
       <VoiceChannelContent
-        channelName={channelName}
         onLeave={handleLeave}
         onMinimize={handleMinimize}
       />
@@ -216,16 +204,10 @@ export default function VoiceChannelScreen({ route, navigation }: Props) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Inner content (must be inside StreamCall provider)
-// ---------------------------------------------------------------------------
-
 function VoiceChannelContent({
-  channelName,
   onLeave,
   onMinimize,
 }: {
-  channelName: string;
   onLeave: () => void;
   onMinimize: () => void;
 }) {
@@ -242,36 +224,13 @@ function VoiceChannelContent({
   const { isMute: isMuted, microphone } = useMicrophoneState();
   const { isMute: isCameraOff, camera } = useCameraState();
   const isJoined = callingState === CallingState.JOINED;
-
-  // Speaker toggle state — tracked locally because the SDK does not
-  // provide useSpeakerState() on React Native.
   const [isSpeakerOn, setIsSpeakerOn] = useState(false);
 
-  // Screen share state — attempt to read from SDK, fallback to false
-  const [isScreenSharing, setIsScreenSharing] = useState(false);
-  const [screenShareDisabledReason, setScreenShareDisabledReason] = useState<
-    string | undefined
-  >(undefined);
-
-  // Check screen share capability on mount
-  useEffect(() => {
-    if (Platform.OS === "ios") {
-      // iOS needs a Broadcast Extension; check if it's configured
-      setScreenShareDisabledReason(undefined);
-    } else if (Platform.OS === "android") {
-      setScreenShareDisabledReason(undefined);
-    } else {
-      setScreenShareDisabledReason("Not supported on this platform");
-    }
-  }, []);
-
-  // Play a brief chime when a new participant joins (skip the initial load)
   const prevCountRef = useRef<number | null>(null);
   useEffect(() => {
     if (!isJoined) return;
     const count = participants.length;
     if (prevCountRef.current === null) {
-      // First render after join — record baseline, no sound
       prevCountRef.current = count;
       return;
     }
@@ -281,7 +240,6 @@ function VoiceChannelContent({
     prevCountRef.current = count;
   }, [isJoined, participants.length]);
 
-  // Safe mic toggle — only allow when JOINED
   const handleToggleMic = useCallback(async () => {
     if (callingState !== CallingState.JOINED) return;
     try {
@@ -291,17 +249,19 @@ function VoiceChannelContent({
     }
   }, [callingState, microphone]);
 
-  // Camera toggle
   const handleToggleCamera = useCallback(async () => {
     if (callingState !== CallingState.JOINED) return;
     try {
+      if (isCameraOff) {
+        const granted = await requestCameraPermission();
+        if (!granted) return;
+      }
       await camera.toggle();
     } catch (err) {
       console.warn("[VoiceChannelScreen] camera toggle failed:", err);
     }
-  }, [callingState, camera]);
+  }, [callingState, camera, isCameraOff]);
 
-  // Speaker toggle using callManager.speaker.setForceSpeakerphoneOn
   const handleToggleSpeaker = useCallback(async () => {
     if (!callManager?.speaker?.setForceSpeakerphoneOn) return;
     try {
@@ -313,7 +273,6 @@ function VoiceChannelContent({
     }
   }, [isSpeakerOn]);
 
-  // Camera flip
   const handleFlipCamera = useCallback(async () => {
     if (callingState !== CallingState.JOINED) return;
     try {
@@ -323,52 +282,32 @@ function VoiceChannelContent({
     }
   }, [callingState, camera]);
 
-  // Screen share toggle
-  const handleToggleScreenShare = useCallback(async () => {
-    if (callingState !== CallingState.JOINED || screenShareDisabledReason)
-      return;
-    try {
-      // Access the call's screenShare property via the useCall hook
-      // screenShare is available on the call object
-      const call = (microphone as any)?.call;
-      if (call?.screenShare) {
-        if (isScreenSharing) {
-          await call.screenShare.disable();
-        } else {
-          await call.screenShare.enable();
-        }
-        setIsScreenSharing(!isScreenSharing);
-      }
-    } catch (err) {
-      console.warn("[VoiceChannelScreen] screen share toggle failed:", err);
-    }
-  }, [callingState, isScreenSharing, microphone, screenShareDisabledReason]);
-
-  // Elapsed timer
   const [elapsed, setElapsed] = useState(0);
   useEffect(() => {
     if (!isJoined) return;
-    const iv = setInterval(() => setElapsed((e) => e + 1), 1000);
-    return () => clearInterval(iv);
+    const interval = setInterval(() => setElapsed((value) => value + 1), 1000);
+    return () => clearInterval(interval);
   }, [isJoined]);
 
   const timeStr = `${Math.floor(elapsed / 60)}:${(elapsed % 60).toString().padStart(2, "0")}`;
-
-  // Build status text
   const statusText = (() => {
     switch (callingState) {
       case CallingState.JOINING:
         return "Connecting...";
       case CallingState.JOINED:
-        return `${participants.length} ${participants.length === 1 ? "person" : "people"} · ${timeStr}`;
+        return `${participants.length} ${participants.length === 1 ? "person" : "people"} - ${timeStr}`;
       case CallingState.RECONNECTING:
+      case CallingState.MIGRATING:
         return "Reconnecting...";
+      case CallingState.RECONNECTING_FAILED:
+        return "Connection failed";
+      case CallingState.OFFLINE:
+        return "Offline, waiting to reconnect...";
       default:
         return "";
     }
   })();
 
-  // Calculate tile size based on participant count — 2 per row for <=4, 3 per row for more
   const numColumns = participants.length <= 4 ? 2 : 3;
   const tilePadding = 8;
   const tileSize =
@@ -376,16 +315,12 @@ function VoiceChannelContent({
 
   const renderParticipant = useCallback(
     ({ item }: { item: (typeof participants)[0] }) => {
-      // Speaking: only true if participant IS publishing audio AND marked as speaking.
-      // A muted participant must NEVER show as speaking — this fixes the
-      // "always speaking when muted" bug.
-      const isPublishingAudio = item.publishedTracks?.includes(1); // TrackType.AUDIO
+      const isPublishingAudio = hasAudio(item);
       const isSpeaking = !!(item.isSpeaking && isPublishingAudio);
       const isParticipantMuted = !isPublishingAudio;
-
+      const participantHasVideo = hasVideo(item);
       const displayName = item.name || "Participant";
       const avatarUrl = item.image;
-      const hasVideo = item.publishedTracks?.includes(2); // TrackType.VIDEO
 
       return (
         <View
@@ -400,49 +335,66 @@ function VoiceChannelContent({
             },
           ]}
         >
-          {/* Avatar or video placeholder */}
-          <View style={styles.tileAvatarContainer}>
-            <ProfilePicture
-              url={avatarUrl ?? null}
-              name={displayName}
-              size={Math.min(tileSize * 0.45, 56)}
-              showLoading={false}
+          {participantHasVideo ? (
+            <ParticipantView
+              participant={item}
+              trackType="videoTrack"
+              style={styles.participantVideo}
+              objectFit="cover"
+              ParticipantLabel={null as any}
+              ParticipantReaction={null as any}
+              ParticipantNetworkQualityIndicator={null as any}
+              ParticipantVideoFallback={() => (
+                <View style={styles.tileAvatarContainer}>
+                  <ProfilePicture
+                    url={avatarUrl ?? null}
+                    name={displayName}
+                    size={Math.min(tileSize * 0.45, 56)}
+                    showLoading={false}
+                  />
+                </View>
+              )}
             />
-          </View>
+          ) : (
+            <View style={styles.tileAvatarContainer}>
+              <ProfilePicture
+                url={avatarUrl ?? null}
+                name={displayName}
+                size={Math.min(tileSize * 0.45, 56)}
+                showLoading={false}
+              />
+            </View>
+          )}
 
-          {/* Name */}
-          <Text
-            style={[styles.tileName, { color: colors.text }]}
-            numberOfLines={1}
-          >
-            {displayName}
-          </Text>
+          <View style={participantHasVideo ? styles.tileOverlay : undefined}>
+            <Text
+              style={[
+                styles.tileName,
+                { color: participantHasVideo ? "#fff" : colors.text },
+              ]}
+              numberOfLines={1}
+            >
+              {displayName}
+            </Text>
 
-          {/* Status icons row */}
-          <View style={styles.tileStatusRow}>
-            {isSpeaking && (
-              <MaterialCommunityIcons
-                name="volume-high"
-                size={14}
-                color="#43A047"
-                style={{ marginRight: 4 }}
-              />
-            )}
-            {isParticipantMuted && (
-              <MaterialCommunityIcons
-                name="microphone-off"
-                size={14}
-                color="#E53935"
-                style={{ marginRight: 4 }}
-              />
-            )}
-            {hasVideo && (
-              <MaterialCommunityIcons
-                name="video"
-                size={14}
-                color={colors.primary}
-              />
-            )}
+            <View style={styles.tileStatusRow}>
+              {isSpeaking && (
+                <MaterialCommunityIcons
+                  name="volume-high"
+                  size={14}
+                  color="#43A047"
+                  style={{ marginRight: 4 }}
+                />
+              )}
+              {isParticipantMuted && (
+                <MaterialCommunityIcons
+                  name="microphone-off"
+                  size={14}
+                  color="#E53935"
+                  style={{ marginRight: 4 }}
+                />
+              )}
+            </View>
           </View>
         </View>
       );
@@ -455,7 +407,6 @@ function VoiceChannelContent({
       style={[styles.container, { backgroundColor: colors.background }]}
       edges={["top"]}
     >
-      {/* Compact header — minimize arrow + status */}
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
         <Pressable
           onPress={onMinimize}
@@ -477,11 +428,9 @@ function VoiceChannelContent({
           </Text>
         </View>
 
-        {/* Spacer to center title */}
         <View style={styles.headerSpacer} />
       </View>
 
-      {/* Participant Grid */}
       <FlatList
         data={participants}
         keyExtractor={(item) => item.sessionId}
@@ -499,30 +448,28 @@ function VoiceChannelContent({
             />
             <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
               {isJoined
-                ? "You\u2019re the only one here"
+                ? "You're the only one here"
                 : "Connecting to voice channel..."}
             </Text>
           </View>
         }
       />
 
-      {/* Full control bar with all supported controls */}
+      {/* Screen share is intentionally hidden here. This app build does not
+          have Stream's native screenshare setup wired end-to-end, and the
+          installed SDK version only exposes the older broadcast flow. */}
       <CallControlBar
         isMuted={isMuted}
         onToggleMic={handleToggleMic}
         micDisabled={!isJoined}
-        showCamera={true}
+        showCamera={isJoined}
         isCameraOff={isCameraOff}
         onToggleCamera={handleToggleCamera}
-        showFlipCamera={!isCameraOff}
+        showFlipCamera={isJoined && !isCameraOff}
         onFlipCamera={handleFlipCamera}
         showSpeaker={!!callManager?.speaker?.setForceSpeakerphoneOn}
         isSpeakerOn={isSpeakerOn}
         onToggleSpeaker={handleToggleSpeaker}
-        showScreenShare={!screenShareDisabledReason}
-        isScreenSharing={isScreenSharing}
-        onToggleScreenShare={handleToggleScreenShare}
-        screenShareDisabledReason={screenShareDisabledReason}
         onLeave={onLeave}
         leaveLabel="Disconnect"
       />
@@ -549,8 +496,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: "center",
   },
-
-  // Header — compact, no Voice Room banner
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -575,8 +520,6 @@ const styles = StyleSheet.create({
   headerSpacer: {
     width: 40,
   },
-
-  // Participant grid
   gridContent: {
     paddingHorizontal: 16,
     paddingVertical: 12,
@@ -590,6 +533,27 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     padding: 8,
+    overflow: "hidden",
+  },
+  participantVideo: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderRadius: 16,
+  },
+  tileOverlay: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    borderBottomLeftRadius: 16,
+    borderBottomRightRadius: 16,
+    alignItems: "center",
   },
   tileAvatarContainer: {
     marginBottom: 6,
@@ -606,8 +570,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     minHeight: 16,
   },
-
-  // Empty state
   emptyState: {
     alignItems: "center",
     justifyContent: "center",
@@ -618,7 +580,6 @@ const styles = StyleSheet.create({
     marginTop: 12,
     textAlign: "center",
   },
-
   retryButton: {
     marginTop: 20,
     paddingHorizontal: 24,

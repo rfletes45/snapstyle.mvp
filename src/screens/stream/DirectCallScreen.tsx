@@ -8,10 +8,10 @@
  * - Outgoing ringing state
  * - Active audio call UI (avatar + controls)
  * - Active video call UI (remote video + local PiP)
- * - Call controls: mute, speaker, camera toggle, camera flip, end call
+ * - Real joined-video controls via Stream's built-in CallContent
+ * - Audio-call controls: mute, speaker, end call
  * - Call duration timer
  * - Back navigation / minimize while staying in call
- * - Screen share control (when platform supports it)
  */
 
 import { ProfilePicture } from "@/components/profile/ProfilePicture/ProfilePicture";
@@ -25,6 +25,7 @@ import {
   CallContent,
   CallingState,
   StreamCall,
+  useCall,
   useCallStateHooks,
 } from "@stream-io/video-react-native-sdk";
 import React, {
@@ -64,7 +65,6 @@ export default function DirectCallScreen({ route, navigation }: Props) {
     mode?: "audio" | "video";
     isOutgoing?: boolean;
   };
-  const callId = params.callId ?? "";
   const recipientName = params.recipientName ?? "";
   const mode = params.mode ?? "audio";
   const isOutgoing = params.isOutgoing ?? false;
@@ -161,20 +161,17 @@ function DirectCallContent({
     useCallCallingState,
     useParticipants,
     useMicrophoneState,
-    useCameraState,
   } = useCallStateHooks();
 
   const callingState = useCallCallingState();
   const participants = useParticipants();
   const { isMute: isMuted, microphone } = useMicrophoneState();
-  const { isMute: isCameraOff, camera } = useCameraState();
   const isVideo = mode === "video";
+  const call = useCall();
 
   // Speaker toggle state — tracked locally (SDK doesn't provide useSpeakerState on RN)
   const [isSpeakerOn, setIsSpeakerOn] = useState(false);
-
-  // Screen share state
-  const [isScreenSharing, setIsScreenSharing] = useState(false);
+  const [wasAcceptedByRemote, setWasAcceptedByRemote] = useState(false);
 
   // Safe mic toggle — only allow when JOINED to prevent permanent track death
   const handleToggleMic = useCallback(async () => {
@@ -185,16 +182,6 @@ function DirectCallContent({
       console.warn("[DirectCallScreen] mic toggle failed:", err);
     }
   }, [callingState, microphone]);
-
-  // Safe camera toggle
-  const handleToggleCamera = useCallback(async () => {
-    if (callingState !== CallingState.JOINED) return;
-    try {
-      await camera.toggle();
-    } catch (err) {
-      console.warn("[DirectCallScreen] camera toggle failed:", err);
-    }
-  }, [callingState, camera]);
 
   // Speaker toggle using callManager.speaker.setForceSpeakerphoneOn
   const handleToggleSpeaker = useCallback(async () => {
@@ -208,23 +195,14 @@ function DirectCallContent({
     }
   }, [isSpeakerOn]);
 
-  // Screen share toggle
-  const handleToggleScreenShare = useCallback(async () => {
-    if (callingState !== CallingState.JOINED) return;
-    try {
-      const call = (microphone as any)?.call;
-      if (call?.screenShare) {
-        if (isScreenSharing) {
-          await call.screenShare.disable();
-        } else {
-          await call.screenShare.enable();
-        }
-        setIsScreenSharing(!isScreenSharing);
+  useEffect(() => {
+    if (!call || !isOutgoing) return;
+    return call.on("call.accepted", (event) => {
+      if (event.user.id !== call.currentUserId) {
+        setWasAcceptedByRemote(true);
       }
-    } catch (err) {
-      console.warn("[DirectCallScreen] screen share toggle failed:", err);
-    }
-  }, [callingState, isScreenSharing, microphone]);
+    });
+  }, [call, isOutgoing]);
 
   // Derive remote participant info from Stream state for enriched display
   const remoteParticipant = useMemo(() => {
@@ -252,14 +230,23 @@ function DirectCallContent({
   // Outgoing ring sound — play while waiting for callee to answer
   useEffect(() => {
     if (!ringtoneService) return;
-    const isRinging = isOutgoing && callingState === CallingState.RINGING;
+    const isRinging =
+      isOutgoing &&
+      callingState === CallingState.RINGING &&
+      !wasAcceptedByRemote;
     if (isRinging) {
       ringtoneService.startRingtone("outgoing", false, true);
     }
     return () => {
       ringtoneService?.stopRingtone();
     };
-  }, [isOutgoing, callingState]);
+  }, [isOutgoing, callingState, wasAcceptedByRemote]);
+
+  useEffect(() => {
+    if (callingState === CallingState.RINGING) {
+      setWasAcceptedByRemote(false);
+    }
+  }, [callingState]);
 
   const formatDuration = (secs: number) => {
     const m = Math.floor(secs / 60);
@@ -267,17 +254,26 @@ function DirectCallContent({
     return `${m}:${s.toString().padStart(2, "0")}`;
   };
 
+  const hasRemoteParticipant = !!remoteParticipant;
+
   // Derive status text
   const statusText = (() => {
     switch (callingState) {
       case CallingState.RINGING:
         return isOutgoing ? "Ringing..." : "Incoming call...";
       case CallingState.JOINING:
-        return "Connecting...";
+        return wasAcceptedByRemote ? "Answered, connecting..." : "Connecting...";
       case CallingState.JOINED:
-        return formatDuration(duration);
+        return hasRemoteParticipant
+          ? `Live - ${formatDuration(duration)}`
+          : "Connected, waiting for media...";
       case CallingState.RECONNECTING:
+      case CallingState.MIGRATING:
         return "Reconnecting...";
+      case CallingState.RECONNECTING_FAILED:
+        return "Connection failed";
+      case CallingState.OFFLINE:
+        return "Offline, waiting to reconnect...";
       case CallingState.LEFT:
         return "Call ended";
       default:
@@ -301,7 +297,9 @@ function DirectCallContent({
     }
   }, [callingState, onEndCall]);
 
-  // For video calls when joined, use Stream's built-in CallContent with custom controls
+  // Joined video calls use Stream's built-in CallContent. This gives us
+  // real media controls (mute video, flip camera, hang up) instead of
+  // duplicating those controls in a custom surface.
   if (isVideo && isJoined) {
     return (
       <SafeAreaView
@@ -396,17 +394,9 @@ function DirectCallContent({
         isMuted={isMuted}
         onToggleMic={handleToggleMic}
         micDisabled={!isJoined}
-        showCamera={isVideo}
-        isCameraOff={isCameraOff}
-        onToggleCamera={handleToggleCamera}
-        showFlipCamera={isVideo && !isCameraOff}
-        onFlipCamera={() => camera.flip()}
         showSpeaker={!!callManager?.speaker?.setForceSpeakerphoneOn}
         isSpeakerOn={isSpeakerOn}
         onToggleSpeaker={handleToggleSpeaker}
-        showScreenShare={isVideo}
-        isScreenSharing={isScreenSharing}
-        onToggleScreenShare={handleToggleScreenShare}
         onLeave={onEndCall}
         leaveLabel="End"
       />

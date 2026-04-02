@@ -2,19 +2,19 @@
  * Voice Channel Service
  *
  * Handles Discord-style voice channels using Stream Video.
- * Voice channels are non-ringing, joinable audio rooms tied to group IDs.
+ * Voice channels are non-ringing, joinable rooms tied to group IDs.
  *
  * Key behaviors:
  * - Deterministic channel IDs: `voice_channel_{groupId}`
  * - No ringing — users join/leave freely
- * - Audio-only by default (camera disabled via settings_override)
+ * - Audio by default, but video opt-in supported (camera starts off)
  * - Persistent room identity (room exists as a join target even when empty)
  * - Real-time participant/occupancy updates via Stream
  *
  * Uses the "default" call type rather than "audio_room" because:
- * - "audio_room" enables backstage by default and restricts SEND_AUDIO to hosts
- * - "default" grants send-audio to all participants with no backstage gate
- * - This matches a Discord-style free-talk model, not a Clubhouse-style moderated room
+ * - Stream documents "audio_room" as a backstage/request-to-speak flow
+ * - Stream documents "default" as open audio+video calling with backstage disabled
+ * - This matches a Discord-style free-talk model, not a moderated stage
  */
 
 import { callSettingsService } from "@/services/calls";
@@ -22,6 +22,14 @@ import type { Call } from "@stream-io/video-react-native-sdk";
 import { getStreamClient } from "./streamClient";
 import { ensureStreamUsersExist } from "./streamUserProvisioning";
 import { toStreamDevice } from "./streamUtils";
+
+// Lazy-load callManager — may not exist in Expo Go
+let callManager: any = null;
+try {
+  callManager = require("@stream-io/video-react-native-sdk").callManager;
+} catch {
+  // Not available
+}
 
 /**
  * Stream call type for voice channels.
@@ -82,11 +90,9 @@ export async function joinVoiceChannel(
   // included (like target_resolution) fall back to {0, 0} internally,
   // which fails the API's own validation (min 240×240) during join().
   //
-  // Fix: Disable video entirely for voice channels AND provide a valid
-  // target_resolution as a safety net. This ensures:
-  //   1. The SDK never attempts video negotiation for this call
-  //   2. If the API still validates target_resolution, it passes
-  //   3. Camera hardware is never touched (no iOS indicator)
+  // Video is ENABLED so participants can opt-in to camera, but
+  // camera_default_on is false so it doesn't auto-start. This allows
+  // the SFU to negotiate video tracks when a user toggles their camera.
   try {
     await call.getOrCreate({
       data: {
@@ -100,7 +106,7 @@ export async function joinVoiceChannel(
             default_device: toStreamDevice(config.audio.defaultOutput),
           },
           video: {
-            enabled: false,
+            enabled: true,
             camera_default_on: false,
             // Safety net: provide valid target_resolution so partial video
             // overrides never fail Stream's validation (min 240×240).
@@ -114,6 +120,22 @@ export async function joinVoiceChannel(
     throw new Error(
       `Unable to open voice channel: ${err?.message ?? "unknown error"}`,
     );
+  }
+
+  // Configure the native audio session BEFORE joining. callManager.start()
+  // sets the iOS AVAudioSession category to .playAndRecord and configures
+  // Android audio routing. Without this, two-way audio won't work because
+  // the default session category (.playback) doesn't support microphone input.
+  if (callManager?.start) {
+    try {
+      const deviceEndpoint = toStreamDevice(config.audio.defaultOutput);
+      callManager.start({
+        audioRole: "communicator",
+        deviceEndpointType: deviceEndpoint,
+      });
+    } catch (err) {
+      console.warn("[VoiceChannelService] callManager.start failed:", err);
+    }
   }
 
   // Join without settings_override — settings were applied at creation.

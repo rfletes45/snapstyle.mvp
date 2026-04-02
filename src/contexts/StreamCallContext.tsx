@@ -155,20 +155,23 @@ function StreamCallInnerProvider({
 
   // Record history for the ended session
   const recordSessionHistory = useCallback(
-    (result: "completed" | "missed" | "declined" | "canceled" | "left") => {
+    (
+      result: "completed" | "missed" | "declined" | "canceled" | "left",
+      callOverride?: Call | null,
+    ) => {
       const meta = sessionMetaRef.current;
       if (!meta || !streamHistorySvc) return;
       sessionMetaRef.current = null;
 
       const now = Date.now();
+      const callForHistory = callOverride ?? activeCallRef.current;
 
       try {
         if (meta.groupId) {
           // Voice room
-          const callId =
-            activeCallRef.current?.id ?? `voice_channel_${meta.groupId}`;
+          const callId = callForHistory?.id ?? `voice_channel_${meta.groupId}`;
           const participantCount =
-            activeCallRef.current?.state?.participants?.length ?? 0;
+            callForHistory?.state?.participants?.length ?? 0;
           const entry = streamHistorySvc.buildVoiceRoomEntry({
             callId,
             groupId: meta.groupId,
@@ -182,9 +185,9 @@ function StreamCallInnerProvider({
           streamHistorySvc.recordCallHistory(entry).catch(() => {});
         } else if (meta.recipientId) {
           // Direct call — try to get avatar from the active call's remote participant
-          const callId = activeCallRef.current?.id ?? uuidv4();
+          const callId = callForHistory?.id ?? uuidv4();
           const remoteParticipant =
-            activeCallRef.current?.state?.participants?.find(
+            callForHistory?.state?.participants?.find(
               (p: any) => p.userId !== userId,
             );
           const avatarUrl =
@@ -212,6 +215,14 @@ function StreamCallInnerProvider({
     [userId],
   );
 
+  const resolveDirectCallEndResult = useCallback((call: Call) => {
+    const meta = sessionMetaRef.current;
+    if (call.state.callingState === CallingState.RINGING && meta?.isOutgoing) {
+      return "canceled" as const;
+    }
+    return "completed" as const;
+  }, []);
+
   // Track active session from the call's calling state.
   // This subscription is the AUTHORITATIVE cleanup path — when Stream
   // reports LEFT/IDLE, we reset state. The explicit endCall/leaveChannel
@@ -229,7 +240,7 @@ function StreamCallInnerProvider({
         // triggering call.leave(), so if we get here and ref is already
         // null, the explicit action already handled cleanup.
         if (activeCallRef.current !== call) return;
-        recordSessionHistory("completed");
+        recordSessionHistory("completed", call);
         activeCallRef.current = null;
         setActiveCall(null);
         setActiveSession(null);
@@ -354,12 +365,13 @@ function StreamCallInnerProvider({
 
     // Null the ref FIRST so the callingState$ subscription (which fires
     // when call.endCall/leave triggers LEFT) won't double-reset state.
+    const historyResult = resolveDirectCallEndResult(call);
     activeCallRef.current = null;
     busyRef.current = false;
 
     // Record history before clearing session (needs activeSession type)
     if (activeSession?.type === "direct_call") {
-      recordSessionHistory("completed");
+      recordSessionHistory(historyResult, call);
     }
 
     // CRITICAL: Set state to null BEFORE the async endDirectCall.
@@ -377,7 +389,7 @@ function StreamCallInnerProvider({
     } catch {
       // Best-effort — call may already be ended by remote
     }
-  }, [activeSession, recordSessionHistory]);
+  }, [activeSession, recordSessionHistory, resolveDirectCallEndResult]);
 
   // ── Voice channel actions ───────────────────────────────────────────────
 
@@ -440,7 +452,7 @@ function StreamCallInnerProvider({
 
     // Record history before clearing session (needs activeSession type)
     if (activeSession?.type === "voice_channel") {
-      recordSessionHistory("left");
+      recordSessionHistory("left", call);
     }
 
     // Leave the call on the SDK side FIRST so the server knows we've

@@ -19,6 +19,14 @@ import { getStreamClient } from "./streamClient";
 import { ensureStreamUsersExist } from "./streamUserProvisioning";
 import { toStreamDevice } from "./streamUtils";
 
+// Lazy-load callManager — may not exist in Expo Go
+let callManager: any = null;
+try {
+  callManager = require("@stream-io/video-react-native-sdk").callManager;
+} catch {
+  // Not available
+}
+
 const TAG = "[DirectCallService]";
 
 /**
@@ -122,6 +130,26 @@ export async function startDirectCall(
     throw new Error(classifyCallError(createErr, "create"));
   }
 
+  // Step 2b: Configure the native audio session BEFORE joining.
+  // callManager.start() sets iOS AVAudioSession to .playAndRecord and
+  // Android audio routing. Without this, two-way audio won't work for
+  // audio-only calls (video calls use <CallContent> which handles this
+  // internally). Use earpiece for audio calls, speaker for video.
+  if (callManager?.start) {
+    try {
+      const deviceEndpoint =
+        mode === "video"
+          ? "speaker"
+          : toStreamDevice(config.audio.defaultOutput);
+      callManager.start({
+        audioRole: "communicator",
+        deviceEndpointType: deviceEndpoint,
+      });
+    } catch (err) {
+      console.warn(`${TAG} callManager.start failed:`, err);
+    }
+  }
+
   // Step 3: Join the call. No settings_override here — settings were
   // applied at creation time above. The SDK reads camera_default_on
   // from the call settings to decide whether to enable camera hardware.
@@ -168,6 +196,22 @@ export async function acceptDirectCall(
 ): Promise<void> {
   const config = callSettingsService.getCallConfig();
   const cameraOn = mode === "video" && config.video.startEnabled;
+
+  // Configure native audio session before joining (same as startDirectCall).
+  if (callManager?.start) {
+    try {
+      const deviceEndpoint =
+        mode === "video"
+          ? "speaker"
+          : toStreamDevice(config.audio.defaultOutput);
+      callManager.start({
+        audioRole: "communicator",
+        deviceEndpointType: deviceEndpoint,
+      });
+    } catch (err) {
+      console.warn(`${TAG} callManager.start failed:`, err);
+    }
+  }
 
   // Join the call. The caller's settings_override.camera_default_on
   // controls whether the SDK enables camera after join.

@@ -60,7 +60,10 @@ export async function initStreamClient(
     user,
     token,
     tokenProvider: streamTokenProvider,
-    options: { logLevel: __DEV__ ? "info" : "warn" },
+    options: {
+      logLevel: __DEV__ ? "info" : "warn",
+      rejectCallWhenBusy: true,
+    },
   });
 
   currentUserId = userId;

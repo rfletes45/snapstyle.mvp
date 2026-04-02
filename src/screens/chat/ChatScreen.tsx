@@ -109,14 +109,14 @@ import {
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 
 // Services
-import { blockUser } from "@/services/blocking";
-import { getOrCreateChat } from "@/services/chat";
 import {
   sendAnimalSignalMessage,
   sendChatDraft,
   sendMediaAttachmentMessage,
   sendVoiceRecordingMessage,
 } from "@/chat/sendDraft";
+import { blockUser } from "@/services/blocking";
+import { getOrCreateChat } from "@/services/chat";
 import { safeSystemText } from "@/services/chat/normalizeMessage";
 import { getUserProfileByUid } from "@/services/friends";
 import { retryMessage } from "@/services/messaging";
@@ -133,7 +133,11 @@ import { Spacing } from "@/constants/theme";
 import { buildSenderStyle } from "@/cosmetics/chatAppearanceResolver";
 import { useAnimalEntitlement } from "@/hooks/useAnimalEntitlement";
 import { playAnimalSound } from "@/services/chat/animalSoundService";
-import type { AttachmentV2, MessageV2, ReplyToMetadata } from "@/types/messaging";
+import type {
+  AttachmentV2,
+  MessageV2,
+  ReplyToMetadata,
+} from "@/types/messaging";
 import type { ReportReason } from "@/types/models";
 import * as Haptics from "expo-haptics";
 
@@ -501,9 +505,13 @@ export default function ChatScreen({
         ? screen.messages.map((msg) => {
             // Apply read receipt status for messages sent by current user
             if (msg.senderId === uid && msg.serverReceivedAt) {
-              // Exclude "read" from status check since getMessageStatus will determine it
+              // For DMs, messages that reached the server are at minimum
+              // "delivered". Map "sent" → "delivered" so the receipt resolver
+              // never falls back to "Sent" during watermark hydration.
               const baseStatus =
-                msg.status !== "read" ? msg.status : "delivered";
+                msg.status === "read" || msg.status === "sent"
+                  ? "delivered"
+                  : msg.status;
               return {
                 ...msg,
                 status: readReceipts.getMessageStatus(

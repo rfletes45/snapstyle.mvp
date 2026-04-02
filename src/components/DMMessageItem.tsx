@@ -275,22 +275,6 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
               </Text>
             </TouchableOpacity>
           );
-        case "sent":
-          return (
-            <View
-              style={styles.statusContainer}
-              accessibilityLabel="Message sent"
-            >
-              <Text
-                style={[
-                  styles.statusLabel,
-                  { color: theme.colors.onSurfaceVariant },
-                ]}
-              >
-                Sent
-              </Text>
-            </View>
-          );
         case "delivered":
           return (
             <View

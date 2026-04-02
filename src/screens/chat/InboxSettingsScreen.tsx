@@ -10,17 +10,18 @@
  * @module screens/chat/InboxSettingsScreen
  */
 
+import { Spacing } from "@/constants/theme";
 import {
   subscribeToInboxSettings,
   updateInboxSettings,
 } from "@/services/inboxSettings";
 import { useAuth } from "@/store/AuthContext";
 import { useAppTheme } from "@/store/ThemeContext";
-import type { AppTabsParamList, InboxStackParamList } from "@/types/navigation";
 import type { InboxSettings } from "@/types/messaging";
+import type { AppTabsParamList, InboxStackParamList } from "@/types/navigation";
 import { log } from "@/utils/log";
-import { useNavigation } from "@react-navigation/native";
 import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
+import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import React, { useCallback, useEffect, useState } from "react";
 import { ScrollView, StyleSheet, View } from "react-native";
@@ -37,7 +38,6 @@ import {
   Text,
 } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Spacing } from "@/constants/theme";
 
 // =============================================================================
 // Types

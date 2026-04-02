@@ -30,7 +30,9 @@ const getDb = () => getFirestoreInstance();
 const log = createLogger("groupMembers");
 const GROUP_TYPING_TIMEOUT_MS = 5000;
 
-function normalizeGroupTypingAt(data: Record<string, unknown>): number | undefined {
+function normalizeGroupTypingAt(
+  data: Record<string, unknown>,
+): number | undefined {
   if (typeof data.typingAt === "number" && data.typingAt > 0) {
     return data.typingAt;
   }

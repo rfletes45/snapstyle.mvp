@@ -16,6 +16,7 @@
  * If a sound file is missing, playback silently fails without crashing.
  */
 
+import { callSettingsService } from "@/services/calls";
 import { Vibration } from "react-native";
 
 // ---------------------------------------------------------------------------
@@ -57,6 +58,16 @@ let activePlayer: any = null;
 let activeType: RingtoneType | null = null;
 let vibrationInterval: ReturnType<typeof setInterval> | null = null;
 
+function getNotificationPreferences() {
+  const settings = callSettingsService.getSettingsSync();
+  return {
+    ringtone: settings.ringtone,
+    customRingtoneUri: settings.customRingtoneUri,
+    vibrationEnabled: settings.vibrationEnabled,
+    volume: Math.max(0, Math.min(1, settings.ringtoneVolume / 100)),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -77,8 +88,21 @@ export async function startRingtone(
   // Stop any currently playing ringtone
   await stopRingtone();
 
-  const shouldVibrate = vibrate ?? type === "incoming";
+  const preferences = getNotificationPreferences();
+  const shouldVibrate =
+    (vibrate ?? type === "incoming") && preferences.vibrationEnabled;
   const shouldLoop = loop ?? (type === "incoming" || type === "outgoing");
+  const shouldPlayTone =
+    type === "room_join"
+      ? true
+      : preferences.ringtone !== "silent" &&
+        preferences.ringtone !== "vibrate_only";
+  const source =
+    type !== "room_join" &&
+    preferences.ringtone === "custom" &&
+    preferences.customRingtoneUri
+      ? preferences.customRingtoneUri
+      : SOUND_SOURCES[type];
 
   // Configure audio session for playback alongside other audio
   if (setAudioModeAsync) {
@@ -86,6 +110,7 @@ export async function startRingtone(
       await setAudioModeAsync({
         playsInSilentMode: true,
         shouldRouteThroughEarpiece: false,
+        interruptionMode: "duckOthers",
       });
     } catch {
       // Non-fatal — audio mode may already be set by the call SDK
@@ -93,17 +118,16 @@ export async function startRingtone(
   }
 
   // Create and start the audio player
-  if (createAudioPlayer) {
+  if (shouldPlayTone && createAudioPlayer) {
     try {
-      const source = SOUND_SOURCES[type];
       if (!source) {
         console.warn(`[RingtoneService] No sound source for type: ${type}`);
         return;
       }
 
-      activePlayer = createAudioPlayer(source, {
-        isLooping: shouldLoop,
-      });
+      activePlayer = createAudioPlayer(source);
+      activePlayer.loop = shouldLoop;
+      activePlayer.volume = preferences.volume;
       activePlayer.play();
       activeType = type;
     } catch (err) {
@@ -141,9 +165,9 @@ export async function stopRingtone(): Promise<void> {
   if (activePlayer) {
     try {
       activePlayer.pause();
-      activePlayer.release();
+      activePlayer.remove();
     } catch {
-      // Player may already be released
+      // Player may already be removed
     }
     activePlayer = null;
     activeType = null;
@@ -159,17 +183,20 @@ export async function playSoundEffect(type: RingtoneType): Promise<void> {
 
   try {
     const source = SOUND_SOURCES[type];
+    const { volume } = getNotificationPreferences();
     if (!source) return;
 
-    const player = createAudioPlayer(source, { isLooping: false });
+    const player = createAudioPlayer(source);
+    player.loop = false;
+    player.volume = volume;
     player.play();
 
-    // Release the player after playback completes (approximate)
+    // Remove the player after playback completes (approximate)
     setTimeout(() => {
       try {
-        player.release();
+        player.remove();
       } catch {
-        // Already released
+        // Already removed
       }
     }, 3000);
   } catch (err) {

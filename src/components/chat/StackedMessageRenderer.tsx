@@ -203,74 +203,6 @@ export const StackedMessageRenderer: React.FC<StackedMessageRendererProps> =
         [message.createdAt],
       );
 
-      // ── Status indicator ──────────────────────────────────────────────
-      const renderStatus = () => {
-        if (!isSentByMe) return null;
-        const color = theme.colors.onSurfaceVariant;
-        switch (message.status) {
-          case "sending":
-            return (
-              <Text
-                style={[s.metaText, s.statusLabel, { color }]}
-                accessibilityLabel="Sending"
-              >
-                Sending
-              </Text>
-            );
-          case "failed":
-            return (
-              <TouchableOpacity
-                onPress={() => onRetry(message)}
-                accessibilityLabel="Message failed. Tap to retry"
-                accessibilityRole="button"
-              >
-                <Text
-                  style={[
-                    s.metaText,
-                    s.statusLabel,
-                    { color: theme.colors.error },
-                  ]}
-                >
-                  Failed · Tap to retry
-                </Text>
-              </TouchableOpacity>
-            );
-          case "sent":
-            return (
-              <Text
-                style={[s.metaText, s.statusLabel, { color }]}
-                accessibilityLabel="Sent"
-              >
-                Sent
-              </Text>
-            );
-          case "delivered":
-            return (
-              <Text
-                style={[s.metaText, s.statusLabel, { color }]}
-                accessibilityLabel="Delivered"
-              >
-                Delivered
-              </Text>
-            );
-          case "read":
-            return (
-              <Text
-                style={[
-                  s.metaText,
-                  s.statusLabel,
-                  { color: theme.colors.primary },
-                ]}
-                accessibilityLabel="Read"
-              >
-                Read
-              </Text>
-            );
-          default:
-            return null;
-        }
-      };
-
       // ── Message content ───────────────────────────────────────────────
       const renderContent = () => {
         if (message.kind === "animal") {
@@ -419,7 +351,7 @@ export const StackedMessageRenderer: React.FC<StackedMessageRendererProps> =
 
                 {/* Content column — name + message in one vertical flow */}
                 <View style={s.contentColumn}>
-                  {/* Author name + timestamp (group-start only) */}
+                  {/* Author name + timestamp + status (group-start only) */}
                   {vm.isGroupStart && (
                     <View style={s.nameRow}>
                       <Text
@@ -474,11 +406,6 @@ export const StackedMessageRenderer: React.FC<StackedMessageRendererProps> =
                       />
                     </View>
                   )}
-
-                  {/* Delivery status at group-end (time already shown in group header) */}
-                  {vm.showTimestamp && isSentByMe && (
-                    <View style={s.metaRow}>{renderStatus()}</View>
-                  )}
                 </View>
               </View>
             </TouchableOpacity>
@@ -526,7 +453,7 @@ const s = StyleSheet.create({
     marginTop: F.withinGroupGap,
   },
 
-  // ── Group-start name row: [name] [timestamp] (inside content column) ──
+  // ── Group-start name row: [name] [timestamp] [status?] (inside content column)
   nameRow: {
     flexDirection: "row",
     alignItems: "baseline",
@@ -586,20 +513,6 @@ const s = StyleSheet.create({
   // ── Reactions (always left-aligned) ─────────────────────────────────
   reactionRow: {
     marginTop: F.reactionRowGap,
-  },
-
-  // ── Metadata row ────────────────────────────────────────────────────
-  metaRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    marginTop: 2,
-  },
-  metaText: {
-    fontSize: F.timestampFontSize,
-  },
-  statusLabel: {
-    fontWeight: "700",
   },
 
   // ── Thread indicator row ────────────────────────────────────────────

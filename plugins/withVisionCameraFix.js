@@ -4,10 +4,7 @@
  * react-native-vision-camera v4 importing non-modular headers in framework modules
  * on newer Xcode toolchains.
  */
-const {
-  withXcodeProject,
-  withDangerousMod,
-} = require("expo/config-plugins");
+const { withXcodeProject, withDangerousMod } = require("expo/config-plugins");
 const fs = require("fs");
 const path = require("path");
 
@@ -18,7 +15,7 @@ const withVisionCameraFix = (config) => {
     async (config) => {
       const podfilePath = path.join(
         config.modRequest.platformProjectRoot,
-        "Podfile"
+        "Podfile",
       );
       let podfileContents = fs.readFileSync(podfilePath, "utf8");
 
@@ -49,7 +46,7 @@ const withVisionCameraFix = (config) => {
       target.build_configurations.each do |build_config|
         build_config.build_settings['CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES'] = 'YES'
       end
-    end`
+    end`,
         );
       } else {
         // Append before the final "end" of the target block

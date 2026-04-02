@@ -139,6 +139,9 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     [
       "@stream-io/video-react-native-sdk",
       {
+        // Screen share stays disabled in this build. The installed SDK/version
+        // path in this repo still relies on native Stream screenshare setup,
+        // and the app has not been configured for that end-to-end flow yet.
         ringingPushNotifications: {
           disableVideoIos: false,
           includesCallsInRecentsIos: false,

@@ -92,7 +92,6 @@ import AdminReportsQueueScreen from "@/screens/admin/AdminReportsQueueScreen";
 import ActivityFeedScreen from "@/screens/social/ActivityFeedScreen";
 
 // Camera screens
-import { ActiveCallBanner } from "@/components/stream/ActiveCallBanner";
 import { CALL_FEATURES } from "@/constants/featureFlags";
 import CameraScreen from "@/screens/camera/CameraScreen";
 import CameraShareScreen from "@/screens/camera/ShareScreen";
@@ -787,7 +786,6 @@ export default function RootNavigator({
                 syncProfileTheme={syncProfileTheme}
               />
               <MainStack />
-              <ActiveCallBanner />
               <WarningModal />
             </>
           ) : hydrationState === "needs_profile" ? (
