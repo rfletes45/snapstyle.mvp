@@ -68,6 +68,19 @@ function getNotificationPreferences() {
   };
 }
 
+async function configurePlaybackAudioMode(): Promise<void> {
+  if (!setAudioModeAsync) return;
+  try {
+    await setAudioModeAsync({
+      playsInSilentMode: true,
+      shouldRouteThroughEarpiece: false,
+      interruptionMode: "mixWithOthers",
+    });
+  } catch {
+    // Non-fatal — audio mode may already be controlled by the call SDK
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -104,18 +117,10 @@ export async function startRingtone(
       ? preferences.customRingtoneUri
       : SOUND_SOURCES[type];
 
-  // Configure audio session for playback alongside other audio
-  if (setAudioModeAsync) {
-    try {
-      await setAudioModeAsync({
-        playsInSilentMode: true,
-        shouldRouteThroughEarpiece: false,
-        interruptionMode: "duckOthers",
-      });
-    } catch {
-      // Non-fatal — audio mode may already be set by the call SDK
-    }
-  }
+  // Configure audio session for playback alongside other audio.
+  // Use 'mixWithOthers' so ringtone doesn't fight with the active call
+  // audio session that callManager.start() may have already configured.
+  await configurePlaybackAudioMode();
 
   // Create and start the audio player
   if (shouldPlayTone && createAudioPlayer) {
@@ -125,7 +130,9 @@ export async function startRingtone(
         return;
       }
 
-      activePlayer = createAudioPlayer(source);
+      activePlayer = createAudioPlayer(source, {
+        keepAudioSessionActive: true,
+      });
       activePlayer.loop = shouldLoop;
       activePlayer.volume = preferences.volume;
       activePlayer.play();
@@ -186,7 +193,11 @@ export async function playSoundEffect(type: RingtoneType): Promise<void> {
     const { volume } = getNotificationPreferences();
     if (!source) return;
 
-    const player = createAudioPlayer(source);
+    await configurePlaybackAudioMode();
+
+    const player = createAudioPlayer(source, {
+      keepAudioSessionActive: true,
+    });
     player.loop = false;
     player.volume = volume;
     player.play();

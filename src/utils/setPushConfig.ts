@@ -40,8 +40,6 @@ export function setPushConfig(): void {
   // while the app is terminated and the SDK needs to create a client.
   const createStreamVideoClient = async () => {
     try {
-      const AsyncStorage =
-        require("@react-native-async-storage/async-storage").default;
       const { fetchStreamToken } =
         require("@/services/stream/streamTokenProvider") as typeof import("@/services/stream/streamTokenProvider");
       const { getAuthInstance } =
@@ -112,5 +110,10 @@ export function setPushConfig(): void {
     // Called when a push arrives while the app is terminated.
     // The SDK needs a connected client to process the call event.
     createStreamVideoClient,
+
+    // Stream 1.30 watches ringing / joined calls from the root component
+    // rather than routing through deprecated navigateAcceptCall callbacks.
+    // We intentionally rely on IncomingCallHandler + useCalls() for app-side
+    // navigation after native accept / decline actions.
   });
 }

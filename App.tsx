@@ -1,6 +1,7 @@
 import ErrorBoundary from "@/components/ErrorBoundary";
 import InAppToast from "@/components/InAppToast";
 import { IncomingCallHandler } from "@/components/stream";
+import { FloatingVideoOverlay } from "@/components/stream/FloatingVideoOverlay";
 import { StreamCallProvider } from "@/contexts/StreamCallContext";
 import { loadCustomFonts } from "@/fonts/fontLoader";
 import { useOutboxProcessor } from "@/hooks/useOutboxProcessor";
@@ -8,6 +9,7 @@ import { lockToPortrait } from "@/hooks/useScreenOrientation";
 import RootNavigator from "@/navigation/RootNavigator";
 import { initializeFirebase } from "@/services/firebase";
 import { firebaseConfig } from "@/services/firebaseConfig";
+import { navigationRef } from "@/services/navigationRef";
 import { AuthProvider } from "@/store/AuthContext";
 import { CameraProvider } from "@/store/CameraContext";
 import { ConversationDisplayModeProvider } from "@/store/ConversationDisplayModeContext";
@@ -15,15 +17,11 @@ import { InAppNotificationsProvider } from "@/store/InAppNotificationsContext";
 import { SnackbarProvider } from "@/store/SnackbarContext";
 import { ThemeProvider, useAppTheme } from "@/store/ThemeContext";
 import { UserProvider } from "@/store/UserContext";
-import type { RootStackParamList } from "@/types/navigation/root";
-import {
-  CommonActions,
-  NavigationContainerRef,
-} from "@react-navigation/native";
+import { CommonActions } from "@react-navigation/native";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar as ExpoStatusBar } from "expo-status-bar";
 import * as SystemUI from "expo-system-ui";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
@@ -64,8 +62,18 @@ function handleError(error: Error, errorInfo: React.ErrorInfo): void {
  */
 function AppContent() {
   const { theme, isDark, colors } = useAppTheme();
-  const navigationRef =
-    useRef<NavigationContainerRef<RootStackParamList>>(null);
+  const [currentRouteName, setCurrentRouteName] = useState<string | undefined>(
+    undefined,
+  );
+
+  // Track current route for FloatingVideoOverlay visibility
+  useEffect(() => {
+    const unsubscribe = navigationRef.addListener("state", () => {
+      const route = navigationRef.getCurrentRoute();
+      if (route?.name) setCurrentRouteName(route.name);
+    });
+    return unsubscribe;
+  }, []);
 
   // ── Font loading gate ───────────────────────────────────────────────────
   const [fontsReady, setFontsReady] = useState(false);
@@ -126,10 +134,10 @@ function AppContent() {
    */
   const handleToastNavigate = useCallback(
     (screen: string, params?: Record<string, unknown>) => {
-      if (!navigationRef.current) return;
+      if (!navigationRef.isReady()) return;
 
       // Use CommonActions for robust navigation across stacks
-      navigationRef.current.dispatch(
+      navigationRef.dispatch(
         CommonActions.navigate({
           name: screen,
           params,
@@ -200,11 +208,11 @@ function AppContent() {
                         { backgroundColor: colors.background },
                       ]}
                     >
-                      <RootNavigator navigationRef={navigationRef} />
+                      <RootNavigator />
                       <InAppToast onNavigate={handleToastNavigate} />
                       <IncomingCallHandler
                         onNavigateToCall={(callId, mode) => {
-                          navigationRef.current?.navigate(
+                          navigationRef.navigate(
                             "DirectCall" as any,
                             {
                               callId,
@@ -214,6 +222,12 @@ function AppContent() {
                             } as any,
                           );
                         }}
+                      />
+                      <FloatingVideoOverlay
+                        isOnCallScreen={
+                          currentRouteName === "DirectCall" ||
+                          currentRouteName === "VoiceChannel"
+                        }
                       />
                     </View>
                     <ExpoStatusBar style={isDark ? "light" : "dark"} />

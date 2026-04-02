@@ -303,7 +303,12 @@ function StreamCallInnerProvider({
 
     try {
       const mode = (call.state.custom?.mode as DirectCallMode) ?? "audio";
-      await acceptDirectCall(call, mode);
+      const wasAlreadyAccepted =
+        call.state.callingState === CallingState.JOINING ||
+        call.state.callingState === CallingState.JOINED;
+      if (!wasAlreadyAccepted) {
+        await acceptDirectCall(call, mode);
+      }
 
       // Set metadata BEFORE state updates so useEffect subscription has it
       sessionMetaRef.current = {
@@ -322,6 +327,12 @@ function StreamCallInnerProvider({
         recipientName: call.state.createdBy?.name,
         mode,
       });
+      if (wasAlreadyAccepted) {
+        console.log(
+          "[StreamCallContext] Adopted already-accepted incoming call",
+          call.id,
+        );
+      }
     } catch (err) {
       busyRef.current = false;
       throw err;

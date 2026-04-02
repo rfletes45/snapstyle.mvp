@@ -12,7 +12,13 @@ import { useAuth } from "@/store/AuthContext";
 import { useAppTheme } from "@/store/ThemeContext";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import type { Call } from "@stream-io/video-react-native-sdk";
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   Dimensions,
   StyleSheet,
@@ -77,6 +83,7 @@ function IncomingCallHandlerInner({
   const incomingCalls = allCalls.filter(
     (c) => c.state.callingState === CallingState.RINGING && !c.isCreatedByMe,
   );
+
   const mostRecentIncomingCall = useMemo(() => {
     if (incomingCalls.length === 0) return null;
     return incomingCalls.reduce((latest, call) => {
@@ -98,6 +105,60 @@ function IncomingCallHandlerInner({
   // isBusy=true (via context state) BEFORE setPendingCall(null) runs,
   // causing the auto-reject effect to fire and reject the call we just accepted.
   const acceptingRef = useRef(false);
+
+  // ── Native accept adoption ───────────────────────────────────────────
+  // Stream processes native accept actions itself when the user answers via
+  // CallKit / notification UI. When the app returns to foreground we must
+  // adopt that JOINING/JOINED call into our context and navigate straight to
+  // the active call screen, without showing a second in-app accept sheet.
+  useEffect(() => {
+    const acceptedDirectCalls = allCalls.filter(
+      (c) =>
+        !c.isCreatedByMe &&
+        typeof c.state.custom?.mode === "string" &&
+        (c.state.callingState === CallingState.JOINED ||
+          c.state.callingState === CallingState.JOINING),
+    );
+    const alreadyAcceptedCall =
+      acceptedDirectCalls.length === 0
+        ? undefined
+        : acceptedDirectCalls.reduce((latest, call) => {
+            const latestCreatedAt = latest.state.createdAt?.getTime?.() ?? 0;
+            const callCreatedAt = call.state.createdAt?.getTime?.() ?? 0;
+            return callCreatedAt > latestCreatedAt ? call : latest;
+          });
+
+    if (
+      alreadyAcceptedCall &&
+      !isBusy &&
+      !acceptingRef.current &&
+      !(
+        activeSession?.type === "direct_call" &&
+        activeSession.callId === alreadyAcceptedCall.id
+      )
+    ) {
+      const callToAdopt = alreadyAcceptedCall;
+      const mode =
+        (callToAdopt.state.custom?.mode as "audio" | "video") ?? "audio";
+      acceptingRef.current = true;
+      setPendingCall(null);
+      setCallAllowed(null);
+
+      acceptCall(callToAdopt)
+        .then(() => {
+          onNavigateToCall?.(callToAdopt.id, mode);
+        })
+        .catch((err) => {
+          console.error(
+            "[IncomingCallHandler] Native accept adoption failed:",
+            err,
+          );
+        })
+        .finally(() => {
+          acceptingRef.current = false;
+        });
+    }
+  }, [allCalls, isBusy, activeSession, acceptCall, onNavigateToCall]);
 
   // Always show the most recent incoming call. Watching only the length can
   // miss call replacement when one ringing call disappears and another takes

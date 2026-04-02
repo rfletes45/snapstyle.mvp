@@ -14,6 +14,12 @@
  */
 
 import { ProfilePicture } from "@/components/profile/ProfilePicture/ProfilePicture";
+import type { AudioRoute } from "@/components/stream/AudioRoutePicker";
+import {
+  AudioRoutePicker,
+  applyAudioRoute,
+  getAudioRouteFromStatus,
+} from "@/components/stream/AudioRoutePicker";
 import { CallControlBar } from "@/components/stream/CallControlBar";
 import { useStreamCall } from "@/contexts/StreamCallContext";
 import { useAppTheme } from "@/store/ThemeContext";
@@ -33,6 +39,7 @@ import {
   ActivityIndicator,
   Dimensions,
   FlatList,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -196,10 +203,7 @@ export default function VoiceChannelScreen({ route, navigation }: Props) {
 
   return (
     <StreamCall call={activeCall}>
-      <VoiceChannelContent
-        onLeave={handleLeave}
-        onMinimize={handleMinimize}
-      />
+      <VoiceChannelContent onLeave={handleLeave} onMinimize={handleMinimize} />
     </StreamCall>
   );
 }
@@ -224,7 +228,57 @@ function VoiceChannelContent({
   const { isMute: isMuted, microphone } = useMicrophoneState();
   const { isMute: isCameraOff, camera } = useCameraState();
   const isJoined = callingState === CallingState.JOINED;
-  const [isSpeakerOn, setIsSpeakerOn] = useState(false);
+  const [isSpeakerOn, setIsSpeakerOn] = useState(true); // Voice rooms default to speaker
+  const [audioRoutePickerVisible, setAudioRoutePickerVisible] = useState(false);
+  const [currentAudioRoute, setCurrentAudioRoute] =
+    useState<AudioRoute>("speaker");
+
+  useEffect(() => {
+    if (
+      Platform.OS !== "android" ||
+      !callManager?.android?.getAudioDeviceStatus ||
+      !callManager?.android?.addAudioDeviceChangeListener
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    const syncAudioRoute = async () => {
+      try {
+        const status = await callManager.android.getAudioDeviceStatus();
+        if (cancelled) return;
+        const route = getAudioRouteFromStatus(status);
+        if (route !== "unknown") {
+          setCurrentAudioRoute(route);
+          setIsSpeakerOn(route === "speaker");
+        }
+      } catch (err) {
+        if (!cancelled) {
+          console.warn(
+            "[VoiceChannelScreen] Failed to sync Android audio route:",
+            err,
+          );
+        }
+      }
+    };
+
+    syncAudioRoute();
+    const unsubscribe = callManager.android.addAudioDeviceChangeListener(
+      (status: any) => {
+        if (cancelled) return;
+        const route = getAudioRouteFromStatus(status);
+        if (route !== "unknown") {
+          setCurrentAudioRoute(route);
+          setIsSpeakerOn(route === "speaker");
+        }
+      },
+    );
+
+    return () => {
+      cancelled = true;
+      unsubscribe?.();
+    };
+  }, []);
 
   const prevCountRef = useRef<number | null>(null);
   useEffect(() => {
@@ -235,7 +289,12 @@ function VoiceChannelContent({
       return;
     }
     if (count > prevCountRef.current) {
-      ringtoneService?.playSoundEffect("room_join");
+      // Small delay lets the audio session from callManager.start() settle.
+      // expo-audio playback can fail if fired immediately after the session
+      // switches to .playAndRecord mode.
+      setTimeout(() => {
+        ringtoneService?.playSoundEffect("room_join");
+      }, 300);
     }
     prevCountRef.current = count;
   }, [isJoined, participants.length]);
@@ -268,10 +327,17 @@ function VoiceChannelContent({
       const newState = !isSpeakerOn;
       callManager.speaker.setForceSpeakerphoneOn(newState);
       setIsSpeakerOn(newState);
+      setCurrentAudioRoute(newState ? "speaker" : "earpiece");
     } catch (err) {
       console.warn("[VoiceChannelScreen] speaker toggle failed:", err);
     }
   }, [isSpeakerOn]);
+
+  const handleAudioRouteSelect = useCallback((route: AudioRoute) => {
+    applyAudioRoute(route);
+    setCurrentAudioRoute(route);
+    setIsSpeakerOn(route === "speaker");
+  }, []);
 
   const handleFlipCamera = useCallback(async () => {
     if (callingState !== CallingState.JOINED) return;
@@ -428,7 +494,20 @@ function VoiceChannelContent({
           </Text>
         </View>
 
-        <View style={styles.headerSpacer} />
+        <View style={styles.headerSpacer}>
+          <Pressable
+            onPress={() => setAudioRoutePickerVisible(true)}
+            style={styles.backButton}
+            accessibilityLabel="Audio output"
+            hitSlop={12}
+          >
+            <MaterialCommunityIcons
+              name="speaker"
+              size={22}
+              color={colors.textSecondary}
+            />
+          </Pressable>
+        </View>
       </View>
 
       <FlatList
@@ -472,6 +551,13 @@ function VoiceChannelContent({
         onToggleSpeaker={handleToggleSpeaker}
         onLeave={onLeave}
         leaveLabel="Disconnect"
+      />
+
+      <AudioRoutePicker
+        visible={audioRoutePickerVisible}
+        onClose={() => setAudioRoutePickerVisible(false)}
+        currentRoute={currentAudioRoute}
+        onRouteSelected={handleAudioRouteSelect}
       />
     </SafeAreaView>
   );

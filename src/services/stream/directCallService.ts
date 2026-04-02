@@ -141,13 +141,16 @@ export async function startDirectCall(
         mode === "video"
           ? "speaker"
           : toStreamDevice(config.audio.defaultOutput);
-      callManager.start({
+      await callManager.start({
         audioRole: "communicator",
         deviceEndpointType: deviceEndpoint,
       });
+      console.log(`${TAG} callManager.start succeeded (${deviceEndpoint})`);
     } catch (err) {
       console.warn(`${TAG} callManager.start failed:`, err);
     }
+  } else {
+    console.warn(`${TAG} callManager not available — audio may not work`);
   }
 
   // Step 3: Join the call. No settings_override here — settings were
@@ -204,13 +207,18 @@ export async function acceptDirectCall(
         mode === "video"
           ? "speaker"
           : toStreamDevice(config.audio.defaultOutput);
-      callManager.start({
+      await callManager.start({
         audioRole: "communicator",
         deviceEndpointType: deviceEndpoint,
       });
+      console.log(
+        `${TAG} acceptDirectCall callManager.start succeeded (${deviceEndpoint})`,
+      );
     } catch (err) {
       console.warn(`${TAG} callManager.start failed:`, err);
     }
+  } else {
+    console.warn(`${TAG} callManager not available — audio may not work`);
   }
 
   // Join the call. The caller's settings_override.camera_default_on

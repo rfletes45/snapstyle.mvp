@@ -7,23 +7,32 @@
  * Handles:
  * - Outgoing ringing state
  * - Active audio call UI (avatar + controls)
- * - Active video call UI (remote video + local PiP)
- * - Real joined-video controls via Stream's built-in CallContent
+ * - Active video call UI (remote video + local PiP + full controls)
+ * - Video call controls: camera on/off, flip camera, mute, speaker, end call
  * - Audio-call controls: mute, speaker, end call
+ * - Audio route picker for all call types
  * - Call duration timer
  * - Back navigation / minimize while staying in call
  */
 
 import { ProfilePicture } from "@/components/profile/ProfilePicture/ProfilePicture";
+import type { AudioRoute } from "@/components/stream/AudioRoutePicker";
+import {
+  AudioRoutePicker,
+  applyAudioRoute,
+  getAudioRouteFromStatus,
+} from "@/components/stream/AudioRoutePicker";
 import { CallControlBar } from "@/components/stream/CallControlBar";
 import { useStreamCall } from "@/contexts/StreamCallContext";
 import { useAppTheme } from "@/store/ThemeContext";
 import type { MainStackParamList } from "@/types/navigation/root";
+import { requestCameraPermission } from "@/utils/permissions";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
+import { hasVideo } from "@stream-io/video-client";
 import {
-  CallContent,
   CallingState,
+  ParticipantView,
   StreamCall,
   useCall,
   useCallStateHooks,
@@ -35,7 +44,7 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 // Lazy-load ringtone service for outgoing ring sound
@@ -58,6 +67,9 @@ try {
 type Props = NativeStackScreenProps<MainStackParamList, "DirectCall">;
 
 export default function DirectCallScreen({ route, navigation }: Props) {
+  const { endCall, activeCall } = useStreamCall();
+  const { colors } = useAppTheme();
+
   // Normalize params once at the top — prevents undefined-driven re-renders
   const params = route.params as {
     callId?: string;
@@ -66,11 +78,12 @@ export default function DirectCallScreen({ route, navigation }: Props) {
     isOutgoing?: boolean;
   };
   const recipientName = params.recipientName ?? "";
-  const mode = params.mode ?? "audio";
-  const isOutgoing = params.isOutgoing ?? false;
-
-  const { endCall, activeCall } = useStreamCall();
-  const { colors } = useAppTheme();
+  const modeFromCall = activeCall?.state.custom?.mode;
+  const mode =
+    modeFromCall === "video" || modeFromCall === "audio"
+      ? modeFromCall
+      : (params.mode ?? "audio");
+  const isOutgoing = params.isOutgoing ?? activeCall?.isCreatedByMe ?? false;
 
   // Ref-gate prevents multiple endCall dispatches. Once endCall is invoked
   // (by user tap, remote hangup, or callingState→LEFT), this ref ensures
@@ -161,17 +174,79 @@ function DirectCallContent({
     useCallCallingState,
     useParticipants,
     useMicrophoneState,
+    useCameraState,
   } = useCallStateHooks();
 
   const callingState = useCallCallingState();
   const participants = useParticipants();
   const { isMute: isMuted, microphone } = useMicrophoneState();
+  const { isMute: isCameraOff, camera } = useCameraState();
   const isVideo = mode === "video";
   const call = useCall();
 
   // Speaker toggle state — tracked locally (SDK doesn't provide useSpeakerState on RN)
-  const [isSpeakerOn, setIsSpeakerOn] = useState(false);
+  const [isSpeakerOn, setIsSpeakerOn] = useState(isVideo); // Default speaker ON for video
   const [wasAcceptedByRemote, setWasAcceptedByRemote] = useState(false);
+  const [audioRoutePickerVisible, setAudioRoutePickerVisible] = useState(false);
+  const [currentAudioRoute, setCurrentAudioRoute] = useState<AudioRoute>(
+    isVideo ? "speaker" : "earpiece",
+  );
+
+  useEffect(() => {
+    if (
+      Platform.OS !== "android" ||
+      !callManager?.android?.getAudioDeviceStatus ||
+      !callManager?.android?.addAudioDeviceChangeListener
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    const syncAudioRoute = async () => {
+      try {
+        const status = await callManager.android.getAudioDeviceStatus();
+        if (cancelled) return;
+        const route = getAudioRouteFromStatus(status);
+        if (route !== "unknown") {
+          setCurrentAudioRoute(route);
+          setIsSpeakerOn(route === "speaker");
+        }
+      } catch (err) {
+        if (!cancelled) {
+          console.warn(
+            "[DirectCallScreen] Failed to sync Android audio route:",
+            err,
+          );
+        }
+      }
+    };
+
+    syncAudioRoute();
+    const unsubscribe = callManager.android.addAudioDeviceChangeListener(
+      (status: any) => {
+        if (cancelled) return;
+        const route = getAudioRouteFromStatus(status);
+        if (route !== "unknown") {
+          setCurrentAudioRoute(route);
+          setIsSpeakerOn(route === "speaker");
+        }
+      },
+    );
+
+    return () => {
+      cancelled = true;
+      unsubscribe?.();
+    };
+  }, []);
+
+  // Initialize speaker state for video calls
+  useEffect(() => {
+    if (isVideo && callManager?.speaker?.setForceSpeakerphoneOn) {
+      callManager.speaker.setForceSpeakerphoneOn(true);
+      setIsSpeakerOn(true);
+      setCurrentAudioRoute("speaker");
+    }
+  }, [isVideo]);
 
   // Safe mic toggle — only allow when JOINED to prevent permanent track death
   const handleToggleMic = useCallback(async () => {
@@ -183,6 +258,30 @@ function DirectCallContent({
     }
   }, [callingState, microphone]);
 
+  // Camera toggle for video calls
+  const handleToggleCamera = useCallback(async () => {
+    if (callingState !== CallingState.JOINED) return;
+    try {
+      if (isCameraOff) {
+        const granted = await requestCameraPermission();
+        if (!granted) return;
+      }
+      await camera.toggle();
+    } catch (err) {
+      console.warn("[DirectCallScreen] camera toggle failed:", err);
+    }
+  }, [callingState, camera, isCameraOff]);
+
+  // Camera flip
+  const handleFlipCamera = useCallback(async () => {
+    if (callingState !== CallingState.JOINED || isCameraOff) return;
+    try {
+      await camera.flip();
+    } catch (err) {
+      console.warn("[DirectCallScreen] camera flip failed:", err);
+    }
+  }, [callingState, camera, isCameraOff]);
+
   // Speaker toggle using callManager.speaker.setForceSpeakerphoneOn
   const handleToggleSpeaker = useCallback(async () => {
     if (!callManager?.speaker?.setForceSpeakerphoneOn) return;
@@ -190,10 +289,18 @@ function DirectCallContent({
       const newState = !isSpeakerOn;
       callManager.speaker.setForceSpeakerphoneOn(newState);
       setIsSpeakerOn(newState);
+      setCurrentAudioRoute(newState ? "speaker" : "earpiece");
     } catch (err) {
       console.warn("[DirectCallScreen] speaker toggle failed:", err);
     }
   }, [isSpeakerOn]);
+
+  // Audio route selection
+  const handleAudioRouteSelect = useCallback((route: AudioRoute) => {
+    applyAudioRoute(route);
+    setCurrentAudioRoute(route);
+    setIsSpeakerOn(route === "speaker");
+  }, []);
 
   useEffect(() => {
     if (!call || !isOutgoing) return;
@@ -211,8 +318,16 @@ function DirectCallContent({
     return {
       name: remote.name || recipientName || "Participant",
       image: remote.image,
+      hasVideo: hasVideo(remote),
+      participant: remote,
     };
   }, [participants, recipientName]);
+
+  // Local participant for PiP
+  const localParticipant = useMemo(
+    () => participants.find((p) => p.isLocalParticipant),
+    [participants],
+  );
 
   const displayName = remoteParticipant?.name || recipientName || "Calling...";
   const avatarUrl = remoteParticipant?.image;
@@ -227,7 +342,9 @@ function DirectCallContent({
     return () => clearInterval(interval);
   }, [isJoined]);
 
-  // Outgoing ring sound — play while waiting for callee to answer
+  // Outgoing ring sound — play while waiting for callee to answer.
+  // The ringtone uses expo-audio with mixWithOthers mode so it doesn't
+  // fight the active call audio session from callManager.start().
   useEffect(() => {
     if (!ringtoneService) return;
     const isRinging =
@@ -235,11 +352,18 @@ function DirectCallContent({
       callingState === CallingState.RINGING &&
       !wasAcceptedByRemote;
     if (isRinging) {
-      ringtoneService.startRingtone("outgoing", false, true);
+      // Small delay to let callManager.start() audio session settle
+      const timeout = setTimeout(() => {
+        ringtoneService!.startRingtone("outgoing", false, true);
+      }, 200);
+      return () => {
+        clearTimeout(timeout);
+        ringtoneService?.stopRingtone();
+      };
     }
-    return () => {
-      ringtoneService?.stopRingtone();
-    };
+    // Stop any playing ringtone when state changes away from ringing
+    ringtoneService.stopRingtone();
+    return undefined;
   }, [isOutgoing, callingState, wasAcceptedByRemote]);
 
   useEffect(() => {
@@ -262,7 +386,9 @@ function DirectCallContent({
       case CallingState.RINGING:
         return isOutgoing ? "Ringing..." : "Incoming call...";
       case CallingState.JOINING:
-        return wasAcceptedByRemote ? "Answered, connecting..." : "Connecting...";
+        return wasAcceptedByRemote
+          ? "Answered, connecting..."
+          : "Connecting...";
       case CallingState.JOINED:
         return hasRemoteParticipant
           ? `Live - ${formatDuration(duration)}`
@@ -297,16 +423,66 @@ function DirectCallContent({
     }
   }, [callingState, onEndCall]);
 
-  // Joined video calls use Stream's built-in CallContent. This gives us
-  // real media controls (mute video, flip camera, hang up) instead of
-  // duplicating those controls in a custom surface.
+  // Joined video calls — custom video rendering with full controls
   if (isVideo && isJoined) {
     return (
       <SafeAreaView
         style={[styles.container, { backgroundColor: "#000" }]}
         edges={["top"]}
       >
-        {/* Minimize header floating over video */}
+        {/* Remote video (full screen) */}
+        <View style={styles.videoContent}>
+          {remoteParticipant?.hasVideo && remoteParticipant.participant ? (
+            <ParticipantView
+              participant={remoteParticipant.participant}
+              trackType="videoTrack"
+              style={StyleSheet.absoluteFill}
+              objectFit="cover"
+              ParticipantLabel={null as any}
+              ParticipantReaction={null as any}
+              ParticipantNetworkQualityIndicator={null as any}
+              ParticipantVideoFallback={() => (
+                <View style={styles.videoFallback}>
+                  <ProfilePicture
+                    url={avatarUrl ?? null}
+                    name={displayName}
+                    size={120}
+                    showLoading={false}
+                  />
+                  <Text style={styles.videoFallbackName}>{displayName}</Text>
+                </View>
+              )}
+            />
+          ) : (
+            <View style={styles.videoFallback}>
+              <ProfilePicture
+                url={avatarUrl ?? null}
+                name={displayName}
+                size={120}
+                showLoading={false}
+              />
+              <Text style={styles.videoFallbackName}>{displayName}</Text>
+            </View>
+          )}
+
+          {/* Local self-view PiP */}
+          {localParticipant && !isCameraOff && hasVideo(localParticipant) && (
+            <View style={styles.localPip}>
+              <ParticipantView
+                participant={localParticipant}
+                trackType="videoTrack"
+                style={styles.localPipVideo}
+                objectFit="cover"
+                ParticipantLabel={null as any}
+                ParticipantReaction={null as any}
+                ParticipantNetworkQualityIndicator={null as any}
+                mirror
+              />
+            </View>
+          )}
+        </View>
+
+        {/* Header floating over video */}
         <View style={styles.videoHeader}>
           <Pressable
             onPress={onMinimize}
@@ -321,12 +497,39 @@ function DirectCallContent({
             />
           </Pressable>
           <Text style={styles.videoStatusText}>{statusText}</Text>
-          <View style={{ width: 40 }} />
+          <Pressable
+            onPress={() => setAudioRoutePickerVisible(true)}
+            style={styles.videoBackButton}
+            accessibilityLabel="Audio output"
+            hitSlop={12}
+          >
+            <MaterialCommunityIcons name="speaker" size={22} color="#fff" />
+          </Pressable>
         </View>
 
-        <View style={styles.videoContent}>
-          <CallContent onHangupCallHandler={onEndCall} />
-        </View>
+        {/* Full video call controls */}
+        <CallControlBar
+          isMuted={isMuted}
+          onToggleMic={handleToggleMic}
+          micDisabled={!isJoined}
+          showCamera
+          isCameraOff={isCameraOff}
+          onToggleCamera={handleToggleCamera}
+          showFlipCamera={!isCameraOff}
+          onFlipCamera={handleFlipCamera}
+          showSpeaker={!!callManager?.speaker?.setForceSpeakerphoneOn}
+          isSpeakerOn={isSpeakerOn}
+          onToggleSpeaker={handleToggleSpeaker}
+          onLeave={onEndCall}
+          leaveLabel="End"
+        />
+
+        <AudioRoutePicker
+          visible={audioRoutePickerVisible}
+          onClose={() => setAudioRoutePickerVisible(false)}
+          currentRoute={currentAudioRoute}
+          onRouteSelected={handleAudioRouteSelect}
+        />
       </SafeAreaView>
     );
   }
@@ -356,7 +559,18 @@ function DirectCallContent({
           {isVideo ? "Video Call" : "Audio Call"}
         </Text>
 
-        <View style={{ width: 40 }} />
+        <Pressable
+          onPress={() => setAudioRoutePickerVisible(true)}
+          style={styles.backButton}
+          accessibilityLabel="Audio output"
+          hitSlop={12}
+        >
+          <MaterialCommunityIcons
+            name="speaker"
+            size={22}
+            color={colors.textSecondary}
+          />
+        </Pressable>
       </View>
 
       {/* Caller info + avatar */}
@@ -399,6 +613,13 @@ function DirectCallContent({
         onToggleSpeaker={handleToggleSpeaker}
         onLeave={onEndCall}
         leaveLabel="End"
+      />
+
+      <AudioRoutePicker
+        visible={audioRoutePickerVisible}
+        onClose={() => setAudioRoutePickerVisible(false)}
+        currentRoute={currentAudioRoute}
+        onRouteSelected={handleAudioRouteSelect}
       />
     </SafeAreaView>
   );
@@ -464,6 +685,38 @@ const styles = StyleSheet.create({
   },
   videoContent: {
     flex: 1,
+  },
+  videoFallback: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#1a1a2e",
+  },
+  videoFallbackName: {
+    color: "#fff",
+    fontSize: 18,
+    fontWeight: "600",
+    marginTop: 12,
+  },
+  localPip: {
+    position: "absolute",
+    bottom: 100,
+    right: 12,
+    width: 110,
+    height: 160,
+    borderRadius: 12,
+    overflow: "hidden",
+    borderWidth: 2,
+    borderColor: "rgba(255,255,255,0.3)",
+    elevation: 6,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.4,
+    shadowRadius: 4,
+  },
+  localPipVideo: {
+    width: "100%" as any,
+    height: "100%" as any,
   },
 
   // Caller info

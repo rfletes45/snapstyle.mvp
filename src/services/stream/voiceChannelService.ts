@@ -126,16 +126,23 @@ export async function joinVoiceChannel(
   // sets the iOS AVAudioSession category to .playAndRecord and configures
   // Android audio routing. Without this, two-way audio won't work because
   // the default session category (.playback) doesn't support microphone input.
+  // Voice rooms always use speaker — earpiece makes no sense for group audio.
   if (callManager?.start) {
     try {
-      const deviceEndpoint = toStreamDevice(config.audio.defaultOutput);
-      callManager.start({
+      await callManager.start({
         audioRole: "communicator",
-        deviceEndpointType: deviceEndpoint,
+        deviceEndpointType: "speaker",
       });
+      console.log(
+        "[VoiceChannelService] callManager.start succeeded (speaker)",
+      );
     } catch (err) {
       console.warn("[VoiceChannelService] callManager.start failed:", err);
     }
+  } else {
+    console.warn(
+      "[VoiceChannelService] callManager not available — audio may not work",
+    );
   }
 
   // Join without settings_override — settings were applied at creation.
