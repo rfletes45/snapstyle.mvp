@@ -7,7 +7,7 @@
 
 import { useStreamCall } from "@/contexts/StreamCallContext";
 import type { ActiveVoiceRoom } from "@/hooks/useActiveVoiceRooms";
-import { getVoiceChannelId } from "@/services/stream/voiceChannelService";
+import { getVoiceChannelId } from "@/services/stream/voiceChannelIds";
 import { useAppTheme } from "@/store/ThemeContext";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { useCallback, useEffect, useRef } from "react";

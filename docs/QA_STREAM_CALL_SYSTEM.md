@@ -1,5 +1,11 @@
 # Stream Call System — Post-Implementation Verification Report
 
+Historical note:
+
+- this report reflects an earlier audit snapshot
+- the live runtime now uses Stream `default` for voice channels, not `audio_room`
+- prefer [calls-and-audio.md](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/docs/features/calls-and-audio.md) for current implementation truth
+
 > Generated after thorough audit, runtime analysis, and bug-fix pass.
 > All 13 Stream files + 4 integration points reviewed and corrected.
 

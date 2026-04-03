@@ -28,6 +28,7 @@ import {
 // Lazy-load Stream SDK components
 let ParticipantView: any = null;
 let useCallStateHooks: any = null;
+let useIsInPiPMode: () => boolean = () => false;
 let CallingState: any = null;
 let hasVideo: any = null;
 let StreamCall: any = null;
@@ -35,6 +36,7 @@ try {
   const sdk = require("@stream-io/video-react-native-sdk");
   ParticipantView = sdk.ParticipantView;
   useCallStateHooks = sdk.useCallStateHooks;
+  useIsInPiPMode = sdk.useIsInPiPMode ?? useIsInPiPMode;
   CallingState = sdk.CallingState;
   StreamCall = sdk.StreamCall;
   hasVideo = require("@stream-io/video-client").hasVideo;
@@ -60,11 +62,13 @@ export function FloatingVideoOverlay({
   isOnCallScreen,
 }: FloatingVideoOverlayProps) {
   const { activeCall, activeSession } = useStreamCall();
+  const isInPiPMode = useIsInPiPMode();
 
   // Only show for active video direct calls when NOT on the call screen
   const isVideoCall =
     activeSession?.type === "direct_call" && activeSession.mode === "video";
-  const shouldShow = !isOnCallScreen && isVideoCall && !!activeCall;
+  const shouldShow =
+    !isInPiPMode && !isOnCallScreen && isVideoCall && !!activeCall;
 
   if (!shouldShow || !activeCall || !StreamCall) return null;
 
@@ -82,13 +86,13 @@ function FloatingVideoContent({ activeCall }: { activeCall: any }) {
   const callingState = useCallCallingState();
   const participants = useParticipants();
   const isJoined = callingState === CallingState.JOINED;
+  const callMode =
+    activeCall?.state?.custom?.mode === "video" ? "video" : "audio";
 
   // Find remote participant with video
   const remoteWithVideo = participants.find(
     (p: any) => !p.isLocalParticipant && hasVideo(p),
   );
-  const callMode =
-    activeCall?.state?.custom?.mode === "video" ? "video" : "audio";
 
   const [minimized, setMinimized] = useState(false);
   const handleRestoreCall = useCallback(() => {

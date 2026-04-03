@@ -213,7 +213,7 @@ function IncomingCallHandlerInner({
 
         if (!allowed) {
           console.info(`[IncomingCallHandler] Auto-rejecting call: ${reason}`);
-          await rejectCall(pendingCall);
+          await rejectCall(pendingCall, "decline");
           setPendingCall(null);
           setCallAllowed(null);
         } else {
@@ -265,7 +265,7 @@ function IncomingCallHandlerInner({
     if (!pendingCall) return;
 
     try {
-      await rejectCall(pendingCall);
+      await rejectCall(pendingCall, "decline");
       setPendingCall(null);
     } catch (err) {
       console.error("[IncomingCallHandler] Decline failed:", err);
@@ -277,7 +277,7 @@ function IncomingCallHandlerInner({
   useEffect(() => {
     if (acceptingRef.current) return;
     if (isBusy && activeSession && pendingCall) {
-      rejectCall(pendingCall).catch((err) =>
+      rejectCall(pendingCall, "busy").catch((err) =>
         console.warn("[IncomingCallHandler] Auto-reject failed:", err),
       );
       setPendingCall(null);

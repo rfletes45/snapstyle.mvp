@@ -82,6 +82,7 @@ export default function VoiceChannelScreen({ route, navigation }: Props) {
     joinChannel,
     activeCall,
     activeSession,
+    isBusy,
     wasChannelDeliberatelyLeft,
     clearDeliberateLeave,
   } = useStreamCall();
@@ -89,6 +90,7 @@ export default function VoiceChannelScreen({ route, navigation }: Props) {
   const [joinError, setJoinError] = useState<string | null>(null);
   const joinAttemptedRef = useRef(false);
   const mountedRef = useRef(true);
+  const hasSeenActiveCallRef = useRef(false);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -97,12 +99,37 @@ export default function VoiceChannelScreen({ route, navigation }: Props) {
     };
   }, []);
 
+  useEffect(() => {
+    if (activeCall) {
+      hasSeenActiveCallRef.current = true;
+      return;
+    }
+
+    if (!hasSeenActiveCallRef.current) return;
+
+    const timeout = setTimeout(() => {
+      if (navigation.canGoBack()) navigation.goBack();
+    }, 250);
+
+    return () => clearTimeout(timeout);
+  }, [activeCall, navigation]);
+
   const isAlreadyInChannel =
     activeSession?.type === "voice_channel" &&
     activeSession.channelId === channelId;
 
   useEffect(() => {
     if (!groupId || isAlreadyInChannel || joinAttemptedRef.current) return;
+
+    // Guard: don't attempt to join if user is already in another call.
+    // The context's joinChannel() would throw, but checking here avoids
+    // a subtle race where isBusy becomes true between render and effect.
+    if (isBusy && !isAlreadyInChannel) {
+      setJoinError(
+        "You're already in a call. Leave it first to join this voice channel.",
+      );
+      return;
+    }
 
     if (wasChannelDeliberatelyLeft(channelId)) {
       clearDeliberateLeave(channelId);
@@ -121,6 +148,7 @@ export default function VoiceChannelScreen({ route, navigation }: Props) {
     channelName,
     clearDeliberateLeave,
     groupId,
+    isBusy,
     isAlreadyInChannel,
     joinChannel,
     wasChannelDeliberatelyLeft,
@@ -225,8 +253,8 @@ function VoiceChannelContent({
 
   const callingState = useCallCallingState();
   const participants = useParticipants();
-  const { isMute: isMuted, microphone } = useMicrophoneState();
-  const { isMute: isCameraOff, camera } = useCameraState();
+  const { optimisticIsMute: isMuted, microphone } = useMicrophoneState();
+  const { optimisticIsMute: isCameraOff, camera } = useCameraState();
   const isJoined = callingState === CallingState.JOINED;
   const [isSpeakerOn, setIsSpeakerOn] = useState(true); // Voice rooms default to speaker
   const [audioRoutePickerVisible, setAudioRoutePickerVisible] = useState(false);
@@ -366,7 +394,7 @@ function VoiceChannelContent({
       case CallingState.MIGRATING:
         return "Reconnecting...";
       case CallingState.RECONNECTING_FAILED:
-        return "Connection failed";
+        return "Connection failed — leaving room...";
       case CallingState.OFFLINE:
         return "Offline, waiting to reconnect...";
       default:

@@ -153,6 +153,7 @@ Current responsibilities:
 - best-effort Stream user upserts via `ensureStreamUsers`
 - verify Stream webhook signatures with `STREAM_API_SECRET`
 - write call history entries to `Users/{uid}/StreamCallHistory/{entryId}`
+- handle `call.session_ended`, `call.rejected`, and `call.missed` webhook events for canonical call history
 
 ## Colyseus Boundaries
 

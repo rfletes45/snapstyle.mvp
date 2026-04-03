@@ -1,61 +1,68 @@
 /**
- * Firebase Notification Listeners — Android
+ * Firebase Notification Listeners - Android
  *
- * Wires the Stream Video SDK's push notification handlers into React Native
- * Firebase Messaging and Notifee event systems. These handlers process
- * incoming call pushes on Android (foreground, background, and terminated).
+ * Wires Stream's Android push handlers into Firebase Messaging and Notifee,
+ * but only when the required native modules are actually available.
  *
- * Platform-specific file: React Native automatically selects this over
- * setFirebaseListeners.ts when bundling for Android.
+ * This file must stay safe to import in Expo Go. Do not add top-level imports
+ * from Notifee, React Native Firebase Messaging, or Stream's video SDK here.
  */
 
-import notifee from "@notifee/react-native";
-import messaging from "@react-native-firebase/messaging";
-import {
-  firebaseDataHandler,
-  isFirebaseStreamVideoMessage,
-  isNotifeeStreamVideoEvent,
-  onAndroidNotifeeEvent,
-} from "@stream-io/video-react-native-sdk";
+import { CALL_FEATURES } from "@/constants/featureFlags";
+
+let listenersRegistered = false;
 
 export const setFirebaseListeners = (): void => {
-  // ── Background message handler ──────────────────────────────────────────
-  // Fires when a Firebase data message arrives while the app is in the
-  // background or terminated. The SDK displays a Notifee notification with
-  // accept/decline actions.
-  messaging().setBackgroundMessageHandler(async (msg) => {
-    if (isFirebaseStreamVideoMessage(msg)) {
-      await firebaseDataHandler(msg.data);
-    }
-    // Non-Stream messages are ignored here; they are handled by the
-    // existing Expo notification system.
-  });
+  if (!CALL_FEATURES.CALLS_ENABLED) {
+    console.log(
+      "[setFirebaseListeners] Stream calling native modules unavailable; skipping Android call listener bootstrap",
+    );
+    return;
+  }
 
-  // ── Notifee background event handler ────────────────────────────────────
-  // Fires when the user taps Accept/Decline on the Notifee notification
-  // while the app is in the background.
-  notifee.onBackgroundEvent(async (event) => {
-    if (isNotifeeStreamVideoEvent(event)) {
-      await onAndroidNotifeeEvent({ event, isBackground: true });
-    }
-  });
+  if (listenersRegistered) {
+    return;
+  }
 
-  // ── Foreground message handler ──────────────────────────────────────────
-  // Fires when a Firebase data message arrives while the app is in the
-  // foreground. The SDK may display a heads-up notification or route to
-  // the in-app ringing UI.
-  messaging().onMessage((msg) => {
-    if (isFirebaseStreamVideoMessage(msg)) {
-      firebaseDataHandler(msg.data);
-    }
-  });
+  try {
+    const notifee = require("@notifee/react-native").default;
+    const messaging = require("@react-native-firebase/messaging").default;
+    const {
+      firebaseDataHandler,
+      isFirebaseStreamVideoMessage,
+      isNotifeeStreamVideoEvent,
+      onAndroidNotifeeEvent,
+    } = require("@stream-io/video-react-native-sdk") as typeof import("@stream-io/video-react-native-sdk");
 
-  // ── Notifee foreground event handler ────────────────────────────────────
-  // Fires when the user interacts with a Notifee notification while the
-  // app is in the foreground.
-  notifee.onForegroundEvent((event) => {
-    if (isNotifeeStreamVideoEvent(event)) {
-      onAndroidNotifeeEvent({ event, isBackground: false });
-    }
-  });
+    messaging().setBackgroundMessageHandler(async (msg: any) => {
+      if (isFirebaseStreamVideoMessage(msg)) {
+        await firebaseDataHandler(msg.data);
+      }
+    });
+
+    notifee.onBackgroundEvent(async (event: any) => {
+      if (isNotifeeStreamVideoEvent(event)) {
+        await onAndroidNotifeeEvent({ event, isBackground: true });
+      }
+    });
+
+    messaging().onMessage((msg: any) => {
+      if (isFirebaseStreamVideoMessage(msg)) {
+        firebaseDataHandler(msg.data);
+      }
+    });
+
+    notifee.onForegroundEvent((event: any) => {
+      if (isNotifeeStreamVideoEvent(event)) {
+        onAndroidNotifeeEvent({ event, isBackground: false });
+      }
+    });
+
+    listenersRegistered = true;
+  } catch (error) {
+    console.warn(
+      "[setFirebaseListeners] Android call listeners unavailable in this runtime; continuing without them",
+      error,
+    );
+  }
 };

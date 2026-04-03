@@ -91,6 +91,23 @@ export function SwipeableConversation({
         extrapolate: "clamp",
       });
 
+      // Fade the icon in so it doesn't overlay the chat row before the
+      // action area is meaningfully revealed.  The icon stays invisible
+      // for the first ~30 % of the drag, then fades to full opacity.
+      const iconOpacity = dragX.interpolate({
+        inputRange: [0, LEFT_ACTION_WIDTH * 0.3, LEFT_ACTION_WIDTH * 0.6],
+        outputRange: [0, 0, 1],
+        extrapolate: "clamp",
+      });
+
+      // Slide the icon in with the background so it doesn't sit stationary
+      // while the coloured background is still translating into view.
+      const iconTranslateX = dragX.interpolate({
+        inputRange: [0, LEFT_ACTION_WIDTH],
+        outputRange: [-LEFT_ACTION_WIDTH * 0.5, 0],
+        extrapolate: "clamp",
+      });
+
       const isPinned = !!conversation.memberState.pinnedAt;
 
       return (
@@ -113,7 +130,12 @@ export function SwipeableConversation({
               },
             ]}
           />
-          <Animated.View style={{ transform: [{ scale }] }}>
+          <Animated.View
+            style={{
+              opacity: iconOpacity,
+              transform: [{ translateX: iconTranslateX }, { scale }],
+            }}
+          >
             <RectButton
               style={styles.actionButton}
               onPress={() => handleAction(onPin)}

@@ -97,6 +97,7 @@ import { PinnedInviteBar } from "@/gamesV4/components/PinnedInviteBar";
 import { createGameInvite } from "@/gamesV4/services/gameServiceV4";
 import type { GameId } from "@/gamesV4/types";
 import { useConversationDisplayMode } from "@/store/ConversationDisplayModeContext";
+import { KeyboardAvoidingView } from "@/utils/optionalKeyboardController";
 
 // Keyboard-sync (KCSV + KeyboardAvoidingView fallback)
 import {
@@ -106,7 +107,6 @@ import {
   setChatScrollViewConfig,
   useRenderChatScrollComponent,
 } from "@/components/chat/ChatKeyboardScrollView";
-import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 
 // Services
 import {
@@ -125,7 +125,7 @@ import { scheduleMessage } from "@/services/scheduledMessages";
 import { markConversationNotificationsRead } from "@/services/userNotifications";
 
 // Call buttons
-import { DirectCallButton } from "@/components/stream";
+import DirectCallButton from "@/components/stream/DirectCallButton";
 
 // Types & Utils
 import { DEBUG_CHAT_V2, GAMES_V4_ENABLED } from "@/constants/featureFlags";

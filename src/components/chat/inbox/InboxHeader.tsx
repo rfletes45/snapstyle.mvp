@@ -179,20 +179,20 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     zIndex: 1,
+    gap: Spacing.sm,
   },
   rightContainer: {
     flexDirection: "row",
     alignItems: "center",
     zIndex: 1,
-    gap: 5,
-    marginRight: Spacing.sm,
+    gap: Spacing.sm,
+    marginRight: Spacing.md,
   },
   spacer: {
     flex: 1,
   },
   avatarContainer: {
     marginLeft: Spacing.md,
-    marginRight: Spacing.xs,
   },
   iconButton: {
     margin: 0,

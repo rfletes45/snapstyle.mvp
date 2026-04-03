@@ -8,7 +8,6 @@
 
 import { CALL_FEATURES } from "@/constants/featureFlags";
 import { getUserGroups } from "@/services/groups";
-import { queryVoiceChannel } from "@/services/stream/voiceChannelService";
 import { useAuth } from "@/store/AuthContext";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState } from "react-native";
@@ -52,6 +51,9 @@ export function useActiveVoiceRooms(
       try {
         const groups = await getUserGroups(uid);
         if (!mountedRef.current) return;
+
+        const { queryVoiceChannel } =
+          require("@/services/stream/voiceChannelService") as typeof import("@/services/stream/voiceChannelService");
 
         // Check the most recent groups for active voice rooms
         const groupsToCheck = groups.slice(0, MAX_GROUPS_TO_CHECK);

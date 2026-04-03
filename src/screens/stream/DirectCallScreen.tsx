@@ -36,6 +36,7 @@ import {
   StreamCall,
   useCall,
   useCallStateHooks,
+  useIsInPiPMode,
 } from "@stream-io/video-react-native-sdk";
 import React, {
   useCallback,
@@ -179,10 +180,12 @@ function DirectCallContent({
 
   const callingState = useCallCallingState();
   const participants = useParticipants();
-  const { isMute: isMuted, microphone } = useMicrophoneState();
-  const { isMute: isCameraOff, camera } = useCameraState();
+  const { optimisticIsMute: isMuted, microphone } = useMicrophoneState();
+  const { optimisticIsMute: isCameraOff, camera } = useCameraState();
   const isVideo = mode === "video";
   const call = useCall();
+  const isJoined = callingState === CallingState.JOINED;
+  const isInPiPMode = useIsInPiPMode();
 
   // Speaker toggle state — tracked locally (SDK doesn't provide useSpeakerState on RN)
   const [isSpeakerOn, setIsSpeakerOn] = useState(isVideo); // Default speaker ON for video
@@ -191,6 +194,8 @@ function DirectCallContent({
   const [currentAudioRoute, setCurrentAudioRoute] = useState<AudioRoute>(
     isVideo ? "speaker" : "earpiece",
   );
+  const pipEligibilityLogRef = useRef<string | null>(null);
+  const pipModeLogRef = useRef<boolean | null>(null);
 
   useEffect(() => {
     if (
@@ -247,6 +252,32 @@ function DirectCallContent({
       setCurrentAudioRoute("speaker");
     }
   }, [isVideo]);
+
+  useEffect(() => {
+    if (isInPiPMode && audioRoutePickerVisible) {
+      setAudioRoutePickerVisible(false);
+    }
+  }, [audioRoutePickerVisible, isInPiPMode]);
+
+  useEffect(() => {
+    const nextMessage = !isVideo
+      ? "Native PiP skipped for audio-only direct call"
+      : !isJoined
+        ? `Native PiP waiting for joined state (current=${callingState})`
+        : "Native PiP enabled for joined video call";
+
+    if (pipEligibilityLogRef.current === nextMessage) return;
+    pipEligibilityLogRef.current = nextMessage;
+    console.debug(`[DirectCallScreen] ${nextMessage}`);
+  }, [callingState, isJoined, isVideo]);
+
+  useEffect(() => {
+    if (pipModeLogRef.current === isInPiPMode) return;
+    pipModeLogRef.current = isInPiPMode;
+    console.debug(
+      `[DirectCallScreen] Native PiP ${isInPiPMode ? "active" : "inactive"}`,
+    );
+  }, [isInPiPMode]);
 
   // Safe mic toggle — only allow when JOINED to prevent permanent track death
   const handleToggleMic = useCallback(async () => {
@@ -334,7 +365,6 @@ function DirectCallContent({
 
   // Duration timer
   const [duration, setDuration] = useState(0);
-  const isJoined = callingState === CallingState.JOINED;
 
   useEffect(() => {
     if (!isJoined) return;
@@ -372,6 +402,22 @@ function DirectCallContent({
     }
   }, [callingState]);
 
+  // Client-side safety timeout for unanswered outgoing calls.
+  // Stream's server has a default 30s ring timeout that transitions the
+  // call to IDLE/LEFT, but if that event is lost (network glitch), the
+  // caller would see "Ringing..." indefinitely. This 60s client-side
+  // timeout acts as a safety net.
+  useEffect(() => {
+    if (!isOutgoing || callingState !== CallingState.RINGING) return;
+    const timeout = setTimeout(() => {
+      console.warn(
+        "[DirectCallScreen] Client-side ringing timeout — ending call",
+      );
+      onEndCall();
+    }, 60_000);
+    return () => clearTimeout(timeout);
+  }, [isOutgoing, callingState, onEndCall]);
+
   const formatDuration = (secs: number) => {
     const m = Math.floor(secs / 60);
     const s = secs % 60;
@@ -406,22 +452,6 @@ function DirectCallContent({
         return "";
     }
   })();
-
-  // Notify parent when Stream reports call ended. Only fire after the
-  // call has been JOINED at least once — prevents false triggers from
-  // the initial IDLE state before the call connects.
-  const hasJoinedRef = useRef(false);
-  useEffect(() => {
-    if (callingState === CallingState.JOINED) {
-      hasJoinedRef.current = true;
-    }
-    if (
-      hasJoinedRef.current &&
-      (callingState === CallingState.LEFT || callingState === CallingState.IDLE)
-    ) {
-      onEndCall();
-    }
-  }, [callingState, onEndCall]);
 
   // Joined video calls — custom video rendering with full controls
   if (isVideo && isJoined) {
@@ -466,70 +496,79 @@ function DirectCallContent({
           )}
 
           {/* Local self-view PiP */}
-          {localParticipant && !isCameraOff && hasVideo(localParticipant) && (
-            <View style={styles.localPip}>
-              <ParticipantView
-                participant={localParticipant}
-                trackType="videoTrack"
-                style={styles.localPipVideo}
-                objectFit="cover"
-                ParticipantLabel={null as any}
-                ParticipantReaction={null as any}
-                ParticipantNetworkQualityIndicator={null as any}
-                mirror
-              />
-            </View>
-          )}
+          {!isInPiPMode &&
+            localParticipant &&
+            !isCameraOff &&
+            hasVideo(localParticipant) && (
+              <View style={styles.localPip}>
+                <ParticipantView
+                  participant={localParticipant}
+                  trackType="videoTrack"
+                  style={styles.localPipVideo}
+                  objectFit="cover"
+                  ParticipantLabel={null as any}
+                  ParticipantReaction={null as any}
+                  ParticipantNetworkQualityIndicator={null as any}
+                  mirror
+                />
+              </View>
+            )}
         </View>
 
         {/* Header floating over video */}
-        <View style={styles.videoHeader}>
-          <Pressable
-            onPress={onMinimize}
-            style={styles.videoBackButton}
-            accessibilityLabel="Minimize call"
-            hitSlop={12}
-          >
-            <MaterialCommunityIcons
-              name="chevron-down"
-              size={28}
-              color="#fff"
-            />
-          </Pressable>
-          <Text style={styles.videoStatusText}>{statusText}</Text>
-          <Pressable
-            onPress={() => setAudioRoutePickerVisible(true)}
-            style={styles.videoBackButton}
-            accessibilityLabel="Audio output"
-            hitSlop={12}
-          >
-            <MaterialCommunityIcons name="speaker" size={22} color="#fff" />
-          </Pressable>
-        </View>
+        {!isInPiPMode && (
+          <View style={styles.videoHeader}>
+            <Pressable
+              onPress={onMinimize}
+              style={styles.videoBackButton}
+              accessibilityLabel="Minimize call"
+              hitSlop={12}
+            >
+              <MaterialCommunityIcons
+                name="chevron-down"
+                size={28}
+                color="#fff"
+              />
+            </Pressable>
+            <Text style={styles.videoStatusText}>{statusText}</Text>
+            <Pressable
+              onPress={() => setAudioRoutePickerVisible(true)}
+              style={styles.videoBackButton}
+              accessibilityLabel="Audio output"
+              hitSlop={12}
+            >
+              <MaterialCommunityIcons name="speaker" size={22} color="#fff" />
+            </Pressable>
+          </View>
+        )}
 
         {/* Full video call controls */}
-        <CallControlBar
-          isMuted={isMuted}
-          onToggleMic={handleToggleMic}
-          micDisabled={!isJoined}
-          showCamera
-          isCameraOff={isCameraOff}
-          onToggleCamera={handleToggleCamera}
-          showFlipCamera={!isCameraOff}
-          onFlipCamera={handleFlipCamera}
-          showSpeaker={!!callManager?.speaker?.setForceSpeakerphoneOn}
-          isSpeakerOn={isSpeakerOn}
-          onToggleSpeaker={handleToggleSpeaker}
-          onLeave={onEndCall}
-          leaveLabel="End"
-        />
+        {!isInPiPMode && (
+          <>
+            <CallControlBar
+              isMuted={isMuted}
+              onToggleMic={handleToggleMic}
+              micDisabled={!isJoined}
+              showCamera
+              isCameraOff={isCameraOff}
+              onToggleCamera={handleToggleCamera}
+              showFlipCamera={!isCameraOff}
+              onFlipCamera={handleFlipCamera}
+              showSpeaker={!!callManager?.speaker?.setForceSpeakerphoneOn}
+              isSpeakerOn={isSpeakerOn}
+              onToggleSpeaker={handleToggleSpeaker}
+              onLeave={onEndCall}
+              leaveLabel="End"
+            />
 
-        <AudioRoutePicker
-          visible={audioRoutePickerVisible}
-          onClose={() => setAudioRoutePickerVisible(false)}
-          currentRoute={currentAudioRoute}
-          onRouteSelected={handleAudioRouteSelect}
-        />
+            <AudioRoutePicker
+              visible={audioRoutePickerVisible}
+              onClose={() => setAudioRoutePickerVisible(false)}
+              currentRoute={currentAudioRoute}
+              onRouteSelected={handleAudioRouteSelect}
+            />
+          </>
+        )}
       </SafeAreaView>
     );
   }

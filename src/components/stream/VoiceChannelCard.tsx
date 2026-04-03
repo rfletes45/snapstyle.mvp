@@ -13,7 +13,7 @@
 
 import { ProfilePicture } from "@/components/profile/ProfilePicture/ProfilePicture";
 import { useStreamCall } from "@/contexts/StreamCallContext";
-import { getVoiceChannelId, queryVoiceChannel } from "@/services/stream";
+import { getVoiceChannelId } from "@/services/stream/voiceChannelIds";
 import { useAppTheme } from "@/store/ThemeContext";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { useCallback, useEffect, useState } from "react";
@@ -55,6 +55,8 @@ export default function VoiceChannelCard({
 
     async function fetchOccupancy() {
       try {
+        const { queryVoiceChannel } =
+          require("@/services/stream/voiceChannelService") as typeof import("@/services/stream/voiceChannelService");
         const result = await queryVoiceChannel(groupId);
         if (cancelled) return;
 

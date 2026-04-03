@@ -12,7 +12,10 @@ import { StyleSheet } from "react-native";
 import AppGate from "@/components/AppGate";
 import WarningModal from "@/components/WarningModal";
 import { clearLastOpenChat, getLastOpenChat } from "@/services/lastOpenChat";
-import { navigationRef } from "@/services/navigationRef";
+import {
+  flushPendingNavigation,
+  navigationRef,
+} from "@/services/navigationRef";
 import { useInAppNotifications } from "@/store/InAppNotificationsContext";
 import { useAppTheme } from "@/store/ThemeContext";
 import { useUser } from "@/store/UserContext";
@@ -93,8 +96,6 @@ import ActivityFeedScreen from "@/screens/social/ActivityFeedScreen";
 
 // Camera screens
 import { CALL_FEATURES } from "@/constants/featureFlags";
-import CameraScreen from "@/screens/camera/CameraScreen";
-import CameraShareScreen from "@/screens/camera/ShareScreen";
 
 // Game V4 screens
 import AchievementSectionScreen from "@/gamesV4/screens/AchievementSectionScreen";
@@ -121,6 +122,15 @@ const DirectCallScreen = CALL_FEATURES.CALLS_ENABLED
 const VoiceChannelScreen = CALL_FEATURES.CALLS_ENABLED
   ? require("@/screens/stream/VoiceChannelScreen").default
   : () => null;
+function CameraScreen(props: any) {
+  const Screen = require("@/screens/camera/CameraScreen").default;
+  return <Screen {...props} />;
+}
+
+function CameraShareScreen(props: any) {
+  const Screen = require("@/screens/camera/ShareScreen").default;
+  return <Screen {...props} />;
+}
 
 const AuthStack_Nav = createNativeStackNavigator<AuthStackParamList>();
 const InboxStack_Nav = createNativeStackNavigator<InboxStackParamList>();
@@ -662,6 +672,7 @@ function MainStack() {
 
 interface RootNavigatorProps {
   navigationRef?: React.RefObject<NavigationContainerRef<RootStackParamList> | null>;
+  onRouteChange?: (routeName: keyof RootStackParamList | undefined) => void;
 }
 
 /**
@@ -702,23 +713,35 @@ function ProfileReadySignal({
  */
 export default function RootNavigator({
   navigationRef: externalRef,
+  onRouteChange,
 }: RootNavigatorProps) {
   const { theme, markProfileReady, syncProfileTheme } = useAppTheme();
   const { setCurrentScreen } = useInAppNotifications();
 
   const navRef = externalRef || navigationRef;
 
-  // Track the active route name for context-aware notification suppression
-  const handleStateChange = useCallback(() => {
-    if (!navRef || !("current" in navRef)) return;
+  const getActiveRouteName = useCallback(() => {
+    if (!navRef || !("current" in navRef)) return undefined;
     const currentRef = (navRef as React.RefObject<NavigationContainerRef<any>>)
       .current;
-    if (!currentRef) return;
-    const route = currentRef.getCurrentRoute();
-    if (route?.name) {
-      setCurrentScreen(route.name);
-    }
-  }, [navRef, setCurrentScreen]);
+    return currentRef?.getCurrentRoute()?.name as
+      | keyof RootStackParamList
+      | undefined;
+  }, [navRef]);
+
+  // Track the active route name for context-aware notification suppression
+  const handleStateChange = useCallback(() => {
+    const routeName = getActiveRouteName();
+    setCurrentScreen(routeName ?? null);
+    onRouteChange?.(routeName);
+  }, [getActiveRouteName, onRouteChange, setCurrentScreen]);
+
+  const handleReady = useCallback(() => {
+    const routeName = getActiveRouteName();
+    setCurrentScreen(routeName ?? null);
+    onRouteChange?.(routeName);
+    flushPendingNavigation();
+  }, [getActiveRouteName, onRouteChange, setCurrentScreen]);
 
   const linking = useMemo(
     () => ({
@@ -777,6 +800,7 @@ export default function RootNavigator({
           ref={navRef}
           linking={linking}
           theme={theme.navigation}
+          onReady={handleReady}
           onStateChange={handleStateChange}
         >
           {hydrationState === "ready" ? (

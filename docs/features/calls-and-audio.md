@@ -1,27 +1,47 @@
 # Calls and Audio
 
-Last verified: 2026-03-30
+Last verified: 2026-04-03
 
 ## Scope
 
-This is the current-state reference for the live call stack:
+This is the current-state reference for the live Stream call stack:
 
-- Stream direct calls
-- Stream-backed group voice channels
-- incoming call handling
+- direct 1:1 audio calls
+- direct 1:1 video calls
+- group voice channels
+- incoming ringing flow
 - call history
 - call settings
 
-It supersedes the old Firestore/WebRTC call architecture as the description of the runtime that actually ships today.
+It replaces the legacy Firestore/WebRTC call stack as the description of the runtime that actually ships today.
 
-## Current Status
+## Canonical Flows
 
-- direct calls: implemented
-- group voice channels: implemented
-- incoming ringing flow: implemented
-- call history: implemented
-- call settings: implemented, with some placeholder UI in DND scheduling
-- legacy Firestore/WebRTC call stack: not the active runtime
+### Direct audio call
+
+- Stream call type: `default`
+- unique UUID call ID
+- custom mode: `"audio"`
+- ringing flow via `getOrCreate({ ring: true })`
+
+### Direct video call
+
+- Stream call type: `default`
+- unique UUID call ID
+- custom mode: `"video"`
+- ringing flow via `getOrCreate({ ring: true, video: true })`
+
+### Group voice channel
+
+- Stream call type: `default`
+- deterministic room ID: `voice_channel_{groupId}`
+- no ringing
+- shared join/leave room behavior
+
+Important correction from older docs:
+
+- the live voice-channel implementation does not use Stream `audio_room`
+- `audio_room` is a backstage/request-to-speak model in Stream docs, not the open Discord-style room this app implements
 
 ## Main Files
 
@@ -29,119 +49,124 @@ Provider and screens:
 
 - [StreamCallContext.tsx](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/src/contexts/StreamCallContext.tsx)
 - [IncomingCallHandler.tsx](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/src/components/stream/IncomingCallHandler.tsx)
-- [CallsScreen.tsx](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/src/screens/calls/CallsScreen.tsx)
-- [CallSettingsScreen.tsx](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/src/screens/calls/CallSettingsScreen.tsx)
 - [DirectCallScreen.tsx](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/src/screens/stream/DirectCallScreen.tsx)
 - [VoiceChannelScreen.tsx](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/src/screens/stream/VoiceChannelScreen.tsx)
+- [CallsScreen.tsx](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/src/screens/calls/CallsScreen.tsx)
 
 Stream services:
 
 - [streamClient.ts](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/src/services/stream/streamClient.ts)
-- [streamPushRegistration.ts](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/src/services/stream/streamPushRegistration.ts)
+- [callSessionManager.ts](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/src/services/stream/callSessionManager.ts)
 - [directCallService.ts](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/src/services/stream/directCallService.ts)
 - [voiceChannelService.ts](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/src/services/stream/voiceChannelService.ts)
 - [streamCallHistoryService.ts](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/src/services/stream/streamCallHistoryService.ts)
+- [setPushConfig.ts](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/src/utils/setPushConfig.ts)
 
 Backend:
 
 - [streamToken.ts](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/firebase-backend/functions/src/streamToken.ts)
 - [streamCallHistory.ts](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/firebase-backend/functions/src/streamCallHistory.ts)
 
-## Availability and Gating
-
-Calling is gated by `CALL_FEATURES.CALLS_ENABLED`.
-
-Current behavior:
-
-- enabled when Stream native modules are available
-- disabled automatically in Expo Go
-- available in native dev-client, preview, and production builds
-
-This means the docs should not describe calls as universally available across all Expo environments.
-
 ## Architecture
 
-`StreamCallProvider` owns the live media session model.
+`StreamCallProvider` owns the live media-session model.
 
 Current responsibilities:
 
-- initialize a single `StreamVideoClient` after auth and profile hydration
-- destroy the client on logout
-- enforce a single active media session at a time
+- initialize one `StreamVideoClient` after auth and profile hydration
+- keep `<StreamVideo>` mounted at the app root
 - expose direct-call and voice-channel actions through context
-- record history when sessions end
+- enforce one active media session at a time
+- perform provider-level cleanup on `LEFT`, `IDLE`, and `RECONNECTING_FAILED`
 
-There is no active `CallProvider` in the current app shell.
+The provider is the authoritative cleanup layer. Individual screens render state and dispatch explicit user actions, but they do not own call disposal anymore.
 
-## Direct Calls
+## Direct Call Lifecycle
 
-Direct calls use Stream ringing with:
+Outgoing ringing calls follow Stream’s documented flow:
 
-- call type: `"default"`
-- unique UUID call IDs
-- mode: `"audio"` or `"video"`
+1. best-effort provision Stream users
+2. request microphone permission, and camera permission only if local auto-video is enabled
+3. `call.getOrCreate({ ring: true })`
+4. start `callManager` before media join
+5. let Stream auto-join the caller when the first callee accepts
+6. enable local mic/camera after the call reaches `JOINED`
 
-Flow:
+Incoming direct calls:
 
-1. initialize/get the Stream client
-2. best-effort provision Stream users
-3. `getOrCreate` the call with `ring: true`
-4. join the call
-5. set final camera/mic state
+1. `IncomingCallHandler` watches `useCalls()` from the root tree
+2. app-level DND / privacy gates run before presenting the in-app accept UI
+3. accept uses `call.join()` and idempotent local device setup
+4. decline uses `call.leave({ reject: true, reason: "decline" })`
 
-Incoming ringing is handled globally by `IncomingCallHandler`.
+Important corrections:
 
-## Group Voice Channels
+- the caller does not manually `join()` immediately after `getOrCreate({ ring: true })`
+- canceling an unanswered outgoing call uses `call.leave({ reject: true, reason: "cancel" })`
+- native-accepted calls can be adopted safely without attempting a second `join()`
+- `callManager.start()` is paired with `callManager.stop()` on every exit path
 
-Group voice channels are also Stream calls, but they are treated as non-ringing rooms.
+## Voice Channel Lifecycle
 
-Current implementation details:
+Voice channels are non-ringing rooms on the `default` call type.
 
-- deterministic channel ID: `voice_channel_{groupId}`
-- call type: `"default"`
-- no ringing
-- camera is forced off after join
+Current behavior:
 
-Important correction from older docs:
+- room identity is deterministic per group
+- join requests microphone permission deliberately
+- local audio routing starts before join and stops on leave/cleanup
+- room teardown is provider-driven, so minimized/backgrounded rooms cannot leave stale active state behind
 
-- the live implementation does not use Stream `audio_room`
-- the service explicitly explains that `"default"` is used so all participants can freely send audio without backstage/host restrictions
+Room occupancy/discovery:
 
-## History and Calls Tab
+- the app intentionally uses the low-level `/calls` query through the Stream client instead of `queryCalls()`
+- reason: the current RN SDK materializes queried `Call` objects and applies device config during `queryCalls()`, which is not acceptable for read-only occupancy checks on iOS
+- this deviation is intentional, documented, and isolated to `queryVoiceChannel()`
 
-The Calls tab combines:
+## Push and Incoming Calls
 
-- active/joinable voice-room data
-- Stream call history stored in Firestore
+Push handling is split into two parts:
 
-History documents are written server-side by the Stream webhook into:
+- `setPushConfig()` in [setPushConfig.ts](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/src/utils/setPushConfig.ts) configures provider names, channels, and background client creation
+- the mounted `<StreamVideo>` provider runs the RN SDK’s built-in push registration hooks for Android tokens, iOS APNs tokens, and iOS VoIP tokens
+
+Important correction:
+
+- the app does not need a separate custom `streamPushRegistration.ts` layer
+- logout cleanup must call `StreamVideoRN.onPushLogout()` before disconnecting the Stream client
+
+## Call History
+
+History is server-authoritative.
+
+Storage:
 
 - `Users/{uid}/StreamCallHistory/{entryId}`
 
-## Push Registration
+Writers:
 
-There are two different push systems in play:
+- Cloud Function webhook only
 
-- Expo push tokens for the app’s own notification system
-- native device tokens registered with Stream for incoming call ringing
+Handled Stream webhook events:
 
-Current Stream push registration is already implemented in code:
+- `call.session_ended`
+- `call.rejected`
+- `call.missed`
 
-- Android provider name: `vibe-firebase`
-- iOS provider name: `vibe-apn`
-- registration happens from `streamClient.ts`
-- unregister happens on Stream client teardown
+Important corrections:
 
-This means the setup doc should talk about verification and provider naming, not imply that the app still needs a new push-registration code path added.
+- the client no longer writes durable Stream history documents directly
+- voice-room history is detected from deterministic room metadata / call ID, not `call.type === "audio_room"`
+- voice-room history uses session participants, not call members
 
 ## Call Settings
 
-The active settings service lives under `src/services/calls/callSettingsService.ts`. The old broader call service stack is not the active call transport anymore.
+The active settings service lives at [callSettingsService.ts](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/src/services/calls/callSettingsService.ts).
 
 Current settings areas:
 
+- audio output defaults
 - camera defaults
-- audio defaults
 - ringtone and vibration
 - privacy options
 - DND schedule
@@ -150,41 +175,38 @@ Current settings areas:
 
 Known caveat:
 
-- the DND time range rows in `CallSettingsScreen` still show placeholder alerts instead of a real time picker
+- the DND time-range rows in `CallSettingsScreen` still show placeholder alerts instead of a real time picker
 
 ## Runtime Boundaries
 
 ### Stream owns
 
 - live media transport
-- ringing calls
+- ringing-call state
 - participant state
-- device registration for native call push delivery
+- push-token registration inside the RN SDK provider
 
 ### Firebase owns
 
 - auth for token issuance
 - `getStreamVideoToken`
-- call history persistence
-- the rest of the app’s push notification system
+- webhook-authenticated call history persistence
+- the rest of the app’s non-call notification system
 
-## Legacy and Non-Canonical Surfaces
+## Legacy and Historical Docs
 
-The following are not the live calling runtime anymore:
+These are historical references, not the live runtime source of truth:
 
 - old Firestore/WebRTC call docs
 - `firebase-backend/functions/src/calls.ts`
-- old `src/services/calls/*` transport assumptions
+- older QA docs that describe `audio_room` as the active voice-channel implementation
 
-What is still active from `src/services/calls/`:
-
-- `callSettingsService`
+When docs disagree, prefer this file plus the active source files listed above.
 
 ## Recommended Validation
 
 ```bash
 npm run type-check
 npm run lint
-npm run test
 npm --prefix firebase-backend/functions run build
 ```

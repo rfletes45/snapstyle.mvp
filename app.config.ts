@@ -78,6 +78,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   plugins: [
     "@react-native-community/datetimepicker",
     "./plugins/withVisionCameraFix",
+    "./plugins/withFirebaseMessagingColorOverride",
     [
       "expo-build-properties",
       {
@@ -91,7 +92,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
           ],
         },
         android: {
-          minSdkVersion: 24,
+          minSdkVersion: 26,
           compileSdkVersion: 35,
           targetSdkVersion: 35,
         },
@@ -142,12 +143,16 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
         // Screen share stays disabled in this build. The installed SDK/version
         // path in this repo still relies on native Stream screenshare setup,
         // and the app has not been configured for that end-to-end flow yet.
+        // Native PiP and iOS multitasking camera access require a dev
+        // build/native rebuild; this is not available in Expo Go.
         ringingPushNotifications: {
           disableVideoIos: false,
           includesCallsInRecentsIos: false,
           showWhenLockedAndroid: true,
         },
         androidKeepCallAlive: true,
+        androidPictureInPicture: true,
+        iOSEnableMultitaskingCameraAccess: true,
       },
     ],
     // Firebase messaging (Android push for incoming calls)

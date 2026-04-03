@@ -1,49 +1,41 @@
 /**
  * Direct Call Service
  *
- * Handles 1:1 audio and video calls using Stream Video's ringing flow.
- * Each call gets a unique ID and uses Stream's built-in ringing mechanism.
+ * Handles 1:1 audio and video calls using Stream's ringing flow.
  *
- * Bootstrap sequence:
- *  1. Best-effort user provisioning (caller + callee should exist in Stream)
- *  2. getOrCreate the call with ringing + members + settings_override
- *  3. Join (no settings_override — Stream validates target_resolution)
- *  4. Set camera/mic state programmatically after join
+ * Stream-aligned lifecycle:
+ *  1. Best-effort provision caller + callee in Stream
+ *  2. Request local media permissions deliberately
+ *  3. `getOrCreate({ ring: true })` with a unique call ID
+ *  4. Start the local audio session while the caller is ringing
+ *  5. Let Stream auto-join the caller when the first callee accepts
+ *  6. Apply local mic/camera state after the join completes
  */
 
 import { callSettingsService } from "@/services/calls";
 import type { DirectCallMode } from "@/types/streamCall";
 import type { Call } from "@stream-io/video-react-native-sdk";
 import { validateParticipantIds } from "./callSettingsValidator";
+import {
+  requestCallPermissions,
+  startCallAudioSession,
+  stopCallAudioSession,
+} from "./callSessionManager";
 import { getStreamClient } from "./streamClient";
 import { ensureStreamUsersExist } from "./streamUserProvisioning";
 import { toStreamDevice } from "./streamUtils";
 
-// Lazy-load callManager — may not exist in Expo Go
-let callManager: any = null;
-try {
-  callManager = require("@stream-io/video-react-native-sdk").callManager;
-} catch {
-  // Not available
-}
-
 const TAG = "[DirectCallService]";
+
+const getCallingState = () =>
+  (require("@stream-io/video-react-native-sdk") as typeof import("@stream-io/video-react-native-sdk"))
+    .CallingState;
 
 /**
  * Stream call type for 1:1 ringing calls.
- * Uses Stream's built-in "default" call type which supports ringing.
  */
 const DIRECT_CALL_TYPE = "default";
 
-/**
- * Start an outgoing ringing call.
- *
- * @param callId   Unique call ID (use uuid)
- * @param callerId The caller's user ID
- * @param calleeId The recipient's user ID
- * @param mode     "audio" or "video"
- * @returns The Stream Call object
- */
 export async function startDirectCall(
   callId: string,
   callerId: string,
@@ -52,20 +44,13 @@ export async function startDirectCall(
 ): Promise<Call> {
   const client = getStreamClient();
   const config = callSettingsService.getCallConfig();
-  const cameraOn = mode === "video" && config.video.startEnabled;
+  const wantsCameraOn = mode === "video" && config.video.startEnabled;
 
-  // Validate participant IDs before any network calls
   const [validCallerId, validCalleeId] = validateParticipantIds(
     [callerId, calleeId],
     "direct call",
   );
 
-  // Step 1: Best-effort provision caller & callee as Stream users.
-  // getStreamVideoToken already upserts the CALLER on every token fetch,
-  // and the callee may already exist from their own token fetch.
-  // We attempt provisioning but proceed if it fails — getOrCreate below
-  // will fail with a clear "user not found" error if the user truly
-  // doesn't exist, which we surface with a specific message.
   let provisionFailed = false;
   try {
     await ensureStreamUsersExist([validCallerId, validCalleeId]);
@@ -78,15 +63,18 @@ export async function startDirectCall(
     );
   }
 
-  // Step 2: Create (or get existing) call with ringing and member list.
-  // settings_override goes HERE at creation time, not in join().
-  // Passing video settings in join() causes Stream to validate
-  // target_resolution defaults which fail with width/height < 240.
+  const requestedPermissions = await requestCallPermissions({
+    microphone: true,
+    camera: wantsCameraOn,
+  });
+  const cameraOn = wantsCameraOn && requestedPermissions.cameraGranted;
+
   const call = client.call(DIRECT_CALL_TYPE, callId);
 
   try {
     await call.getOrCreate({
       ring: true,
+      video: mode === "video",
       data: {
         members: [
           { user_id: validCallerId, role: "admin" },
@@ -95,24 +83,10 @@ export async function startDirectCall(
         custom: {
           mode,
         },
-        settings_override: {
-          audio: {
-            mic_default_on: true,
-            default_device: toStreamDevice(config.audio.defaultOutput),
-          },
-          video: {
-            camera_default_on: cameraOn,
-            // ALWAYS provide a valid target_resolution when overriding ANY
-            // video field. Stream's API stores the override as-is — missing
-            // fields default to {0, 0} which fails validation (min 240×240).
-            target_resolution: { width: 1280, height: 720, bitrate: 3000000 },
-          },
-        },
       },
     });
   } catch (createErr: any) {
     const errMsg = createErr?.message ?? String(createErr);
-    // If provisioning failed AND create failed, give a specific message
     if (
       provisionFailed &&
       (errMsg.includes("user") || errMsg.includes("don't exist"))
@@ -130,157 +104,149 @@ export async function startDirectCall(
     throw new Error(classifyCallError(createErr, "create"));
   }
 
-  // Step 2b: Configure the native audio session BEFORE joining.
-  // callManager.start() sets iOS AVAudioSession to .playAndRecord and
-  // Android audio routing. Without this, two-way audio won't work for
-  // audio-only calls (video calls use <CallContent> which handles this
-  // internally). Use earpiece for audio calls, speaker for video.
-  if (callManager?.start) {
-    try {
-      const deviceEndpoint =
-        mode === "video"
-          ? "speaker"
-          : toStreamDevice(config.audio.defaultOutput);
-      await callManager.start({
-        audioRole: "communicator",
-        deviceEndpointType: deviceEndpoint,
-      });
-      console.log(`${TAG} callManager.start succeeded (${deviceEndpoint})`);
-    } catch (err) {
-      console.warn(`${TAG} callManager.start failed:`, err);
-    }
-  } else {
-    console.warn(`${TAG} callManager not available — audio may not work`);
-  }
-
-  // Step 3: Join the call. No settings_override here — settings were
-  // applied at creation time above. The SDK reads camera_default_on
-  // from the call settings to decide whether to enable camera hardware.
+  const deviceEndpoint =
+    mode === "video" ? "speaker" : toStreamDevice(config.audio.defaultOutput);
   try {
-    await call.join({ create: false, ring: true });
-  } catch (joinErr: any) {
-    console.error(`${TAG} join failed:`, joinErr);
-    // Clean up the created call so it doesn't leave a phantom ringing state
-    try {
-      await call.endCall();
-    } catch {
-      /* best effort cleanup */
-    }
-    throw new Error(classifyCallError(joinErr, "join"));
+    await startCallAudioSession(deviceEndpoint);
+    console.log(`${TAG} callManager.start succeeded (${deviceEndpoint})`);
+  } catch (err) {
+    console.warn(`${TAG} callManager.start failed:`, err);
   }
 
-  // Only touch camera hardware when mode is video.
-  // For audio calls, skip camera.enable/disable entirely to prevent
-  // the iOS camera indicator from activating.
-  if (mode === "video") {
-    try {
-      if (cameraOn) {
-        await call.camera.enable();
-      } else {
-        await call.camera.disable();
-      }
-    } catch {
-      // Non-fatal — camera state may already be correct
-    }
-  }
+  watchLocalDeviceSetupOnJoin(call, {
+    enableMicrophone: true,
+    enableCamera: cameraOn,
+  });
 
-  console.log(`${TAG} Call ${callId} started (${mode}) → ${calleeId}`);
+  console.log(`${TAG} Call ${callId} started (${mode}) -> ${calleeId}`);
   return call;
 }
 
-/**
- * Accept an incoming ringing call.
- * Camera/mic state is set programmatically after join to avoid
- * settings_override validation issues (target_resolution).
- */
 export async function acceptDirectCall(
   call: Call,
   mode: DirectCallMode = "audio",
 ): Promise<void> {
+  const CallingState = getCallingState();
   const config = callSettingsService.getCallConfig();
-  const cameraOn = mode === "video" && config.video.startEnabled;
+  const wantsCameraOn = mode === "video" && config.video.startEnabled;
+  const requestedPermissions = await requestCallPermissions({
+    microphone: true,
+    camera: wantsCameraOn,
+  });
+  const cameraOn = wantsCameraOn && requestedPermissions.cameraGranted;
 
-  // Configure native audio session before joining (same as startDirectCall).
-  if (callManager?.start) {
-    try {
-      const deviceEndpoint =
-        mode === "video"
-          ? "speaker"
-          : toStreamDevice(config.audio.defaultOutput);
-      await callManager.start({
-        audioRole: "communicator",
-        deviceEndpointType: deviceEndpoint,
-      });
-      console.log(
-        `${TAG} acceptDirectCall callManager.start succeeded (${deviceEndpoint})`,
-      );
-    } catch (err) {
-      console.warn(`${TAG} callManager.start failed:`, err);
-    }
-  } else {
-    console.warn(`${TAG} callManager not available — audio may not work`);
-  }
-
-  // Join the call. The caller's settings_override.camera_default_on
-  // controls whether the SDK enables camera after join.
-  // For audio calls: camera_default_on = false → no camera hardware access.
-  // For video calls: camera_default_on = cameraOn → SDK may enable camera.
-  await call.join();
-
-  // Only touch camera hardware when mode is video.
-  // For audio calls, camera_default_on: false in the caller's settings is sufficient.
-  if (mode === "video") {
-    try {
-      if (cameraOn) {
-        await call.camera.enable();
-      } else {
-        await call.camera.disable();
-      }
-    } catch {
-      // Non-fatal — defaults are usually acceptable
-    }
-  }
-
-  // Ensure microphone is on
+  const deviceEndpoint =
+    mode === "video" ? "speaker" : toStreamDevice(config.audio.defaultOutput);
   try {
-    await call.microphone.enable();
-  } catch {
-    // Non-fatal — defaults are usually acceptable
+    await startCallAudioSession(deviceEndpoint);
+    console.log(
+      `${TAG} acceptDirectCall callManager.start succeeded (${deviceEndpoint})`,
+    );
+  } catch (err) {
+    console.warn(`${TAG} callManager.start failed:`, err);
+  }
+
+  try {
+    if (
+      call.state.callingState !== CallingState.JOINING &&
+      call.state.callingState !== CallingState.JOINED
+    ) {
+      await call.join();
+    }
+
+    await ensureLocalDevices(call, {
+      enableMicrophone: true,
+      enableCamera: cameraOn,
+    });
+  } catch (err) {
+    await stopCallAudioSession();
+    throw err;
   }
 }
 
-/**
- * Reject/decline an incoming ringing call.
- */
-export async function rejectDirectCall(call: Call): Promise<void> {
-  await call.leave({ reject: true });
+export async function rejectDirectCall(
+  call: Call,
+  reason: "decline" | "busy" | "cancel" = "decline",
+): Promise<void> {
+  try {
+    await call.leave({ reject: true, reason });
+  } finally {
+    await stopCallAudioSession();
+  }
 }
 
-/**
- * End an active direct call for both participants.
- */
 export async function endDirectCall(call: Call): Promise<void> {
+  const CallingState = getCallingState();
   try {
+    if (call.state.callingState === CallingState.RINGING) {
+      const reason = call.isCreatedByMe ? "cancel" : "decline";
+      await call.leave({ reject: true, reason });
+      return;
+    }
+
     await call.endCall();
   } catch {
-    // Fallback to leave if endCall fails (e.g. already ended by remote)
     await call.leave();
+  } finally {
+    await stopCallAudioSession();
   }
 }
 
-// ---------------------------------------------------------------------------
-// Error classification
-// ---------------------------------------------------------------------------
+function watchLocalDeviceSetupOnJoin(
+  call: Call,
+  options: {
+    enableMicrophone: boolean;
+    enableCamera: boolean;
+  },
+): void {
+  const CallingState = getCallingState();
+  const subscription = call.state.callingState$.subscribe((state) => {
+    if (state === CallingState.JOINED) {
+      subscription.unsubscribe();
+      ensureLocalDevices(call, options).catch((err) => {
+        console.warn(`${TAG} Failed to prepare local devices after join:`, err);
+      });
+      return;
+    }
 
-/**
- * Transform raw Stream/Firebase errors into user-readable messages
- * with enough detail for TestFlight debugging.
- */
+    if (
+      state === CallingState.LEFT ||
+      state === CallingState.IDLE ||
+      state === CallingState.RECONNECTING_FAILED
+    ) {
+      subscription.unsubscribe();
+    }
+  });
+}
+
+async function ensureLocalDevices(
+  call: Call,
+  options: {
+    enableMicrophone: boolean;
+    enableCamera: boolean;
+  },
+): Promise<void> {
+  if (options.enableMicrophone) {
+    try {
+      await call.microphone.enable();
+    } catch (err) {
+      console.warn(`${TAG} microphone.enable failed:`, err);
+    }
+  }
+
+  if (options.enableCamera) {
+    try {
+      await call.camera.enable();
+    } catch (err) {
+      console.warn(`${TAG} camera.enable failed:`, err);
+    }
+  }
+}
+
 function classifyCallError(err: any, phase: "create" | "join"): string {
   const raw = err?.message ?? String(err);
   const code = err?.code ?? "";
 
-  // Firebase Functions errors
   if (code === "not-found" || raw.includes("not-found")) {
     return `Call setup failed: backend function unavailable (${phase}). Please update the app or try again later.`;
   }
@@ -291,7 +257,6 @@ function classifyCallError(err: any, phase: "create" | "join"): string {
     return "You don't have permission to call this user.";
   }
 
-  // Stream API errors
   if (raw.includes("call type") && raw.includes("not found")) {
     return `Call type not configured on server. Contact support. (${phase})`;
   }
@@ -306,9 +271,8 @@ function classifyCallError(err: any, phase: "create" | "join"): string {
     raw.includes("timeout") ||
     raw.includes("ECONNREFUSED")
   ) {
-    return "Network error — check your connection and try again.";
+    return "Network error - check your connection and try again.";
   }
 
-  // Fallback — include phase for debugging
   return `Unable to ${phase === "create" ? "start" : "connect to"} call: ${raw}`;
 }

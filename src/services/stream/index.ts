@@ -33,20 +33,9 @@ export {
 } from "./voiceChannelService";
 
 export {
-  buildDirectCallEntry,
-  buildVoiceRoomEntry,
-  clearAllStreamCallHistory,
-  deleteCallHistoryEntry,
   getStreamCallHistory,
-  recordCallHistory,
   subscribeToStreamCallHistory,
-  updateCallHistory,
 } from "./streamCallHistoryService";
-
-export {
-  registerStreamPushToken,
-  unregisterStreamPushToken,
-} from "./streamPushRegistration";
 
 export { ensureStreamUsersExist } from "./streamUserProvisioning";
 
@@ -54,3 +43,9 @@ export {
   sanitizeSettingsOverride,
   validateParticipantIds,
 } from "./callSettingsValidator";
+
+export {
+  requestCallPermissions,
+  startCallAudioSession,
+  stopCallAudioSession,
+} from "./callSessionManager";

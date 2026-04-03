@@ -1,5 +1,11 @@
 # Final Stream Call System + Voice Header Verification Pass
 
+Historical note:
+
+- this report reflects an earlier audit snapshot
+- the live runtime now uses Stream `default` for voice channels, not `audio_room`
+- prefer [calls-and-audio.md](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/docs/features/calls-and-audio.md) for current implementation truth
+
 **Date:** 2026-03-24  
 **Auditor:** Claude 4.6 — Senior Implementation Auditor  
 **Scope:** Voice room header indicator, full Stream-based calling system, legacy cleanup  

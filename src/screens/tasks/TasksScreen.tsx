@@ -366,10 +366,20 @@ export default function TasksScreen({ navigation }: { navigation: any }) {
       style={[styles.appbar, { backgroundColor: theme.colors.background }]}
     >
       <Appbar.BackAction onPress={() => navigation.goBack()} />
-      <Appbar.Content
-        title="Tasks"
-        titleStyle={[styles.appbarTitle, { color: theme.colors.onBackground }]}
-      />
+      {/* Absolutely centered title so it aligns with the dynamic island /
+          visible top-center area regardless of left/right content widths */}
+      <View style={styles.appbarTitleOverlay} pointerEvents="none">
+        <Text
+          style={[
+            styles.appbarTitleCentered,
+            { color: theme.colors.onBackground },
+          ]}
+        >
+          Tasks
+        </Text>
+      </View>
+      {/* Spacer so balance badge stays right-aligned */}
+      <View style={{ flex: 1 }} />
       <View
         style={[
           styles.balanceBadge,
@@ -633,6 +643,19 @@ const styles = StyleSheet.create({
     elevation: 0,
   },
   appbarTitle: {
+    fontWeight: "bold",
+  },
+  appbarTitleOverlay: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  appbarTitleCentered: {
+    fontSize: 20,
     fontWeight: "bold",
   },
   balanceBadge: {

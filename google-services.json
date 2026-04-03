@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1093558948023",
+    "project_id": "gamerapp-37e70",
+    "storage_bucket": "gamerapp-37e70.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1093558948023:android:3426d658c6a699cb423d32",
+        "android_client_info": {
+          "package_name": "com.vibeapp.mobile"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCkoL3f2Moo0cry2EM_BahKT7Nyi6mu4bE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

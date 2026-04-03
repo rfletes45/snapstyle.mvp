@@ -1,6 +1,7 @@
 import ErrorBoundary from "@/components/ErrorBoundary";
 import InAppToast from "@/components/InAppToast";
-import { IncomingCallHandler } from "@/components/stream";
+import IncomingCallHandler from "@/components/stream/IncomingCallHandler";
+import { NativePiPBridge } from "@/components/stream/NativePiPBridge";
 import { FloatingVideoOverlay } from "@/components/stream/FloatingVideoOverlay";
 import { StreamCallProvider } from "@/contexts/StreamCallContext";
 import { loadCustomFonts } from "@/fonts/fontLoader";
@@ -9,7 +10,7 @@ import { lockToPortrait } from "@/hooks/useScreenOrientation";
 import RootNavigator from "@/navigation/RootNavigator";
 import { initializeFirebase } from "@/services/firebase";
 import { firebaseConfig } from "@/services/firebaseConfig";
-import { navigationRef } from "@/services/navigationRef";
+import { navigate as globalNavigate } from "@/services/navigationRef";
 import { AuthProvider } from "@/store/AuthContext";
 import { CameraProvider } from "@/store/CameraContext";
 import { ConversationDisplayModeProvider } from "@/store/ConversationDisplayModeContext";
@@ -17,14 +18,13 @@ import { InAppNotificationsProvider } from "@/store/InAppNotificationsContext";
 import { SnackbarProvider } from "@/store/SnackbarContext";
 import { ThemeProvider, useAppTheme } from "@/store/ThemeContext";
 import { UserProvider } from "@/store/UserContext";
-import { CommonActions } from "@react-navigation/native";
+import { KeyboardProvider } from "@/utils/optionalKeyboardController";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar as ExpoStatusBar } from "expo-status-bar";
 import * as SystemUI from "expo-system-ui";
 import React, { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import { KeyboardProvider } from "react-native-keyboard-controller";
 import { PaperProvider } from "react-native-paper";
 
 // Keep splash screen visible until we explicitly hide it
@@ -42,11 +42,6 @@ try {
   console.error("[BOOT] Firebase init failed:", e);
 }
 
-// Lock the app to portrait at startup. Individual screens (e.g. Tropical
-// Fishing) can temporarily switch to landscape via useScreenOrientation().
-lockToPortrait();
-console.log("[BOOT] lockToPortrait called");
-
 /**
  * Root error handler for ErrorBoundary
  * In production, this would send errors to a crash reporting service
@@ -62,18 +57,7 @@ function handleError(error: Error, errorInfo: React.ErrorInfo): void {
  */
 function AppContent() {
   const { theme, isDark, colors } = useAppTheme();
-  const [currentRouteName, setCurrentRouteName] = useState<string | undefined>(
-    undefined,
-  );
-
-  // Track current route for FloatingVideoOverlay visibility
-  useEffect(() => {
-    const unsubscribe = navigationRef.addListener("state", () => {
-      const route = navigationRef.getCurrentRoute();
-      if (route?.name) setCurrentRouteName(route.name);
-    });
-    return unsubscribe;
-  }, []);
+  const [currentRouteName, setCurrentRouteName] = useState<string | undefined>();
 
   // ── Font loading gate ───────────────────────────────────────────────────
   const [fontsReady, setFontsReady] = useState(false);
@@ -123,6 +107,11 @@ function AppContent() {
   // Stream Video SDK handles its own initialization via StreamCallProvider.
   // No legacy call bootstrap needed.
 
+  // Lock the app to portrait after the React tree mounts.
+  useEffect(() => {
+    void lockToPortrait();
+  }, []);
+
   // Sync Android system UI (navigation bar) background with theme
   useEffect(() => {
     SystemUI.setBackgroundColorAsync(colors.background).catch(() => {});
@@ -134,15 +123,7 @@ function AppContent() {
    */
   const handleToastNavigate = useCallback(
     (screen: string, params?: Record<string, unknown>) => {
-      if (!navigationRef.isReady()) return;
-
-      // Use CommonActions for robust navigation across stacks
-      navigationRef.dispatch(
-        CommonActions.navigate({
-          name: screen,
-          params,
-        }),
-      );
+      globalNavigate(screen as any, params as any);
     },
     [],
   );
@@ -208,23 +189,29 @@ function AppContent() {
                         { backgroundColor: colors.background },
                       ]}
                     >
-                      <RootNavigator />
+                      <RootNavigator
+                        onRouteChange={(routeName) =>
+                          setCurrentRouteName(routeName)
+                        }
+                      />
                       <InAppToast onNavigate={handleToastNavigate} />
                       <IncomingCallHandler
                         onNavigateToCall={(callId, mode) => {
-                          navigationRef.navigate(
+                          globalNavigate(
                             "DirectCall" as any,
                             {
                               callId,
                               recipientName: "",
                               mode,
                               isOutgoing: false,
-                            } as any,
+                            },
                           );
                         }}
                       />
+                      <NativePiPBridge />
                       <FloatingVideoOverlay
                         isOnCallScreen={
+                          currentRouteName === undefined ||
                           currentRouteName === "DirectCall" ||
                           currentRouteName === "VoiceChannel"
                         }

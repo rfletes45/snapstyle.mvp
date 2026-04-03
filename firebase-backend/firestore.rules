@@ -314,21 +314,15 @@ service cloud.firestore {
 
       // --------------------------------------------------------
       // StreamCallHistory subcollection
-      // Written by:
-      //   1. Cloud Functions (streamCallWebhook) — primary, after each call ends
-      //   2. Client (StreamCallContext) — fast fallback for immediate UI feedback
-      //      and for events that don't trigger webhooks (declined, cancelled calls)
+      // Server-authoritative call history written by Cloud Functions from
+      // Stream webhooks (`call.session_ended`, `call.rejected`, `call.missed`).
       // --------------------------------------------------------
       match /StreamCallHistory/{entryId} {
         // User can only read their own stream call history
         allow read: if isAuth() && isOwner(uid);
 
-        // User can create/update entries in their own history
-        // (client writes for immediate feedback; webhook overwrites with canonical data)
-        allow create, update: if isAuth() && isOwner(uid);
-
-        // Delete: owner can remove their own history entries
-        allow delete: if isAuth() && isOwner(uid);
+        // Writes are server-only so history stays canonical.
+        allow create, update, delete: if false;
       }
 
       // --------------------------------------------------------

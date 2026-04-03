@@ -2,6 +2,12 @@
 
 ## Summary
 
+Historical note:
+
+- this report reflects an earlier audit snapshot
+- the live runtime now uses Stream `default` for voice channels, not `audio_room`
+- prefer [calls-and-audio.md](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/docs/features/calls-and-audio.md) for current implementation truth
+
 All 7 issues (A–G) root-caused and fixed. Zero TypeScript errors across all modified files.
 
 ---

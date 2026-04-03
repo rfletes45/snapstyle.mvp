@@ -9,10 +9,6 @@ import type {
   StreamVideoClient,
   User,
 } from "@stream-io/video-react-native-sdk";
-import {
-  registerStreamPushToken,
-  unregisterStreamPushToken,
-} from "./streamPushRegistration";
 import { fetchStreamToken, streamTokenProvider } from "./streamTokenProvider";
 
 // Lazy-load SDK to avoid native module crash in Expo Go.
@@ -68,12 +64,6 @@ export async function initStreamClient(
 
   currentUserId = userId;
 
-  // Register device push token with Stream for background call notifications.
-  // Fire-and-forget — push registration failure should never block client init.
-  registerStreamPushToken(client).catch((err) =>
-    console.warn("[StreamClient] Push registration failed:", err),
-  );
-
   return client;
 }
 
@@ -102,16 +92,23 @@ export function getStreamClientOrNull(): StreamVideoClient | null {
  */
 export async function destroyStreamClient(): Promise<void> {
   if (client) {
-    // Unregister push token first so user stops receiving call pushes
     try {
-      await unregisterStreamPushToken(client);
+      const StreamVideoRN = require("@stream-io/video-react-native-sdk")
+        .StreamVideoRN;
+      await StreamVideoRN?.onPushLogout?.();
     } catch (err) {
-      console.warn("[StreamClient] Push unregistration failed:", err);
+      console.warn("[StreamClient] onPushLogout failed:", err);
     }
     try {
       await client.disconnectUser();
     } catch (err) {
       console.warn("[StreamClient] disconnectUser failed:", err);
+    }
+    try {
+      const { stopCallAudioSession } = require("./callSessionManager") as typeof import("./callSessionManager");
+      await stopCallAudioSession();
+    } catch (err) {
+      console.warn("[StreamClient] stopCallAudioSession failed:", err);
     }
     client = null;
     currentUserId = null;

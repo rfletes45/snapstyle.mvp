@@ -2,7 +2,7 @@
  * useVoiceRoomOccupancy
  *
  * Tracks who is currently in a group's voice room without joining.
- * Uses Stream's call.get() to read participant state with configurable
+ * Uses the read-only `queryVoiceChannel()` helper to read participant state with configurable
  * refresh interval. Returns occupant list, active state, and whether
  * the current user is in the room.
  *
@@ -10,7 +10,6 @@
  */
 
 import { CALL_FEATURES } from "@/constants/featureFlags";
-import { queryVoiceChannel } from "@/services/stream/voiceChannelService";
 import { useAuth } from "@/store/AuthContext";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState } from "react-native";
@@ -53,6 +52,8 @@ export function useVoiceRoomOccupancy(
     if (!groupId || !CALL_FEATURES.CALLS_ENABLED) return;
 
     try {
+      const { queryVoiceChannel } =
+        require("@/services/stream/voiceChannelService") as typeof import("@/services/stream/voiceChannelService");
       const result = await queryVoiceChannel(groupId);
       if (!mountedRef.current) return;
 

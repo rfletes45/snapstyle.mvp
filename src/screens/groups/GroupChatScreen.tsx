@@ -166,12 +166,13 @@ import { GroupStackedMessageRenderer } from "@/components/chat/GroupStackedMessa
 import { useAnimalEntitlement } from "@/hooks/useAnimalEntitlement";
 import { playAnimalSound } from "@/services/chat/animalSoundService";
 import { useConversationDisplayMode } from "@/store/ConversationDisplayModeContext";
+import { KeyboardAvoidingView } from "@/utils/optionalKeyboardController";
 
 // Voice channels (Stream-powered)
 import { VoiceRoomAvatarStack } from "@/components/stream/VoiceRoomAvatarStack";
 import { useStreamCall } from "@/contexts/StreamCallContext";
 import { useVoiceRoomOccupancy } from "@/hooks/useVoiceRoomOccupancy";
-import { getVoiceChannelId } from "@/services/stream/voiceChannelService";
+import { getVoiceChannelId } from "@/services/stream/voiceChannelIds";
 
 // Types
 import {
@@ -205,7 +206,6 @@ import {
   useRenderChatScrollComponent,
 } from "@/components/chat/ChatKeyboardScrollView";
 import { createLogger } from "@/utils/log";
-import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 const logger = createLogger("screens/groups/GroupChatScreen");
 // =============================================================================
 // Constants

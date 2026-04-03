@@ -63,6 +63,10 @@ export function setPushConfig(): void {
           const result = await fetchStreamToken();
           return result.token;
         },
+        options: {
+          logLevel: __DEV__ ? "info" : "warn",
+          rejectCallWhenBusy: true,
+        },
       });
     } catch (err) {
       console.error("[setPushConfig] createStreamVideoClient failed:", err);

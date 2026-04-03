@@ -7,7 +7,8 @@
  * @module constants/featureFlags
  */
 
-import { Platform } from "react-native";
+import Constants from "expo-constants";
+import { NativeModules, Platform } from "react-native";
 
 // =============================================================================
 // Platform Detection
@@ -202,17 +203,28 @@ export const PROFILE_V2_FEATURES = {
 // Video Calling Feature Flags
 // =============================================================================
 
+const IS_EXPO_GO =
+  Constants.executionEnvironment === "storeClient" ||
+  Constants.appOwnership === "expo" ||
+  Constants.expoVersion != null;
+
+function hasStreamNativeModules(): boolean {
+  const nativeModules = NativeModules as Record<string, unknown>;
+  return Boolean(
+    nativeModules.WebRTCModule && nativeModules.StreamVideoReactNative,
+  );
+}
+
 /**
  * Check whether Stream Video native modules are available at runtime.
- * Returns false in Expo Go where the native WebRTC module is missing.
+ *
+ * Stream's React Native SDK requires native WebRTC + Stream modules, so it
+ * must be disabled in Expo Go and any runtime that doesn't expose both native
+ * modules on the bridge.
  */
 function isStreamNativeAvailable(): boolean {
-  try {
-    require("@stream-io/react-native-webrtc");
-    return true;
-  } catch {
-    return false;
-  }
+  if (IS_WEB || IS_EXPO_GO) return false;
+  return hasStreamNativeModules();
 }
 
 /**

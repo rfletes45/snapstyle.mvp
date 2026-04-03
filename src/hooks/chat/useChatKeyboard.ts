@@ -1,53 +1,32 @@
 /**
  * useChatKeyboard Hook
  *
- * Provides smooth keyboard-attached composer animation using react-native-keyboard-controller.
- * Returns keyboardHeight and keyboardProgress SharedValues for 60fps animations.
- *
- * Screens use these values to create their own animated styles:
- * - marginBottom: -keyboardHeight.value (pushes composer up)
- * - paddingBottom: insets.bottom * (1 - keyboardProgress.value) (animates safe area)
- *
- * @module hooks/chat/useChatKeyboard
+ * Provides keyboard shared values for chat layout.
+ * Falls back safely when react-native-keyboard-controller is unavailable.
  */
 
 import { createLogger } from "@/utils/log";
-import { useCallback, useMemo, useState } from "react";
 import {
-  useKeyboardHandler,
-  useReanimatedKeyboardAnimation,
-} from "react-native-keyboard-controller";
-import { runOnJS, SharedValue } from "react-native-reanimated";
+  useKeyboardHandlerCompat,
+  useReanimatedKeyboardAnimationCompat,
+} from "@/utils/optionalKeyboardController";
+import { useCallback, useMemo, useState } from "react";
+import { runOnJS, type SharedValue } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const log = createLogger("useChatKeyboard");
 
-// =============================================================================
-// Types
-// =============================================================================
-
 export interface ChatKeyboardConfig {
-  /** Enable debug logging */
   debug?: boolean;
 }
 
 export interface ChatKeyboardState {
-  /** Reanimated shared value: current keyboard height (NEGATIVE when open) */
   keyboardHeight: SharedValue<number>;
-  /** Reanimated shared value: keyboard animation progress 0→1 */
   keyboardProgress: SharedValue<number>;
-
-  /** JS boolean: whether keyboard is currently open */
   isKeyboardOpen: boolean;
-  /** JS number: final keyboard height (positive, after animation completes) */
   finalKeyboardHeight: number;
-  /** Safe area bottom inset */
   safeAreaBottom: number;
 }
-
-// =============================================================================
-// Hook Implementation
-// =============================================================================
 
 export function useChatKeyboard(
   config: ChatKeyboardConfig = {},
@@ -56,17 +35,12 @@ export function useChatKeyboard(
 
   const insets = useSafeAreaInsets();
   const safeAreaBottom = insets.bottom;
-
-  // Track final keyboard height (JS state for conditional logic)
   const [finalKeyboardHeight, setFinalKeyboardHeight] = useState(0);
   const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
 
-  // Reanimated keyboard animation values from react-native-keyboard-controller
-  // Note: height is NEGATIVE when keyboard is open (e.g., -318)
   const { height: keyboardHeight, progress: keyboardProgress } =
-    useReanimatedKeyboardAnimation();
+    useReanimatedKeyboardAnimationCompat();
 
-  // Callback to update JS state from worklet
   const updateKeyboardState = useCallback(
     (height: number, open: boolean) => {
       setFinalKeyboardHeight(height);
@@ -82,7 +56,6 @@ export function useChatKeyboard(
     [debug],
   );
 
-  // Debug logging helper that can be called from worklet via runOnJS
   const logKeyboardStart = useCallback(
     (targetHeight: number) => {
       if (debug) {
@@ -95,23 +68,20 @@ export function useChatKeyboard(
     [debug],
   );
 
-  // Use keyboard handler for state updates
-  useKeyboardHandler({
-    onStart: (e) => {
+  useKeyboardHandlerCompat({
+    onStart: (event: { height: number }) => {
       "worklet";
       if (debug) {
-        runOnJS(logKeyboardStart)(e.height);
+        runOnJS(logKeyboardStart)(event.height);
       }
     },
     onMove: () => {
       "worklet";
-      // This fires during interactive dismiss (iOS drag)
-      // The animated values are already updated by useReanimatedKeyboardAnimation
     },
-    onEnd: (e) => {
+    onEnd: (event: { height: number }) => {
       "worklet";
-      const open = e.height > 0;
-      runOnJS(updateKeyboardState)(e.height, open);
+      const open = event.height > 0;
+      runOnJS(updateKeyboardState)(event.height, open);
     },
   });
 

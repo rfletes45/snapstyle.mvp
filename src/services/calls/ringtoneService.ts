@@ -56,7 +56,6 @@ const SOUND_SOURCES: Record<RingtoneType, any> = {
 
 let activePlayer: any = null;
 let activeType: RingtoneType | null = null;
-let vibrationInterval: ReturnType<typeof setInterval> | null = null;
 
 function getNotificationPreferences() {
   const settings = callSettingsService.getSettingsSync();
@@ -149,11 +148,6 @@ export async function startRingtone(
     // Vibrate in a phone-like pattern: buzz-pause-buzz-pause
     const VIBRATE_PATTERN = [0, 800, 600, 800, 600];
     Vibration.vibrate(VIBRATE_PATTERN, true /* repeat */);
-    // Track so we can cancel later
-    vibrationInterval = setInterval(() => {
-      // no-op — the repeating pattern handles itself via Vibration.vibrate
-      // This interval is just a sentinel for stopRingtone to clear
-    }, 10000);
   }
 }
 
@@ -163,10 +157,6 @@ export async function startRingtone(
 export async function stopRingtone(): Promise<void> {
   // Stop vibration
   Vibration.cancel();
-  if (vibrationInterval) {
-    clearInterval(vibrationInterval);
-    vibrationInterval = null;
-  }
 
   // Stop audio
   if (activePlayer) {

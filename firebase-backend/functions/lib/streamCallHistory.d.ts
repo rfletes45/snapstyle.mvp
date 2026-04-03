@@ -1,12 +1,12 @@
 /**
- * Stream Call History — Server-side recording via Stream webhooks.
+ * Stream Call History webhook.
  *
- * Stream sends webhook events for call lifecycle. This function receives
- * `call.session_ended` events and records normalized history entries in
- * each participant's `StreamCallHistory` subcollection.
+ * Persists server-authored call history to `Users/{uid}/StreamCallHistory/*`.
  *
- * Webhook URL: https://<region>-<project>.cloudfunctions.net/streamCallWebhook
- * Configure in Stream Dashboard → Webhooks → call.session_ended
+ * Handled events:
+ * - `call.session_ended` for completed direct calls and voice-room sessions
+ * - `call.rejected` for declined / canceled / timed-out ringing calls
+ * - `call.missed` for missed incoming ringing calls
  */
 import * as functions from "firebase-functions";
 export declare const streamCallWebhook: functions.HttpsFunction;

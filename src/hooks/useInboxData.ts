@@ -273,16 +273,21 @@ export function useInboxData(uid: string): UseInboxDataResult {
   const [groupLoading, setGroupLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const [filter, setFilter] = useState<InboxFilter>("all");
-  const [refreshKey, setRefreshKey] = useState(0);
 
   // Track if we've loaded cached data (to avoid double-loading)
   const cacheLoadedRef = useRef(false);
 
   // Track whether both live subscriptions have delivered at least once.
   // This prevents the partial flash where groups appear before DMs.
+  // IMPORTANT: Once set to true, never reset — real-time listeners stay
+  // active and will automatically push updates without needing a restart.
   const [bothLiveReady, setBothLiveReady] = useState(false);
   const dmReadyRef = useRef(false);
   const groupReadyRef = useRef(false);
+
+  // Once we have loaded data (from cache OR live), never show the loading
+  // spinner again. This prevents flicker when data refreshes in the background.
+  const hasEverLoadedRef = useRef(false);
 
   // Track recently-read conversation IDs to prevent Firestore snapshots from
   // resetting the optimistic unread state before the watermark write propagates.
@@ -292,10 +297,14 @@ export function useInboxData(uid: string): UseInboxDataResult {
   // Loading: show loading state until we have EITHER cached data OR both live
   // subscriptions have resolved. This prevents a partial list flash where
   // groups appear before DMs or vice versa.
+  // Once we've loaded data for the first time, never go back to loading=true.
   const hasCachedData =
     cacheLoadedRef.current &&
     (dmConversations.length > 0 || groupConversations.length > 0);
-  const loading = !hasCachedData && !bothLiveReady;
+  if (hasCachedData || bothLiveReady) {
+    hasEverLoadedRef.current = true;
+  }
+  const loading = !hasEverLoadedRef.current && !hasCachedData && !bothLiveReady;
 
   // =============================================================================
   // Load Cached Data on Mount (INSTANT LOAD)
@@ -322,13 +331,18 @@ export function useInboxData(uid: string): UseInboxDataResult {
     loadCache();
   }, [uid, useAggregatedInbox]);
 
-  // Manual refresh trigger
+  // Manual refresh trigger.
+  // For the non-aggregated path, the Firestore onSnapshot listeners are
+  // already real-time and will push updates automatically.  A "refresh"
+  // simply clears any stale error state so the UI can recover after a
+  // transient failure.  We do NOT tear down & recreate the subscriptions
+  // because that causes the visible list stutter the user reported.
   const refresh = useCallback(() => {
     if (useAggregatedInbox) {
       aggregation.refresh();
       return;
     }
-    setRefreshKey((k) => k + 1);
+    setError(null);
   }, [aggregation, useAggregatedInbox]);
 
   // Optimistically mark a conversation as read in local state
@@ -406,10 +420,6 @@ export function useInboxData(uid: string): UseInboxDataResult {
       if (groupReadyRef.current) setBothLiveReady(true);
       return;
     }
-
-    // Reset ready state when subscriptions restart
-    dmReadyRef.current = false;
-    setBothLiveReady(false);
 
     let cancelled = false;
     const db = getFirestoreInstance();
@@ -560,7 +570,7 @@ export function useInboxData(uid: string): UseInboxDataResult {
       cancelled = true;
       unsubscribe();
     };
-  }, [uid, refreshKey, useAggregatedInbox]);
+  }, [uid, useAggregatedInbox]);
 
   // =============================================================================
   // Group Subscription (OPTIMIZED - Parallel fetching)
@@ -573,10 +583,6 @@ export function useInboxData(uid: string): UseInboxDataResult {
       if (dmReadyRef.current) setBothLiveReady(true);
       return;
     }
-
-    // Reset ready state when subscriptions restart
-    groupReadyRef.current = false;
-    setBothLiveReady(false);
 
     let cancelled = false;
 
@@ -703,7 +709,7 @@ export function useInboxData(uid: string): UseInboxDataResult {
       cancelled = true;
       unsubscribe();
     };
-  }, [uid, refreshKey, useAggregatedInbox]);
+  }, [uid, useAggregatedInbox]);
 
   // =============================================================================
   // Combined & Filtered List
