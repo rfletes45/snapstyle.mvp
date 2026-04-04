@@ -2,13 +2,19 @@ import type { UseAttachmentPickerReturn } from "@/hooks/useAttachmentPicker";
 import type { SendMessageOptions, UseChatReturn } from "@/hooks/useChat";
 import type { UseChatComposerReturn } from "@/hooks/useChatComposer";
 import type { VoiceRecording } from "@/hooks/useVoiceRecorder";
-import type { LocalAttachment } from "@/types/messaging";
+import type { AttachmentV2, LocalAttachment } from "@/types/messaging";
 import { createLogger } from "@/utils/log";
 
 const log = createLogger("chat/sendDraft");
 
-type ChatSendTarget = Pick<UseChatReturn, "sendMessage" | "replyTo" | "clearReplyTo">;
-type ChatComposerState = Pick<UseChatComposerReturn, "text" | "clearText" | "setText">;
+type ChatSendTarget = Pick<
+  UseChatReturn,
+  "sendMessage" | "replyTo" | "clearReplyTo"
+>;
+type ChatComposerState = Pick<
+  UseChatComposerReturn,
+  "text" | "clearText" | "setText"
+>;
 type ChatAttachmentState = Pick<
   UseAttachmentPickerReturn,
   "attachments" | "clearAttachments" | "setAttachments"
@@ -36,9 +42,9 @@ export interface SendChatDraftInput {
   ) => Partial<SendMessageOptions>;
 }
 
-function toMediaAttachment(attachment: LocalAttachment): NonNullable<
-  SendMessageOptions["attachments"]
->[number] {
+function toMediaAttachment(
+  attachment: LocalAttachment,
+): NonNullable<SendMessageOptions["attachments"]>[number] {
   return {
     id: attachment.id,
     uri: attachment.uri,
@@ -65,7 +71,12 @@ export async function sendChatDraft({
   const hasText = text.length > 0;
   const hasAttachments = attachments.length > 0;
 
-  if (!currentUid || !conversationId || isSending || (!hasText && !hasAttachments)) {
+  if (
+    !currentUid ||
+    !conversationId ||
+    isSending ||
+    (!hasText && !hasAttachments)
+  ) {
     return { success: false, error: "Nothing to send" };
   }
 
@@ -186,6 +197,41 @@ export async function sendMediaAttachmentMessage(input: {
   return chat.sendMessage("", {
     kind: "media",
     attachments: [toMediaAttachment(attachment)],
+  });
+}
+
+/**
+ * Send a GIF that is already hosted on a remote CDN (e.g. KLIPY).
+ * Bypasses the compress→upload pipeline entirely — the remote URL is stored
+ * as an already-uploaded AttachmentV2, so the sync engine sends it straight
+ * to the Cloud Function.
+ */
+export async function sendGifMessage(input: {
+  chat: Pick<UseChatReturn, "sendMessage">;
+  gif: {
+    id: string;
+    url: string;
+    width: number;
+    height: number;
+    mime?: string;
+  };
+}): Promise<{ success: boolean; error?: string }> {
+  const { chat, gif } = input;
+
+  const attachment: AttachmentV2 = {
+    id: gif.id,
+    kind: "image",
+    mime: gif.mime ?? "image/gif",
+    url: gif.url,
+    path: "", // External CDN — no Firebase Storage path
+    sizeBytes: 0,
+    width: gif.width,
+    height: gif.height,
+  };
+
+  return chat.sendMessage("", {
+    kind: "media",
+    remoteAttachments: [attachment],
   });
 }
 

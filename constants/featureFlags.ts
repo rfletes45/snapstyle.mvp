@@ -92,6 +92,22 @@ export const USE_VISION_CAMERA = true;
 export const GAMES_V4_ENABLED = true;
 
 // =============================================================================
+// GIF Picker Feature Flag
+// =============================================================================
+
+/**
+ * Master switch for the KLIPY-powered GIF picker.
+ *
+ * When enabled:
+ * - GIF button becomes available in the composer toolbar item picker
+ * - Users can search and send GIFs via KLIPY
+ * - GIF messages render as image attachments in chat
+ *
+ * @default true
+ */
+export const GIF_PICKER_ENABLED = true;
+
+// =============================================================================
 // Debug Features
 // =============================================================================
 

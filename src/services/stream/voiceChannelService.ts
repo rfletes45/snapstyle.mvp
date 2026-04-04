@@ -85,7 +85,22 @@ export async function joinVoiceChannel(
 
 export async function leaveVoiceChannel(call: Call): Promise<void> {
   try {
-    await call.leave();
+    // Disable media tracks first so the server sees the user as
+    // fully inactive before the leave signal. Without this, other
+    // participants may still see the user as "present-but-muted" for
+    // a short window after the leave.
+    try {
+      await call.microphone.disable();
+    } catch {
+      // mic may already be off
+    }
+    try {
+      await call.camera.disable();
+    } catch {
+      // camera may already be off
+    }
+
+    await call.leave({ reject: false });
   } finally {
     await stopCallAudioSession();
   }

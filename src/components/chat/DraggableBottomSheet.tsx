@@ -3,21 +3,45 @@
  * up/down between snap points, with swipe-down-to-dismiss.
  *
  * Uses react-native-gesture-handler + Reanimated for smooth UI-thread gestures.
+ *
+ * Supports an optional "composer-attached" mode where the sheet coordinates
+ * with the chat composer via a shared Reanimated translateY value, enabling
+ * the composer to track the sheet position at 60fps.
  */
 
-import React, { useCallback, useEffect, useMemo } from "react";
-import { Dimensions, Modal, StyleSheet, View } from "react-native";
+import React, {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+} from "react";
+import {
+  BackHandler,
+  Dimensions,
+  Pressable,
+  StyleSheet,
+  View,
+} from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
-import { useTheme } from "react-native-paper";
+import { Portal, useTheme } from "react-native-paper";
 import Animated, {
+  Extrapolation,
   interpolate,
   runOnJS,
+  useAnimatedReaction,
   useAnimatedStyle,
   useSharedValue,
   withSpring,
+  type SharedValue,
 } from "react-native-reanimated";
 
 const { height: SCREEN_HEIGHT } = Dimensions.get("window");
+
+/** Total vertical height of the drag handle zone (padding + handle).
+ *  Used by pickers to add this to the keyboard fraction so the visible
+ *  content area exactly matches the keyboard height. */
+export const HANDLE_ZONE_HEIGHT = 23; // paddingTop(10) + handle(5) + paddingBottom(8)
 
 const SPRING_CONFIG = {
   damping: 28,
@@ -29,6 +53,11 @@ const SPRING_CONFIG = {
 };
 
 // ─── Types ───────────────────────────────────────────────────────────────────
+
+export interface DraggableBottomSheetHandle {
+  /** Programmatically animate to a specific snap point index */
+  snapToIndex: (index: number) => void;
+}
 
 export interface DraggableBottomSheetProps {
   /** Whether the sheet is visible */
@@ -45,19 +74,35 @@ export interface DraggableBottomSheetProps {
   showBackdrop?: boolean;
   /** Override border radius */
   borderRadius?: number;
+  /** External shared value to sync translateY to (for composer coordination).
+   *  When provided, the sheet writes its translateY here on every frame. */
+  sharedTranslateY?: SharedValue<number>;
+  /** Override sheet background color (allows themed keyboard-replacement surfaces). */
+  surfaceColor?: string;
+  /** Override drag handle color. */
+  handleColor?: string;
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export function DraggableBottomSheet({
-  open,
-  onClose,
-  snapPoints = [0.5, 0.85],
-  initialSnapIndex,
-  children,
-  showBackdrop = true,
-  borderRadius = 20,
-}: DraggableBottomSheetProps) {
+export const DraggableBottomSheet = forwardRef<
+  DraggableBottomSheetHandle,
+  DraggableBottomSheetProps
+>(function DraggableBottomSheet(
+  {
+    open,
+    onClose,
+    snapPoints = [0.5, 0.85],
+    initialSnapIndex,
+    children,
+    showBackdrop = true,
+    borderRadius = 20,
+    sharedTranslateY,
+    surfaceColor,
+    handleColor,
+  },
+  ref,
+) {
   const theme = useTheme();
 
   // Convert snap fractions to translateY values (0 = top of screen, SCREEN_HEIGHT = off-screen)
@@ -73,10 +118,52 @@ export function DraggableBottomSheet({
   const startY = useSharedValue(0);
   const activeSnapIndex = useSharedValue(startIndex);
 
+  // ── Sync translateY → sharedTranslateY (UI-thread, 60fps) ───────────────
+
+  useAnimatedReaction(
+    () => translateY.value,
+    (current) => {
+      if (sharedTranslateY) {
+        sharedTranslateY.value = current;
+      }
+    },
+    [sharedTranslateY],
+  );
+
+  // ── Imperative handle ──────────────────────────────────────────────────────
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      snapToIndex: (index: number) => {
+        const target = snapTranslateYs[index];
+        if (target !== undefined) {
+          translateY.value = withSpring(target, SPRING_CONFIG);
+          activeSnapIndex.value = index;
+        }
+      },
+    }),
+    [snapTranslateYs, translateY, activeSnapIndex],
+  );
+
+  // ── Keyboard-replacement mode (no backdrop, no Modal) ─────────────────────
+  const isKeyboardReplacement = !!sharedTranslateY;
+
   // Open / close animations
   useEffect(() => {
     if (open) {
-      translateY.value = withSpring(snapTranslateYs[startIndex], SPRING_CONFIG);
+      if (isKeyboardReplacement) {
+        // In keyboard-replacement mode, jump directly to the snap position.
+        // This prevents a frame-gap where useAnimatedReaction would overwrite
+        // the pre-seeded sheetTranslateY with SCREEN_HEIGHT (dismiss position),
+        // causing the composer to drop and the chat to collapse.
+        translateY.value = snapTranslateYs[startIndex];
+      } else {
+        translateY.value = withSpring(
+          snapTranslateYs[startIndex],
+          SPRING_CONFIG,
+        );
+      }
       activeSnapIndex.value = startIndex;
     } else {
       translateY.value = withSpring(dismissY, SPRING_CONFIG);
@@ -88,11 +175,22 @@ export function DraggableBottomSheet({
     dismissY,
     translateY,
     activeSnapIndex,
+    isKeyboardReplacement,
   ]);
 
   const handleClose = useCallback(() => {
     onClose();
   }, [onClose]);
+
+  // Android back-button handling (replaces Modal's onRequestClose)
+  useEffect(() => {
+    if (!open) return;
+    const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+      handleClose();
+      return true;
+    });
+    return () => sub.remove();
+  }, [open, handleClose]);
 
   // ── Pan gesture ────────────────────────────────────────────────────────────
 
@@ -172,6 +270,7 @@ export function DraggableBottomSheet({
     transform: [{ translateY: translateY.value }],
   }));
 
+  // Standard backdrop: opacity 1 at highest snap, 0 at dismiss
   const backdropStyle = useAnimatedStyle(() => ({
     opacity: interpolate(
       translateY.value,
@@ -180,61 +279,114 @@ export function DraggableBottomSheet({
     ),
   }));
 
+  // Keyboard-replacement overlay: opacity 0 at keyboard-height snap (index 0),
+  // opacity increases only as the sheet rises above that baseline.
+  // This means the overlay is invisible at the resting keyboard-height position
+  // and progressively darkens only when the user expands the modal further.
+  // Height tracks the sheet's translateY (= distance from top), so the overlay
+  // covers from top:0 down to the sheet's top edge exactly, never overlapping
+  // the sheet content or the composer below it.
+  const kbOverlayStyle = useAnimatedStyle(() => {
+    if (snapTranslateYs.length < 2) return { opacity: 0, height: 0 };
+    const kbSnapY = snapTranslateYs[0]; // keyboard-height translateY
+    const highSnapY = snapTranslateYs[snapTranslateYs.length - 1]; // highest snap
+    return {
+      opacity: interpolate(
+        translateY.value,
+        [highSnapY, kbSnapY],
+        [0.5, 0],
+        Extrapolation.CLAMP,
+      ),
+      // translateY.value is the sheet's top edge in screen coordinates
+      height: Math.max(0, translateY.value),
+    };
+  });
+
   if (!open) return null;
 
+  // Determine whether to show standard backdrop (never in keyboard-replacement mode)
+  const shouldShowBackdrop = showBackdrop && !isKeyboardReplacement;
+
   return (
-    <Modal
-      visible={open}
-      transparent
-      animationType="none"
-      onRequestClose={handleClose}
-    >
-      {/* Backdrop */}
-      {showBackdrop && (
-        <Animated.View
-          style={[
-            StyleSheet.absoluteFill,
-            {
-              backgroundColor: theme.dark
-                ? "rgba(0,0,0,0.6)"
-                : "rgba(0,0,0,0.4)",
-            },
-            backdropStyle,
-          ]}
-        >
-          <View style={StyleSheet.absoluteFill} onTouchEnd={handleClose} />
-        </Animated.View>
-      )}
+    <Portal>
+      <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+        {/* Standard backdrop — only for non-keyboard-replacement sheets */}
+        {shouldShowBackdrop && (
+          <Animated.View
+            style={[
+              StyleSheet.absoluteFill,
+              {
+                backgroundColor: theme.dark
+                  ? "rgba(0,0,0,0.6)"
+                  : "rgba(0,0,0,0.4)",
+              },
+              backdropStyle,
+            ]}
+          >
+            <View style={StyleSheet.absoluteFill} onTouchEnd={handleClose} />
+          </Animated.View>
+        )}
 
-      {/* Sheet */}
-      <GestureDetector gesture={panGesture}>
-        <Animated.View
-          style={[
-            styles.sheet,
-            sheetStyle,
-            {
-              backgroundColor: theme.colors.surface,
-              borderTopLeftRadius: borderRadius,
-              borderTopRightRadius: borderRadius,
-            },
-          ]}
-        >
-          {/* Drag handle */}
-          <View style={styles.handleZone}>
-            <View
+        {/* Keyboard-replacement dismiss layer (two parts):
+            1. Full-screen transparent Pressable — always captures taps anywhere
+               outside the sheet. The sheet renders ON TOP of this, so touches on
+               the sheet go to the sheet; everything else dismisses.
+            2. Visual dimming overlay — height-animated to cover only the chat
+               area above the sheet, fading in only when the sheet is expanded
+               beyond keyboard height. pointerEvents="none" so it never steals
+               touches from (1) or the sheet. */}
+        {isKeyboardReplacement && (
+          <>
+            {/* 1. Transparent dismiss target — full screen behind the sheet */}
+            <Pressable style={StyleSheet.absoluteFill} onPress={handleClose} />
+            {/* 2. Visual dimming — covers only above the sheet */}
+            <Animated.View
               style={[
-                styles.handle,
-                { backgroundColor: theme.colors.outlineVariant },
+                styles.kbOverlay,
+                {
+                  backgroundColor: theme.dark
+                    ? "rgba(0,0,0,0.7)"
+                    : "rgba(0,0,0,0.5)",
+                },
+                kbOverlayStyle,
               ]}
+              pointerEvents="none"
             />
-          </View>
+          </>
+        )}
 
-          {children}
-        </Animated.View>
-      </GestureDetector>
-    </Modal>
+        {/* Sheet */}
+        <GestureDetector gesture={panGesture}>
+          <Animated.View
+            style={[
+              isKeyboardReplacement ? styles.sheetFlat : styles.sheet,
+              sheetStyle,
+              {
+                backgroundColor: surfaceColor ?? theme.colors.surface,
+                borderTopLeftRadius: borderRadius,
+                borderTopRightRadius: borderRadius,
+              },
+            ]}
+          >
+            {/* Drag handle */}
+            <View style={styles.handleZone}>
+              <View
+                style={[
+                  styles.handle,
+                  {
+                    backgroundColor: handleColor ?? theme.colors.outlineVariant,
+                  },
+                ]}
+              />
+            </View>
+
+            {children}
+          </Animated.View>
+        </GestureDetector>
+      </View>
+    </Portal>
   );
-}
+});
 
 // ─── Styles ──────────────────────────────────────────────────────────────────
 
@@ -250,6 +402,24 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 12,
   },
+  // Keyboard-replacement sheets: no shadow/elevation to avoid darkening the typing bar
+  sheetFlat: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    height: SCREEN_HEIGHT,
+    elevation: 0,
+  },
+  // Overlay that covers only the chat area above the sheet in keyboard-replacement mode.
+  // Animated `height` tracks the sheet's translateY (sheet top edge from screen top),
+  // so the overlay extends from the screen top down to exactly the sheet's top edge.
+  kbOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    // `height` is set dynamically via animated style
+  },
   handleZone: {
     alignItems: "center",
     paddingTop: 10,
@@ -262,4 +432,5 @@ const styles = StyleSheet.create({
   },
 });
 
+export { SCREEN_HEIGHT as SHEET_SCREEN_HEIGHT };
 export default DraggableBottomSheet;

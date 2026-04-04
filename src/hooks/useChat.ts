@@ -65,6 +65,7 @@ import { updateGroupReadWatermark } from "@/services/groupMembers";
 import { sendMessage as sendMessageService } from "@/services/messaging/send";
 import { syncPendingMessages } from "@/services/sync/syncEngine";
 import {
+  AttachmentV2,
   LocalAttachment,
   MentionSpan,
   MessageKind,
@@ -133,6 +134,8 @@ export interface SendMessageOptions {
   mentionSpans?: MentionSpan[];
   /** Local attachments to upload */
   attachments?: LocalAttachment[];
+  /** Already-hosted remote attachments (skip compress/upload pipeline) */
+  remoteAttachments?: AttachmentV2[];
   /** Message kind (default: "text") */
   kind?: MessageKind;
   /** Animal theme ID (required when kind="animal") */
@@ -482,6 +485,7 @@ export function useChat(config: UseChatConfig): UseChatReturn {
         mentionUids,
         mentionSpans,
         attachments,
+        remoteAttachments,
         kind = "text",
         animalId,
         clearReplyOnSend = true,
@@ -491,7 +495,12 @@ export function useChat(config: UseChatConfig): UseChatReturn {
       const replyToUse = optionsReplyTo ?? replyTo;
 
       // Animal messages don't require text content
-      if (kind !== "animal" && !text.trim() && !attachments?.length) {
+      if (
+        kind !== "animal" &&
+        !text.trim() &&
+        !attachments?.length &&
+        !remoteAttachments?.length
+      ) {
         return { success: false, error: "Message cannot be empty" };
       }
 
@@ -547,6 +556,7 @@ export function useChat(config: UseChatConfig): UseChatReturn {
             replyTo: replyToUse ?? undefined,
             threadRootId,
             mentions: mentionUids,
+            attachments: remoteAttachments, // Already-hosted (skip upload)
             localAttachments: attachments, // Pass local attachments for upload
           });
 

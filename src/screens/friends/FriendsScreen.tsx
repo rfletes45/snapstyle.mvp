@@ -529,12 +529,22 @@ export default function FriendsScreen({ navigation }: any) {
     },
   });
 
-  const safeTop = insets.top;
+  // Use a shared value for safe area top so the Reanimated worklets always
+  // see the current value.  On cold start, useSafeAreaInsets() may initially
+  // return { top: 0 } before the native provider measures.  A plain JS
+  // variable would be captured in the worklet closure at creation time and
+  // never update, causing the header animation to use wrong interpolation
+  // ranges until the component re-renders.
+  const safeTop = useSharedValue(insets.top);
+  useEffect(() => {
+    safeTop.value = insets.top;
+  }, [insets.top, safeTop]);
+
   const headerAnimStyle = useAnimatedStyle(() => ({
     height: interpolate(
       scrollY.value,
       [0, SCROLL_RANGE],
-      [safeTop + HEADER_EXPANDED, safeTop + HEADER_COLLAPSED],
+      [safeTop.value + HEADER_EXPANDED, safeTop.value + HEADER_COLLAPSED],
       Extrapolation.CLAMP,
     ),
   }));

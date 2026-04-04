@@ -182,6 +182,19 @@ const NONE_FILTER: FilterConfig = {
 
 const ALL_FILTERS: FilterConfig[] = [NONE_FILTER, ...FILTER_LIBRARY];
 
+// Pre-compute overlay colors for the filter carousel at module load time.
+// filterToOverlayColor() does expensive color matrix math (7 matrix
+// multiplications per filter).  Computing all 26 during render was blocking
+// the main thread for 300-500 ms right when VisionCamera's GPU pipeline
+// needed to deliver its first frames, causing the camera to freeze.
+const FILTER_OVERLAY_COLORS = new Map<string, string | null>();
+for (const f of ALL_FILTERS) {
+  FILTER_OVERLAY_COLORS.set(
+    f.id,
+    f.id === "none" ? null : filterToOverlayColor(f, 1.0),
+  );
+}
+
 const TIMER_OPTIONS = [0, 3, 10] as const;
 type TimerOption = (typeof TIMER_OPTIONS)[number];
 
@@ -874,8 +887,7 @@ const CameraScreen: React.FC = () => {
   const renderFilterItem = useCallback(
     ({ item, index }: { item: FilterConfig; index: number }) => {
       const isSelected = selectedFilterIndex === index;
-      const tintColor =
-        item.id === "none" ? null : filterToOverlayColor(item, 1.0);
+      const tintColor = FILTER_OVERLAY_COLORS.get(item.id) ?? null;
       return (
         <TouchableOpacity
           style={[styles.filterChip, isSelected && styles.filterChipActive]}
@@ -2147,6 +2159,9 @@ const CameraScreen: React.FC = () => {
             horizontal
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.filterCarouselContent}
+            initialNumToRender={6}
+            maxToRenderPerBatch={4}
+            windowSize={5}
           />
         </View>
       )}

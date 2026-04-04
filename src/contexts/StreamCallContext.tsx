@@ -253,16 +253,21 @@ function StreamCallInnerProvider({
     }
 
     deliberatelyLeftChannelsRef.current.add(call.id);
-    activeCallRef.current = null;
-    busyRef.current = false;
-    setActiveCall(null);
-    setActiveSession(null);
 
+    // Leave the call FIRST while the SDK reference is still live.
+    // Nulling the ref/state before the async leave previously caused the
+    // callingState$ subscription to tear down mid-flight, preventing
+    // proper server-side participant removal.
     try {
       await leaveVoiceChannel(call);
     } catch {
       // Best effort - the room may already be gone locally.
     }
+
+    activeCallRef.current = null;
+    busyRef.current = false;
+    setActiveCall(null);
+    setActiveSession(null);
   }, []);
 
   const wasChannelDeliberatelyLeft = useCallback((channelId: string) => {

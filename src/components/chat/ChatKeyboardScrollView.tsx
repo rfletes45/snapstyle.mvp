@@ -6,26 +6,35 @@
  *
  * Architecture:
  * - PRIMARY: native keyboard-controller scroll + sticky footer
- * - FALLBACK: plain ScrollView + standard KeyboardAvoidingView wrapper
+ * - FALLBACK: Animated paddingBottom container that tracks the effective
+ *   bottom inset (keyboard height + composer sheet offset). This replaces
+ *   the old KeyboardAvoidingView approach which only knew about the
+ *   keyboard — not composer-attached sheets — causing the chat to drop
+ *   when a sheet replaces the keyboard.
  *
  * This file must remain safe to import in Expo Go.
  */
 
+import { useComposerSheet } from "@/contexts/ComposerSheetContext";
+import {
+  isKeyboardControllerAvailable,
+  KeyboardStickyView,
+  KeyboardChatScrollView as OptionalKeyboardChatScrollView,
+  useReanimatedKeyboardAnimationCompat,
+} from "@/utils/optionalKeyboardController";
 import React, { forwardRef, useCallback } from "react";
-import type { ScrollViewProps } from "react-native";
-import { ScrollView, UIManager } from "react-native";
+import type { ScrollViewProps, StyleProp, ViewStyle } from "react-native";
+import { Dimensions, ScrollView, UIManager, View } from "react-native";
 import type { SharedValue } from "react-native-reanimated";
 import Animated, {
   interpolate,
+  useAnimatedReaction,
   useAnimatedStyle,
+  useDerivedValue,
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import {
-  isKeyboardControllerAvailable,
-  KeyboardChatScrollView as OptionalKeyboardChatScrollView,
-  KeyboardStickyView,
-  useReanimatedKeyboardAnimationCompat,
-} from "@/utils/optionalKeyboardController";
+
+const FOOTER_SCREEN_HEIGHT = Dimensions.get("window").height;
 
 let kcsvAvailable = false;
 let KeyboardChatScrollView: any = null;
@@ -106,15 +115,152 @@ export function useRenderChatScrollComponent() {
 }
 
 export function ChatFooterWrapper({ children }: { children: React.ReactNode }) {
+  const {
+    sheetTranslateY,
+    initialSnapHeight,
+    isSheetActive,
+    sheetExtraPadding,
+  } = useComposerSheet();
+  const { height: keyboardHeight } = useReanimatedKeyboardAnimationCompat();
+
+  // Derive the offset the composer should translate up by.
+  //   sheetVisibleHeight = how much of the sheet is on-screen
+  //   clamp to initialSnapHeight (keyboard-equivalent) = "follow zone"
+  //   subtract keyboard contribution to avoid double-offset
+  const composerOffset = useDerivedValue(() => {
+    if (isSheetActive.value === 0) return 0;
+
+    const sheetVisible = FOOTER_SCREEN_HEIGHT - sheetTranslateY.value;
+    const clamped = Math.min(
+      Math.max(sheetVisible, 0),
+      initialSnapHeight.value,
+    );
+    // keyboardHeight from Reanimated is negative when open (keyboard-controller convention)
+    const kbContribution = Math.abs(keyboardHeight.value);
+    return Math.max(0, clamped - kbContribution);
+  }, [sheetTranslateY, initialSnapHeight, isSheetActive, keyboardHeight]);
+
+  // Pipe composerOffset → sheetExtraPadding so KCSV shifts chat content
+  useAnimatedReaction(
+    () => composerOffset.value,
+    (current) => {
+      sheetExtraPadding.value = current;
+    },
+    [sheetExtraPadding],
+  );
+
+  const offsetStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: -composerOffset.value }],
+  }));
+
   if (kcsvAvailable) {
+    // KCSV path: KSV positions footer at keyboard top, translateY adds
+    // the sheet offset so the footer sits above the composer-attached sheet.
     return (
       <KeyboardStickyView offset={{ closed: 0, opened: 0 }}>
-        {children}
+        <Animated.View style={offsetStyle}>{children}</Animated.View>
       </KeyboardStickyView>
     );
   }
 
+  // Fallback path: ChatKeyboardContainer's animated paddingBottom already
+  // positions the footer correctly above the keyboard + sheet. No translateY
+  // needed — the container padding is the single source of truth for the
+  // effective bottom inset, preventing the chat-drops-when-sheet-replaces-
+  // keyboard bug that occurred when KAV only tracked the keyboard.
   return <>{children}</>;
+}
+
+// ─── Effective Bottom Inset ──────────────────────────────────────────────────
+
+/**
+ * Computes the effective bottom inset for the chat container — the total
+ * bottom space occupied by the keyboard + any active composer-attached sheet.
+ *
+ * During a keyboard→sheet transition the two terms are complementary:
+ *   kbH drops from kbH→0, composerOffset rises from 0→kbH
+ *   sum stays constant = kbH (no visual jump)
+ *
+ * Used by ChatKeyboardContainer's fallback path to replace KAV with a
+ * Reanimated-driven paddingBottom that understands the full composer system.
+ */
+function useEffectiveBottomInset(): SharedValue<number> {
+  const { sheetTranslateY, initialSnapHeight, isSheetActive } =
+    useComposerSheet();
+  const { height: keyboardHeight } = useReanimatedKeyboardAnimationCompat();
+
+  return useDerivedValue(() => {
+    const kbH = Math.abs(keyboardHeight.value);
+
+    if (isSheetActive.value === 0) return kbH;
+
+    const sheetVisible = FOOTER_SCREEN_HEIGHT - sheetTranslateY.value;
+    const clamped = Math.min(
+      Math.max(sheetVisible, 0),
+      initialSnapHeight.value,
+    );
+    // composerOffset = extra space the sheet occupies beyond the keyboard
+    const composerOffset = Math.max(0, clamped - kbH);
+    // Total = keyboard + sheet's extra contribution (always >= kbH)
+    return kbH + composerOffset;
+  });
+}
+
+// ─── Chat Keyboard Container ─────────────────────────────────────────────────
+
+/**
+ * Unified keyboard-aware container for chat screens.
+ *
+ * Replaces KeyboardAvoidingView as the outermost layout wrapper:
+ * - KCSV path: plain View (KCSV handles content inset natively via
+ *   contentInset + extraContentPadding — no container padding needed).
+ * - Fallback path: Animated.View whose paddingBottom tracks the effective
+ *   bottom inset (keyboard + composer sheet). This ensures the FlatList
+ *   height stays constant during keyboard↔sheet transitions, eliminating
+ *   the visible downward chat jump that occurred with KAV.
+ */
+export function ChatKeyboardContainer({
+  children,
+  style,
+}: {
+  children: React.ReactNode;
+  style?: StyleProp<ViewStyle>;
+}) {
+  if (kcsvAvailable) {
+    // KCSV handles content inset natively — no extra padding needed
+    return <View style={[{ flex: 1 }, style]}>{children}</View>;
+  }
+
+  return (
+    <FallbackKeyboardContainer style={style}>
+      {children}
+    </FallbackKeyboardContainer>
+  );
+}
+
+/**
+ * Fallback container that uses Reanimated animated paddingBottom to track
+ * the effective bottom inset. This is the single source of truth for how
+ * much space the keyboard + composer sheet system occupies at the bottom.
+ */
+function FallbackKeyboardContainer({
+  children,
+  style,
+}: {
+  children: React.ReactNode;
+  style?: StyleProp<ViewStyle>;
+}) {
+  const effectiveInset = useEffectiveBottomInset();
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    paddingBottom: effectiveInset.value,
+  }));
+
+  return (
+    <Animated.View style={[{ flex: 1 }, animatedStyle, style]}>
+      {children}
+    </Animated.View>
+  );
 }
 
 export function KeyboardSafeAreaSpacer({
@@ -142,11 +288,27 @@ function AnimatedSafeAreaSpacer({
   backgroundColor: string;
 }) {
   const { progress } = useReanimatedKeyboardAnimationCompat();
+  const { isSheetActive, sheetTranslateY, initialSnapHeight } =
+    useComposerSheet();
 
-  const animatedStyle = useAnimatedStyle(() => ({
-    height: interpolate(progress.value, [0, 1], [height, 0]),
-    backgroundColor,
-  }));
+  // Collapse spacer when keyboard is open OR when a composer-attached sheet
+  // is active. Uses a smooth progress derived from the sheet's translate
+  // so the collapse animates in sync with the sheet opening.
+  const animatedStyle = useAnimatedStyle(() => {
+    let sheetProgress = 0;
+    if (isSheetActive.value === 1 && initialSnapHeight.value > 0) {
+      const sheetVisible = FOOTER_SCREEN_HEIGHT - sheetTranslateY.value;
+      sheetProgress = Math.min(
+        1,
+        Math.max(0, sheetVisible / initialSnapHeight.value),
+      );
+    }
+    const factor = Math.max(progress.value, sheetProgress);
+    return {
+      height: interpolate(factor, [0, 1], [height, 0]),
+      backgroundColor,
+    };
+  });
 
   return <Animated.View style={animatedStyle} />;
 }

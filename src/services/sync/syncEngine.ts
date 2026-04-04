@@ -274,8 +274,11 @@ async function syncSingleMessage(
 
       if (attachmentsNeedingUpload.length > 0) {
         // Convert to LocalAttachment format for upload
+        // Skip remote URLs (http/https) — they aren't local files and would
+        // crash compressImage. This can happen if stale data was inserted by
+        // an earlier code path that didn't distinguish remote vs local.
         const localAttachments: LocalAttachment[] = attachmentsNeedingUpload
-          .filter((a) => a.local_uri) // Must have local file
+          .filter((a) => a.local_uri && !a.local_uri.startsWith("http"))
           .map((a) => ({
             id: a.id,
             uri: a.local_uri!,
@@ -358,14 +361,20 @@ async function syncSingleMessage(
         }
       }
 
-      // Add already-uploaded attachments to the list
+      // Add already-uploaded attachments to the list.
+      // Also include attachments whose local_uri is a remote URL — they are
+      // externally hosted (e.g. KLIPY GIFs) and don't need upload.
       const alreadyUploaded = message.attachments
-        .filter((a) => a.upload_status === "uploaded" && a.remote_url)
+        .filter(
+          (a) =>
+            (a.upload_status === "uploaded" && a.remote_url) ||
+            a.local_uri?.startsWith("http"),
+        )
         .map((a) => ({
           id: a.id,
           kind: a.kind as "image" | "video" | "audio" | "file",
           mime: a.mime,
-          url: a.remote_url!,
+          url: a.remote_url || a.local_uri!,
           path: a.remote_path || "",
           sizeBytes: a.size_bytes || 0,
           width: a.width || undefined,

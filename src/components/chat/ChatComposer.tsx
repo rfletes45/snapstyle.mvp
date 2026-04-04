@@ -7,6 +7,7 @@
  *
  * Features:
  * - Scope-aware rendering (dm vs group)
+ * - Customizable toolbar with drag-and-drop reordering
  * - Voice button for groups (when input empty)
  * - Mention autocomplete support for groups
  * - Reply preview bar with cancel
@@ -38,7 +39,15 @@ import { IconButton, Text, useTheme } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AnimalIcon } from "./AnimalIcon";
 import { AnimalPickerBubble } from "./AnimalPickerBubble";
+import { ComposerCustomizeToolbar } from "./ComposerToolbar/ComposerCustomizeToolbar";
+import { ComposerItemPicker } from "./ComposerToolbar/ComposerItemPicker";
+import { ComposerToolbarRow } from "./ComposerToolbar/ComposerToolbarRow";
+import type { ComposerToolbarItemId } from "./ComposerToolbar/types";
+import { DEFAULT_TOOLBAR_ITEMS } from "./ComposerToolbar/types";
+import { EmojiButton } from "./EmojiButton";
+import { GifButton } from "./GifButton";
 import { ReplyPreviewBar } from "./ReplyPreviewBar";
+import { SendButton } from "./SendButton";
 import { VoiceRecordButton } from "./VoiceRecordButton";
 
 // =============================================================================
@@ -121,6 +130,40 @@ export interface ChatComposerProps {
   textInputProps?: Partial<TextInputProps>;
   /** TextInput ref */
   textInputRef?: React.RefObject<TextInput | null>;
+  // ── Customizable Toolbar Props ──────────────────────────────────────
+  /** Ordered toolbar items from useComposerToolbarLayout. Uses defaults if omitted. */
+  toolbarItems?: {
+    id: ComposerToolbarItemId;
+    position: number;
+    flexWeight?: number;
+  }[];
+  /** Whether the toolbar is in edit/customize mode. */
+  toolbarEditing?: boolean;
+  /** Whether toolbar layout is being saved. */
+  toolbarSaving?: boolean;
+  /** Enter toolbar edit mode. */
+  onToolbarEnterEdit?: () => void;
+  /** Save toolbar changes and exit edit mode. */
+  onToolbarSaveAndExit?: () => void;
+  /** Cancel toolbar changes and exit edit mode. */
+  onToolbarCancelEdit?: () => void;
+  /** Move a toolbar item to a new position. */
+  onToolbarMoveItem?: (
+    itemId: ComposerToolbarItemId,
+    toPosition: number,
+  ) => void;
+  /** Add a toolbar item. */
+  onToolbarAddItem?: (itemId: ComposerToolbarItemId) => void;
+  /** Remove a toolbar item. */
+  onToolbarRemoveItem?: (itemId: ComposerToolbarItemId) => void;
+  /** Reset toolbar to defaults. */
+  onToolbarResetDefaults?: () => void;
+  /** Called when an emoji is selected from the emoji picker toolbar button. */
+  onEmojiSelected?: (emoji: string) => void;
+  /** Called when a GIF is selected from the GIF picker toolbar button. */
+  onGifSelected?: (gif: import("@/services/gif/types").GifItem) => void;
+  /** Schedule button handler (for the schedule toolbar item). */
+  onSchedulePress?: () => void;
 }
 
 function normalizeNodeForView(node: React.ReactNode): React.ReactNode {
@@ -175,6 +218,20 @@ export function ChatComposer({
   style,
   textInputProps,
   textInputRef,
+  // Customizable toolbar props
+  toolbarItems,
+  toolbarEditing = false,
+  toolbarSaving = false,
+  onToolbarEnterEdit,
+  onToolbarSaveAndExit,
+  onToolbarCancelEdit,
+  onToolbarMoveItem,
+  onToolbarAddItem,
+  onToolbarRemoveItem,
+  onToolbarResetDefaults,
+  onEmojiSelected,
+  onGifSelected,
+  onSchedulePress,
 }: ChatComposerProps): React.JSX.Element {
   const theme = useTheme();
   const { colors, isDark } = useAppTheme();
@@ -325,114 +382,83 @@ export function ChatComposer({
     [containerBg, style],
   );
 
-  return (
-    <>
-      <View style={containerStyle}>
-        {/* Mention autocomplete (groups only) - shown above everything */}
-        {scope === "group" && normalizedMentionAutocomplete}
+  // ── Toolbar state ─────────────────────────────────────────────────────
+  const [itemPickerVisible, setItemPickerVisible] = React.useState(false);
 
-        {/* Header content (attachment tray, etc.) */}
-        {normalizedHeaderContent}
+  // Determine which toolbar items to render (use provided or defaults)
+  const activeToolbarItems = toolbarItems ?? DEFAULT_TOOLBAR_ITEMS;
 
-        {/* Reply preview bar */}
-        {replyTo && onCancelReply && (
-          <ReplyPreviewBar
-            replyTo={replyTo}
-            onCancel={onCancelReply}
-            isOwnMessage={isOwnMessage}
-          />
-        )}
-
-        {/* Input row */}
-        <View
-          style={[
-            styles.inputRow,
-            { backgroundColor: containerBg, borderTopColor: borderColor },
-          ]}
-        >
-          {/* Left accessory */}
-          {normalizedLeftAccessory}
-
-          {/* Text input container with voice button inside */}
-          <View
-            style={[styles.textInputContainer, { backgroundColor: inputBg }]}
-          >
-            <TextInput
-              ref={inputRef}
-              style={[styles.textInput, { color: inputColor }]}
-              placeholder={placeholder}
-              placeholderTextColor={placeholderColor}
-              selectionColor={colors.primary}
-              keyboardAppearance={
-                Platform.OS === "ios" ? (isDark ? "dark" : "light") : undefined
-              }
-              value={value}
-              onChangeText={onChangeText}
-              onSelectionChange={
-                onCursorChange
-                  ? (e) => onCursorChange(e.nativeEvent.selection.end)
-                  : undefined
-              }
-              multiline
-              maxLength={1000}
-              textAlignVertical="center"
-              editable={!isRecording}
-              returnKeyType="send"
-              submitBehavior="submit"
-              onSubmitEditing={canSend ? handleSend : undefined}
-              {...textInputProps}
-            />
-
-            {/* Voice button inside text input (when no text) */}
-            {showVoiceButton &&
-              (normalizedVoiceButtonComponent ||
-                (onVoiceComplete ? (
-                  // Built-in VoiceRecordButton (hold-to-record with visual feedback)
-                  <VoiceRecordButton
-                    onRecordingComplete={onVoiceComplete}
-                    onRecordingCancelled={onVoiceCancelled}
-                    disabled={isSending}
-                    size={32}
-                    maxDuration={maxVoiceDuration / 1000} // Convert ms to seconds
-                    style={styles.voiceButtonInside}
-                  />
-                ) : (
-                  // Legacy simple IconButton (for backwards compatibility)
-                  <IconButton
-                    icon={isRecording ? "stop" : "microphone"}
-                    size={20}
-                    iconColor={
-                      isRecording
-                        ? theme.colors.error
-                        : theme.colors.onSurfaceVariant
-                    }
-                    onPress={onVoicePress}
-                    style={styles.voiceButtonInside}
-                  />
-                )))}
-          </View>
-
-          {/* Right accessory (custom) */}
-          {normalizedRightAccessory}
-
-          {/* Additional right accessory (schedule button, etc.) */}
-          {normalizedAdditionalRightAccessory}
-
-          {/* Upload progress indicator */}
-          {isUploading && uploadProgress && (
-            <View style={styles.uploadProgressContainer}>
-              <ActivityIndicator size={20} color={theme.colors.primary} />
-              <Text style={[styles.uploadProgressText, { color: inputColor }]}>
-                {Math.round(
-                  (uploadProgress.current / uploadProgress.total) * 100,
-                )}
-                %
-              </Text>
+  // ── Toolbar item renderer ─────────────────────────────────────────────
+  const renderToolbarItem = useCallback(
+    (itemId: ComposerToolbarItemId): React.ReactNode => {
+      switch (itemId) {
+        case "message-bar":
+          return (
+            <View
+              style={[styles.textInputContainer, { backgroundColor: inputBg }]}
+            >
+              <TextInput
+                ref={inputRef}
+                style={[styles.textInput, { color: inputColor }]}
+                placeholder={placeholder}
+                placeholderTextColor={placeholderColor}
+                selectionColor={colors.primary}
+                keyboardAppearance={
+                  Platform.OS === "ios"
+                    ? isDark
+                      ? "dark"
+                      : "light"
+                    : undefined
+                }
+                value={value}
+                onChangeText={onChangeText}
+                onSelectionChange={
+                  onCursorChange
+                    ? (e) => onCursorChange(e.nativeEvent.selection.end)
+                    : undefined
+                }
+                multiline
+                maxLength={1000}
+                textAlignVertical="center"
+                editable={!isRecording && !toolbarEditing}
+                returnKeyType="send"
+                submitBehavior="submit"
+                onSubmitEditing={canSend ? handleSend : undefined}
+                {...textInputProps}
+              />
+              {/* Voice button inside text input (when no text) */}
+              {showVoiceButton &&
+                (normalizedVoiceButtonComponent ||
+                  (onVoiceComplete ? (
+                    <VoiceRecordButton
+                      onRecordingComplete={onVoiceComplete}
+                      onRecordingCancelled={onVoiceCancelled}
+                      disabled={isSending}
+                      size={32}
+                      maxDuration={maxVoiceDuration / 1000}
+                      style={styles.voiceButtonInside}
+                    />
+                  ) : (
+                    <IconButton
+                      icon={isRecording ? "stop" : "microphone"}
+                      size={20}
+                      iconColor={
+                        isRecording
+                          ? theme.colors.error
+                          : theme.colors.onSurfaceVariant
+                      }
+                      onPress={onVoicePress}
+                      style={styles.voiceButtonInside}
+                    />
+                  )))}
             </View>
-          )}
+          );
 
-          {/* Game button - opens game picker */}
-          {onGamePress && (
+        case "camera":
+          return normalizedLeftAccessory ?? null;
+
+        case "game":
+          return onGamePress ? (
             <IconButton
               icon="gamepad-variant-outline"
               size={24}
@@ -440,13 +466,12 @@ export function ChatComposer({
               onPress={onGamePress}
               style={styles.gameButton}
             />
-          )}
+          ) : null;
 
-          {/* Animal button - sends an animal bubble based on equipped theme */}
-          {onAnimalPress && (
+        case "animal":
+          return onAnimalPress ? (
             <View ref={animalButtonRef} collapsable={false}>
               {animalPickerVisible ? (
-                // X close button when picker is open
                 <Pressable
                   onPress={onAnimalPickerClose}
                   style={styles.animalCloseButton}
@@ -480,6 +505,141 @@ export function ChatComposer({
                 </TouchableOpacity>
               )}
             </View>
+          ) : null;
+
+        case "send":
+          return (
+            <SendButton
+              onSend={handleSend}
+              canSend={canSend}
+              isSending={isSending}
+            />
+          );
+
+        case "emoji":
+          return onEmojiSelected ? (
+            <EmojiButton onEmojiSelected={onEmojiSelected} />
+          ) : null;
+
+        case "gif":
+          return onGifSelected ? (
+            <GifButton onGifSelected={onGifSelected} />
+          ) : null;
+
+        case "schedule":
+          return onSchedulePress ? (
+            <IconButton
+              icon="clock-outline"
+              size={22}
+              iconColor={theme.colors.onSurfaceVariant}
+              onPress={onSchedulePress}
+              style={styles.actionButton}
+            />
+          ) : null;
+
+        default:
+          return null;
+      }
+    },
+    [
+      inputBg,
+      inputColor,
+      placeholder,
+      placeholderColor,
+      colors,
+      isDark,
+      value,
+      onChangeText,
+      onCursorChange,
+      isRecording,
+      toolbarEditing,
+      canSend,
+      handleSend,
+      textInputProps,
+      showVoiceButton,
+      normalizedVoiceButtonComponent,
+      onVoiceComplete,
+      onVoiceCancelled,
+      isSending,
+      maxVoiceDuration,
+      onVoicePress,
+      theme,
+      normalizedLeftAccessory,
+      onGamePress,
+      onAnimalPress,
+      animalPickerVisible,
+      onAnimalPickerClose,
+      animalLocked,
+      handleAnimalLongPress,
+      animalThemeId,
+      onEmojiSelected,
+      onGifSelected,
+      onSchedulePress,
+      inputRef,
+    ],
+  );
+
+  return (
+    <>
+      <View style={containerStyle}>
+        {/* Customize mode toolbar (shown above composer when editing) */}
+        {toolbarEditing && onToolbarSaveAndExit && onToolbarCancelEdit && (
+          <ComposerCustomizeToolbar
+            saving={toolbarSaving}
+            onDone={onToolbarSaveAndExit}
+            onCancel={onToolbarCancelEdit}
+            onAddItem={() => setItemPickerVisible(true)}
+          />
+        )}
+
+        {/* Mention autocomplete (groups only) - shown above everything */}
+        {scope === "group" && normalizedMentionAutocomplete}
+
+        {/* Header content (attachment tray, etc.) */}
+        {normalizedHeaderContent}
+
+        {/* Reply preview bar */}
+        {replyTo && onCancelReply && (
+          <ReplyPreviewBar
+            replyTo={replyTo}
+            onCancel={onCancelReply}
+            isOwnMessage={isOwnMessage}
+          />
+        )}
+
+        {/* Input row — now driven by customizable toolbar */}
+        <View
+          style={[
+            styles.inputRow,
+            { backgroundColor: containerBg, borderTopColor: borderColor },
+          ]}
+        >
+          <ComposerToolbarRow
+            items={activeToolbarItems}
+            isEditing={toolbarEditing}
+            onMoveItem={onToolbarMoveItem}
+            onRemoveItem={onToolbarRemoveItem}
+            onEnterEditMode={onToolbarEnterEdit}
+            renderItem={renderToolbarItem}
+          />
+
+          {/* Right accessory (custom, non-toolbar) */}
+          {normalizedRightAccessory}
+
+          {/* Additional right accessory (non-toolbar) */}
+          {normalizedAdditionalRightAccessory}
+
+          {/* Upload progress indicator */}
+          {isUploading && uploadProgress && (
+            <View style={styles.uploadProgressContainer}>
+              <ActivityIndicator size={20} color={theme.colors.primary} />
+              <Text style={[styles.uploadProgressText, { color: inputColor }]}>
+                {Math.round(
+                  (uploadProgress.current / uploadProgress.total) * 100,
+                )}
+                %
+              </Text>
+            </View>
           )}
         </View>
       </View>
@@ -500,6 +660,20 @@ export function ChatComposer({
             safeAreaBottom={safeAreaBottom}
           />
         )}
+
+      {/* Item picker bottom sheet */}
+      {onToolbarAddItem && onToolbarResetDefaults && (
+        <ComposerItemPicker
+          visible={itemPickerVisible}
+          currentItemIds={activeToolbarItems.map((i) => i.id)}
+          onAddItem={(itemId) => {
+            onToolbarAddItem(itemId);
+            setItemPickerVisible(false);
+          }}
+          onRestoreDefaults={onToolbarResetDefaults}
+          onClose={() => setItemPickerVisible(false)}
+        />
+      )}
     </>
   );
 }

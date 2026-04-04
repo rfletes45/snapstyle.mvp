@@ -314,7 +314,25 @@ export function useInboxData(uid: string): UseInboxDataResult {
     if (useAggregatedInbox || !uid || cacheLoadedRef.current) return;
 
     const loadCache = async () => {
+      // If either live subscription has already delivered data by the time
+      // the cache promise resolves, skip the cache entirely.  In production
+      // (Hermes), Firestore listeners often fire before AsyncStorage
+      // completes, and writing stale cached data on top of fresh live data
+      // causes the visible "second reload" stutter.
+      if (dmReadyRef.current || groupReadyRef.current) {
+        cacheLoadedRef.current = true;
+        return;
+      }
+
       const cached = await loadInboxCache(uid);
+
+      // Re-check after the async gap — a listener may have fired while
+      // we were reading from AsyncStorage.
+      if (dmReadyRef.current || groupReadyRef.current) {
+        cacheLoadedRef.current = true;
+        return;
+      }
+
       if (cached) {
         log.debug("Loaded inbox from cache", {
           data: {

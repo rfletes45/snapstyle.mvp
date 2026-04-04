@@ -85,6 +85,7 @@ import { FullEmojiPicker } from "@/components/chat/FullEmojiPicker";
 import { NetworkBanner } from "@/components/chat/NetworkBanner";
 import { ScrollReturnButton } from "@/components/chat/ScrollReturnButton";
 import { VoiceRecordButton } from "@/components/chat/VoiceRecordButton";
+import { useComposerToolbarLayout } from "@/hooks/useComposerToolbarLayout";
 
 // UI components
 import BlockUserModal from "@/components/BlockUserModal";
@@ -92,17 +93,20 @@ import { ChatHeader } from "@/components/chat/ChatHeader";
 import { ChatMessageRenderer } from "@/components/chat/ChatMessageRenderer";
 import ReportUserModal from "@/components/ReportUserModal";
 import ScheduleMessageModal from "@/components/ScheduleMessageModal";
+import {
+  ComposerSheetProvider,
+  useComposerSheet,
+} from "@/contexts/ComposerSheetContext";
 import { GamePickerModal } from "@/gamesV4/components/GamePickerModal";
 import { PinnedInviteBar } from "@/gamesV4/components/PinnedInviteBar";
 import { createGameInvite } from "@/gamesV4/services/gameServiceV4";
 import type { GameId } from "@/gamesV4/types";
 import { useConversationDisplayMode } from "@/store/ConversationDisplayModeContext";
-import { KeyboardAvoidingView } from "@/utils/optionalKeyboardController";
 
-// Keyboard-sync (KCSV + KeyboardAvoidingView fallback)
+// Keyboard-sync (KCSV + fallback animated container)
 import {
   ChatFooterWrapper,
-  isKCSVAvailable,
+  ChatKeyboardContainer,
   KeyboardSafeAreaSpacer,
   setChatScrollViewConfig,
   useRenderChatScrollComponent,
@@ -112,6 +116,7 @@ import {
 import {
   sendAnimalSignalMessage,
   sendChatDraft,
+  sendGifMessage,
   sendMediaAttachmentMessage,
   sendVoiceRecordingMessage,
 } from "@/chat/sendDraft";
@@ -119,6 +124,8 @@ import { blockUser } from "@/services/blocking";
 import { getOrCreateChat } from "@/services/chat";
 import { safeSystemText } from "@/services/chat/normalizeMessage";
 import { getUserProfileByUid } from "@/services/friends";
+import { registerGifShare } from "@/services/gif/gifService";
+import type { GifItem } from "@/services/gif/types";
 import { retryMessage } from "@/services/messaging";
 import { submitReport } from "@/services/reporting";
 import { scheduleMessage } from "@/services/scheduledMessages";
@@ -128,7 +135,11 @@ import { markConversationNotificationsRead } from "@/services/userNotifications"
 import DirectCallButton from "@/components/stream/DirectCallButton";
 
 // Types & Utils
-import { DEBUG_CHAT_V2, GAMES_V4_ENABLED } from "@/constants/featureFlags";
+import {
+  DEBUG_CHAT_V2,
+  GAMES_V4_ENABLED,
+  GIF_PICKER_ENABLED,
+} from "@/constants/featureFlags";
 import { Spacing } from "@/constants/theme";
 import { buildSenderStyle } from "@/cosmetics/chatAppearanceResolver";
 import { useAnimalEntitlement } from "@/hooks/useAnimalEntitlement";
@@ -327,6 +338,9 @@ export default function ChatScreen({
   const [gamePickerVisible, setGamePickerVisible] = useState(false);
   const [gameInviteCreating, setGameInviteCreating] = useState(false);
 
+  // Customizable toolbar
+  const toolbar = useComposerToolbarLayout(uid);
+
   // Message actions state
   const [actionsSheetVisible, setActionsSheetVisible] = useState(false);
   const [selectedMessage, setSelectedMessage] = useState<MessageV2 | null>(
@@ -397,6 +411,14 @@ export default function ChatScreen({
     debug: DEBUG_CHAT,
   });
 
+  // Keep ComposerSheetContext aware of the latest keyboard height
+  const { setLastKeyboardHeight, sheetExtraPadding } = useComposerSheet();
+  useEffect(() => {
+    if (screen.keyboard.finalKeyboardHeight > 0) {
+      setLastKeyboardHeight(screen.keyboard.finalKeyboardHeight);
+    }
+  }, [screen.keyboard.finalKeyboardHeight, setLastKeyboardHeight]);
+
   // Warm image cache for recent chat images
   usePrefetchChatImages(screen.messages?.slice(0, 20));
 
@@ -455,6 +477,30 @@ export default function ChatScreen({
           Alert.alert("Error", result.error || "Failed to send photo");
         }
       }
+    },
+    [uid, chatId, screen.chat, screen.sending],
+  );
+
+  // Send a GIF selected from the KLIPY-powered GIF picker.
+  const handleGifSelected = useCallback(
+    async (gif: GifItem) => {
+      if (!uid || !chatId || screen.sending) return;
+      const result = await sendGifMessage({
+        chat: screen.chat,
+        gif: {
+          id: `gif_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+          url: gif.fullUrl,
+          width: gif.fullWidth,
+          height: gif.fullHeight,
+          mime: gif.mime ?? "image/gif",
+        },
+      });
+
+      if (!result.success) {
+        Alert.alert("Error", result.error || "Failed to send GIF");
+      }
+      // Fire-and-forget: let KLIPY know this GIF was shared (analytics / ranking).
+      registerGifShare(gif.id).catch(() => {});
     },
     [uid, chatId, screen.chat, screen.sending],
   );
@@ -847,6 +893,13 @@ export default function ChatScreen({
   // ==========================================================================
   // Handlers
   // ==========================================================================
+
+  const handleEmojiInsert = useCallback(
+    (emoji: string) => {
+      screen.composer.setText(screen.composer.text + emoji);
+    },
+    [screen.composer],
+  );
 
   const handleTextChange = useCallback(
     (text: string) => {
@@ -1251,15 +1304,14 @@ export default function ChatScreen({
   setChatScrollViewConfig({
     offset: 0,
     keyboardLiftBehavior: "whenAtEnd",
+    extraContentPadding: sheetExtraPadding,
   });
   const renderScrollComponent = useRenderChatScrollComponent();
 
   return (
-    <>
-      <KeyboardAvoidingView
+    <ComposerSheetProvider>
+      <ChatKeyboardContainer
         style={[styles.container, { backgroundColor: theme.colors.background }]}
-        behavior="padding"
-        enabled={!isKCSVAvailable}
       >
         {/* Unified custom header — matches group chat style */}
         <ChatHeader
@@ -1425,6 +1477,20 @@ export default function ChatScreen({
                 />
               ) : undefined
             }
+            // Customizable toolbar
+            toolbarItems={toolbar.items}
+            toolbarEditing={toolbar.isEditing}
+            toolbarSaving={toolbar.saving}
+            onToolbarEnterEdit={toolbar.enterEditMode}
+            onToolbarSaveAndExit={toolbar.saveAndExit}
+            onToolbarCancelEdit={toolbar.cancelEdit}
+            onToolbarMoveItem={toolbar.moveItem}
+            onToolbarAddItem={toolbar.addItem}
+            onToolbarRemoveItem={toolbar.removeItem}
+            onToolbarResetDefaults={toolbar.resetToDefaults}
+            onEmojiSelected={handleEmojiInsert}
+            onGifSelected={GIF_PICKER_ENABLED ? handleGifSelected : undefined}
+            onSchedulePress={() => setScheduleModalVisible(true)}
           />
           <KeyboardSafeAreaSpacer backgroundColor={theme.colors.background} />
         </ChatFooterWrapper>
@@ -1436,7 +1502,7 @@ export default function ChatScreen({
           onAutoHide={handleReturnButtonAutoHide}
           autoHideDelay={5000}
         />
-      </KeyboardAvoidingView>
+      </ChatKeyboardContainer>
 
       <BlockUserModal
         visible={blockModalVisible}
@@ -1512,7 +1578,7 @@ export default function ChatScreen({
           </View>
         </View>
       )}
-    </>
+    </ComposerSheetProvider>
   );
 }
 
