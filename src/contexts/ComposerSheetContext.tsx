@@ -19,6 +19,7 @@ import React, {
   useCallback,
   useContext,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { Dimensions, Keyboard, Platform } from "react-native";
@@ -55,11 +56,21 @@ export interface ComposerSheetContextValue {
 
   /** Call when a composer-attached sheet is about to open.
    *  Captures the current keyboard height, dismisses the keyboard,
-   *  and marks the sheet as active. */
-  activateSheet: (currentKeyboardHeight?: number) => void;
+   *  and marks the sheet as active.
+   *  If another sheet is already open, it will be dismissed first.
+   *  Pass a `closeCallback` so the context can dismiss this sheet
+   *  if a different picker opens later. */
+  activateSheet: (
+    currentKeyboardHeight?: number,
+    closeCallback?: () => void,
+  ) => void;
 
   /** Call when the sheet closes. Resets all shared values. */
   deactivateSheet: () => void;
+
+  /** Dismiss the currently-active sheet (if any) by invoking its close callback.
+   *  Used by SheetDismissLayer for tap/scroll-to-dismiss. */
+  dismissActiveSheet: () => void;
 
   /** Update the stored keyboard height (called by the keyboard hook). */
   setLastKeyboardHeight: (height: number) => void;
@@ -85,12 +96,27 @@ export function ComposerSheetProvider({
 
   const [lastKeyboardHeight, setLastKbH] = useState(DEFAULT_KEYBOARD_HEIGHT);
 
+  /** Ref to the close callback of the currently-active sheet.
+   *  When a new sheet activates while another is open, we call this
+   *  to dismiss the old one first (prevents stacking). */
+  const activeCloseRef = useRef<(() => void) | null>(null);
+
   const setLastKeyboardHeight = useCallback((h: number) => {
     if (h > 0) setLastKbH(h);
   }, []);
 
   const activateSheet = useCallback(
-    (currentKbHeight?: number) => {
+    (currentKbHeight?: number, closeCallback?: () => void) => {
+      // If another sheet is already open, dismiss it first
+      if (activeCloseRef.current) {
+        const prev = activeCloseRef.current;
+        activeCloseRef.current = null; // clear before calling to prevent loops
+        prev();
+      }
+
+      // Store the new sheet's close callback
+      activeCloseRef.current = closeCallback ?? null;
+
       const kbH =
         currentKbHeight && currentKbHeight > 0
           ? currentKbHeight
@@ -99,14 +125,15 @@ export function ComposerSheetProvider({
       // Persist for future use
       if (kbH > 0) setLastKbH(kbH);
 
-      initialSnapHeight.value = kbH;
+      // +10 gives the composer ceiling headroom when the sheet expands
+      initialSnapHeight.value = kbH + 10;
       isSheetActive.value = 1;
 
-      // Pre-seed sheetTranslateY to the keyboard-equivalent position so the
-      // composer offset is already correct before the sheet finishes animating.
-      // Without this, there's a visible gap while the keyboard closes and
-      // the sheet hasn't reached its snap point yet.
-      sheetTranslateY.value = SCREEN_HEIGHT - kbH;
+      // Pre-seed sheetTranslateY to match the actual modal snap position
+      // (+7, same as the pickers' snap fraction offset). This must match
+      // the modal snap exactly so the composer doesn't jump on the first
+      // frame and then settle to a different position on drag-release.
+      sheetTranslateY.value = SCREEN_HEIGHT - (kbH + 7);
 
       // Dismiss keyboard — the sheet replaces it.
       // Because sheetTranslateY is pre-seeded above, composerOffset
@@ -118,11 +145,20 @@ export function ComposerSheetProvider({
   );
 
   const deactivateSheet = useCallback(() => {
+    activeCloseRef.current = null;
     isSheetActive.value = 0;
     sheetTranslateY.value = SCREEN_HEIGHT;
     initialSnapHeight.value = 0;
     sheetExtraPadding.value = 0;
   }, [isSheetActive, sheetTranslateY, initialSnapHeight, sheetExtraPadding]);
+
+  const dismissActiveSheet = useCallback(() => {
+    if (activeCloseRef.current) {
+      const close = activeCloseRef.current;
+      activeCloseRef.current = null;
+      close();
+    }
+  }, []);
 
   const value = useMemo<ComposerSheetContextValue>(
     () => ({
@@ -133,6 +169,7 @@ export function ComposerSheetProvider({
       lastKeyboardHeight,
       activateSheet,
       deactivateSheet,
+      dismissActiveSheet,
       setLastKeyboardHeight,
     }),
     [
@@ -143,6 +180,7 @@ export function ComposerSheetProvider({
       lastKeyboardHeight,
       activateSheet,
       deactivateSheet,
+      dismissActiveSheet,
       setLastKeyboardHeight,
     ],
   );
@@ -174,6 +212,7 @@ export function useComposerSheet(): ComposerSheetContextValue {
     lastKeyboardHeight: DEFAULT_KEYBOARD_HEIGHT,
     activateSheet: NOOP,
     deactivateSheet: NOOP,
+    dismissActiveSheet: NOOP,
     setLastKeyboardHeight: NOOP,
   };
 }

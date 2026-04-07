@@ -146,6 +146,12 @@ export interface UseInboxDataResult {
     conversationId: string,
     conversationType?: "dm" | "group",
   ) => void;
+
+  /** Optimistically toggle pin state (updates local state immediately) */
+  togglePinOptimistic: (
+    conversationId: string,
+    conversationType?: "dm" | "group",
+  ) => void;
 }
 
 // =============================================================================
@@ -417,6 +423,51 @@ export function useInboxData(uid: string): UseInboxDataResult {
                     ...c.memberState,
                     lastSeenAtPrivate: Date.now(),
                     lastMarkedUnreadAt: undefined,
+                  },
+                }
+              : c,
+          ),
+        );
+      }
+    },
+    [aggregation, useAggregatedInbox],
+  );
+
+  // Optimistically toggle pin state in local state
+  const togglePinOptimistic = useCallback(
+    (conversationId: string, conversationType?: "dm" | "group") => {
+      if (useAggregatedInbox) {
+        aggregation.togglePinOptimistic(conversationId, conversationType);
+        return;
+      }
+
+      const now = Date.now();
+
+      if (!conversationType || conversationType === "dm") {
+        setDmConversations((prev) =>
+          prev.map((c) =>
+            c.id === conversationId
+              ? {
+                  ...c,
+                  memberState: {
+                    ...c.memberState,
+                    pinnedAt: c.memberState.pinnedAt ? null : now,
+                  },
+                }
+              : c,
+          ),
+        );
+      }
+
+      if (!conversationType || conversationType === "group") {
+        setGroupConversations((prev) =>
+          prev.map((c) =>
+            c.id === conversationId
+              ? {
+                  ...c,
+                  memberState: {
+                    ...c.memberState,
+                    pinnedAt: c.memberState.pinnedAt ? null : now,
                   },
                 }
               : c,
@@ -818,6 +869,7 @@ export function useInboxData(uid: string): UseInboxDataResult {
       setFilter: aggregation.setFilter as (filter: InboxFilter) => void,
       refresh,
       markConversationReadOptimistic,
+      togglePinOptimistic,
     };
   }
 
@@ -833,5 +885,6 @@ export function useInboxData(uid: string): UseInboxDataResult {
     setFilter,
     refresh,
     markConversationReadOptimistic,
+    togglePinOptimistic,
   };
 }

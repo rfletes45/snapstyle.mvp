@@ -122,7 +122,31 @@ const TOOLBAR_ITEM_DEFINITIONS: ToolbarItemDefinition[] = [
     canResize: false,
     maxInstances: 1,
     defaultPosition: 5,
-    available: false, // Coming soon
+    available: true,
+  },
+  {
+    itemId: "gif-sticker",
+    displayName: "GIFs & Stickers",
+    description: "Combined GIF and sticker picker in one modal.",
+    icon: "image-multiple",
+    category: "media",
+    canRemove: true,
+    canResize: false,
+    maxInstances: 1,
+    defaultPosition: 5,
+    available: true,
+  },
+  {
+    itemId: "image-picker",
+    displayName: "Photos",
+    description: "Pick and send photos from your library.",
+    icon: "image-outline",
+    category: "media",
+    canRemove: true,
+    canResize: false,
+    maxInstances: 1,
+    defaultPosition: 5,
+    available: true,
   },
 ];
 

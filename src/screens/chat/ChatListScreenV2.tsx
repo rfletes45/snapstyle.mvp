@@ -104,6 +104,7 @@ export default function ChatListScreen() {
     setFilter,
     refresh,
     markConversationReadOptimistic,
+    togglePinOptimistic,
   } = useInboxData(uid);
 
   React.useEffect(() => {
@@ -508,10 +509,19 @@ export default function ChatListScreen() {
 
   const handleContextMenuPin = useCallback(() => {
     if (contextMenu.conversation) {
+      togglePinOptimistic(
+        contextMenu.conversation.id,
+        contextMenu.conversation.type,
+      );
       actions.togglePin(contextMenu.conversation);
     }
     handleCloseContextMenu();
-  }, [actions, contextMenu.conversation, handleCloseContextMenu]);
+  }, [
+    actions,
+    contextMenu.conversation,
+    handleCloseContextMenu,
+    togglePinOptimistic,
+  ]);
 
   const handleContextMenuMute = useCallback(() => {
     const conversation = contextMenu.conversation;
@@ -577,7 +587,10 @@ export default function ChatListScreen() {
     ({ item }: { item: InboxConversation }) => (
       <SwipeableConversation
         conversation={item}
-        onPin={() => actions.togglePin(item)}
+        onPin={() => {
+          togglePinOptimistic(item.id, item.type);
+          actions.togglePin(item);
+        }}
         onDelete={() => handleDeleteRequest(item)}
         onMute={() => handleMute(item)}
       >
@@ -594,6 +607,7 @@ export default function ChatListScreen() {
     ),
     [
       actions,
+      togglePinOptimistic,
       inboxTyping,
       handleConversationPress,
       handleAvatarPress,

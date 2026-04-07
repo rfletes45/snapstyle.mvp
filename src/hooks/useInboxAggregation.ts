@@ -15,13 +15,13 @@
  */
 
 import { CHAT_FEATURES } from "@/constants/featureFlags";
-import { getFirestoreInstance } from "@/services/firebase";
 import {
   getDefaultMemberState,
   normalizeConversationFromInboxEntry,
   RECENTLY_READ_TTL_MS,
   sortInboxConversations,
 } from "@/services/chat/normalizeInboxRow";
+import { getFirestoreInstance } from "@/services/firebase";
 import {
   InboxConversation,
   InboxEntry,
@@ -76,6 +76,10 @@ export interface UseInboxAggregationResult {
     conversationId: string,
     conversationType?: "dm" | "group",
   ) => void;
+  togglePinOptimistic: (
+    conversationId: string,
+    conversationType?: "dm" | "group",
+  ) => void;
 }
 
 // =============================================================================
@@ -126,9 +130,7 @@ async function getMemberPrivateStateForEntry(
       uid,
       archived: data.archived ?? entry.archived ?? false,
       mutedUntil:
-        toMillisLike(data.mutedUntil) ??
-        toMillisLike(entry.mutedUntil) ??
-        null,
+        toMillisLike(data.mutedUntil) ?? toMillisLike(entry.mutedUntil) ?? null,
       notifyLevel: data.notifyLevel ?? entry.notifyLevel ?? "all",
       sendReadReceipts: data.sendReadReceipts ?? true,
       lastSeenAtPrivate: toMillisLike(data.lastSeenAtPrivate) ?? 0,
@@ -141,7 +143,11 @@ async function getMemberPrivateStateForEntry(
     };
   } catch (e) {
     log.warn("Failed to load MembersPrivate for inbox aggregation", {
-      data: { conversationId: entry.conversationId, scope: entry.scope, error: e },
+      data: {
+        conversationId: entry.conversationId,
+        scope: entry.scope,
+        error: e,
+      },
     });
     return getDefaultMemberState(uid);
   }
@@ -190,7 +196,9 @@ export function useInboxAggregation(uid: string): UseInboxAggregationResult {
             (docSnap) => docSnap.data() as InboxEntry,
           );
           const memberStates = await Promise.all(
-            inboxEntries.map((entry) => getMemberPrivateStateForEntry(uid, entry)),
+            inboxEntries.map((entry) =>
+              getMemberPrivateStateForEntry(uid, entry),
+            ),
           );
           const convos = inboxEntries.map((entry, index) =>
             normalizeConversationFromInboxEntry(
@@ -295,6 +303,28 @@ export function useInboxAggregation(uid: string): UseInboxAggregationResult {
     [],
   );
 
+  const togglePinOptimistic = useCallback(
+    (conversationId: string, conversationType?: "dm" | "group") => {
+      const now = Date.now();
+      setEntries((prev) =>
+        prev.map((conversation) => {
+          if (conversation.id !== conversationId) return conversation;
+          if (conversationType && conversation.type !== conversationType) {
+            return conversation;
+          }
+          return {
+            ...conversation,
+            memberState: {
+              ...conversation.memberState,
+              pinnedAt: conversation.memberState.pinnedAt ? null : now,
+            },
+          };
+        }),
+      );
+    },
+    [],
+  );
+
   return {
     conversations,
     pinnedConversations,
@@ -309,5 +339,6 @@ export function useInboxAggregation(uid: string): UseInboxAggregationResult {
     setShowArchived,
     refresh,
     markConversationReadOptimistic,
+    togglePinOptimistic,
   };
 }

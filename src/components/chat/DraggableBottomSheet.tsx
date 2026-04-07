@@ -16,13 +16,7 @@ import React, {
   useImperativeHandle,
   useMemo,
 } from "react";
-import {
-  BackHandler,
-  Dimensions,
-  Pressable,
-  StyleSheet,
-  View,
-} from "react-native";
+import { BackHandler, Dimensions, StyleSheet, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { Portal, useTheme } from "react-native-paper";
 import Animated, {
@@ -72,7 +66,7 @@ export interface DraggableBottomSheetProps {
   children: React.ReactNode;
   /** Whether to show the backdrop */
   showBackdrop?: boolean;
-  /** Override border radius */
+  /** Override border radius (0 = square edges) */
   borderRadius?: number;
   /** External shared value to sync translateY to (for composer coordination).
    *  When provided, the sheet writes its translateY here on every frame. */
@@ -96,7 +90,7 @@ export const DraggableBottomSheet = forwardRef<
     initialSnapIndex,
     children,
     showBackdrop = true,
-    borderRadius = 20,
+    borderRadius = 0,
     sharedTranslateY,
     surfaceColor,
     handleColor,
@@ -119,15 +113,22 @@ export const DraggableBottomSheet = forwardRef<
   const activeSnapIndex = useSharedValue(startIndex);
 
   // ── Sync translateY → sharedTranslateY (UI-thread, 60fps) ───────────────
+  // Guard: never propagate the dismiss position (SCREEN_HEIGHT) to the
+  // shared value. When the sheet re-opens, its internal translateY still
+  // holds the dismiss value for one frame before useEffect sets the snap.
+  // Without this guard, that stale dismiss value overwrites the pre-seed
+  // set by activateSheet(), causing the composer and chat to briefly drop
+  // during the keyboard→sheet transition (visible in production builds
+  // where react-native-keyboard-controller reports real animated heights).
 
   useAnimatedReaction(
     () => translateY.value,
     (current) => {
-      if (sharedTranslateY) {
+      if (sharedTranslateY && current < dismissY) {
         sharedTranslateY.value = current;
       }
     },
-    [sharedTranslateY],
+    [sharedTranslateY, dismissY],
   );
 
   // ── Imperative handle ──────────────────────────────────────────────────────
@@ -327,32 +328,26 @@ export const DraggableBottomSheet = forwardRef<
           </Animated.View>
         )}
 
-        {/* Keyboard-replacement dismiss layer (two parts):
-            1. Full-screen transparent Pressable — always captures taps anywhere
-               outside the sheet. The sheet renders ON TOP of this, so touches on
-               the sheet go to the sheet; everything else dismisses.
-            2. Visual dimming overlay — height-animated to cover only the chat
-               area above the sheet, fading in only when the sheet is expanded
-               beyond keyboard height. pointerEvents="none" so it never steals
-               touches from (1) or the sheet. */}
+        {/* Keyboard-replacement dismiss overlay:
+            - Covers only the area ABOVE the sheet (top:0, height = translateY)
+            - Visual-only dimming layer (pointerEvents="none")
+            - Tap/scroll-to-dismiss is handled by SheetDismissLayer in the
+              chat content hierarchy, which can coexist with message long
+              presses, scrolling, and swipe-to-reply gestures
+            - Opacity is 0 at keyboard-height snap, fades in when sheet expands */}
         {isKeyboardReplacement && (
-          <>
-            {/* 1. Transparent dismiss target — full screen behind the sheet */}
-            <Pressable style={StyleSheet.absoluteFill} onPress={handleClose} />
-            {/* 2. Visual dimming — covers only above the sheet */}
-            <Animated.View
-              style={[
-                styles.kbOverlay,
-                {
-                  backgroundColor: theme.dark
-                    ? "rgba(0,0,0,0.7)"
-                    : "rgba(0,0,0,0.5)",
-                },
-                kbOverlayStyle,
-              ]}
-              pointerEvents="none"
-            />
-          </>
+          <Animated.View
+            style={[
+              styles.kbOverlay,
+              {
+                backgroundColor: theme.dark
+                  ? "rgba(0,0,0,0.7)"
+                  : "rgba(0,0,0,0.5)",
+              },
+              kbOverlayStyle,
+            ]}
+            pointerEvents="none"
+          />
         )}
 
         {/* Sheet */}

@@ -54,7 +54,13 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { Alert, StyleSheet, TouchableOpacity, View } from "react-native";
+import {
+  Alert,
+  Keyboard,
+  StyleSheet,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import {
   ActivityIndicator,
   IconButton,
@@ -155,6 +161,8 @@ import {
   toggleReaction,
 } from "@/services/reactions";
 import { scheduleMessage } from "@/services/scheduledMessages";
+import { registerStickerShare } from "@/services/sticker/stickerService";
+import type { StickerItem } from "@/services/sticker/types";
 import { markConversationNotificationsRead } from "@/services/userNotifications";
 
 // Animal feature
@@ -187,6 +195,7 @@ import {
   DEBUG_CHAT_V2,
   GAMES_V4_ENABLED,
   GIF_PICKER_ENABLED,
+  STICKER_PICKER_ENABLED,
 } from "@/constants/featureFlags";
 import type { GroupPermissionsConfig } from "@/permissions/groupPermissions";
 import {
@@ -198,7 +207,6 @@ import {
 import { Group, GroupMember } from "@/types/models";
 
 // Games V4
-import { GamePickerModal } from "@/gamesV4/components/GamePickerModal";
 import { PinnedInviteBar } from "@/gamesV4/components/PinnedInviteBar";
 import { createGameInvite } from "@/gamesV4/services/gameServiceV4";
 import type { GameId } from "@/gamesV4/types";
@@ -213,6 +221,7 @@ import {
   setChatScrollViewConfig,
   useRenderChatScrollComponent,
 } from "@/components/chat/ChatKeyboardScrollView";
+import { SheetDismissLayer } from "@/components/chat/SheetDismissLayer";
 import { createLogger } from "@/utils/log";
 const logger = createLogger("screens/groups/GroupChatScreen");
 // =============================================================================
@@ -363,7 +372,6 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   const [animalPickerVisible, setAnimalPickerVisible] = useState(false);
 
   // Games V4 state
-  const [gamePickerVisible, setGamePickerVisible] = useState(false);
   const [gameInviteCreating, setGameInviteCreating] = useState(false);
 
   // Reply navigation state (highlight + jump-back)
@@ -628,6 +636,33 @@ export default function GroupChatScreen({ route, navigation }: Props) {
       }
       // Fire-and-forget: let KLIPY know this GIF was shared (analytics / ranking).
       registerGifShare(gif.id).catch(() => {});
+    },
+    [uid, screen.chat, screen.sending],
+  );
+
+  // Send a sticker selected from the KLIPY-powered sticker picker.
+  const handleStickerSelected = useCallback(
+    async (sticker: StickerItem) => {
+      if (!uid || screen.sending) return;
+      const result = await sendGifMessage({
+        chat: screen.chat,
+        gif: {
+          id: `sticker_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+          url: sticker.fullUrl,
+          width: sticker.fullWidth,
+          height: sticker.fullHeight,
+          mime: sticker.mime ?? "image/gif",
+        },
+      });
+
+      if (!result.success) {
+        setSnackbar({
+          visible: true,
+          message: result.error || "Failed to send sticker",
+        });
+      }
+      // Fire-and-forget: let KLIPY know this sticker was shared.
+      registerStickerShare(sticker.slug).catch(() => {});
     },
     [uid, screen.chat, screen.sending],
   );
@@ -946,6 +981,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   );
 
   const handleMessageLongPress = useCallback((message: MessageV2) => {
+    Keyboard.dismiss();
     setSelectedMessage(message);
     setActionsSheetVisible(true);
   }, []);
@@ -1826,52 +1862,57 @@ export default function GroupChatScreen({ route, navigation }: Props) {
           <PinnedInviteBar conversationId={groupId} scope="group" />
         )}
 
-        {/* OPTIMIZATION: Show skeleton during loading, messages when ready */}
-        {showSkeleton ? (
-          <ChatSkeleton bubbleCount={8} />
-        ) : (
-          <ChatMessageList
-            ref={messageListRef}
-            data={timelineData}
-            renderItem={renderMessage}
-            keyExtractor={(item) => timelineKeyExtractor(item, (msg) => msg.id)}
-            renderScrollComponent={renderScrollComponent}
-            pillBottomOffset={60 + insets.bottom + 16}
-            isKeyboardOpen={screen.keyboard.isKeyboardOpen}
-            ListHeaderComponent={
-              screen.chat.pagination.isLoadingOlder ? (
-                <View style={styles.loadMoreContainer}>
-                  <ActivityIndicator size="small" color={colors.primary} />
+        {/* SheetDismissLayer: tap/scroll above composer dismisses active sheet */}
+        <SheetDismissLayer>
+          {/* OPTIMIZATION: Show skeleton during loading, messages when ready */}
+          {showSkeleton ? (
+            <ChatSkeleton bubbleCount={8} />
+          ) : (
+            <ChatMessageList
+              ref={messageListRef}
+              data={timelineData}
+              renderItem={renderMessage}
+              keyExtractor={(item) =>
+                timelineKeyExtractor(item, (msg) => msg.id)
+              }
+              renderScrollComponent={renderScrollComponent}
+              pillBottomOffset={60 + insets.bottom + 16}
+              isKeyboardOpen={screen.keyboard.isKeyboardOpen}
+              ListHeaderComponent={
+                screen.chat.pagination.isLoadingOlder ? (
+                  <View style={styles.loadMoreContainer}>
+                    <ActivityIndicator size="small" color={colors.primary} />
+                  </View>
+                ) : null
+              }
+              ListEmptyComponent={
+                <View style={styles.emptyStateContainer}>
+                  <Text
+                    variant="titleMedium"
+                    style={[styles.emptyTitle, { color: colors.text }]}
+                  >
+                    No messages yet
+                  </Text>
+                  <Text
+                    variant="bodyMedium"
+                    style={[
+                      styles.emptySubtitle,
+                      { color: colors.textSecondary },
+                    ]}
+                  >
+                    Be the first to send a message!
+                  </Text>
                 </View>
-              ) : null
-            }
-            ListEmptyComponent={
-              <View style={styles.emptyStateContainer}>
-                <Text
-                  variant="titleMedium"
-                  style={[styles.emptyTitle, { color: colors.text }]}
-                >
-                  No messages yet
-                </Text>
-                <Text
-                  variant="bodyMedium"
-                  style={[
-                    styles.emptySubtitle,
-                    { color: colors.textSecondary },
-                  ]}
-                >
-                  Be the first to send a message!
-                </Text>
-              </View>
-            }
-            flatListProps={{
-              onEndReached: screen.chat.loadOlder,
-              onEndReachedThreshold: 0.3,
-              initialNumToRender: 15,
-              maxToRenderPerBatch: 8,
-            }}
-          />
-        )}
+              }
+              flatListProps={{
+                onEndReached: screen.chat.loadOlder,
+                onEndReachedThreshold: 0.3,
+                initialNumToRender: 15,
+                maxToRenderPerBatch: 8,
+              }}
+            />
+          )}
+        </SheetDismissLayer>
 
         {/* Keyboard-aware footer: typing indicator + composer */}
         <ChatFooterWrapper>
@@ -1964,9 +2005,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
             replyTo={screen.chat.replyTo}
             onCancelReply={handleCancelReply}
             currentUid={uid}
-            onGamePress={
-              GAMES_V4_ENABLED ? () => setGamePickerVisible(true) : undefined
-            }
+            onGameSelected={GAMES_V4_ENABLED ? handleGameSelected : undefined}
             onAnimalPress={handleAnimalPress}
             animalThemeId={animalEntitlement.equippedAnimalId}
             animalLocked={!animalEntitlement.canSend}
@@ -1989,7 +2028,12 @@ export default function GroupChatScreen({ route, navigation }: Props) {
             onToolbarResetDefaults={toolbar.resetToDefaults}
             onEmojiSelected={handleEmojiInsert}
             onGifSelected={GIF_PICKER_ENABLED ? handleGifSelected : undefined}
+            onStickerSelected={
+              STICKER_PICKER_ENABLED ? handleStickerSelected : undefined
+            }
             onSchedulePress={() => setScheduleModalVisible(true)}
+            onImagesPicked={handleDirectGallerySend}
+            imagePickerDisabled={screen.sending}
           />
           <KeyboardSafeAreaSpacer backgroundColor={colors.background} />
         </ChatFooterWrapper>
@@ -2047,16 +2091,6 @@ export default function GroupChatScreen({ route, navigation }: Props) {
         onSchedule={handleScheduleMessage}
         onClose={() => setScheduleModalVisible(false)}
       />
-
-      {/* Games V4: Game picker modal */}
-      {GAMES_V4_ENABLED && (
-        <GamePickerModal
-          visible={gamePickerVisible}
-          onSelect={handleGameSelected}
-          onClose={() => setGamePickerVisible(false)}
-          multiplayerOnly
-        />
-      )}
 
       {/* Games V4: Invite creation loading overlay */}
       {gameInviteCreating && (

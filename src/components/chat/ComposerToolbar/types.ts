@@ -41,7 +41,9 @@ export type ComposerToolbarItemId =
   | "emoji"
   | "schedule"
   | "gif"
-  | "sticker";
+  | "sticker"
+  | "gif-sticker"
+  | "image-picker";
 
 // =============================================================================
 // Toolbar Item Instance

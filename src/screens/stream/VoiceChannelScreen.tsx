@@ -544,6 +544,7 @@ function VoiceChannelContent({
         renderItem={renderParticipant}
         numColumns={numColumns}
         key={`grid-${numColumns}`}
+        style={styles.participantList}
         columnWrapperStyle={numColumns > 1 ? styles.gridRow : undefined}
         contentContainerStyle={styles.gridContent}
         ListEmptyComponent={
@@ -616,6 +617,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
+    zIndex: 10,
+    elevation: 4,
+  },
+  participantList: {
+    flex: 1,
   },
   backButton: {
     width: 40,

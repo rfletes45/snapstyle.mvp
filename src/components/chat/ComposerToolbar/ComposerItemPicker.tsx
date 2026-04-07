@@ -11,13 +11,22 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import React, { memo, useCallback, useMemo } from "react";
-import { ScrollView, StyleSheet, TouchableOpacity, View } from "react-native";
+import {
+  Dimensions,
+  ScrollView,
+  StyleSheet,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import { Text } from "react-native-paper";
 
 import { BorderRadius, FontSizes, Spacing } from "@/constants/theme";
 import { useColors } from "@/store/ThemeContext";
 
-import { DraggableBottomSheet } from "../DraggableBottomSheet";
+import {
+  DraggableBottomSheet,
+  HANDLE_ZONE_HEIGHT,
+} from "../DraggableBottomSheet";
 import {
   getAvailableToolbarItemDefinitions,
   TOOLBAR_CATEGORY_META,
@@ -137,6 +146,16 @@ function ComposerItemPickerBase({
   const currentSet = useMemo(() => new Set(currentItemIds), [currentItemIds]);
   const atMax = currentItemIds.length >= MAX_TOOLBAR_ITEMS;
 
+  // The sheet opens at the 0.75 snap point (initialSnapIndex=1).
+  // Constrain ScrollView height to the visible area so content overflows
+  // correctly and enables scrolling instead of rendering below the fold.
+  const PICKER_SNAP = 0.75;
+  const HEADER_HEIGHT = 48; // header row approximate height
+  const scrollMaxHeight =
+    Dimensions.get("window").height * PICKER_SNAP -
+    HANDLE_ZONE_HEIGHT -
+    HEADER_HEIGHT;
+
   // Group available items by category, excluding already-added items
   const sections = useMemo(() => {
     const allDefs = getAvailableToolbarItemDefinitions();
@@ -194,9 +213,11 @@ function ComposerItemPickerBase({
       </View>
 
       <ScrollView
-        style={styles.scroll}
+        style={[styles.scroll, { maxHeight: scrollMaxHeight }]}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        nestedScrollEnabled
+        bounces
       >
         {isEmpty ? (
           <View style={styles.emptyState}>

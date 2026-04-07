@@ -23,6 +23,7 @@
 import {
   fetchTrending,
   getAutocomplete,
+  getCategories,
   searchGifs,
 } from "@/services/gif/gifService";
 import type { GifItem } from "@/services/gif/types";
@@ -54,6 +55,7 @@ import {
 import { Text } from "react-native-paper";
 import type { SharedValue } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { CategoryGrid, type CategoryTile } from "./CategoryGrid";
 import {
   DraggableBottomSheet,
   type DraggableBottomSheetHandle,
@@ -224,13 +226,12 @@ export const GifPicker = forwardRef<DraggableBottomSheetHandle, GifPickerProps>(
     }));
 
     // ── Snap points — keyboard-equivalent initial, expanded secondary ───────
-    // Add HANDLE_ZONE_HEIGHT so the visible content area (below the drag handle)
-    // exactly matches the keyboard height. Without this, the handle eats into
-    // the content space, making the modal ~23px shorter than the keyboard.
+    // ── Snap points — keyboard-equivalent initial, expanded secondary ───────
     const snapPoints = useMemo(() => {
       if (keyboardHeight && keyboardHeight > 0) {
+        // +8 aligns the modal with the keyboard height
         const kbFraction = Math.min(
-          keyboardHeight / GIF_SCREEN_HEIGHT,
+          (keyboardHeight + 7) / GIF_SCREEN_HEIGHT,
           GIF_EXPANDED_SNAP - 0.05,
         );
         return [kbFraction, GIF_EXPANDED_SNAP];
@@ -260,6 +261,13 @@ export const GifPicker = forwardRef<DraggableBottomSheetHandle, GifPickerProps>(
     const [error, setError] = useState<string | null>(null);
     const [nextCursor, setNextCursor] = useState<string | undefined>();
     const [suggestions, setSuggestions] = useState<string[]>([]);
+    const [gifCategories, setGifCategories] = useState<CategoryTile[]>([]);
+    const [categoriesLoading, setCategoriesLoading] = useState(false);
+    // Browse state: "landing" = category grid, "category" = inside a category, "search" = user typed a query
+    const [browseState, setBrowseState] = useState<
+      "landing" | "category" | "search"
+    >("landing");
+    const [activeCategory, setActiveCategory] = useState<string | null>(null);
 
     const debouncedQuery = useDebouncedValue(searchQuery, DEBOUNCE_MS);
     const abortRef = useRef<AbortController | null>(null);
@@ -307,6 +315,54 @@ export const GifPicker = forwardRef<DraggableBottomSheetHandle, GifPickerProps>(
       };
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [open]);
+
+    // ── Fetch categories on open ───────────────────────────────────────────────
+    useEffect(() => {
+      if (!open || gifCategories.length > 0) return;
+
+      let cancelled = false;
+      setCategoriesLoading(true);
+
+      getCategories()
+        .then((cats) => {
+          if (!cancelled) {
+            setGifCategories(
+              cats.map((c) => ({ name: c.name, imageUrl: c.imageUrl })),
+            );
+          }
+        })
+        .catch((err) => {
+          log.warn("Failed to load categories", { error: String(err) });
+        })
+        .finally(() => {
+          if (!cancelled) setCategoriesLoading(false);
+        });
+
+      return () => {
+        cancelled = true;
+      };
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [open]);
+
+    // ── Category tile tap → navigate into that category ───────────────────────
+    const handleCategorySelect = useCallback((categoryName: string) => {
+      setActiveCategory(categoryName);
+      setSearchQuery(categoryName);
+      setBrowseState("category");
+    }, []);
+
+    // ── Search input changes ───────────────────────────────────────────────────
+    const handleSearchChange = useCallback((text: string) => {
+      setSearchQuery(text);
+      if (text.trim()) {
+        setBrowseState("search");
+        setActiveCategory(null);
+      } else {
+        // Cleared search → back to landing
+        setBrowseState("landing");
+        setActiveCategory(null);
+      }
+    }, []);
 
     // ── Search when debounced query changes ────────────────────────────────────
     useEffect(() => {
@@ -431,6 +487,7 @@ export const GifPicker = forwardRef<DraggableBottomSheetHandle, GifPickerProps>(
     // ── Suggestion tap ─────────────────────────────────────────────────────────
     const handleSuggestionPress = useCallback((term: string) => {
       setSearchQuery(term);
+      setBrowseState("search");
     }, []);
 
     // ── Close and reset ────────────────────────────────────────────────────────
@@ -438,6 +495,8 @@ export const GifPicker = forwardRef<DraggableBottomSheetHandle, GifPickerProps>(
       setSearchQuery("");
       setSuggestions([]);
       setError(null);
+      setActiveCategory(null);
+      setBrowseState("landing");
       onClose();
     }, [onClose]);
 
@@ -528,7 +587,7 @@ export const GifPicker = forwardRef<DraggableBottomSheetHandle, GifPickerProps>(
             placeholder="Search KLIPY"
             placeholderTextColor={onSurfaceVariantColor}
             value={searchQuery}
-            onChangeText={setSearchQuery}
+            onChangeText={handleSearchChange}
             onFocus={handleSearchFocus}
             autoCapitalize="none"
             autoCorrect
@@ -542,7 +601,11 @@ export const GifPicker = forwardRef<DraggableBottomSheetHandle, GifPickerProps>(
           />
           {searchQuery ? (
             <TouchableOpacity
-              onPress={() => setSearchQuery("")}
+              onPress={() => {
+                setSearchQuery("");
+                setActiveCategory(null);
+                setBrowseState("landing");
+              }}
               accessibilityLabel="Clear search"
               accessibilityRole="button"
             >
@@ -553,8 +616,8 @@ export const GifPicker = forwardRef<DraggableBottomSheetHandle, GifPickerProps>(
           ) : null}
         </View>
 
-        {/* Suggestion chips */}
-        {suggestions.length > 0 && (
+        {/* Suggestion chips (only in search/category mode) */}
+        {browseState !== "landing" && suggestions.length > 0 && (
           <View style={styles.suggestionsRow}>
             {suggestions.map((term) => (
               <SuggestionChip
@@ -568,8 +631,20 @@ export const GifPicker = forwardRef<DraggableBottomSheetHandle, GifPickerProps>(
           </View>
         )}
 
-        {/* Content area */}
-        {loading && gifs.length === 0 ? (
+        {/* Content area — state machine: landing / category / search */}
+        {browseState === "landing" ? (
+          /* Category landing screen */
+          <CategoryGrid
+            categories={gifCategories}
+            loading={categoriesLoading}
+            onSelect={handleCategorySelect}
+            colors={{
+              surface: sheetSurface,
+              surfaceVariant: surfaceVariantColor,
+              text: onSurfaceColor,
+            }}
+          />
+        ) : loading && gifs.length === 0 ? (
           /* Loading skeleton */
           <View style={styles.masonryContainer}>
             <View style={styles.masonryColumn}>

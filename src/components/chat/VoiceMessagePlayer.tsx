@@ -87,7 +87,9 @@ function VoiceMessagePlayerFallback({
           styles.playButton,
           {
             backgroundColor: isOwn
-              ? "rgba(255,255,255,0.2)"
+              ? theme.dark
+                ? "rgba(255,255,255,0.2)"
+                : theme.colors.surfaceVariant
               : theme.colors.surfaceVariant,
           },
         ]}
@@ -96,7 +98,11 @@ function VoiceMessagePlayerFallback({
           name="play"
           size={22}
           color={
-            isOwn ? "rgba(255,255,255,0.6)" : theme.colors.onSurfaceVariant
+            isOwn
+              ? theme.dark
+                ? "rgba(255,255,255,0.6)"
+                : theme.colors.onSurfaceVariant
+              : theme.colors.onSurfaceVariant
           }
         />
       </View>
@@ -111,7 +117,9 @@ function VoiceMessagePlayerFallback({
                 {
                   height: `${height * 100}%`,
                   backgroundColor: isOwn
-                    ? "rgba(255,255,255,0.3)"
+                    ? theme.dark
+                      ? "rgba(255,255,255,0.3)"
+                      : "rgba(0,0,0,0.15)"
                     : "rgba(0,0,0,0.15)",
                 },
               ]}
@@ -125,7 +133,9 @@ function VoiceMessagePlayerFallback({
           styles.duration,
           {
             color: isOwn
-              ? "rgba(255,255,255,0.6)"
+              ? theme.dark
+                ? "rgba(255,255,255,0.6)"
+                : theme.colors.onSurfaceVariant
               : theme.colors.onSurfaceVariant,
           },
         ]}
@@ -219,10 +229,20 @@ function VoiceMessagePlayerImpl({
 
   const speed = SPEED_OPTIONS[speedIndex];
 
-  const activeColor = isOwn ? "#FFF" : theme.colors.primary;
-  const inactiveColor = isOwn ? "rgba(255,255,255,0.3)" : "rgba(0,0,0,0.12)";
+  const activeColor = isOwn
+    ? theme.dark
+      ? "#FFF"
+      : theme.colors.primary
+    : theme.colors.primary;
+  const inactiveColor = isOwn
+    ? theme.dark
+      ? "rgba(255,255,255,0.3)"
+      : "rgba(0,0,0,0.15)"
+    : "rgba(0,0,0,0.20)";
   const textColor = isOwn
-    ? "rgba(255,255,255,0.85)"
+    ? theme.dark
+      ? "rgba(255,255,255,0.85)"
+      : theme.colors.onSurface
     : theme.colors.onSurfaceVariant;
 
   return (
@@ -238,7 +258,9 @@ function VoiceMessagePlayerImpl({
             styles.playButton,
             {
               backgroundColor: isOwn
-                ? "rgba(255,255,255,0.2)"
+                ? theme.dark
+                  ? "rgba(255,255,255,0.2)"
+                  : theme.colors.primary
                 : theme.colors.primary,
               transform: [{ scale: buttonScale }],
             },
@@ -247,7 +269,7 @@ function VoiceMessagePlayerImpl({
           <MaterialCommunityIcons
             name={isPlaying ? "pause" : "play"}
             size={22}
-            color={isOwn ? "#FFF" : "#FFF"}
+            color="#FFF"
           />
         </Animated.View>
       </TouchableOpacity>

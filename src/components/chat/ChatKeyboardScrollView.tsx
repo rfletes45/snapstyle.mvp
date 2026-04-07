@@ -24,7 +24,13 @@ import {
 } from "@/utils/optionalKeyboardController";
 import React, { forwardRef, useCallback } from "react";
 import type { ScrollViewProps, StyleProp, ViewStyle } from "react-native";
-import { Dimensions, ScrollView, UIManager, View } from "react-native";
+import {
+  Dimensions,
+  ScrollView,
+  StyleSheet,
+  UIManager,
+  View,
+} from "react-native";
 import type { SharedValue } from "react-native-reanimated";
 import Animated, {
   interpolate,
@@ -127,6 +133,9 @@ export function ChatFooterWrapper({ children }: { children: React.ReactNode }) {
   //   sheetVisibleHeight = how much of the sheet is on-screen
   //   clamp to initialSnapHeight (keyboard-equivalent) = "follow zone"
   //   subtract keyboard contribution to avoid double-offset
+  //   +2 COMPOSER_SHEET_LIFT so the composer sits flush with the keyboard
+  //   position even though the modal snap is 2px shorter than the keyboard.
+  const COMPOSER_SHEET_LIFT = 2;
   const composerOffset = useDerivedValue(() => {
     if (isSheetActive.value === 0) return 0;
 
@@ -137,7 +146,9 @@ export function ChatFooterWrapper({ children }: { children: React.ReactNode }) {
     );
     // keyboardHeight from Reanimated is negative when open (keyboard-controller convention)
     const kbContribution = Math.abs(keyboardHeight.value);
-    return Math.max(0, clamped - kbContribution);
+    const base = Math.max(0, clamped - kbContribution);
+    // Lift the composer slightly so it matches the keyboard position
+    return base > 0 ? base + COMPOSER_SHEET_LIFT : 0;
   }, [sheetTranslateY, initialSnapHeight, isSheetActive, keyboardHeight]);
 
   // Pipe composerOffset → sheetExtraPadding so KCSV shifts chat content
@@ -201,8 +212,10 @@ function useEffectiveBottomInset(): SharedValue<number> {
     );
     // composerOffset = extra space the sheet occupies beyond the keyboard
     const composerOffset = Math.max(0, clamped - kbH);
+    // +2 lift to match the composer lift applied in ChatFooterWrapper
+    const lift = composerOffset > 0 ? 2 : 0;
     // Total = keyboard + sheet's extra contribution (always >= kbH)
-    return kbH + composerOffset;
+    return kbH + composerOffset + lift;
   });
 }
 
@@ -226,13 +239,45 @@ export function ChatKeyboardContainer({
   children: React.ReactNode;
   style?: StyleProp<ViewStyle>;
 }) {
+  // Extract backgroundColor from the style prop to use as a solid backdrop
+  // behind the keyboard. This makes the area under the keyboard match the
+  // theme instead of showing the default system background.
+  const flatStyle = StyleSheet.flatten(style);
+  const backdropColor =
+    typeof flatStyle?.backgroundColor === "string"
+      ? flatStyle.backgroundColor
+      : undefined;
+
+  // Solid backdrop that sits behind the keyboard at the bottom of the screen.
+  // Absolutely positioned with zIndex -1 so it never affects layout or
+  // intercept touches — it's purely visual.
+  const backdrop = backdropColor ? (
+    <View
+      style={{
+        position: "absolute",
+        bottom: 0,
+        left: 0,
+        right: 0,
+        height: FOOTER_SCREEN_HEIGHT / 2,
+        backgroundColor: backdropColor,
+        zIndex: -1,
+      }}
+      pointerEvents="none"
+    />
+  ) : null;
+
   if (kcsvAvailable) {
     // KCSV handles content inset natively — no extra padding needed
-    return <View style={[{ flex: 1 }, style]}>{children}</View>;
+    return (
+      <View style={[{ flex: 1 }, style]}>
+        {backdrop}
+        {children}
+      </View>
+    );
   }
 
   return (
-    <FallbackKeyboardContainer style={style}>
+    <FallbackKeyboardContainer style={style} backdrop={backdrop}>
       {children}
     </FallbackKeyboardContainer>
   );
@@ -246,9 +291,11 @@ export function ChatKeyboardContainer({
 function FallbackKeyboardContainer({
   children,
   style,
+  backdrop,
 }: {
   children: React.ReactNode;
   style?: StyleProp<ViewStyle>;
+  backdrop?: React.ReactNode;
 }) {
   const effectiveInset = useEffectiveBottomInset();
 
@@ -258,6 +305,7 @@ function FallbackKeyboardContainer({
 
   return (
     <Animated.View style={[{ flex: 1 }, animatedStyle, style]}>
+      {backdrop}
       {children}
     </Animated.View>
   );

@@ -1,12 +1,18 @@
 /**
  * Games V4 — GamePickerModal
  *
- * Bottom-sheet style modal allowing users to pick a game to send as an invite.
- * Groups games by category (Solo, Turn-based, Realtime) with icons and names.
+ * Bottom-sheet game picker that opens as a keyboard-replacement sheet,
+ * consistent with the GIF and Sticker pickers. Uses DraggableBottomSheet
+ * and syncs with the composer via sharedTranslateY.
  *
  * @module gamesV4/components/GamePickerModal
  */
 
+import {
+  DraggableBottomSheet,
+  HANDLE_ZONE_HEIGHT,
+  type DraggableBottomSheetHandle,
+} from "@/components/chat/DraggableBottomSheet";
 import {
   GAME_METADATA,
   IMPLEMENTED_GAME_IDS,
@@ -15,27 +21,40 @@ import {
 import type { GameId } from "@/gamesV4/types";
 import { useAppTheme } from "@/store/ThemeContext";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import React, { useMemo } from "react";
+import React, { forwardRef, useImperativeHandle, useMemo, useRef } from "react";
 import {
+  Dimensions,
   FlatList,
-  Modal,
-  Pressable,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
+import type { SharedValue } from "react-native-reanimated";
+
+// =============================================================================
+// Constants
+// =============================================================================
+
+const { height: GAME_SCREEN_HEIGHT } = Dimensions.get("window");
+const GAME_EXPANDED_SNAP = 0.85;
+const GAME_FALLBACK_SMALL_SNAP = 0.45;
 
 // =============================================================================
 // Types
 // =============================================================================
 
-interface GamePickerModalProps {
-  visible: boolean;
+export interface GamePickerModalProps {
+  /** Whether the picker is visible */
+  open: boolean;
   onSelect: (gameId: GameId) => void;
   onClose: () => void;
   /** If set, only show multiplayer games (for group/DM contexts). */
   multiplayerOnly?: boolean;
+  /** When provided, the sheet opens to this height first (keyboard replacement). */
+  keyboardHeight?: number;
+  /** Shared Reanimated value for composer offset coordination. */
+  sharedTranslateY?: SharedValue<number>;
 }
 
 interface GameSection {
@@ -47,13 +66,47 @@ interface GameSection {
 // Component
 // =============================================================================
 
-export function GamePickerModal({
-  visible,
-  onSelect,
-  onClose,
-  multiplayerOnly = false,
-}: GamePickerModalProps) {
-  const { theme } = useAppTheme();
+export const GamePickerModal = forwardRef<
+  DraggableBottomSheetHandle,
+  GamePickerModalProps
+>(function GamePickerModal(
+  {
+    open,
+    onSelect,
+    onClose,
+    multiplayerOnly = false,
+    keyboardHeight,
+    sharedTranslateY,
+  },
+  ref,
+) {
+  const { colors, isDark } = useAppTheme();
+  const sheetRef = useRef<DraggableBottomSheetHandle>(null);
+
+  useImperativeHandle(ref, () => ({
+    snapToIndex: (index: number) => sheetRef.current?.snapToIndex(index),
+  }));
+
+  // ── Snap points — keyboard-equivalent initial, expanded secondary ─────
+  const snapPoints = useMemo(() => {
+    if (keyboardHeight && keyboardHeight > 0) {
+      const kbFraction = Math.min(
+        (keyboardHeight + 7) / GAME_SCREEN_HEIGHT,
+        GAME_EXPANDED_SNAP - 0.05,
+      );
+      return [kbFraction, GAME_EXPANDED_SNAP];
+    }
+    return [GAME_FALLBACK_SMALL_SNAP, GAME_EXPANDED_SNAP];
+  }, [keyboardHeight]);
+
+  const initialSnapIndex = keyboardHeight ? 0 : 1;
+
+  // Constrain FlatList to visible snap area so content scrolls properly
+  // instead of rendering below the fold.
+  const HEADER_HEIGHT = 50;
+  const visibleSnap = snapPoints[initialSnapIndex];
+  const listMaxHeight =
+    GAME_SCREEN_HEIGHT * visibleSnap - HANDLE_ZONE_HEIGHT - HEADER_HEIGHT;
 
   const sections = useMemo(() => {
     const all = Object.values(GAME_METADATA);
@@ -73,11 +126,10 @@ export function GamePickerModal({
     return result;
   }, [multiplayerOnly]);
 
-  const bgColor = theme.isDark ? "#1C1C1E" : "#FFFFFF";
-  const overlayColor = "rgba(0,0,0,0.5)";
-  const textColor = theme.isDark ? "#FFF" : "#000";
-  const subtextColor = theme.isDark ? "#999" : "#666";
-  const borderColor = theme.isDark ? "#333" : "#E0E0E0";
+  const textColor = isDark ? "#FFF" : "#000";
+  const subtextColor = isDark ? "#999" : "#666";
+  const borderColor = isDark ? "#333" : "#E0E0E0";
+  const sheetSurface = isDark ? "#1C1C1E" : "#FFFFFF";
 
   const renderGame = (game: GameMetadata) => {
     const isImplemented = IMPLEMENTED_GAME_IDS.has(game.gameId);
@@ -99,13 +151,13 @@ export function GamePickerModal({
         <View
           style={[
             styles.gameIcon,
-            { backgroundColor: theme.isDark ? "#2C2C2E" : "#F2F2F7" },
+            { backgroundColor: isDark ? "#2C2C2E" : "#F2F2F7" },
           ]}
         >
           <MaterialCommunityIcons
             name={game.icon as keyof typeof MaterialCommunityIcons.glyphMap}
             size={24}
-            color={isImplemented ? theme.colors.primary : subtextColor}
+            color={isImplemented ? colors.primary : subtextColor}
           />
         </View>
         <View style={styles.gameInfo}>
@@ -156,84 +208,45 @@ export function GamePickerModal({
     </View>
   );
 
+  if (!open) return null;
+
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="fade"
-      onRequestClose={onClose}
+    <DraggableBottomSheet
+      ref={sheetRef}
+      open={open}
+      onClose={onClose}
+      snapPoints={snapPoints}
+      initialSnapIndex={initialSnapIndex}
+      sharedTranslateY={sharedTranslateY}
+      surfaceColor={sheetSurface}
+      handleColor={colors.divider}
     >
-      <Pressable
-        style={[styles.overlay, { backgroundColor: overlayColor }]}
-        onPress={onClose}
-      >
-        <Pressable
-          style={[styles.sheet, { backgroundColor: bgColor }]}
-          onPress={(e) => e.stopPropagation()}
-        >
-          {/* Handle */}
-          <View style={styles.handleRow}>
-            <View
-              style={[
-                styles.handle,
-                { backgroundColor: theme.isDark ? "#555" : "#CCC" },
-              ]}
-            />
-          </View>
+      {/* Header */}
+      <View style={[styles.headerRow, { borderBottomColor: borderColor }]}>
+        <Text style={[styles.headerTitle, { color: textColor }]}>
+          Choose a Game
+        </Text>
+      </View>
 
-          {/* Header */}
-          <View style={[styles.headerRow, { borderBottomColor: borderColor }]}>
-            <Text style={[styles.headerTitle, { color: textColor }]}>
-              Choose a Game
-            </Text>
-            <TouchableOpacity onPress={onClose}>
-              <MaterialCommunityIcons
-                name="close"
-                size={24}
-                color={subtextColor}
-              />
-            </TouchableOpacity>
-          </View>
-
-          {/* Content */}
-          <FlatList
-            data={sections}
-            renderItem={({ item }) => renderSection(item)}
-            keyExtractor={(item) => item.title}
-            contentContainerStyle={styles.content}
-            showsVerticalScrollIndicator={false}
-          />
-        </Pressable>
-      </Pressable>
-    </Modal>
+      {/* Content */}
+      <FlatList
+        data={sections}
+        renderItem={({ item }) => renderSection(item)}
+        keyExtractor={(item) => item.title}
+        contentContainerStyle={styles.content}
+        style={{ maxHeight: listMaxHeight }}
+        showsVerticalScrollIndicator={false}
+        nestedScrollEnabled
+      />
+    </DraggableBottomSheet>
   );
-}
+});
 
 // =============================================================================
 // Styles
 // =============================================================================
 
 const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    justifyContent: "flex-end",
-  },
-  sheet: {
-    maxHeight: "70%",
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    paddingBottom: 34, // home indicator
-  },
-  handleRow: {
-    alignItems: "center",
-    paddingTop: 8,
-    paddingBottom: 4,
-  },
-  handle: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-  },
   headerRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -247,7 +260,7 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   content: {
-    paddingBottom: 16,
+    paddingBottom: 40,
   },
   sectionTitle: {
     fontSize: 13,

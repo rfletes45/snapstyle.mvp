@@ -64,18 +64,122 @@ export function FloatingVideoOverlay({
   const { activeCall, activeSession } = useStreamCall();
   const isInPiPMode = useIsInPiPMode();
 
-  // Only show for active video direct calls when NOT on the call screen
-  const isVideoCall =
-    activeSession?.type === "direct_call" && activeSession.mode === "video";
+  const isDirectCall = activeSession?.type === "direct_call";
+  const isVideoCall = isDirectCall && activeSession.mode === "video";
+  const isAudioCall = isDirectCall && activeSession.mode === "audio";
+
+  // Show for any active direct call when NOT on the call screen
   const shouldShow =
-    !isInPiPMode && !isOnCallScreen && isVideoCall && !!activeCall;
+    !isInPiPMode && !isOnCallScreen && isDirectCall && !!activeCall;
 
-  if (!shouldShow || !activeCall || !StreamCall) return null;
+  if (!shouldShow || !activeCall) return null;
 
+  // Audio calls: show a compact "Return to call" banner (no Stream video needed)
+  if (isAudioCall) {
+    return (
+      <FloatingAudioBanner
+        activeCall={activeCall}
+        activeSession={activeSession}
+      />
+    );
+  }
+
+  // Video calls: wrap in StreamCall for video rendering
+  if (!StreamCall) return null;
   return (
     <StreamCall call={activeCall}>
       <FloatingVideoContent activeCall={activeCall} />
     </StreamCall>
+  );
+}
+
+/**
+ * FloatingAudioBanner — draggable pill for minimized audio/phone calls.
+ * Tap to navigate back to the DirectCall screen.
+ */
+function FloatingAudioBanner({
+  activeCall,
+  activeSession,
+}: {
+  activeCall: any;
+  activeSession: NonNullable<ReturnType<typeof useStreamCall>["activeSession"]>;
+}) {
+  const { colors } = useAppTheme();
+
+  const handleRestoreCall = useCallback(() => {
+    navigate("DirectCall", {
+      callId: activeCall.id,
+      recipientName:
+        activeSession.type === "direct_call"
+          ? (activeSession.recipientName ?? "")
+          : "",
+      mode: "audio",
+      isOutgoing: !!activeCall.isCreatedByMe,
+    });
+  }, [activeCall.id, activeCall.isCreatedByMe, activeSession]);
+
+  // Pan responder for drag
+  const pan = useRef(
+    new Animated.ValueXY({ x: DEFAULT_X, y: DEFAULT_Y }),
+  ).current;
+  const lastOffset = useRef({ x: DEFAULT_X, y: DEFAULT_Y });
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, gestureState) =>
+        Math.abs(gestureState.dx) > 5 || Math.abs(gestureState.dy) > 5,
+      onPanResponderGrant: () => {
+        pan.setOffset(lastOffset.current);
+        pan.setValue({ x: 0, y: 0 });
+      },
+      onPanResponderMove: Animated.event([null, { dx: pan.x, dy: pan.y }], {
+        useNativeDriver: false,
+      }),
+      onPanResponderRelease: (_, gestureState) => {
+        pan.flattenOffset();
+
+        const currentX = lastOffset.current.x + gestureState.dx;
+        const currentY = lastOffset.current.y + gestureState.dy;
+
+        const snapX =
+          currentX < SCREEN_W / 2 ? MARGIN : SCREEN_W - PIP_WIDTH - MARGIN;
+        const snapY = Math.max(
+          MARGIN + 50,
+          Math.min(currentY, SCREEN_H - PIP_HEIGHT - 120),
+        );
+
+        lastOffset.current = { x: snapX, y: snapY };
+
+        Animated.spring(pan, {
+          toValue: { x: snapX, y: snapY },
+          useNativeDriver: false,
+          friction: 7,
+        }).start();
+      },
+    }),
+  ).current;
+
+  return (
+    <Animated.View
+      style={[
+        styles.minimizedPill,
+        {
+          backgroundColor: colors.primary,
+          transform: pan.getTranslateTransform(),
+        },
+      ]}
+      {...panResponder.panHandlers}
+    >
+      <Pressable
+        onPress={handleRestoreCall}
+        hitSlop={8}
+        style={styles.minimizedPillInner}
+      >
+        <MaterialCommunityIcons name="phone" size={20} color="#fff" />
+        <Text style={styles.minimizedText}>Return to call</Text>
+      </Pressable>
+    </Animated.View>
   );
 }
 

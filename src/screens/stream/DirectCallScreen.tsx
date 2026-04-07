@@ -680,6 +680,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: 12,
     paddingVertical: 8,
+    zIndex: 10,
+    elevation: 4,
   },
   backButton: {
     width: 40,
@@ -703,6 +705,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     zIndex: 10,
+    elevation: 4,
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 12,

@@ -137,8 +137,9 @@ export const FullEmojiPicker = forwardRef<
   // ── Snap points — keyboard-equivalent initial, expanded secondary ───────
   const snapPoints = useMemo(() => {
     if (keyboardHeight && keyboardHeight > 0) {
+      // +8 aligns the modal with the keyboard height
       const kbFraction = Math.min(
-        keyboardHeight / EMOJI_SCREEN_HEIGHT,
+        (keyboardHeight + 7) / EMOJI_SCREEN_HEIGHT,
         EXPANDED_SNAP - 0.05, // ensure there's room for an expanded snap above
       );
       return [kbFraction, EXPANDED_SNAP];

@@ -5,6 +5,9 @@
  * followed by all replies in the thread in chronological order,
  * with a composer at the bottom for adding new replies.
  *
+ * Modernized to reuse ChatMessageRenderer for full message-type support,
+ * display-mode awareness, reactions, and chat appearance.
+ *
  * Navigation params:
  *   conversationId: string
  *   scope: "dm" | "group"
@@ -15,7 +18,13 @@
 
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   FlatList,
   KeyboardAvoidingView,
@@ -28,25 +37,49 @@ import {
   View,
 } from "react-native";
 
-import { ReplyBubble } from "@/components/chat";
+// Chat rendering pipeline
+import { MediaViewerModal, MessageActionsSheet } from "@/components/chat";
+import { ChatMessageRenderer } from "@/components/chat/ChatMessageRenderer";
+
+// Data services
 import {
   getMessageById,
   getThreadMessages,
   insertMessage,
   rowToMessageV2,
 } from "@/services/database/messageRepository";
+import { getUserProfileByUid } from "@/services/friends";
+import {
+  applyOptimisticReaction,
+  type ReactionSummary,
+  subscribeToMultipleMessageReactions,
+  toggleReaction,
+} from "@/services/reactions";
 import {
   subscribeToConversation,
   syncPendingMessages,
 } from "@/services/sync/syncEngine";
+
+// Hooks & Context
 import { useAuth } from "@/store/AuthContext";
+import { useConversationDisplayMode } from "@/store/ConversationDisplayModeContext";
 import { useAppTheme } from "@/store/ThemeContext";
-import type { MessageV2, ReplyToMetadata } from "@/types/messaging";
+import { useUser } from "@/store/UserContext";
+
+// Types
+import type {
+  AttachmentV2,
+  MessageV2,
+  ReplyToMetadata,
+} from "@/types/messaging";
 import type { MainStackParamList } from "@/types/navigation/root";
 import { createLogger } from "@/utils/log";
 import { createThreadRealtimeLifecycle } from "./threadLifecycle";
 
 const logger = createLogger("ThreadScreen");
+
+/** Messages within this window from the same sender are visually grouped */
+const MESSAGE_GROUP_THRESHOLD_MS = 2 * 60 * 1000;
 
 type Props = NativeStackScreenProps<MainStackParamList, "ThreadView">;
 
@@ -59,8 +92,12 @@ export default function ThreadScreen({ navigation, route }: Props) {
 
   const { colors, isDark } = useAppTheme();
   const { currentFirebaseUser } = useAuth();
+  const { profile } = useUser();
+  const { displayMode } = useConversationDisplayMode();
   const uid = currentFirebaseUser?.uid ?? "";
   const displayName = currentFirebaseUser?.displayName ?? "";
+  const chatAppearance = profile?.chatAppearance ?? null;
+  const isGroupChat = scope === "group";
 
   // ---------------------------------------------------------------------------
   // State
@@ -71,6 +108,28 @@ export default function ThreadScreen({ navigation, route }: Props) {
   const [sending, setSending] = useState(false);
   const flatListRef = useRef<FlatList<MessageV2>>(null);
   const isMountedRef = useRef(true);
+
+  // Friend profile (for DM threads)
+  const [friendProfile, setFriendProfile] = useState<any>(null);
+
+  // Reactions
+  const [messageReactions, setMessageReactions] = useState<
+    Map<string, ReactionSummary[]>
+  >(new Map());
+
+  // Message actions sheet
+  const [actionsSheetVisible, setActionsSheetVisible] = useState(false);
+  const [selectedMessage, setSelectedMessage] = useState<MessageV2 | null>(
+    null,
+  );
+
+  // Media viewer
+  const [mediaViewerVisible, setMediaViewerVisible] = useState(false);
+  const [viewerAttachments, setViewerAttachments] = useState<AttachmentV2[]>(
+    [],
+  );
+  const [viewerSenderName, setViewerSenderName] = useState("");
+  const [viewerTimestamp, setViewerTimestamp] = useState<Date | undefined>();
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -122,6 +181,146 @@ export default function ThreadScreen({ navigation, route }: Props) {
       onConversationUpdate: loadThread,
     });
   }, [scope, conversationId, loadThread]);
+
+  // ---------------------------------------------------------------------------
+  // Fetch friend profile (DM threads)
+  // ---------------------------------------------------------------------------
+  const friendUid = useMemo(() => {
+    if (isGroupChat) return null;
+    const allMessages = rootMessage ? [rootMessage, ...replies] : replies;
+    return (
+      allMessages.find((m) => m.senderId && m.senderId !== uid)?.senderId ??
+      null
+    );
+  }, [rootMessage, replies, uid, isGroupChat]);
+
+  useEffect(() => {
+    if (!friendUid) return;
+    let cancelled = false;
+    getUserProfileByUid(friendUid)
+      .then((p) => {
+        if (p && !cancelled && isMountedRef.current) setFriendProfile(p);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [friendUid]);
+
+  // ---------------------------------------------------------------------------
+  // Reactions subscription
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    const allIds = rootMessage
+      ? [rootMessage.id, ...replies.map((r) => r.id)]
+      : replies.map((r) => r.id);
+    if (!allIds.length || !conversationId) return;
+    return subscribeToMultipleMessageReactions(
+      scope,
+      conversationId,
+      allIds,
+      uid,
+      (reactionsMap) => {
+        if (isMountedRef.current) setMessageReactions(reactionsMap);
+      },
+    );
+  }, [scope, conversationId, rootMessage?.id, replies.length, uid]);
+
+  // ---------------------------------------------------------------------------
+  // Grouping
+  // ---------------------------------------------------------------------------
+  const areMessagesGrouped = useCallback(
+    (a: MessageV2 | null, b: MessageV2 | null): boolean => {
+      if (!a || !b) return false;
+      if (a.senderId !== b.senderId) return false;
+      const timeA = a.serverReceivedAt || a.createdAt;
+      const timeB = b.serverReceivedAt || b.createdAt;
+      return Math.abs(timeA - timeB) < MESSAGE_GROUP_THRESHOLD_MS;
+    },
+    [],
+  );
+
+  // ---------------------------------------------------------------------------
+  // Interaction handlers
+  // ---------------------------------------------------------------------------
+  const handleReply = useCallback((_replyTo: ReplyToMetadata) => {
+    // In threads, all replies go to the thread root
+  }, []);
+
+  const handleLongPress = useCallback((message: MessageV2) => {
+    setSelectedMessage(message);
+    setActionsSheetVisible(true);
+  }, []);
+
+  const handleScrollToMessage = useCallback((_messageId: string) => {
+    // Threads are short — no scroll-to needed
+  }, []);
+
+  const handleRetryMessage = useCallback(
+    async (_message: MessageV2) => {
+      await syncPendingMessages().catch((err) => {
+        logger.error("[ThreadScreen] Retry sync failed:", err);
+      });
+      loadThread();
+    },
+    [loadThread],
+  );
+
+  const handleImagePress = useCallback(
+    (imageUrl: string, senderName: string, timestamp: Date) => {
+      setViewerAttachments([
+        {
+          id: "thread-image",
+          kind: "photo" as any,
+          mime: "image/jpeg",
+          url: imageUrl,
+          path: "",
+          sizeBytes: 0,
+        },
+      ]);
+      setViewerSenderName(senderName);
+      setViewerTimestamp(timestamp);
+      setMediaViewerVisible(true);
+    },
+    [],
+  );
+
+  const handleOptimisticReaction = useCallback(
+    (messageId: string, emoji: string) => {
+      setMessageReactions((prev) => {
+        const next = new Map(prev);
+        const current = next.get(messageId) || [];
+        next.set(messageId, applyOptimisticReaction(current, emoji, uid));
+        return next;
+      });
+      toggleReaction({
+        scope,
+        conversationId,
+        messageId,
+        emoji,
+        uid,
+      }).catch(() => {});
+    },
+    [scope, conversationId, uid],
+  );
+
+  const handleActionsClose = useCallback(() => {
+    setActionsSheetVisible(false);
+    setSelectedMessage(null);
+  }, []);
+
+  const handleActionsReply = useCallback((_replyTo: ReplyToMetadata) => {
+    setActionsSheetVisible(false);
+    setSelectedMessage(null);
+  }, []);
+
+  const handleReactionAdded = useCallback(
+    (emoji: string) => {
+      if (!selectedMessage) return;
+      handleOptimisticReaction(selectedMessage.id, emoji);
+    },
+    [selectedMessage, handleOptimisticReaction],
+  );
 
   // ---------------------------------------------------------------------------
   // Send reply
@@ -192,77 +391,117 @@ export default function ThreadScreen({ navigation, route }: Props) {
   // ---------------------------------------------------------------------------
   // Render helpers
   // ---------------------------------------------------------------------------
+  const currentUserDisplayName =
+    profile?.displayName ||
+    profile?.username ||
+    currentFirebaseUser?.displayName ||
+    "Me";
+  const currentUserProfilePictureUrl =
+    (profile as any)?.profilePicture?.url ?? null;
+  const currentUserDecorationId =
+    (profile as any)?.avatarDecoration?.decorationId ?? null;
 
-  /** Render a single message row */
-  const renderMessage = useCallback(
-    (message: MessageV2, isRoot: boolean) => {
-      const isOwn = message.senderId === uid;
-      return (
-        <View
-          style={[
-            styles.messageRow,
-            isRoot && styles.rootMessageRow,
-            isRoot && { borderBottomColor: colors.outline },
-          ]}
-        >
-          {/* Sender name */}
-          {!isOwn && (
-            <Text style={[styles.senderName, { color: colors.primary }]}>
-              {message.senderName || "Unknown"}
-            </Text>
-          )}
-
-          {/* Reply preview (for non-root messages that reply to other thread members) */}
-          {!isRoot && message.replyTo && (
-            <ReplyBubble
-              replyTo={message.replyTo}
-              isSentByMe={isOwn}
-              isReplyToMe={message.replyTo.senderId === uid}
-            />
-          )}
-
-          {/* Bubble */}
-          <View
-            style={[
-              styles.bubble,
-              isOwn
-                ? [styles.ownBubble, { backgroundColor: colors.primary }]
-                : [
-                    styles.otherBubble,
-                    {
-                      backgroundColor: colors.surfaceVariant,
-                    },
-                  ],
-            ]}
-          >
-            <Text
-              style={[
-                styles.messageText,
-                { color: isOwn ? colors.onPrimary : colors.text },
-              ]}
-            >
-              {message.text || ""}
-            </Text>
-          </View>
-
-          {/* Timestamp */}
-          <Text style={[styles.timestamp, { color: colors.textSecondary }]}>
-            {new Date(
-              message.serverReceivedAt || message.createdAt,
-            ).toLocaleTimeString("en-US", {
-              hour: "2-digit",
-              minute: "2-digit",
-            })}
-          </Text>
-        </View>
-      );
-    },
-    [uid, colors, isDark],
-  );
+  const renderRootMessage = useCallback(() => {
+    if (!rootMessage) return null;
+    return (
+      <View
+        style={[
+          styles.rootMessageContainer,
+          { borderBottomColor: colors.outline },
+        ]}
+      >
+        <ChatMessageRenderer
+          message={rootMessage}
+          currentUid={uid}
+          chatId={conversationId}
+          friendProfile={friendProfile}
+          chatAppearance={chatAppearance}
+          onReply={handleReply}
+          onLongPress={handleLongPress}
+          onScrollToMessage={handleScrollToMessage}
+          onRetry={handleRetryMessage}
+          onImagePress={handleImagePress}
+          reactions={messageReactions.get(rootMessage.id) || []}
+          onOptimisticReaction={handleOptimisticReaction}
+          displayMode={displayMode}
+          isGroupChat={isGroupChat}
+          isGroupedWithPrevious={false}
+          isGroupedWithNext={false}
+          currentUserDisplayName={currentUserDisplayName}
+          currentUserProfilePictureUrl={currentUserProfilePictureUrl}
+          currentUserDecorationId={currentUserDecorationId}
+        />
+      </View>
+    );
+  }, [
+    rootMessage,
+    uid,
+    conversationId,
+    friendProfile,
+    chatAppearance,
+    handleReply,
+    handleLongPress,
+    handleScrollToMessage,
+    handleRetryMessage,
+    handleImagePress,
+    messageReactions,
+    handleOptimisticReaction,
+    displayMode,
+    isGroupChat,
+    currentUserDisplayName,
+    currentUserProfilePictureUrl,
+    currentUserDecorationId,
+    colors.outline,
+  ]);
 
   const renderItem = useCallback(
-    ({ item }: { item: MessageV2 }) => renderMessage(item, false),
-    [renderMessage],
+    ({ item, index }: { item: MessageV2; index: number }) => {
+      const prev = index > 0 ? replies[index - 1] : null;
+      const next = index < replies.length - 1 ? replies[index + 1] : null;
+      return (
+        <ChatMessageRenderer
+          message={item}
+          currentUid={uid}
+          chatId={conversationId}
+          friendProfile={friendProfile}
+          chatAppearance={chatAppearance}
+          onReply={handleReply}
+          onLongPress={handleLongPress}
+          onScrollToMessage={handleScrollToMessage}
+          onRetry={handleRetryMessage}
+          onImagePress={handleImagePress}
+          reactions={messageReactions.get(item.id) || []}
+          onOptimisticReaction={handleOptimisticReaction}
+          displayMode={displayMode}
+          isGroupChat={isGroupChat}
+          isGroupedWithPrevious={areMessagesGrouped(prev, item)}
+          isGroupedWithNext={areMessagesGrouped(item, next)}
+          currentUserDisplayName={currentUserDisplayName}
+          currentUserProfilePictureUrl={currentUserProfilePictureUrl}
+          currentUserDecorationId={currentUserDecorationId}
+        />
+      );
+    },
+    [
+      replies,
+      uid,
+      conversationId,
+      friendProfile,
+      chatAppearance,
+      handleReply,
+      handleLongPress,
+      handleScrollToMessage,
+      handleRetryMessage,
+      handleImagePress,
+      messageReactions,
+      handleOptimisticReaction,
+      displayMode,
+      isGroupChat,
+      areMessagesGrouped,
+      currentUserDisplayName,
+      currentUserProfilePictureUrl,
+      currentUserDecorationId,
+    ],
   );
 
   const keyExtractor = useCallback((item: MessageV2) => item.id, []);
@@ -300,7 +539,7 @@ export default function ThreadScreen({ navigation, route }: Props) {
         keyboardVerticalOffset={0}
       >
         {/* Root message */}
-        {rootMessage && renderMessage(rootMessage, true)}
+        {renderRootMessage()}
 
         {/* Thread replies */}
         <FlatList
@@ -384,6 +623,26 @@ export default function ThreadScreen({ navigation, route }: Props) {
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
+
+      {/* Message Actions Sheet */}
+      <MessageActionsSheet
+        visible={actionsSheetVisible}
+        message={selectedMessage}
+        currentUid={uid}
+        onClose={handleActionsClose}
+        onReply={handleActionsReply}
+        onReactionAdded={handleReactionAdded}
+      />
+
+      {/* Media Viewer */}
+      <MediaViewerModal
+        visible={mediaViewerVisible}
+        attachments={viewerAttachments}
+        initialIndex={0}
+        onClose={() => setMediaViewerVisible(false)}
+        senderName={viewerSenderName}
+        timestamp={viewerTimestamp}
+      />
     </SafeAreaView>
   );
 }
@@ -422,43 +681,11 @@ const styles = StyleSheet.create({
     fontWeight: "400",
   },
 
-  // Message rows
-  messageRow: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-  },
-  rootMessageRow: {
-    paddingBottom: 12,
+  // Root message
+  rootMessageContainer: {
+    paddingBottom: 4,
     borderBottomWidth: StyleSheet.hairlineWidth,
     marginBottom: 4,
-  },
-  senderName: {
-    fontSize: 13,
-    fontWeight: "600",
-    marginBottom: 2,
-  },
-  bubble: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 22,
-    maxWidth: "85%",
-  },
-  ownBubble: {
-    alignSelf: "flex-end",
-    borderBottomRightRadius: 6,
-  },
-  otherBubble: {
-    alignSelf: "flex-start",
-    borderBottomLeftRadius: 6,
-  },
-  messageText: {
-    fontSize: 20,
-    lineHeight: 29,
-  },
-  timestamp: {
-    fontSize: 11,
-    marginTop: 6,
-    alignSelf: "flex-end",
   },
 
   // List

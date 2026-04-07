@@ -13,7 +13,7 @@
 
 import { useComposerSheet } from "@/contexts/ComposerSheetContext";
 import * as Haptics from "expo-haptics";
-import React, { memo, useCallback, useRef, useState } from "react";
+import React, { memo, useCallback, useEffect, useRef, useState } from "react";
 import { StyleSheet } from "react-native";
 import { IconButton, useTheme } from "react-native-paper";
 
@@ -46,16 +46,28 @@ function EmojiButtonBase({ onEmojiSelected, size = 24 }: EmojiButtonProps) {
     sheetTranslateY,
   } = useComposerSheet();
 
-  const handlePress = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    activateSheet();
-    setPickerOpen(true);
-  }, [activateSheet]);
+  const pickerOpenRef = useRef(false);
+  pickerOpenRef.current = pickerOpen;
+
+  // Clean up composer sheet if this button unmounts while its picker is open.
+  useEffect(() => {
+    return () => {
+      if (pickerOpenRef.current) {
+        deactivateSheet();
+      }
+    };
+  }, [deactivateSheet]);
 
   const handleClose = useCallback(() => {
     setPickerOpen(false);
     deactivateSheet();
   }, [deactivateSheet]);
+
+  const handlePress = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    activateSheet(undefined, handleClose);
+    setPickerOpen(true);
+  }, [activateSheet, handleClose]);
 
   const handleEmojiSelected = useCallback(
     (emoji: string) => {

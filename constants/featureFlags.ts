@@ -107,6 +107,18 @@ export const GAMES_V4_ENABLED = true;
  */
 export const GIF_PICKER_ENABLED = true;
 
+/**
+ * Sticker Picker (KLIPY-powered)
+ *
+ * When enabled:
+ * - Sticker button becomes available in the composer toolbar item picker
+ * - Users can search and send stickers via KLIPY
+ * - Sticker messages render as image attachments in chat
+ *
+ * @default true
+ */
+export const STICKER_PICKER_ENABLED = true;
+
 // =============================================================================
 // Debug Features
 // =============================================================================

@@ -1516,7 +1516,7 @@ export const MutualFriendsAdapter = memo(function MutualFriendsAdapter({
           style={[adapterStyles.adapterTitle, { color: colors.text }]}
           numberOfLines={1}
         >
-          {compact ? `${count}` : `${count} Mutual Friends`}
+          Mutual Friends
         </Text>
       </View>
       {!compact && mutuals.length > 0 && (
@@ -1548,13 +1548,14 @@ export const MutualFriendsAdapter = memo(function MutualFriendsAdapter({
           )}
         </View>
       )}
-      {!compact && mutuals.length === 0 && (
-        <Text
-          style={[adapterStyles.emptyHint, { color: colors.textSecondary }]}
-        >
-          No mutual friends yet
-        </Text>
-      )}
+      <Text
+        style={[adapterStyles.emptyHint, { color: colors.textSecondary }]}
+        numberOfLines={compact ? 1 : 2}
+      >
+        {mutuals.length > 0 && !compact
+          ? `${count} friend${count !== 1 ? "s" : ""} in common`
+          : "Shows mutual friends to profile viewers"}
+      </Text>
     </View>
   );
 });
@@ -2552,35 +2553,34 @@ export const ThemeModeAdapter = memo(function ThemeModeAdapter({
     [canInteract, data.onChangeMode],
   );
 
-  const isCompact = size === "small";
+  const isSmall = size === "small";
 
   return (
     <View
       style={[
         themeStyles.root,
-        isCompact && themeStyles.rootCompact,
+        isSmall && themeStyles.rootCompact,
         { backgroundColor: colors.surface },
       ]}
     >
-      {!isCompact && (
-        <View style={themeStyles.headerRow}>
-          <MaterialCommunityIcons
-            name="brightness-6"
-            size={14}
-            color={colors.textSecondary}
-          />
-          <Text
-            style={[themeStyles.headerLabel, { color: colors.textSecondary }]}
-          >
-            Appearance
-          </Text>
-        </View>
-      )}
+      <View style={themeStyles.headerRow}>
+        <MaterialCommunityIcons
+          name="brightness-6"
+          size={isSmall ? 12 : 14}
+          color={colors.textSecondary}
+        />
+        <Text
+          style={[
+            themeStyles.headerLabel,
+            isSmall && themeStyles.headerLabelCompact,
+            { color: colors.textSecondary },
+          ]}
+        >
+          Appearance
+        </Text>
+      </View>
       <View
-        style={[
-          themeStyles.segmented,
-          isCompact && themeStyles.segmentedCompact,
-        ]}
+        style={[themeStyles.segmented, isSmall && themeStyles.segmentedCompact]}
       >
         {THEME_OPTIONS.map((opt) => {
           const isActive = active === opt.key;
@@ -2589,7 +2589,7 @@ export const ThemeModeAdapter = memo(function ThemeModeAdapter({
               key={opt.key}
               style={[
                 themeStyles.seg,
-                isCompact && themeStyles.segCompact,
+                isSmall && themeStyles.segCompact,
                 isActive && {
                   backgroundColor: colors.primary + "20",
                   borderColor: colors.primary,
@@ -2602,22 +2602,21 @@ export const ThemeModeAdapter = memo(function ThemeModeAdapter({
             >
               <MaterialCommunityIcons
                 name={opt.icon as keyof typeof MaterialCommunityIcons.glyphMap}
-                size={isCompact ? 14 : 16}
+                size={isSmall ? 13 : 16}
                 color={isActive ? colors.primary : colors.textSecondary}
               />
-              {!isCompact && (
-                <Text
-                  style={[
-                    themeStyles.segLabel,
-                    {
-                      color: isActive ? colors.primary : colors.textSecondary,
-                      fontWeight: isActive ? "700" : "500",
-                    },
-                  ]}
-                >
-                  {opt.label}
-                </Text>
-              )}
+              <Text
+                style={[
+                  themeStyles.segLabel,
+                  isSmall && themeStyles.segLabelCompact,
+                  {
+                    color: isActive ? colors.primary : colors.textSecondary,
+                    fontWeight: isActive ? "700" : "500",
+                  },
+                ]}
+              >
+                {opt.label}
+              </Text>
             </TouchableOpacity>
           );
         })}
@@ -2646,8 +2645,7 @@ const themeStyles = StyleSheet.create({
   },
   rootCompact: {
     padding: Spacing.sm,
-    alignItems: "center",
-    justifyContent: "center",
+    gap: 4,
   },
   headerRow: {
     flexDirection: "row",
@@ -2656,6 +2654,7 @@ const themeStyles = StyleSheet.create({
     marginBottom: 2,
   },
   headerLabel: { fontSize: 11, fontWeight: "600" },
+  headerLabelCompact: { fontSize: 10 },
   segmented: {
     flexDirection: "row",
     gap: 6,
@@ -2679,6 +2678,7 @@ const themeStyles = StyleSheet.create({
     flex: 1,
   },
   segLabel: { fontSize: 12 },
+  segLabelCompact: { fontSize: 10 },
   desc: { fontSize: 11, marginTop: 2 },
 });
 
@@ -2715,37 +2715,36 @@ export const ChatLayoutModeAdapter = memo(function ChatLayoutModeAdapter({
     [canInteract, data.onChangeMode],
   );
 
-  const isCompact = size === "small";
+  const isSmall = size === "small";
 
   return (
     <View
       style={[
         chatLayoutStyles.root,
-        isCompact && chatLayoutStyles.rootCompact,
+        isSmall && chatLayoutStyles.rootCompact,
         { backgroundColor: colors.surface },
       ]}
     >
-      {!isCompact && (
-        <View style={chatLayoutStyles.headerRow}>
-          <MaterialCommunityIcons
-            name="message-text-outline"
-            size={14}
-            color={colors.textSecondary}
-          />
-          <Text
-            style={[
-              chatLayoutStyles.headerLabel,
-              { color: colors.textSecondary },
-            ]}
-          >
-            Chat Layout
-          </Text>
-        </View>
-      )}
+      <View style={chatLayoutStyles.headerRow}>
+        <MaterialCommunityIcons
+          name="message-text-outline"
+          size={isSmall ? 12 : 14}
+          color={colors.textSecondary}
+        />
+        <Text
+          style={[
+            chatLayoutStyles.headerLabel,
+            isSmall && chatLayoutStyles.headerLabelCompact,
+            { color: colors.textSecondary },
+          ]}
+        >
+          Chat Layout
+        </Text>
+      </View>
       <View
         style={[
           chatLayoutStyles.segmented,
-          isCompact && chatLayoutStyles.segmentedCompact,
+          isSmall && chatLayoutStyles.segmentedCompact,
         ]}
       >
         {CHAT_LAYOUT_OPTIONS.map((opt) => {
@@ -2755,7 +2754,7 @@ export const ChatLayoutModeAdapter = memo(function ChatLayoutModeAdapter({
               key={opt.key}
               style={[
                 chatLayoutStyles.seg,
-                isCompact && chatLayoutStyles.segCompact,
+                isSmall && chatLayoutStyles.segCompact,
                 isActive && {
                   backgroundColor: colors.primary + "20",
                   borderColor: colors.primary,
@@ -2768,13 +2767,13 @@ export const ChatLayoutModeAdapter = memo(function ChatLayoutModeAdapter({
             >
               <MaterialCommunityIcons
                 name={opt.icon as keyof typeof MaterialCommunityIcons.glyphMap}
-                size={isCompact ? 15 : 17}
+                size={isSmall ? 14 : 17}
                 color={isActive ? colors.primary : colors.textSecondary}
               />
               <Text
                 style={[
                   chatLayoutStyles.segLabel,
-                  isCompact && chatLayoutStyles.segLabelCompact,
+                  isSmall && chatLayoutStyles.segLabelCompact,
                   {
                     color: isActive ? colors.primary : colors.textSecondary,
                     fontWeight: isActive ? "700" : "500",
@@ -2809,8 +2808,7 @@ const chatLayoutStyles = StyleSheet.create({
   },
   rootCompact: {
     padding: Spacing.sm,
-    alignItems: "center",
-    justifyContent: "center",
+    gap: 4,
   },
   headerRow: {
     flexDirection: "row",
@@ -2819,6 +2817,7 @@ const chatLayoutStyles = StyleSheet.create({
     marginBottom: 2,
   },
   headerLabel: { fontSize: 11, fontWeight: "600" },
+  headerLabelCompact: { fontSize: 10 },
   segmented: {
     flexDirection: "row",
     gap: 6,
@@ -2841,7 +2840,7 @@ const chatLayoutStyles = StyleSheet.create({
     borderRadius: 8,
   },
   segLabel: { fontSize: 12 },
-  segLabelCompact: { fontSize: 11 },
+  segLabelCompact: { fontSize: 10 },
   desc: { fontSize: 11, marginTop: 2 },
 });
 

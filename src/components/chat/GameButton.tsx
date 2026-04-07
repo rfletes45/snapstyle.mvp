@@ -1,37 +1,38 @@
 /**
- * GifButton
+ * GameButton
  *
- * Opens the GIF picker (KLIPY-powered) and calls onGifSelected
- * when a GIF is chosen. Follows the exact same pattern as EmojiButton.
- *
- * When opened, the picker acts as a keyboard replacement: it opens to the
- * same height as the keyboard, and the composer follows it upward.
+ * Opens the game picker and calls onGameSelected when a game is chosen.
+ * Follows the same keyboard-replacement sheet pattern as GifButton and
+ * StickerButton: the picker opens to keyboard height and the composer
+ * follows it upward via the shared ComposerSheetContext.
  *
  * Designed for use as a toolbar item in the composer drag toolbar.
  * - 40×40 touch target, 24px icon
- * - Material Community Icons "gif" icon
+ * - Material Community Icons "gamepad-variant-outline" icon
  * - Haptic feedback on press
  *
- * @module components/chat/GifButton
+ * @module components/chat/GameButton
  */
 
 import { useComposerSheet } from "@/contexts/ComposerSheetContext";
-import type { GifItem } from "@/services/gif/types";
+import { GamePickerModal } from "@/gamesV4/components/GamePickerModal";
+import type { GameId } from "@/gamesV4/types";
 import * as Haptics from "expo-haptics";
 import React, { memo, useCallback, useEffect, useRef, useState } from "react";
 import { StyleSheet } from "react-native";
 import { IconButton, useTheme } from "react-native-paper";
 
 import type { DraggableBottomSheetHandle } from "./DraggableBottomSheet";
-import { GifPicker } from "./GifPicker";
 
 // =============================================================================
 // Types
 // =============================================================================
 
-export interface GifButtonProps {
-  /** Called when a GIF is selected from the picker. */
-  onGifSelected: (gif: GifItem) => void;
+export interface GameButtonProps {
+  /** Called when a game is selected from the picker. */
+  onGameSelected: (gameId: GameId) => void;
+  /** Only show multiplayer games. */
+  multiplayerOnly?: boolean;
   /** Button size in pixels. */
   size?: number;
 }
@@ -40,7 +41,11 @@ export interface GifButtonProps {
 // Component
 // =============================================================================
 
-function GifButtonBase({ onGifSelected, size = 24 }: GifButtonProps) {
+function GameButtonBase({
+  onGameSelected,
+  multiplayerOnly = false,
+  size = 24,
+}: GameButtonProps) {
   const theme = useTheme();
   const [pickerOpen, setPickerOpen] = useState(false);
   const sheetRef = useRef<DraggableBottomSheetHandle>(null);
@@ -51,14 +56,11 @@ function GifButtonBase({ onGifSelected, size = 24 }: GifButtonProps) {
     sheetTranslateY,
   } = useComposerSheet();
 
-  // Track open state in a ref so the unmount cleanup can access it
-  // without adding pickerOpen to the effect's dependency array.
+  // Track open state in a ref for unmount cleanup.
   const pickerOpenRef = useRef(false);
   pickerOpenRef.current = pickerOpen;
 
-  // If this button unmounts while its picker is open (e.g. toolbar item
-  // removed during edit mode), clean up the composer sheet so the
-  // composer doesn't get stuck in the raised position.
+  // Clean up composer sheet if this button unmounts while its picker is open.
   useEffect(() => {
     return () => {
       if (pickerOpenRef.current) {
@@ -78,30 +80,31 @@ function GifButtonBase({ onGifSelected, size = 24 }: GifButtonProps) {
     setPickerOpen(true);
   }, [activateSheet, handleClose]);
 
-  const handleGifSelected = useCallback(
-    (gif: GifItem) => {
-      onGifSelected(gif);
-      // Picker auto-closes on selection (handled in GifPicker)
+  const handleGameSelected = useCallback(
+    (gameId: GameId) => {
+      onGameSelected(gameId);
+      // GamePickerModal calls onClose internally after selection
     },
-    [onGifSelected],
+    [onGameSelected],
   );
 
   return (
     <>
       <IconButton
-        icon="file-gif-box"
+        icon="gamepad-variant-outline"
         size={size}
         iconColor={theme.colors.onSurfaceVariant}
         onPress={handlePress}
         style={styles.button}
-        accessibilityLabel="Open GIF picker"
+        accessibilityLabel="Open game picker"
         accessibilityRole="button"
       />
-      <GifPicker
+      <GamePickerModal
         ref={sheetRef}
         open={pickerOpen}
+        onSelect={handleGameSelected}
         onClose={handleClose}
-        onGifSelected={handleGifSelected}
+        multiplayerOnly={multiplayerOnly}
         keyboardHeight={lastKeyboardHeight}
         sharedTranslateY={sheetTranslateY}
       />
@@ -109,7 +112,7 @@ function GifButtonBase({ onGifSelected, size = 24 }: GifButtonProps) {
   );
 }
 
-export const GifButton = memo(GifButtonBase);
+export const GameButton = memo(GameButtonBase);
 
 // =============================================================================
 // Styles

@@ -229,9 +229,11 @@ export const StackedMessageRenderer: React.FC<StackedMessageRendererProps> =
                 s.voiceContainer,
                 {
                   backgroundColor: isSentByMe
-                    ? theme.colors.primaryContainer + "40"
-                    : theme.colors.surfaceVariant + "80",
-                  borderColor: theme.colors.outline + "20",
+                    ? theme.colors.primaryContainer + "55"
+                    : theme.colors.surfaceVariant + "DD",
+                  borderColor: isSentByMe
+                    ? theme.colors.primary + "30"
+                    : theme.colors.outline + "55",
                 },
               ]}
             >

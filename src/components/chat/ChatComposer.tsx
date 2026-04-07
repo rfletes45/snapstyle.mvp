@@ -45,9 +45,13 @@ import { ComposerToolbarRow } from "./ComposerToolbar/ComposerToolbarRow";
 import type { ComposerToolbarItemId } from "./ComposerToolbar/types";
 import { DEFAULT_TOOLBAR_ITEMS } from "./ComposerToolbar/types";
 import { EmojiButton } from "./EmojiButton";
+import { GameButton } from "./GameButton";
 import { GifButton } from "./GifButton";
+import { GifStickerButton } from "./GifStickerButton";
+import { ImagePickerButton } from "./ImagePickerButton";
 import { ReplyPreviewBar } from "./ReplyPreviewBar";
 import { SendButton } from "./SendButton";
+import { StickerButton } from "./StickerButton";
 import { VoiceRecordButton } from "./VoiceRecordButton";
 
 // =============================================================================
@@ -116,8 +120,10 @@ export interface ChatComposerProps {
   currentUserId?: string;
   /** Called when an animal is equipped from the picker */
   onAnimalEquipped?: (animalId: string) => void;
-  /** Game button handler (opens game picker) */
+  /** Game button handler (opens game picker) — DEPRECATED, use onGameSelected */
   onGamePress?: () => void;
+  /** Called when a game is selected from the inline game picker. */
+  onGameSelected?: (gameId: import("@/gamesV4/types").GameId) => void;
   /** Upload progress indicator (shown when uploading) */
   uploadProgress?: { current: number; total: number } | null;
   /** Called when the cursor position changes (for mention trigger detection) */
@@ -162,8 +168,16 @@ export interface ChatComposerProps {
   onEmojiSelected?: (emoji: string) => void;
   /** Called when a GIF is selected from the GIF picker toolbar button. */
   onGifSelected?: (gif: import("@/services/gif/types").GifItem) => void;
+  /** Called when a sticker is selected from the sticker picker toolbar button. */
+  onStickerSelected?: (
+    sticker: import("@/services/sticker/types").StickerItem,
+  ) => void;
   /** Schedule button handler (for the schedule toolbar item). */
   onSchedulePress?: () => void;
+  /** Called when images are picked from the image picker toolbar button. */
+  onImagesPicked?: (imageUris: string[]) => void;
+  /** Whether the image picker button should be disabled (e.g. during send). */
+  imagePickerDisabled?: boolean;
 }
 
 function normalizeNodeForView(node: React.ReactNode): React.ReactNode {
@@ -212,6 +226,7 @@ export function ChatComposer({
   currentUserId,
   onAnimalEquipped,
   onGamePress,
+  onGameSelected,
   uploadProgress,
   onCursorChange,
   mentionAutocomplete,
@@ -231,7 +246,10 @@ export function ChatComposer({
   onToolbarResetDefaults,
   onEmojiSelected,
   onGifSelected,
+  onStickerSelected,
   onSchedulePress,
+  onImagesPicked,
+  imagePickerDisabled = false,
 }: ChatComposerProps): React.JSX.Element {
   const theme = useTheme();
   const { colors, isDark } = useAppTheme();
@@ -458,6 +476,14 @@ export function ChatComposer({
           return normalizedLeftAccessory ?? null;
 
         case "game":
+          // Prefer the new inline picker (onGameSelected) over the legacy
+          // onGamePress callback so the game sheet integrates with the
+          // composer sheet system like GIFs and Stickers.
+          if (onGameSelected) {
+            return (
+              <GameButton onGameSelected={onGameSelected} multiplayerOnly />
+            );
+          }
           return onGamePress ? (
             <IconButton
               icon="gamepad-variant-outline"
@@ -526,6 +552,11 @@ export function ChatComposer({
             <GifButton onGifSelected={onGifSelected} />
           ) : null;
 
+        case "sticker":
+          return onStickerSelected ? (
+            <StickerButton onStickerSelected={onStickerSelected} />
+          ) : null;
+
         case "schedule":
           return onSchedulePress ? (
             <IconButton
@@ -534,6 +565,22 @@ export function ChatComposer({
               iconColor={theme.colors.onSurfaceVariant}
               onPress={onSchedulePress}
               style={styles.actionButton}
+            />
+          ) : null;
+
+        case "gif-sticker":
+          return onGifSelected && onStickerSelected ? (
+            <GifStickerButton
+              onGifSelected={onGifSelected}
+              onStickerSelected={onStickerSelected}
+            />
+          ) : null;
+
+        case "image-picker":
+          return onImagesPicked ? (
+            <ImagePickerButton
+              onImagesPicked={onImagesPicked}
+              disabled={imagePickerDisabled}
             />
           ) : null;
 
@@ -566,6 +613,7 @@ export function ChatComposer({
       theme,
       normalizedLeftAccessory,
       onGamePress,
+      onGameSelected,
       onAnimalPress,
       animalPickerVisible,
       onAnimalPickerClose,
@@ -574,7 +622,10 @@ export function ChatComposer({
       animalThemeId,
       onEmojiSelected,
       onGifSelected,
+      onStickerSelected,
       onSchedulePress,
+      onImagesPicked,
+      imagePickerDisabled,
       inputRef,
     ],
   );

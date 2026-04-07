@@ -391,16 +391,16 @@ export const MediaViewerModal = memo(function MediaViewerModal({
           {/* Attachment info */}
           {currentAttachment && (
             <View style={styles.attachmentInfo}>
-              {currentAttachment.caption && (
+              {currentAttachment.caption ? (
                 <Text style={styles.caption} numberOfLines={3}>
                   {currentAttachment.caption}
                 </Text>
-              )}
-              {currentAttachment.sizeBytes && (
+              ) : null}
+              {currentAttachment.sizeBytes > 0 ? (
                 <Text style={styles.fileSize}>
                   {formatFileSize(currentAttachment.sizeBytes)}
                 </Text>
-              )}
+              ) : null}
             </View>
           )}
 

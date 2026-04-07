@@ -1,37 +1,39 @@
 /**
- * GifButton
+ * GifStickerButton
  *
- * Opens the GIF picker (KLIPY-powered) and calls onGifSelected
- * when a GIF is chosen. Follows the exact same pattern as EmojiButton.
+ * Combined GIF + Sticker toolbar button. Opens the GifStickerPicker
+ * modal with a tabbed interface for browsing both GIFs and Stickers
+ * in a single entry point.
  *
- * When opened, the picker acts as a keyboard replacement: it opens to the
- * same height as the keyboard, and the composer follows it upward.
- *
- * Designed for use as a toolbar item in the composer drag toolbar.
+ * Follows the same pattern as GifButton and StickerButton:
  * - 40×40 touch target, 24px icon
- * - Material Community Icons "gif" icon
- * - Haptic feedback on press
+ * - Keyboard-replacement coordination via useComposerSheet()
+ * - Imperative sheet ref for controlling picker
+ * - Lifecycle cleanup on unmount
  *
- * @module components/chat/GifButton
+ * @module components/chat/GifStickerButton
  */
 
 import { useComposerSheet } from "@/contexts/ComposerSheetContext";
 import type { GifItem } from "@/services/gif/types";
+import type { StickerItem } from "@/services/sticker/types";
 import * as Haptics from "expo-haptics";
 import React, { memo, useCallback, useEffect, useRef, useState } from "react";
 import { StyleSheet } from "react-native";
 import { IconButton, useTheme } from "react-native-paper";
 
 import type { DraggableBottomSheetHandle } from "./DraggableBottomSheet";
-import { GifPicker } from "./GifPicker";
+import { GifStickerPicker } from "./GifStickerPicker";
 
 // =============================================================================
 // Types
 // =============================================================================
 
-export interface GifButtonProps {
+export interface GifStickerButtonProps {
   /** Called when a GIF is selected from the picker. */
   onGifSelected: (gif: GifItem) => void;
+  /** Called when a sticker is selected from the picker. */
+  onStickerSelected: (sticker: StickerItem) => void;
   /** Button size in pixels. */
   size?: number;
 }
@@ -40,7 +42,11 @@ export interface GifButtonProps {
 // Component
 // =============================================================================
 
-function GifButtonBase({ onGifSelected, size = 24 }: GifButtonProps) {
+function GifStickerButtonBase({
+  onGifSelected,
+  onStickerSelected,
+  size = 24,
+}: GifStickerButtonProps) {
   const theme = useTheme();
   const [pickerOpen, setPickerOpen] = useState(false);
   const sheetRef = useRef<DraggableBottomSheetHandle>(null);
@@ -52,13 +58,10 @@ function GifButtonBase({ onGifSelected, size = 24 }: GifButtonProps) {
   } = useComposerSheet();
 
   // Track open state in a ref so the unmount cleanup can access it
-  // without adding pickerOpen to the effect's dependency array.
   const pickerOpenRef = useRef(false);
   pickerOpenRef.current = pickerOpen;
 
-  // If this button unmounts while its picker is open (e.g. toolbar item
-  // removed during edit mode), clean up the composer sheet so the
-  // composer doesn't get stuck in the raised position.
+  // Clean up composer sheet if this button unmounts while its picker is open.
   useEffect(() => {
     return () => {
       if (pickerOpenRef.current) {
@@ -81,27 +84,34 @@ function GifButtonBase({ onGifSelected, size = 24 }: GifButtonProps) {
   const handleGifSelected = useCallback(
     (gif: GifItem) => {
       onGifSelected(gif);
-      // Picker auto-closes on selection (handled in GifPicker)
     },
     [onGifSelected],
+  );
+
+  const handleStickerSelected = useCallback(
+    (sticker: StickerItem) => {
+      onStickerSelected(sticker);
+    },
+    [onStickerSelected],
   );
 
   return (
     <>
       <IconButton
-        icon="file-gif-box"
+        icon="image-multiple"
         size={size}
         iconColor={theme.colors.onSurfaceVariant}
         onPress={handlePress}
         style={styles.button}
-        accessibilityLabel="Open GIF picker"
+        accessibilityLabel="Open GIF and Sticker picker"
         accessibilityRole="button"
       />
-      <GifPicker
+      <GifStickerPicker
         ref={sheetRef}
         open={pickerOpen}
         onClose={handleClose}
         onGifSelected={handleGifSelected}
+        onStickerSelected={handleStickerSelected}
         keyboardHeight={lastKeyboardHeight}
         sharedTranslateY={sheetTranslateY}
       />
@@ -109,7 +119,7 @@ function GifButtonBase({ onGifSelected, size = 24 }: GifButtonProps) {
   );
 }
 
-export const GifButton = memo(GifButtonBase);
+export const GifStickerButton = memo(GifStickerButtonBase);
 
 // =============================================================================
 // Styles

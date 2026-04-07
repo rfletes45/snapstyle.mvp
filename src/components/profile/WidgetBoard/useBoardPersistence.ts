@@ -20,7 +20,7 @@ import { getFirestoreInstance } from "@/services/firebase";
 import { createLogger } from "@/utils/log";
 
 import { generateDefaultLayout } from "./BoardLayoutEngine";
-import { getAllWidgetDefinitions } from "./WidgetRegistry";
+import { getAllWidgetDefinitions, getWidgetDefinition } from "./WidgetRegistry";
 import {
   LAYOUT_SCHEMA_VERSION,
   SIZE_PRESETS,
@@ -94,6 +94,17 @@ function validateAndMigrate(data: unknown): WidgetInstance[] | null {
       createdAt: w.createdAt || new Date().toISOString(),
       updatedAt: w.updatedAt || new Date().toISOString(),
     });
+  }
+
+  // Migrate widgets whose persisted size is no longer in supportedSizes
+  for (const widget of validWidgets) {
+    const def = getWidgetDefinition(widget.widgetType);
+    if (def && !def.supportedSizes.includes(widget.size)) {
+      logger.info(
+        `Migrating ${widget.widgetType} from unsupported size "${widget.size}" to "${def.defaultSize}"`,
+      );
+      widget.size = def.defaultSize;
+    }
   }
 
   // Ensure mandatory widgets exist

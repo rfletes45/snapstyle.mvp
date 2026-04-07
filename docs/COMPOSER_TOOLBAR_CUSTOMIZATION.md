@@ -36,8 +36,10 @@ ComposerToolbarLayout (Firestore document)
 | `send` | Dedicated send button | Yes | No |
 | `emoji` | Emoji picker | Yes | No |
 | `schedule` | Schedule message | Yes | No |
-| `gif` | GIF picker (coming soon) | Yes | No |
-| `sticker` | Sticker picker (coming soon) | Yes | No |
+| `gif` | GIF picker (KLIPY-powered) | Yes | No |
+| `sticker` | Sticker picker (KLIPY-powered) | Yes | No |
+| `gif-sticker` | Combined GIF + Sticker picker | Yes | No |
+| `image-picker` | Photo library image picker | Yes | No |
 
 ### Default Layout
 
