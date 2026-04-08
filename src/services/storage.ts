@@ -10,7 +10,7 @@
  */
 
 import { AttachmentKind, AttachmentV2 } from "@/types/messaging";
-import * as ImageManipulator from "expo-image-manipulator";
+import { manipulateImage } from "@/utils/imageManipulation";
 import {
   deleteObject,
   getDownloadURL,
@@ -82,7 +82,7 @@ const THUMBNAIL_QUALITY = 0.6;
 /**
  * Compress image before upload
  * On web: uses canvas-based compression for data URLs
- * On native: uses expo-image-manipulator
+ * On native: uses the Expo Image Manipulator context API
  * Resizes to max 1024px (preserving aspect ratio) and reduces JPEG quality to 0.7
  * Reduces file size from MB to typically 50-200KB
  * @param imageUri - Local file URI from camera capture or image picker, or data URL on web
@@ -142,14 +142,16 @@ export async function compressImage(
         img.src = imageUri;
       });
     } else {
-      // On native, use expo-image-manipulator
-      // Only constrain the larger dimension — expo-image-manipulator
+      // On native, use the supported Expo Image Manipulator context API.
+      // Only constrain the larger dimension so the other one stays proportional.
       // auto-calculates the other to preserve aspect ratio.
-      logger.info("🔵 [compressImage] Using expo-image-manipulator");
-      const result = await ImageManipulator.manipulateAsync(
+      logger.info("🔵 [compressImage] Using Expo Image Manipulator");
+      const result = await manipulateImage(
         imageUri,
-        [{ resize: { width: maxSize } }],
-        { compress: quality, format: ImageManipulator.SaveFormat.JPEG },
+        (context) => {
+          context.resize({ width: maxSize });
+        },
+        { compress: quality },
       );
       logger.info("✅ [compressImage] Native compression complete");
       return result.uri;

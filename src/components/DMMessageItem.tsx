@@ -22,7 +22,7 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 
-import AppImage from "@/components/AppImage";
+import MessageImage from "@/components/AppImage";
 import { ReplyBubble, SwipeableMessage } from "@/components/chat";
 import { AnimalBubble } from "@/components/chat/AnimalBubble";
 import { LinkPreviewCard } from "@/components/chat/LinkPreviewCard";
@@ -181,7 +181,7 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
     const messagesForPreview = React.useMemo(
       () =>
         message.kind === "text" && hasUrls(messageText)
-          ? [{ id: message.id, content: messageText, type: "text" as const }]
+          ? [{ id: message.id, text: messageText, kind: message.kind }]
           : [],
       [message.id, message.kind, messageText],
     );
@@ -343,7 +343,7 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
             imageAttachment.height,
           );
           return (
-            <AppImage
+            <MessageImage
               source={{ uri: imageAttachment.url }}
               style={[styles.standaloneImage, imgSize]}
               contentFit="cover"

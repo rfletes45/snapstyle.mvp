@@ -753,6 +753,16 @@ function PongUI({ myUid, sessionId, players: shellPlayers }: GameShellProps) {
     setConcedeConfirm(false);
   }, [concedeConfirm, send]);
 
+  // My paddle screen X: driven by RAF loop from localPaddleYRef / server state.
+  // Sync from server when not touching (fallback).
+  useEffect(() => {
+    if (localPaddleYRef.current === null) {
+      const myY = paddles[mySide ?? "left"]?.y ?? 0.5;
+      const myScreenX = flipView ? (1 - myY) * arenaW : myY * arenaW;
+      myPaddleAnimX.setValue(myScreenX);
+    }
+  }, [paddles, mySide, flipView, arenaW, myPaddleAnimX]);
+
   // ═════════════════════════════════════════════════════════════════════════
   // Render
   // ═════════════════════════════════════════════════════════════════════════
@@ -806,16 +816,6 @@ function PongUI({ myUid, sessionId, players: shellPlayers }: GameShellProps) {
 
   // ── Compute positions for vertical layout ────────────────────────────────
   const pWpx = paddleWidthPx(effectiveSettings?.paddleSizePreset, arenaW);
-
-  // My paddle screen X: driven by RAF loop from localPaddleYRef / server state.
-  // Sync from server when not touching (fallback).
-  useEffect(() => {
-    if (localPaddleYRef.current === null) {
-      const myY = paddles[mySide ?? "left"]?.y ?? 0.5;
-      const myScreenX = flipView ? (1 - myY) * arenaW : myY * arenaW;
-      myPaddleAnimX.setValue(myScreenX);
-    }
-  }, [paddles, mySide, flipView, arenaW, myPaddleAnimX]);
 
   // Bottom paddle = my paddle, top paddle = opponent
   const bottomPaddleAnimX = myPaddleAnimX;

@@ -44,7 +44,7 @@ Database:      Firestore: Calls/{callId}, CallSignaling/{callId}/Signals/{signal
 | --------------------- | ------- | --------------------------------------- |
 | react-native-webrtc   | 124.0.7 | WebRTC peer connection, media streams   |
 | react-native-callkeep | 4.3.16  | iOS CallKit / Android ConnectionService |
-| expo-av               | —       | Ringtone playback                       |
+| expo-audio            | —       | Ringtone playback                       |
 | firebase/firestore    | —       | Signaling, call documents               |
 | firebase/functions    | —       | Push notifications, TURN creds          |
 

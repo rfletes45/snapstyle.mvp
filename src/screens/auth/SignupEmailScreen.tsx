@@ -92,13 +92,13 @@ export default function SignupEmailScreen({ navigation }: any) {
             variant="headlineMedium"
             style={[styles.title, { color: theme.colors.onBackground }]}
           >
-            What's your email?
+            What&apos;s your email?
           </Text>
           <Text
             variant="bodyMedium"
             style={[styles.subtitle, { color: theme.colors.onSurfaceVariant }]}
           >
-            We'll use this to create your account
+            We&apos;ll use this to create your account
           </Text>
 
           <TextInput

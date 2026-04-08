@@ -133,7 +133,7 @@ export default function GamePlayDispatcherV4() {
         ]}
       >
         <Text style={[styles.errorText, { color: theme.colors.primary }]}>
-          No V4 screen available for "{resolvedGameId}"
+          {`No V4 screen available for "${resolvedGameId}"`}
         </Text>
         <TouchableOpacity
           style={[styles.backBtn, { backgroundColor: theme.colors.primary }]}

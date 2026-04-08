@@ -19,7 +19,7 @@ import {
   FadeOutLeft,
   FadeOutRight,
   FadeOutUp,
-  Layout,
+  LinearTransition,
   ReduceMotion,
   SlideInDown,
   SlideInUp,
@@ -221,10 +221,10 @@ export function staggeredZoomIn(
 // =============================================================================
 
 /** Spring layout animation for list items */
-export const layoutSpring = Layout.springify();
+export const layoutSpring = LinearTransition.springify();
 
 /** Quick layout animation for responsive updates */
-export const layoutQuick = Layout.duration(DURATIONS.fast);
+export const layoutQuick = LinearTransition.duration(DURATIONS.fast);
 
 // =============================================================================
 // Animation Helpers

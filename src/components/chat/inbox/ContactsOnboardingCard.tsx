@@ -84,7 +84,7 @@ export const ContactsOnboardingCard = memo(function ContactsOnboardingCard({
           variant="bodyMedium"
           style={[styles.prominentBody, { color: colors.onSurfaceVariant }]}
         >
-          See who's already here by checking your contacts.{"\n"}
+          See who&apos;s already here by checking your contacts.{"\n"}
           Your info stays private — never stored or shared.
         </Text>
 
@@ -175,7 +175,7 @@ export const ContactsOnboardingCard = memo(function ContactsOnboardingCard({
             style={{ color: colors.onSurfaceVariant }}
             numberOfLines={1}
           >
-            See who's already on SnapStyle
+            See who&apos;s already on SnapStyle
           </Text>
         </View>
 

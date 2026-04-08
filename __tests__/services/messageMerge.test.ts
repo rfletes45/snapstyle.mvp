@@ -81,8 +81,7 @@ describe("mergeMessagesWithOutbox", () => {
 
     expect(queued?.status).toBe("sending");
     expect(failed?.status).toBe("failed");
-    expect(failed?.errorMessage).toBe("network");
-    expect(queued?.isLocal).toBe(true);
+    expect(failed).not.toHaveProperty("errorMessage");
   });
 
   it("keeps combined output ordered newest-first", () => {

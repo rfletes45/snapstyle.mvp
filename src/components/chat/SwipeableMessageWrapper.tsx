@@ -19,8 +19,8 @@ import React, { useCallback, useRef } from "react";
 import { Platform, StyleSheet, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { IconButton, Text, useTheme } from "react-native-paper";
+import { scheduleOnRN } from "react-native-worklets";
 import Animated, {
-  runOnJS,
   useAnimatedStyle,
   useSharedValue,
   withSpring,
@@ -133,7 +133,7 @@ export function SwipeableMessageWrapper<T>({
       // Check if we crossed threshold
       if (newValue >= SWIPE_THRESHOLD && !hasTriggeredReply.current) {
         hasTriggeredReply.current = true;
-        runOnJS(triggerReply)();
+        scheduleOnRN(triggerReply);
       }
     })
     .onEnd(() => {

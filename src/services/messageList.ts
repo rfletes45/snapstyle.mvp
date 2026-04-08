@@ -4,11 +4,8 @@
  * Real-time Firestore subscription for message lists.
  * Orders by serverReceivedAt for authoritative ordering.
  *
- * @deprecated This module is being replaced by SQLite-first local storage.
- * For new code, use:
- * - `@/services/database/messageRepository` for message storage
- * - `@/services/sync/syncEngine` for Firestore sync
- * - `@/hooks/useLocalMessages` for React components
+ * Internal Firestore-backed compatibility service used by the web messaging
+ * runtime and related tests/docs.
  *
  * Features:
  * - Real-time subscription with serverReceivedAt ordering
@@ -458,7 +455,7 @@ export async function countUnreadSince(
     });
 
     return count;
-  } catch (error) {
+  } catch {
     // Fallback: if count aggregation fails, estimate from query
     log.warn("Count aggregation failed, using fallback", {
       operation: "countUnread",

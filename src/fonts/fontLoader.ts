@@ -13,6 +13,7 @@
  */
 
 import * as Font from "expo-font";
+import type { FontSource } from "expo-font";
 import { Platform } from "react-native";
 
 // =============================================================================
@@ -28,8 +29,7 @@ import { Platform } from "react-native";
  * which causes OTS parsing failure in Chromium browsers.  We skip it on
  * web to avoid noisy console errors; native platforms handle it fine.
  */
-/* eslint-disable @typescript-eslint/no-require-imports */
-const fontAssetsBase: Record<string, ReturnType<typeof require>> = {
+const fontAssetsBase: Record<string, FontSource> = {
   pf_agency: require("../../assets/fonts/AgencyFB-Regular.ttf"),
   pf_bradleyhand: require("../../assets/fonts/BradleyHand-Regular.ttf"),
   pf_bauhaus: require("../../assets/fonts/Bauhaus93-Regular.ttf"),
@@ -40,7 +40,6 @@ const fontAssetsBase: Record<string, ReturnType<typeof require>> = {
 if (Platform.OS !== "web") {
   fontAssetsBase.pf_bellmt = require("../../assets/fonts/BellMT-Regular.ttf");
 }
-/* eslint-enable @typescript-eslint/no-require-imports */
 
 const fontAssets = fontAssetsBase;
 

@@ -28,7 +28,6 @@ export interface NotificationSessionState {
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldShowAlert: false,
     shouldPlaySound: false,
     shouldSetBadge: true,
     shouldShowBanner: false,
@@ -328,18 +327,18 @@ export async function scheduleLocalNotification(
 
 export function addNotificationReceivedListener(
   callback: (notification: Notifications.Notification) => void,
-): Notifications.Subscription {
+): Notifications.EventSubscription {
   return Notifications.addNotificationReceivedListener(callback);
 }
 
 export function addNotificationResponseListener(
   callback: (response: Notifications.NotificationResponse) => void,
-): Notifications.Subscription {
+): Notifications.EventSubscription {
   return Notifications.addNotificationResponseReceivedListener(callback);
 }
 
-export async function getLastNotificationResponse(): Promise<Notifications.NotificationResponse | null> {
-  return Notifications.getLastNotificationResponseAsync();
+export function getLastNotificationResponse(): Notifications.NotificationResponse | null {
+  return Notifications.getLastNotificationResponse();
 }
 
 export async function cancelAllNotifications(): Promise<void> {

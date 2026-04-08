@@ -168,8 +168,8 @@ export interface FeedLayoutTokens {
 export const FEED_LAYOUT: FeedLayoutTokens = {
   screenEdgeInset: 0,
   gutterWidth: 40,
-  gutterGap: 10,
-  contentIndent: 50, // 0 + 40 + 10
+  gutterGap: 14,
+  contentIndent: 54, // 0 + 40 + 14
   avatarSize: 40,
   groupGap: 14,
   withinGroupGap: 6,
@@ -179,10 +179,10 @@ export const FEED_LAYOUT: FeedLayoutTokens = {
   imageMaxWidth: 260,
   imageMaxHeight: 300,
   imageMinWidth: 140,
-  authorNameFontSize: 13.5,
-  timestampFontSize: 11.5,
-  messageFontSize: 15,
-  messageLineHeight: 21,
+  authorNameFontSize: 16,
+  timestampFontSize: 12.5,
+  messageFontSize: 16,
+  messageLineHeight: 22.5,
   reactionRowGap: 2,
   replyPreviewGap: 4,
   selfTintOpacity: 0,

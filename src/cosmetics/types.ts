@@ -175,7 +175,7 @@ export interface CosmeticBundle {
   /** Visual rarity tier for the bundle card. */
   rarity: CosmeticRarity;
   /** Optional badge label. */
-  badge?: "BEST VALUE" | "POPULAR" | "LIMITED";
+  badge?: "BEST VALUE" | "POPULAR" | "LIMITED" | "NEW";
   /** Sort order in the bundles section. */
   sortOrder?: number;
 }

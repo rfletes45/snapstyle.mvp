@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Premium Shop Screen
  *
  * Main screen for browsing and purchasing items with real money (IAP).
@@ -157,13 +157,12 @@ function mapPremiumBundleToCosmeticBundle(
 
 export default function PremiumShopScreen() {
   const navigation = useNavigation<NavigationProp>();
-  const { colors, isDark } = useAppTheme();
+  const { colors } = useAppTheme();
   const insets = useSafeAreaInsets();
   const { currentFirebaseUser } = useAuth();
   const user = currentFirebaseUser;
 
   const {
-    catalog,
     tokenPacks,
     bundles,
     exclusives,
@@ -225,7 +224,7 @@ export default function PremiumShopScreen() {
       }
       setShowPurchaseModal(false);
       setSelectedItem(null);
-    } catch (_err) {
+    } catch {
       // Error handled by hook
     }
   }, [selectedItem, purchaseTokenPack, purchaseBundle, purchaseExclusive]);
@@ -503,7 +502,7 @@ export default function PremiumShopScreen() {
           Coming Soon
         </Text>
         <Text style={[styles.comingSoonText, { color: colors.textSecondary }]}>
-          Gift tokens and exclusive items to your friends. We're putting the
+          Gift tokens and exclusive items to your friends. We&apos;re putting the
           finishing touches on this feature!
         </Text>
       </View>

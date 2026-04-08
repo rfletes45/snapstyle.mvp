@@ -1,14 +1,9 @@
 /**
  * Unified Message Subscription Service
  *
- * @deprecated This module is being replaced by SQLite-first local storage.
- * For new code, use:
- * - `@/hooks/useLocalMessages` for React components
- * - `@/services/sync/syncEngine` for real-time Firestore sync
- *
  * Provides a unified API for subscribing to messages across both
- * DM and Group conversations. This service wraps the existing
- * messageList.ts functionality and adds legacy GroupMessage conversion.
+ * DM and Group conversations. This is the supported Firestore-backed
+ * compatibility entry point used by the web messaging runtime.
  *
  * Features:
  * - Real-time message subscriptions

@@ -267,8 +267,6 @@ export const GifPicker = forwardRef<DraggableBottomSheetHandle, GifPickerProps>(
     const [browseState, setBrowseState] = useState<
       "landing" | "category" | "search"
     >("landing");
-    const [activeCategory, setActiveCategory] = useState<string | null>(null);
-
     const debouncedQuery = useDebouncedValue(searchQuery, DEBOUNCE_MS);
     const abortRef = useRef<AbortController | null>(null);
     const flatListRef = useRef<FlatList>(null);
@@ -346,7 +344,6 @@ export const GifPicker = forwardRef<DraggableBottomSheetHandle, GifPickerProps>(
 
     // ── Category tile tap → navigate into that category ───────────────────────
     const handleCategorySelect = useCallback((categoryName: string) => {
-      setActiveCategory(categoryName);
       setSearchQuery(categoryName);
       setBrowseState("category");
     }, []);
@@ -356,11 +353,9 @@ export const GifPicker = forwardRef<DraggableBottomSheetHandle, GifPickerProps>(
       setSearchQuery(text);
       if (text.trim()) {
         setBrowseState("search");
-        setActiveCategory(null);
       } else {
         // Cleared search → back to landing
         setBrowseState("landing");
-        setActiveCategory(null);
       }
     }, []);
 
@@ -495,7 +490,6 @@ export const GifPicker = forwardRef<DraggableBottomSheetHandle, GifPickerProps>(
       setSearchQuery("");
       setSuggestions([]);
       setError(null);
-      setActiveCategory(null);
       setBrowseState("landing");
       onClose();
     }, [onClose]);
@@ -603,7 +597,6 @@ export const GifPicker = forwardRef<DraggableBottomSheetHandle, GifPickerProps>(
             <TouchableOpacity
               onPress={() => {
                 setSearchQuery("");
-                setActiveCategory(null);
                 setBrowseState("landing");
               }}
               accessibilityLabel="Clear search"
@@ -689,7 +682,7 @@ export const GifPicker = forwardRef<DraggableBottomSheetHandle, GifPickerProps>(
           <View style={styles.stateContainer}>
             <Text style={{ fontSize: 40 }}>🤷</Text>
             <Text style={[styles.stateText, { color: onSurfaceVariantColor }]}>
-              No GIFs found for "{debouncedQuery}"
+              {`No GIFs found for "${debouncedQuery}"`}
             </Text>
           </View>
         ) : (

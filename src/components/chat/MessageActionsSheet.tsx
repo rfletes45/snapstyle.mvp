@@ -13,6 +13,7 @@
  */
 
 import { BorderRadius, Spacing } from "@/constants/theme";
+import * as Clipboard from "expo-clipboard";
 import {
   canDeleteForAll,
   canDeleteForMe,
@@ -25,7 +26,6 @@ import { MessageV2, ReplyToMetadata } from "@/types/messaging";
 import React, { useCallback, useState } from "react";
 import {
   Alert,
-  Clipboard,
   Platform,
   StyleSheet,
   TextInput,
@@ -175,9 +175,9 @@ export function MessageActionsSheet({
     if (!message?.text) return;
 
     if (Platform.OS === "web") {
-      navigator.clipboard.writeText(message.text);
+      void navigator.clipboard.writeText(message.text);
     } else {
-      Clipboard.setString(message.text);
+      void Clipboard.setStringAsync(message.text);
     }
 
     onClose();

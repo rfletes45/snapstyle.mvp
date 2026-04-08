@@ -20,7 +20,11 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import Animated, { FadeIn, FadeInDown, Layout } from "react-native-reanimated";
+import Animated, {
+  FadeIn,
+  FadeInDown,
+  LinearTransition,
+} from "react-native-reanimated";
 import type { BattleshipTokens } from "./battleshipTheme";
 import { BS } from "./battleshipTheme";
 
@@ -100,7 +104,10 @@ export function EventRibbon({
 
   return (
     <>
-      <Animated.View entering={FadeIn.duration(200)} layout={Layout}>
+      <Animated.View
+        entering={FadeIn.duration(200)}
+        layout={LinearTransition}
+      >
         <TouchableOpacity
           style={[styles.ribbon, { backgroundColor: ribbonBg }]}
           onPress={() => log && log.length > 0 && setDrawerOpen(true)}

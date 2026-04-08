@@ -15,11 +15,12 @@ Last verified: 2026-03-30
 
 ### Storage and camera
 
-- `USE_LOCAL_STORAGE = !IS_WEB`
+- `USE_LOCAL_STORAGE = !IS_WEB || EXPERIMENTAL_WEB_SQLITE`
 - `USE_VISION_CAMERA = true`
 
 Important nuance:
 
+- `EXPERIMENTAL_WEB_SQLITE` is opt-in only and expects Expo's official web SQLite setup: wasm-enabled Metro plus SharedArrayBuffer-capable hosting with COOP/COEP headers
 - `USE_VISION_CAMERA` being `true` does not mean Expo Go supports it
 - the camera surface still performs runtime fallback behavior when native modules are unavailable
 

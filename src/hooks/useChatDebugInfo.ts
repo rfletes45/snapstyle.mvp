@@ -8,7 +8,7 @@
  */
 
 import { CHAT_FEATURES } from "@/constants/featureFlags";
-import { getOutboxForConversation } from "@/services/outbox";
+import { getQueueItemsForConversation } from "@/services/messaging";
 import { EffectiveChatSettings, OutboxItem } from "@/types/messaging";
 import { useEffect, useRef, useState } from "react";
 
@@ -94,7 +94,7 @@ export function useChatDebugInfo(params: {
     // Poll outbox every 2 seconds (dev-only, low cost)
     async function pollOutbox() {
       try {
-        const items = await getOutboxForConversation(conversationId);
+        const items = await getQueueItemsForConversation(conversationId);
         setOutboxItems(items);
       } catch {
         // ignore

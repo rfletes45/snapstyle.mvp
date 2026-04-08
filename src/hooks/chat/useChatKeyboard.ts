@@ -11,7 +11,8 @@ import {
   useReanimatedKeyboardAnimationCompat,
 } from "@/utils/optionalKeyboardController";
 import { useCallback, useMemo, useState } from "react";
-import { runOnJS, type SharedValue } from "react-native-reanimated";
+import { scheduleOnRN } from "react-native-worklets";
+import { type SharedValue } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const log = createLogger("useChatKeyboard");
@@ -72,7 +73,7 @@ export function useChatKeyboard(
     onStart: (event: { height: number }) => {
       "worklet";
       if (debug) {
-        runOnJS(logKeyboardStart)(event.height);
+        scheduleOnRN(logKeyboardStart, event.height);
       }
     },
     onMove: () => {
@@ -81,7 +82,7 @@ export function useChatKeyboard(
     onEnd: (event: { height: number }) => {
       "worklet";
       const open = event.height > 0;
-      runOnJS(updateKeyboardState)(event.height, open);
+      scheduleOnRN(updateKeyboardState, event.height, open);
     },
   });
 

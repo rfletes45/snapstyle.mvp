@@ -3,7 +3,7 @@
  *
  * ⚠️  SUPERSEDED by Skia-based rendering in SkiaFilteredImage.tsx
  *
- * This module used expo-image-manipulator for filter application, but
+ * This module originally used Expo's image manipulator for filter application, but
  * ImageManipulator only supports resize/crop/rotate/flip — it CANNOT do
  * colour grading (brightness, contrast, saturation, hue, blur).
  *
@@ -17,7 +17,7 @@
  */
 
 import { FilterConfig } from "@/types/camera";
-import * as ImageManipulator from "expo-image-manipulator";
+import { manipulateImage } from "@/utils/imageManipulation";
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("services/camera/nativeImageFiltering");
@@ -30,7 +30,7 @@ interface ColorMatrix {
 
 /**
  * Apply filter to image using native processing
- * Uses expo-image-manipulator for performance
+ * Real color grading now lives in the Skia pipeline.
  */
 export async function applyFilterToImage(
   imageUri: string,
@@ -45,13 +45,10 @@ export async function applyFilterToImage(
     // Clamp intensity
     const clampedIntensity = Math.max(0, Math.min(1, intensity));
 
-    // Create manipulator actions
-    const actions: ImageManipulator.Action[] = [];
-
     // Apply brightness (in range -0.5 to 0.5)
     if (filter.brightness !== 0) {
       const brightnessDelta = filter.brightness * clampedIntensity * 0.5; // -0.5 to 0.5
-      // expo-image-manipulator doesn't support brightness natively
+      // The basic image manipulator doesn't support brightness natively.
       // Would need Skia or Canvas for real implementation
       logger.info(
         `[Native Image Filtering] Brightness adjustment: ${brightnessDelta} (placeholder)`,
@@ -70,28 +67,14 @@ export async function applyFilterToImage(
     if (filter.blur && filter.blur > 0) {
       const blurAmount = Math.round(filter.blur * clampedIntensity * 10);
       if (blurAmount > 0) {
-        // expo-image-manipulator doesn't support blur natively
+        // The basic image manipulator doesn't support blur natively.
         logger.info(
           `[Native Image Filtering] Blur: ${blurAmount} (placeholder)`,
         );
       }
     }
 
-    // If no color actions, just return original
-    if (actions.length === 0) {
-      return imageUri;
-    }
-
-    // Apply manipulations using the native library
-    // Note: expo-image-manipulator has limited filter support
-    // For full filter implementation, we need to use native code or canvas
-    const result = await ImageManipulator.manipulateAsync(imageUri, actions, {
-      compress: 1,
-      format: ImageManipulator.SaveFormat.JPEG,
-    });
-
-    logger.info(`[Native Image Filtering] Filter applied successfully`);
-    return result.uri;
+    return imageUri;
   } catch (error) {
     logger.error("[Native Image Filtering] Failed to apply filter:", error);
     throw error;
@@ -104,7 +87,7 @@ export async function applyFilterToImage(
  */
 export async function applyMultipleFilters(
   imageUri: string,
-  filters: Array<{ filter: FilterConfig; intensity: number }>,
+  filters: { filter: FilterConfig; intensity: number }[],
 ): Promise<string> {
   try {
     logger.info(
@@ -283,16 +266,8 @@ export async function applySepiaEffect(
       `[Native Image Filtering] Applying sepia effect at intensity ${intensity}`,
     );
 
-    const clampedIntensity = Math.max(0, Math.min(1, intensity));
-
-    // Sepia transformation matrix
-    const r = 0.393 + 0.607 * (1 - clampedIntensity);
-    const g = 0.769 - 0.769 * clampedIntensity;
-    const b = 0.189 - 0.189 * clampedIntensity;
-
-    const result = await ImageManipulator.manipulateAsync(imageUri, [], {
+    const result = await manipulateImage(imageUri, undefined, {
       compress: 1,
-      format: ImageManipulator.SaveFormat.JPEG,
     });
 
     return result.uri;
@@ -342,11 +317,10 @@ export async function applyBlurEffect(
       `[Native Image Filtering] Applying blur effect with radius ${radius}`,
     );
 
-    // Blur is limited in expo-image-manipulator
+    // Blur is limited in the basic image manipulator API.
     // Use native code for better results
-    const result = await ImageManipulator.manipulateAsync(imageUri, [], {
+    const result = await manipulateImage(imageUri, undefined, {
       compress: 1,
-      format: ImageManipulator.SaveFormat.JPEG,
     });
 
     return result.uri;
@@ -372,12 +346,13 @@ export async function resizeImage(
       `[Native Image Filtering] Resizing image to ${maxWidth}x${maxHeight}`,
     );
 
-    const result = await ImageManipulator.manipulateAsync(
+    const result = await manipulateImage(
       imageUri,
-      [{ resize: { width: maxWidth, height: maxHeight } }],
+      (context) => {
+        context.resize({ width: maxWidth, height: maxHeight });
+      },
       {
         compress: 0.9,
-        format: ImageManipulator.SaveFormat.JPEG,
       },
     );
 
@@ -403,9 +378,8 @@ export async function compressImage(
 
     const clampedQuality = Math.max(0.1, Math.min(1, quality));
 
-    const result = await ImageManipulator.manipulateAsync(imageUri, [], {
+    const result = await manipulateImage(imageUri, undefined, {
       compress: clampedQuality,
-      format: ImageManipulator.SaveFormat.JPEG,
     });
 
     logger.info(`[Native Image Filtering] Image compressed successfully`);
@@ -426,12 +400,13 @@ export async function rotateImage(
   try {
     logger.info(`[Native Image Filtering] Rotating image by ${degrees}°`);
 
-    const result = await ImageManipulator.manipulateAsync(
+    const result = await manipulateImage(
       imageUri,
-      [{ rotate: degrees }],
+      (context) => {
+        context.rotate(degrees);
+      },
       {
         compress: 1,
-        format: ImageManipulator.SaveFormat.JPEG,
       },
     );
 
@@ -453,18 +428,15 @@ export async function flipImage(
   try {
     logger.info(`[Native Image Filtering] Flipping image ${direction}`);
 
-    const actions: ImageManipulator.Action[] = [];
-
-    if (direction === "horizontal") {
-      actions.push({ flip: ImageManipulator.FlipType.Horizontal });
-    } else {
-      actions.push({ flip: ImageManipulator.FlipType.Vertical });
-    }
-
-    const result = await ImageManipulator.manipulateAsync(imageUri, actions, {
-      compress: 1,
-      format: ImageManipulator.SaveFormat.JPEG,
-    });
+    const result = await manipulateImage(
+      imageUri,
+      (context) => {
+        context.flip(direction);
+      },
+      {
+        compress: 1,
+      },
+    );
 
     logger.info(`[Native Image Filtering] Image flipped successfully`);
     return result.uri;
@@ -489,21 +461,18 @@ export async function cropImage(
       `[Native Image Filtering] Cropping image to ${width}x${height} at (${originX}, ${originY})`,
     );
 
-    const result = await ImageManipulator.manipulateAsync(
+    const result = await manipulateImage(
       imageUri,
-      [
-        {
-          crop: {
-            originX,
-            originY,
-            width,
-            height,
-          },
-        },
-      ],
+      (context) => {
+        context.crop({
+          originX,
+          originY,
+          width,
+          height,
+        });
+      },
       {
         compress: 1,
-        format: ImageManipulator.SaveFormat.JPEG,
       },
     );
 
@@ -544,9 +513,8 @@ export async function applyInstantFilmLook(imageUri: string): Promise<string> {
   try {
     logger.info(`[Native Image Filtering] Applying instant film look`);
 
-    const result = await ImageManipulator.manipulateAsync(imageUri, [], {
+    const result = await manipulateImage(imageUri, undefined, {
       compress: 1,
-      format: ImageManipulator.SaveFormat.JPEG,
     });
 
     return result.uri;
@@ -566,9 +534,8 @@ export async function applyBlackAndWhite(imageUri: string): Promise<string> {
   try {
     logger.info(`[Native Image Filtering] Applying black and white conversion`);
 
-    const result = await ImageManipulator.manipulateAsync(imageUri, [], {
+    const result = await manipulateImage(imageUri, undefined, {
       compress: 1,
-      format: ImageManipulator.SaveFormat.JPEG,
     });
 
     return result.uri;

@@ -15,11 +15,11 @@
 import React, { memo, useCallback, useEffect, useState } from "react";
 import { StyleSheet, useWindowDimensions, View } from "react-native";
 import { Text, useTheme } from "react-native-paper";
+import { scheduleOnRN } from "react-native-worklets";
 import Animated, {
   Easing,
   Extrapolation,
   interpolate,
-  runOnJS,
   SharedValue,
   useAnimatedStyle,
   useDerivedValue,
@@ -248,7 +248,7 @@ export const LevelUpAnimation = memo<LevelUpAnimationProps>(
     // Update displayed level number during animation
     useDerivedValue(() => {
       const currentLevel = Math.round(numberCountUp.value);
-      runOnJS(setDisplayedLevel)(currentLevel);
+      scheduleOnRN(setDisplayedLevel, currentLevel);
     });
 
     // Start animation when visible changes
@@ -344,7 +344,7 @@ export const LevelUpAnimation = memo<LevelUpAnimationProps>(
             { duration: 300 },
             (finished) => {
               if (finished) {
-                runOnJS(handleComplete)();
+                scheduleOnRN(handleComplete);
               }
             },
           );

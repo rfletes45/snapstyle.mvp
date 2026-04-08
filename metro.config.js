@@ -21,6 +21,12 @@ config.resolver.blockList = [
 // This ensures native-only modules get web stubs
 config.resolver.sourceExts = [...(config.resolver.sourceExts || [])];
 
+// Expo SQLite's experimental web runtime loads a wasm worker bundle.
+// Adding `wasm` here keeps Metro aligned with Expo's current web setup.
+config.resolver.assetExts = [
+  ...new Set([...(config.resolver.assetExts || []), "wasm"]),
+];
+
 // Add platform-specific extensions for web
 // Metro will automatically prefer .web.ts over .ts on web platform
 config.resolver.resolverMainFields = ["react-native", "browser", "main"];

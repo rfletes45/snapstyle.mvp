@@ -28,6 +28,7 @@ import { Platform } from "react-native";
 
 import {
   ShopErrorCode,
+  type BundleItem,
   type GiftableItem,
   type GiftPurchaseResult,
   type IAPPlatform,
@@ -208,7 +209,7 @@ function mapToTokenPack(doc: PremiumProductDoc): TokenPack {
 /**
  * Resolve a cosmetic type to a bundle-friendly slot label.
  */
-function cosmeticTypeToSlot(type: CosmeticType): string {
+function cosmeticTypeToSlot(type: CosmeticType): BundleItem["slot"] {
   switch (type) {
     case "background":
       return "background";

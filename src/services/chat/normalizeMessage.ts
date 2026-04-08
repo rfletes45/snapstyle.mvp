@@ -232,13 +232,12 @@ export function normalizeMessageFromFirestoreDoc(
     clientId: (data.clientId as string | undefined) || "",
     idempotencyKey: (data.idempotencyKey as string | undefined) || id,
     senderStyle: data.senderStyle as MessageV2["senderStyle"],
-    content: data.content as string | undefined,
-    type: data.type as MessageV2["type"],
-    read: data.read as MessageV2["read"],
     status: (data.status as MessageV2["status"] | undefined) || "sent",
-    isLocal: false,
-    clientMessageId: data.clientMessageId as string | undefined,
   };
+}
+
+function isOptimisticMessage(message: MessageV2): boolean {
+  return message.status === "sending" || message.status === "failed";
 }
 
 function choosePreferredMessage(a: MessageV2, b: MessageV2): MessageV2 {
@@ -246,17 +245,11 @@ function choosePreferredMessage(a: MessageV2, b: MessageV2): MessageV2 {
   const bTime = getCanonicalMessageTimestamp(b);
   if (aTime !== bTime) return aTime > bTime ? a : b;
 
-  // Prefer non-local/server-confirmed version when timestamps tie.
-  if (
-    (a.isLocal || a.status === "sending") &&
-    !(b.isLocal || b.status === "sending")
-  ) {
+  // Prefer the confirmed server version when it ties with an optimistic row.
+  if (isOptimisticMessage(a) && !isOptimisticMessage(b)) {
     return b;
   }
-  if (
-    (b.isLocal || b.status === "sending") &&
-    !(a.isLocal || a.status === "sending")
-  ) {
+  if (isOptimisticMessage(b) && !isOptimisticMessage(a)) {
     return a;
   }
 

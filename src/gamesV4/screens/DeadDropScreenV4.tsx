@@ -457,7 +457,7 @@ function ClueInputForm({
       </View>
       {minCount < 1 && (
         <Text style={[styles.clueInputHint, { color: gc.mutedText }]}>
-          Use 0 for "zero clue"
+          Use 0 for &quot;zero clue&quot;
           {settings.advancedClues === "zero_unlimited"
             ? " or -1 for unlimited"
             : ""}

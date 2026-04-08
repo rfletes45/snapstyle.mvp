@@ -155,33 +155,8 @@ export interface MessageV2 {
     v: 1;
   };
 
-  // =========================================================================
-  // Legacy Compatibility Fields (deprecated)
-  // =========================================================================
-
-  /** @deprecated Use `text` instead */
-  content?: string;
-
-  /** @deprecated Use `kind` instead */
-  type?: "text" | "image";
-
-  /** @deprecated Use member watermarks instead */
-  read?: boolean;
-
-  /** @deprecated Use `serverReceivedAt` for ordering */
-  expiresAt?: number;
-
   /** Delivery status used by local/outbox UI */
   status?: MessageStatusV2;
-
-  /** @deprecated Handled by outbox */
-  isLocal?: boolean;
-
-  /** @deprecated Renamed to `id` */
-  clientMessageId?: string;
-
-  /** @deprecated Handled by outbox */
-  errorMessage?: string;
 }
 
 /**

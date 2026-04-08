@@ -1,9 +1,4 @@
-jest.mock("firebase/functions", () => ({
-  getFunctions: jest.fn(),
-  httpsCallable: jest.fn(),
-}));
-
-import { mergeMessagesWithOutbox } from "@/services/chatV2";
+import { mergeMessagesWithOutbox } from "@/services/messaging/messageMerge";
 import {
   clearOutbox,
   enqueueMessage,
@@ -12,6 +7,11 @@ import {
   processOutbox,
 } from "@/services/outbox";
 import type { MessageV2 } from "@/types/messaging";
+
+jest.mock("firebase/functions", () => ({
+  getFunctions: jest.fn(),
+  httpsCallable: jest.fn(),
+}));
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 

@@ -24,6 +24,7 @@ import type {
 
 export const RARITY_COLORS: Record<ExtendedCosmeticRarity, string> = {
   common: "#9E9E9E",
+  uncommon: "#4CAF50",
   rare: "#2196F3",
   epic: "#9C27B0",
   legendary: "#FF9800",

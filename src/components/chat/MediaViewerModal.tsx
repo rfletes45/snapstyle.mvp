@@ -10,8 +10,8 @@
  * - Index indicator
  * - Close button
  *
- * Note: Video support requires expo-av to be installed.
- * Currently images-only for H10 scope.
+ * Video attachments currently show a placeholder until a dedicated player is wired in.
+ * Images are fully supported for H10 scope.
  *
  * @module components/chat/MediaViewerModal
  */
@@ -204,8 +204,7 @@ const MediaItem = memo(function MediaItem({
   attachment,
   isActive,
 }: MediaItemProps) {
-  // Note: Video support requires expo-av to be installed.
-  // For now, show a placeholder for videos.
+  // Video playback is not enabled in this build yet.
   if (attachment.kind === "video") {
     return (
       <View style={styles.mediaContainer}>
@@ -213,7 +212,7 @@ const MediaItem = memo(function MediaItem({
           <MaterialCommunityIcons name="video" size={64} color="#666" />
           <Text style={styles.videoPlaceholderText}>Video playback</Text>
           <Text style={styles.videoPlaceholderSubtext}>
-            Install expo-av for video support
+            Not enabled in this build yet
           </Text>
         </View>
       </View>

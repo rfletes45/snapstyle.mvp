@@ -205,7 +205,7 @@ firebase functions:config:set stream.api_key="YOUR_KEY" stream.api_secret="YOUR_
 
 ### Known Limitation: No Runtime Permission Requests
 
-The implementation does **not** explicitly request microphone/camera permissions before calls. The Stream SDK may handle this on some platforms, but explicit `expo-av` or `react-native-permissions` requests should be added for production reliability.
+The implementation does **not** explicitly request microphone/camera permissions before calls. The Stream SDK may handle this on some platforms, but explicit platform permission requests or `react-native-permissions` should be added for production reliability.
 
 ---
 

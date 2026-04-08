@@ -22,7 +22,11 @@ import {
   Text,
   useTheme,
 } from "react-native-paper";
-import Animated, { FadeIn, FadeInDown, Layout } from "react-native-reanimated";
+import Animated, {
+  FadeIn,
+  FadeInDown,
+  LinearTransition,
+} from "react-native-reanimated";
 
 import { BorderRadius, Spacing } from "@/constants/theme";
 import { useFullProfileData } from "@/hooks/useFullProfileData";
@@ -351,7 +355,7 @@ const SettingRow = React.memo(function SettingRow({
   return (
     <Animated.View
       entering={FadeInDown.delay(index * 50).springify()}
-      layout={Layout.springify()}
+      layout={LinearTransition.springify()}
     >
       <Surface
         style={[

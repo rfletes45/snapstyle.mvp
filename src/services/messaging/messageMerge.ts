@@ -24,8 +24,6 @@ function createOptimisticMessage(
     clientId: "optimistic",
     idempotencyKey: `optimistic:${outboxItem.messageId}`,
     status: "sending",
-    isLocal: true,
-    clientMessageId: outboxItem.messageId,
   };
 }
 
@@ -47,7 +45,6 @@ export function mergeMessagesWithOutbox(
     .map((item) => {
       const msg = createOptimisticMessage(item, currentUid, currentUserName);
       msg.status = item.state === "failed" ? "failed" : "sending";
-      msg.errorMessage = item.lastError;
       return msg;
     });
 

@@ -1,9 +1,8 @@
 /**
  * useUnifiedMessages Hook (ARCH-D01)
  *
- * @deprecated Use `useLocalMessages` for SQLite-first storage.
- * This hook will continue to work but uses Firestore-first architecture.
- * For better offline support and performance, migrate to useLocalMessages.
+ * Firestore-backed compatibility hook used on web and rollback scenarios.
+ * Native screens should prefer the SQLite-first path through `useChat`.
  *
  * Unified hook for message subscription that works for both DM and Group
  * conversations. Handles:
@@ -23,7 +22,7 @@
  *   scope: "group",
  * });
  *
- * // OLD (Firestore-first):
+ * // Compatibility (Firestore-first):
  * const { messages, loading, loadOlder } = useUnifiedMessages({
  *   scope: "group",
  *   conversationId: groupId,
@@ -37,9 +36,7 @@ import {
   updateDeliveryWatermark as updateDMDeliveryWatermark,
   updateReadWatermark as updateDMReadWatermark,
 } from "@/services/chatMembers";
-import {
-  mergeMessagesWithOutbox,
-} from "@/services/chatV2";
+import { mergeMessagesWithOutbox } from "@/services/messaging/messageMerge";
 import { getPendingForConversation } from "@/services/messaging/send";
 import {
   updateGroupDeliveryWatermark,
@@ -267,7 +264,9 @@ export function useUnifiedMessages(
     setLoading(true);
     setError(null);
 
-    subscriptionManagerRef.current.replace({
+    const subscriptionManager = subscriptionManagerRef.current;
+
+    subscriptionManager.replace({
       scope,
       conversationId,
       initialLimit,
@@ -336,7 +335,7 @@ export function useUnifiedMessages(
     loadOutboxItems();
 
     return () => {
-      subscriptionManagerRef.current.cleanup();
+      subscriptionManager.cleanup();
     };
     // Note: loadOutboxItems is stable via useCallback with [conversationId] deps
     // eslint-disable-next-line react-hooks/exhaustive-deps

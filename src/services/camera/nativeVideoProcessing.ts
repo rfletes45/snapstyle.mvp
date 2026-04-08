@@ -5,7 +5,7 @@
  *
  * IMPORTANT: For full production support, integrate:
  * - react-native-ffmpeg (native video encoding)
- * - expo-av (video playback and metadata)
+ * - a dedicated video playback / metadata stack
  */
 
 import * as FileSystem from "@/utils/fileSystem";
@@ -102,7 +102,7 @@ function getResolutionSpec(resolution: string): {
 
 /**
  * Compress video to target resolution
- * Uses expo-av metadata with FFmpeg instructions for native implementation
+ * Uses placeholder metadata with FFmpeg instructions for native implementation
  */
 export async function compressVideo(
   sourceUri: string,
@@ -393,12 +393,8 @@ export async function getVideoMetadata(
     /**
      * PRODUCTION IMPLEMENTATION:
      *
-     * Using expo-av or react-native-ffmpeg:
+     * Using a dedicated metadata extractor or FFmpeg:
      *
-     * import { Video } from 'expo-av';
-     * const { durationMillis, width, height } = await Video.getVideoInfo(videoUri);
-     *
-     * Or with FFmpeg:
      * const output = await RNFFmpeg.executeWithArguments(['-i', videoUri]);
      * Parse output to extract metadata
      *
@@ -487,7 +483,7 @@ export async function validateVideo(
 
     /**
      * PRODUCTION IMPLEMENTATION:
-     * Would validate duration using FFmpeg or expo-av
+     * Would validate duration using FFmpeg or a native metadata extractor
      * For now, assume duration is valid
      */
 

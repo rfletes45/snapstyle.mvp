@@ -675,6 +675,7 @@ export interface TaskWithProgress extends Task {
  */
 export type ShopItemRarity =
   | "common"
+  | "uncommon"
   | "rare"
   | "epic"
   | "legendary"
@@ -705,6 +706,7 @@ export type ShopItemSlot =
   | "hat"
   | "glasses"
   | "background"
+  | "decoration"
   | "clothing_top"
   | "clothing_bottom"
   | "accessory_neck"
@@ -713,7 +715,13 @@ export type ShopItemSlot =
   | "profile_frame"
   | "profile_banner"
   | "profile_theme"
+  | "theme"
+  | "badge"
   | "chat_bubble"
+  | "chat_font"
+  | "chat_font_color"
+  | "chat_theme"
+  | "item"
   | "name_effect";
 
 /**

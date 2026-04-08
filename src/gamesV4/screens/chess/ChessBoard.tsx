@@ -43,8 +43,8 @@ import React, {
 } from "react";
 import { Animated, Easing, StyleSheet, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import { scheduleOnRN } from "react-native-worklets";
 import ReAnimated, {
-  runOnJS,
   useAnimatedStyle,
   useSharedValue,
 } from "react-native-reanimated";
@@ -193,7 +193,7 @@ export function ChessBoard({
           dragX.value = e.x;
           dragY.value = e.y;
           dragActive.value = true;
-          runOnJS(handleDragStart)(vr, vc, e.x, e.y);
+          scheduleOnRN(handleDragStart, vr, vc, e.x, e.y);
         })
         .onUpdate((e) => {
           "worklet";
@@ -205,12 +205,12 @@ export function ChessBoard({
           const toVC = Math.min(7, Math.max(0, Math.floor(e.x / SQUARE_SIZE)));
           const toVR = Math.min(7, Math.max(0, Math.floor(e.y / SQUARE_SIZE)));
           dragActive.value = false;
-          runOnJS(handleDragEnd)(toVR, toVC);
+          scheduleOnRN(handleDragEnd, toVR, toVC);
         })
         .onFinalize(() => {
           "worklet";
           dragActive.value = false;
-          runOnJS(handleDragCancel)();
+          scheduleOnRN(handleDragCancel);
         }),
     [
       handleDragStart,

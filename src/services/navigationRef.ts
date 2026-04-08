@@ -32,9 +32,7 @@ export function isNavigationReady(): boolean {
   return navigationRef.isReady();
 }
 
-export function getCurrentRouteNameSafe():
-  | keyof RootStackParamList
-  | undefined {
+export function getCurrentRouteNameSafe(): string | undefined {
   if (!hasRenderedNavigator()) return undefined;
 
   try {

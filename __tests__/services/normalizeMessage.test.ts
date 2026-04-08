@@ -113,7 +113,6 @@ describe("normalizeMessage", () => {
         createdAt: 1000,
         serverReceivedAt: 1000,
         status: "sending",
-        isLocal: true,
       }),
       scopeHint: "dm",
       conversationIdHint: "chat-1",
@@ -202,7 +201,6 @@ describe("normalizeMessage", () => {
           createdAt: created,
           serverReceivedAt: created, // placeholder while pending
           status: "sending",
-          isLocal: true,
         }),
         scopeHint: "dm",
         conversationIdHint: "chat-1",
@@ -293,7 +291,6 @@ describe("normalizeMessage", () => {
         createdAt: 5000,
         serverReceivedAt: 5000,
         status: "sending",
-        isLocal: true,
       }),
       scopeHint: "dm",
       conversationIdHint: "chat-1",

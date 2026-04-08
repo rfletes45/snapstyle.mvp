@@ -16,11 +16,11 @@ import type { AchievementTier, Badge } from "@/types/profile";
 import React, { memo, useCallback, useEffect } from "react";
 import { StyleSheet, useWindowDimensions, View } from "react-native";
 import { Text, useTheme } from "react-native-paper";
+import { scheduleOnRN } from "react-native-worklets";
 import Animated, {
   Easing,
   Extrapolation,
   interpolate,
-  runOnJS,
   SharedValue,
   useAnimatedStyle,
   useSharedValue,
@@ -271,7 +271,7 @@ export const BadgeEarnAnimation = memo<BadgeEarnAnimationProps>(
             { duration: 300 },
             (finished) => {
               if (finished) {
-                runOnJS(handleComplete)();
+                scheduleOnRN(handleComplete);
               }
             },
           );

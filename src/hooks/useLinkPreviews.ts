@@ -8,17 +8,13 @@
  */
 
 import { extractUrls, fetchPreview, hasUrls } from "@/services/linkPreview";
-import type { LinkPreviewV2 } from "@/types/messaging";
+import type { LinkPreviewV2, MessageKind } from "@/types/messaging";
 import { useCallback, useEffect, useRef, useState } from "react";
-
-import { createLogger } from "@/utils/log";
-const logger = createLogger("hooks/useLinkPreviews");
 
 interface MessageLike {
   id: string;
   text?: string | null;
-  content?: string;
-  type?: string;
+  kind?: MessageKind;
 }
 
 export interface UseLinkPreviewsReturn {
@@ -33,7 +29,7 @@ export interface UseLinkPreviewsReturn {
 /**
  * Hook to automatically fetch link previews for messages containing URLs.
  *
- * @param messages - Array of message-like objects with id and text/content
+ * @param messages - Array of message-like objects with id, text, and kind
  * @returns Preview data map, loading state, and a URL detection helper
  */
 export function useLinkPreviews(
@@ -50,9 +46,10 @@ export function useLinkPreviews(
   useEffect(() => {
     const fetchAll = async () => {
       for (const message of messages) {
-        const text = message.text ?? message.content;
-        if (!text || message.type === "image" || message.type === "voice")
+        const text = message.text;
+        if (!text || message.kind === "media" || message.kind === "voice") {
           continue;
+        }
         if (!hasUrls(text)) continue;
         if (fetchedRef.current.has(message.id)) continue;
 

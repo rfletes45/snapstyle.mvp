@@ -3,7 +3,6 @@
  * Handles rendering overlays, applying effects, and exporting media
  */
 
-import * as ImageManipulator from "expo-image-manipulator";
 import {
   AppliedFilter,
   DrawingElement,
@@ -12,7 +11,7 @@ import {
   StickerElement,
   TextElement,
 } from "@/types/camera";
-
+import { manipulateImage } from "@/utils/imageManipulation";
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("services/camera/editorService");
@@ -240,9 +239,8 @@ export async function exportSnapAsImage(
     resultUri = await renderAllOverlays(resultUri, overlays);
 
     // Optimize
-    const optimized = await ImageManipulator.manipulateAsync(resultUri, [], {
+    const optimized = await manipulateImage(resultUri, undefined, {
       compress: 0.85,
-      format: ImageManipulator.SaveFormat.JPEG,
     });
 
     return optimized.uri;

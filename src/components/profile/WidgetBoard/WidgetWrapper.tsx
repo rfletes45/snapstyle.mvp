@@ -30,9 +30,9 @@ import {
   View,
 } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import { scheduleOnRN } from "react-native-worklets";
 import Animated, {
   ReduceMotion,
-  runOnJS,
   useAnimatedStyle,
   useSharedValue,
   withSpring,
@@ -69,7 +69,7 @@ export interface WidgetWrapperProps {
   readOnly?: boolean;
   isDragActive: boolean;
   /** Ref to the parent ScrollView for auto-scrolling during drag. */
-  scrollRef?: React.RefObject<ScrollView>;
+  scrollRef?: React.RefObject<ScrollView | null>;
   /** Ref tracking the current scroll offset from the parent's onScroll. */
   scrollOffsetRef?: React.RefObject<number>;
   children: React.ReactNode;
@@ -362,8 +362,8 @@ function WidgetWrapperBase({
         scale.value = withSpring(DRAG_SCALE, SPRING_CONFIGS.snappy);
         zIndex.value = 100;
         shadowOpacity.value = withTiming(0.25, { duration: DURATIONS.fast });
-        runOnJS(triggerLightHaptic)();
-        runOnJS(handleDragStart)();
+        scheduleOnRN(triggerLightHaptic);
+        scheduleOnRN(handleDragStart);
       })
       .onUpdate((e) => {
         "worklet";
@@ -373,7 +373,8 @@ function WidgetWrapperBase({
         translateX.value = e.translationX;
         translateY.value = e.translationY + scrollComp;
         // Pass scroll-compensated translation to JS for hover/reorder calculation
-        runOnJS(handleDragUpdate)(
+        scheduleOnRN(
+          handleDragUpdate,
           e.translationX,
           e.translationY + scrollComp,
           e.absoluteY,
@@ -383,18 +384,17 @@ function WidgetWrapperBase({
         "worklet";
         // Don't reset translate here — the useEffect snap handles it
         // when isDragActive transitions to false after commitPreview
-        runOnJS(handleDragEnd)();
-        runOnJS(triggerLightHaptic)();
+        scheduleOnRN(handleDragEnd);
+        scheduleOnRN(triggerLightHaptic);
       })
       .onFinalize((_, success) => {
         "worklet";
         if (!success) {
-          runOnJS(handleDragCancel)();
+          scheduleOnRN(handleDragCancel);
         }
       });
   }, [
     isCustomizing,
-    widget.pinned,
     translateX,
     translateY,
     scrollDeltaSV,
@@ -494,23 +494,23 @@ function WidgetWrapperBase({
       .enabled(isCustomizing)
       .onStart(() => {
         "worklet";
-        runOnJS(captureResizeInitialSize)();
-        runOnJS(handleDragStart)();
-        runOnJS(triggerLightHaptic)();
+        scheduleOnRN(captureResizeInitialSize);
+        scheduleOnRN(handleDragStart);
+        scheduleOnRN(triggerLightHaptic);
       })
       .onUpdate((e) => {
         "worklet";
-        runOnJS(handleResizeGestureUpdate)(e.translationX, e.translationY);
+        scheduleOnRN(handleResizeGestureUpdate, e.translationX, e.translationY);
       })
       .onEnd(() => {
         "worklet";
-        runOnJS(handleResizeEnd)();
-        runOnJS(triggerLightHaptic)();
+        scheduleOnRN(handleResizeEnd);
+        scheduleOnRN(triggerLightHaptic);
       })
       .onFinalize((_, success) => {
         "worklet";
         if (!success) {
-          runOnJS(handleDragCancel)();
+          scheduleOnRN(handleDragCancel);
         }
       });
   }, [
@@ -568,7 +568,7 @@ function WidgetWrapperBase({
       .minDuration(400)
       .onStart(() => {
         "worklet";
-        runOnJS(handleLongPressEnterEdit)();
+        scheduleOnRN(handleLongPressEnterEdit);
       });
   }, [readOnly, isCustomizing, onEnterCustomize, handleLongPressEnterEdit]);
 

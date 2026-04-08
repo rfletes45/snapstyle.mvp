@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Feature Flags
  *
  * Toggle experimental features on/off.
@@ -16,9 +16,22 @@ import { NativeModules, Platform } from "react-native";
 
 /**
  * Check if running on web platform
- * Used to disable features that don't work on web (SQLite sync, native modules, etc.)
+ * Used to gate features with platform-specific runtime requirements.
  */
 const IS_WEB = Platform.OS === "web";
+
+/**
+ * Opt in to Expo SQLite's experimental web runtime.
+ *
+ * Official Expo support currently requires:
+ * - Metro wasm support
+ * - SharedArrayBuffer availability
+ * - COOP/COEP response headers from the web host
+ *
+ * This stays off by default until the web deployment/runtime is fully configured.
+ */
+export const EXPERIMENTAL_WEB_SQLITE =
+  process.env.EXPO_PUBLIC_ENABLE_WEB_SQLITE === "1";
 
 // =============================================================================
 // Storage Features
@@ -33,18 +46,18 @@ const IS_WEB = Platform.OS === "web";
  * - Offline-first architecture
  *
  * When disabled:
- * - Uses legacy AsyncStorage outbox
- * - Falls back to original chatV2 implementation
+ * - Uses the Firestore-backed compatibility runtime
+ * - Uses the AsyncStorage-backed queue for optimistic sends
  *
  * Set to `false` to rollback to old behavior if issues occur.
  *
- * NOTE: Disabled on web platform because expo-sqlite's synchronous operations
- * require SharedArrayBuffer, which needs COOP/COEP headers that are not
- * available in Expo's dev server or most hosting environments.
+ * NOTE: Web support for expo-sqlite is experimental and requires the official
+ * wasm + SharedArrayBuffer setup. We keep it behind an explicit env flag until
+ * the hosting/runtime path is configured end to end.
  *
- * @default true (native), false (web)
+ * @default true (native), false (web unless explicitly enabled)
  */
-export const USE_LOCAL_STORAGE = !IS_WEB;
+export const USE_LOCAL_STORAGE = !IS_WEB || EXPERIMENTAL_WEB_SQLITE;
 
 // =============================================================================
 // Camera Backend

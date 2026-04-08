@@ -17,7 +17,6 @@ import { LayoutChangeEvent, ScrollView, StyleSheet, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 
 import { Spacing } from "@/constants/theme";
-import { useColors } from "@/store/ThemeContext";
 
 import { getWidgetPixelSize } from "./BoardLayoutEngine";
 import { WidgetGallery } from "./WidgetGallery";
@@ -58,7 +57,7 @@ export interface WidgetBoardContainerProps {
   /** The instanceId of the widget currently being dragged (for highlighting). */
   dragActiveId: string | null;
   /** Ref to the parent ScrollView for auto-scrolling during drag. */
-  scrollRef?: React.RefObject<ScrollView>;
+  scrollRef?: React.RefObject<ScrollView | null>;
   /** Ref tracking the current scroll offset (updated from onScroll). */
   scrollOffsetRef?: React.RefObject<number>;
   /** Controlled gallery visibility (lifted to parent for overlay toolbar). */
@@ -111,7 +110,6 @@ function WidgetBoardContainerBase({
   onDone,
   onCancel,
 }: WidgetBoardContainerProps) {
-  const colors = useColors();
   const isCustomizing = mode === "customize";
 
   // ── Board Width Measurement ───────────────────────────────────────────
@@ -146,10 +144,6 @@ function WidgetBoardContainerBase({
 
   const [galleryVisibleInternal, setGalleryVisibleInternal] = useState(false);
   const galleryVisible = galleryVisibleProp ?? galleryVisibleInternal;
-
-  const handleOpenGallery = useCallback(() => {
-    setGalleryVisibleInternal(true);
-  }, []);
 
   const handleCloseGallery = useCallback(() => {
     if (onCloseGalleryProp) {

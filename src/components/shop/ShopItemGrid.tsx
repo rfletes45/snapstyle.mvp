@@ -20,7 +20,10 @@ import {
   StyleSheet,
   View,
 } from "react-native";
-import Animated, { FadeInUp, Layout } from "react-native-reanimated";
+import Animated, {
+  FadeInUp,
+  LinearTransition,
+} from "react-native-reanimated";
 
 import { ShopItemCard } from "@/components/shop/ShopItemCard";
 import { useAppTheme } from "@/store/ThemeContext";
@@ -103,7 +106,7 @@ function ShopItemGridComponent({
     ({ item, index }) => (
       <Animated.View
         entering={FadeInUp.delay(index * 50).duration(300)}
-        layout={Layout.springify()}
+        layout={LinearTransition.springify()}
       >
         <ShopItemCard
           item={item}

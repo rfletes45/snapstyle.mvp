@@ -71,6 +71,7 @@
     "react-native-vision-camera-face-detector": "^1.10.2",
     "react-native-voip-push-notification": "^3.3.3",
     "react-native-web": "~0.21.0",
+    "react-native-worklets": "^0.5.1",
     "react-native-worklets-core": "^1.6.3",
     "rn-emoji-keyboard": "^1.7.0"
   },

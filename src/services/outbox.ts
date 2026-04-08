@@ -4,15 +4,8 @@
  * Persistent offline message queue using AsyncStorage.
  * Ensures messages are not lost on network failures or app restarts.
  *
- * @deprecated This module is being replaced by SQLite-based storage.
- * For new code, use:
- * - `@/services/database/messageRepository` for message queue storage
- * - `@/services/sync/syncEngine` for syncing pending messages
- *
- * The SQLite-based approach provides:
- * - Faster message storage (synchronous writes)
- * - Better query capabilities
- * - Unified storage for all message data
+ * This is the active queue/runtime for the Firestore-backed compatibility path
+ * used on web and as a rollback boundary for local-first messaging changes.
  *
  * Features:
  * - Persistent storage of pending messages
@@ -261,9 +254,14 @@ export async function getOutboxItem(
  */
 export async function getOutboxForConversation(
   conversationId: string,
+  scope?: "dm" | "group",
 ): Promise<OutboxItem[]> {
   const outbox = await getOutbox();
-  return outbox.filter((i) => i.conversationId === conversationId);
+  return outbox.filter(
+    (i) =>
+      i.conversationId === conversationId &&
+      (scope ? i.scope === scope : true),
+  );
 }
 
 // =============================================================================
@@ -437,7 +435,7 @@ export async function processOutbox(
         data: { staleRemoved, exhaustedRemoved },
       });
     }
-  } catch (cleanupError) {
+  } catch {
     log.warn("Outbox auto-cleanup failed", { operation: "autoCleanupFailed" });
   }
 

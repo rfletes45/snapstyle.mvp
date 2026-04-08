@@ -280,6 +280,13 @@ export interface PointsPurchaseResult {
 // =============================================================================
 
 /**
+ * Slot labels used by premium shop content and bundle previews.
+ * Premium bundles can expose catalog-style categories that are broader than
+ * the equip slots used elsewhere in profile customization.
+ */
+export type PremiumShopSlot = ExtendedCosmeticSlot | "chat_font_color";
+
+/**
  * Token pack available for real money purchase
  */
 export interface TokenPack {
@@ -349,7 +356,7 @@ export interface BundleItem {
   name: string;
 
   /** Slot type */
-  slot: ExtendedCosmeticSlot;
+  slot: PremiumShopSlot;
 
   /** Rarity tier */
   rarity: ExtendedCosmeticRarity;
@@ -460,7 +467,7 @@ export interface PremiumExclusiveItem {
   description: string;
 
   /** Slot type */
-  slot: ExtendedCosmeticSlot;
+  slot: PremiumShopSlot;
 
   /** Only high-tier for premium exclusives */
   rarity: "legendary" | "mythic";
@@ -1143,6 +1150,7 @@ export const POINTS_SHOP_TABS: ShopTabConfig[] = [
  */
 export const RARITY_COLORS: Record<ExtendedCosmeticRarity, string> = {
   common: "#9E9E9E", // Gray
+  uncommon: "#4CAF50", // Green
   rare: "#2196F3", // Blue
   epic: "#9C27B0", // Purple
   legendary: "#FF9800", // Orange

@@ -19,10 +19,10 @@ import React, {
 import { BackHandler, Dimensions, StyleSheet, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { Portal, useTheme } from "react-native-paper";
+import { scheduleOnRN } from "react-native-worklets";
 import Animated, {
   Extrapolation,
   interpolate,
-  runOnJS,
   useAnimatedReaction,
   useAnimatedStyle,
   useSharedValue,
@@ -214,7 +214,7 @@ export const DraggableBottomSheet = forwardRef<
           // Fast swipe down → dismiss
           if (velocityY > 800) {
             translateY.value = withSpring(dismissY, SPRING_CONFIG);
-            runOnJS(handleClose)();
+            scheduleOnRN(handleClose);
             return;
           }
 
@@ -234,7 +234,7 @@ export const DraggableBottomSheet = forwardRef<
             snapTranslateYs[0] + (dismissY - snapTranslateYs[0]) * 0.4;
           if (currentY > dismissThreshold) {
             translateY.value = withSpring(dismissY, SPRING_CONFIG);
-            runOnJS(handleClose)();
+            scheduleOnRN(handleClose);
             return;
           }
 

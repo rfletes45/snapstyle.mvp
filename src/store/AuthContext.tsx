@@ -52,10 +52,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
   const [loading, setLoading] = useState(true);
   const [isHydrated, setIsHydrated] = useState(false);
-  const notificationListenerRef = useRef<Notifications.Subscription | null>(
+  const notificationListenerRef = useRef<Notifications.EventSubscription | null>(
     null,
   );
-  const responseListenerRef = useRef<Notifications.Subscription | null>(null);
+  const responseListenerRef = useRef<Notifications.EventSubscription | null>(
+    null,
+  );
   const previousUserIdRef = useRef<string | null>(null);
   const recentTapKeysRef = useRef<Map<string, number>>(new Map());
 
@@ -111,14 +113,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       (response) => void handleNotificationResponse(response),
     );
 
-    getLastNotificationResponse()
-      .then((response) => handleNotificationResponse(response))
-      .catch((error) => {
-        logger.warn(
-          "[AuthContext] Failed to read last notification response:",
-          error,
-        );
-      });
+    try {
+      void handleNotificationResponse(getLastNotificationResponse());
+    } catch (error) {
+      logger.warn(
+        "[AuthContext] Failed to read last notification response:",
+        error,
+      );
+    }
 
     return () => {
       if (notificationListenerRef.current) {

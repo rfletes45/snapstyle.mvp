@@ -16,10 +16,18 @@ import { useAppTheme } from "@/store/ThemeContext";
 import type { InboxConversation } from "@/types/messaging";
 import * as haptics from "@/utils/haptics";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import React, { useCallback, useRef } from "react";
-import { Animated, StyleSheet, View } from "react-native";
+import React, { memo, useCallback, useRef } from "react";
+import { StyleSheet, View } from "react-native";
 import { RectButton } from "react-native-gesture-handler";
-import Swipeable from "react-native-gesture-handler/Swipeable";
+import ReanimatedSwipeable, {
+  type SwipeableMethods,
+} from "react-native-gesture-handler/ReanimatedSwipeable";
+import Animated, {
+  Extrapolation,
+  interpolate,
+  type SharedValue,
+  useAnimatedStyle,
+} from "react-native-reanimated";
 
 // =============================================================================
 // Types
@@ -40,6 +48,22 @@ export interface SwipeableConversationProps {
   children: React.ReactNode;
 }
 
+interface LeftActionProps {
+  isPinned: boolean;
+  primaryColor: string;
+  translation: SharedValue<number>;
+  onPress: () => void;
+}
+
+interface RightActionsProps {
+  isMuted: boolean;
+  warningColor: string;
+  errorColor: string;
+  translation: SharedValue<number>;
+  onMute: () => void;
+  onDelete: () => void;
+}
+
 // =============================================================================
 // Constants
 // =============================================================================
@@ -47,6 +71,122 @@ export interface SwipeableConversationProps {
 const LEFT_ACTION_WIDTH = 80;
 const RIGHT_ACTION_WIDTH = 120;
 const SINGLE_ACTION_WIDTH = 60;
+
+// =============================================================================
+// Action Renderers
+// =============================================================================
+
+const LeftAction = memo(function LeftAction({
+  isPinned,
+  primaryColor,
+  translation,
+  onPress,
+}: LeftActionProps) {
+  const backgroundStyle = useAnimatedStyle(() => ({
+    transform: [
+      {
+        translateX: interpolate(
+          translation.value,
+          [0, LEFT_ACTION_WIDTH],
+          [-LEFT_ACTION_WIDTH, 0],
+          Extrapolation.CLAMP,
+        ),
+      },
+    ],
+  }));
+
+  const iconStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(
+      translation.value,
+      [0, LEFT_ACTION_WIDTH * 0.3, LEFT_ACTION_WIDTH * 0.6],
+      [0, 0, 1],
+      Extrapolation.CLAMP,
+    ),
+    transform: [
+      {
+        translateX: interpolate(
+          translation.value,
+          [0, LEFT_ACTION_WIDTH],
+          [-LEFT_ACTION_WIDTH * 0.5, 0],
+          Extrapolation.CLAMP,
+        ),
+      },
+      {
+        scale: interpolate(
+          translation.value,
+          [0, LEFT_ACTION_WIDTH],
+          [0.5, 1],
+          Extrapolation.CLAMP,
+        ),
+      },
+    ],
+  }));
+
+  return (
+    <View style={styles.leftActionsClip}>
+      <Animated.View
+        style={[
+          StyleSheet.absoluteFill,
+          { backgroundColor: primaryColor },
+          backgroundStyle,
+        ]}
+      />
+      <Animated.View style={iconStyle}>
+        <RectButton style={styles.actionButton} onPress={onPress}>
+          <MaterialCommunityIcons
+            name={isPinned ? "pin-off" : "pin"}
+            color="white"
+            size={24}
+          />
+        </RectButton>
+      </Animated.View>
+    </View>
+  );
+});
+
+const RightActions = memo(function RightActions({
+  isMuted,
+  warningColor,
+  errorColor,
+  translation,
+  onMute,
+  onDelete,
+}: RightActionsProps) {
+  const containerStyle = useAnimatedStyle(() => ({
+    transform: [
+      {
+        translateX: interpolate(
+          translation.value,
+          [-RIGHT_ACTION_WIDTH, 0],
+          [0, RIGHT_ACTION_WIDTH],
+          Extrapolation.CLAMP,
+        ),
+      },
+    ],
+  }));
+
+  return (
+    <Animated.View style={[styles.rightActions, containerStyle]}>
+      <RectButton
+        style={[styles.singleAction, { backgroundColor: warningColor }]}
+        onPress={onMute}
+      >
+        <MaterialCommunityIcons
+          name={isMuted ? "bell" : "bell-off"}
+          color="white"
+          size={24}
+        />
+      </RectButton>
+
+      <RectButton
+        style={[styles.singleAction, { backgroundColor: errorColor }]}
+        onPress={onDelete}
+      >
+        <MaterialCommunityIcons name="delete" color="white" size={24} />
+      </RectButton>
+    </Animated.View>
+  );
+});
 
 // =============================================================================
 // Component
@@ -61,7 +201,7 @@ export function SwipeableConversation({
   children,
 }: SwipeableConversationProps) {
   const { colors } = useAppTheme();
-  const swipeableRef = useRef<Swipeable>(null);
+  const swipeableRef = useRef<SwipeableMethods | null>(null);
 
   const closeSwipeable = useCallback(() => {
     swipeableRef.current?.close();
@@ -76,147 +216,45 @@ export function SwipeableConversation({
     [closeSwipeable],
   );
 
-  // =========================================================================
-  // Left Swipe Actions (Swipe Right to Reveal)
-  // =========================================================================
+  const isPinned = !!conversation.memberState.pinnedAt;
+  const isMuted = !!conversation.memberState.mutedUntil;
 
   const renderLeftActions = useCallback(
-    (
-      progress: Animated.AnimatedInterpolation<number>,
-      dragX: Animated.AnimatedInterpolation<number>,
-    ) => {
-      const scale = dragX.interpolate({
-        inputRange: [0, LEFT_ACTION_WIDTH],
-        outputRange: [0.5, 1],
-        extrapolate: "clamp",
-      });
-
-      // Fade the icon in so it doesn't overlay the chat row before the
-      // action area is meaningfully revealed.  The icon stays invisible
-      // for the first ~30 % of the drag, then fades to full opacity.
-      const iconOpacity = dragX.interpolate({
-        inputRange: [0, LEFT_ACTION_WIDTH * 0.3, LEFT_ACTION_WIDTH * 0.6],
-        outputRange: [0, 0, 1],
-        extrapolate: "clamp",
-      });
-
-      // Slide the icon in with the background so it doesn't sit stationary
-      // while the coloured background is still translating into view.
-      const iconTranslateX = dragX.interpolate({
-        inputRange: [0, LEFT_ACTION_WIDTH],
-        outputRange: [-LEFT_ACTION_WIDTH * 0.5, 0],
-        extrapolate: "clamp",
-      });
-
-      const isPinned = !!conversation.memberState.pinnedAt;
-
-      return (
-        <View style={styles.leftActionsClip}>
-          {/* Colored background that slides in with the drag distance */}
-          <Animated.View
-            style={[
-              StyleSheet.absoluteFill,
-              {
-                backgroundColor: colors.primary,
-                transform: [
-                  {
-                    translateX: dragX.interpolate({
-                      inputRange: [0, LEFT_ACTION_WIDTH],
-                      outputRange: [-LEFT_ACTION_WIDTH, 0],
-                      extrapolate: "clamp",
-                    }),
-                  },
-                ],
-              },
-            ]}
-          />
-          <Animated.View
-            style={{
-              opacity: iconOpacity,
-              transform: [{ translateX: iconTranslateX }, { scale }],
-            }}
-          >
-            <RectButton
-              style={styles.actionButton}
-              onPress={() => handleAction(onPin)}
-            >
-              <MaterialCommunityIcons
-                name={isPinned ? "pin-off" : "pin"}
-                color="white"
-                size={24}
-              />
-            </RectButton>
-          </Animated.View>
-        </View>
-      );
-    },
-    [colors, conversation.memberState.pinnedAt, handleAction, onPin],
+    (_progress: SharedValue<number>, translation: SharedValue<number>) => (
+      <LeftAction
+        isPinned={isPinned}
+        primaryColor={colors.primary}
+        translation={translation}
+        onPress={() => handleAction(onPin)}
+      />
+    ),
+    [colors.primary, handleAction, isPinned, onPin],
   );
-
-  // =========================================================================
-  // Right Swipe Actions (Swipe Left to Reveal)
-  // =========================================================================
 
   const renderRightActions = useCallback(
-    (
-      progress: Animated.AnimatedInterpolation<number>,
-      dragX: Animated.AnimatedInterpolation<number>,
-    ) => {
-      const translateX = dragX.interpolate({
-        inputRange: [-RIGHT_ACTION_WIDTH, 0],
-        outputRange: [0, RIGHT_ACTION_WIDTH],
-        extrapolate: "clamp",
-      });
-
-      const isMuted = !!conversation.memberState.mutedUntil;
-
-      return (
-        <Animated.View
-          style={[styles.rightActions, { transform: [{ translateX }] }]}
-        >
-          {/* Mute */}
-          <RectButton
-            style={[styles.singleAction, { backgroundColor: colors.warning }]}
-            onPress={() => handleAction(onMute)}
-          >
-            <MaterialCommunityIcons
-              name={isMuted ? "bell" : "bell-off"}
-              color="white"
-              size={24}
-            />
-          </RectButton>
-
-          {/* Delete */}
-          <RectButton
-            style={[styles.singleAction, { backgroundColor: colors.error }]}
-            onPress={() => handleAction(onDelete)}
-          >
-            <MaterialCommunityIcons name="delete" color="white" size={24} />
-          </RectButton>
-        </Animated.View>
-      );
-    },
-    [colors, conversation.memberState, handleAction, onMute, onDelete],
+    (_progress: SharedValue<number>, translation: SharedValue<number>) => (
+      <RightActions
+        isMuted={isMuted}
+        warningColor={colors.warning}
+        errorColor={colors.error}
+        translation={translation}
+        onMute={() => handleAction(onMute)}
+        onDelete={() => handleAction(onDelete)}
+      />
+    ),
+    [colors.error, colors.warning, handleAction, isMuted, onDelete, onMute],
   );
 
-  // =========================================================================
-  // Swipe Events
-  // =========================================================================
-
-  const onSwipeableOpen = useCallback((direction: "left" | "right") => {
+  const onSwipeableOpen = useCallback(() => {
     haptics.swipeThreshold();
   }, []);
-
-  // =========================================================================
-  // Render
-  // =========================================================================
 
   if (!enabled) {
     return <>{children}</>;
   }
 
   return (
-    <Swipeable
+    <ReanimatedSwipeable
       ref={swipeableRef}
       friction={2}
       leftThreshold={40}
@@ -228,7 +266,7 @@ export function SwipeableConversation({
       overshootRight={false}
     >
       {children}
-    </Swipeable>
+    </ReanimatedSwipeable>
   );
 }
 
@@ -243,12 +281,6 @@ const styles = StyleSheet.create({
     paddingLeft: Spacing.lg,
     width: LEFT_ACTION_WIDTH,
     overflow: "hidden",
-  },
-  leftActions: {
-    justifyContent: "center",
-    alignItems: "flex-start",
-    paddingLeft: Spacing.lg,
-    width: LEFT_ACTION_WIDTH,
   },
   rightActions: {
     flexDirection: "row",

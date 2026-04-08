@@ -28,7 +28,7 @@ import Animated, {
 
 import type { MessageViewModel } from "@/chat/displayMode";
 import { FEED_LAYOUT } from "@/chat/displayMode";
-import AppImage from "@/components/AppImage";
+import FeedImage from "@/components/AppImage";
 import { SwipeableMessage } from "@/components/chat";
 import { AnimalBubble } from "@/components/chat/AnimalBubble";
 import { LinkPreviewCard } from "@/components/chat/LinkPreviewCard";
@@ -150,7 +150,7 @@ export const StackedMessageRenderer: React.FC<StackedMessageRendererProps> =
       const messagesForPreview = React.useMemo(
         () =>
           message.kind === "text" && hasUrls(messageText)
-            ? [{ id: message.id, content: messageText, type: "text" as const }]
+            ? [{ id: message.id, text: messageText, kind: message.kind }]
             : [],
         [message.id, message.kind, messageText],
       );
@@ -253,7 +253,7 @@ export const StackedMessageRenderer: React.FC<StackedMessageRendererProps> =
               imageAttachment.height,
             );
             return (
-              <AppImage
+              <FeedImage
                 source={{ uri: imageAttachment.url }}
                 style={[s.image, imgSize]}
                 contentFit="cover"

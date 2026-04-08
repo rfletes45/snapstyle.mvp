@@ -145,12 +145,6 @@ export const CHAT_TABS: {
   { id: "chat_animal_theme", label: "Animals", icon: "paw" },
 ];
 
-/**
- * All customization tabs (both sections combined).
- * @deprecated Use PROFILE_TABS / CHAT_TABS instead for section-aware tab bars.
- */
-export const CUSTOMIZATION_TABS = [...PROFILE_TABS, ...CHAT_TABS];
-
 // =============================================================================
 // Hook
 // =============================================================================

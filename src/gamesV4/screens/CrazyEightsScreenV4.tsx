@@ -1280,7 +1280,7 @@ function SpectatorViewContent({
   return (
     <ScrollView style={{ flex: 1 }} contentContainerStyle={spStyles.container}>
       <Text style={[spStyles.title, { color: primaryColor }]}>
-        📺 Spectating Crazy 8's
+        📺 Spectating Crazy 8&apos;s
       </Text>
       <View style={spStyles.players}>
         {state.turnOrder.map((uid) => (

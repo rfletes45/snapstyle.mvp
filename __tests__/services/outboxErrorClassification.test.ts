@@ -240,14 +240,13 @@ describe("Error Taxonomy (Segment 8)", () => {
     it("should classify error code on failure", () => {
       // When send fails, outbox classifies the error:
       //   item.lastErrorCode = classifyChatError(error);
-      const error = { code: "resource-exhausted", message: "Rate limit" };
       const lastErrorCode = "rate_limited";
 
       expect(lastErrorCode).toBe("rate_limited");
     });
 
     it("should pass traceId through to Cloud Function", () => {
-      // chatV2.ts includes traceId in SendMessageV2Params:
+      // The compatibility send service includes traceId in SendMessageV2Params:
       //   { ...params, traceId: outboxItem.traceId }
       const params = {
         conversationId: "chat123",

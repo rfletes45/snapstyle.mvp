@@ -32,10 +32,6 @@ export interface AutoscrollConfig {
    * adding a state dependency that recreates the callback every frame.
    */
   distanceRef?: { readonly current: number };
-  /** @deprecated Use distanceRef instead. Kept for backwards compatibility. */
-  distanceFromBottom?: number;
-  /** Message threshold for auto-scroll when keyboard closed (default: 30) */
-  messageThreshold?: number;
   /** Pixel threshold for "close to bottom" (default: 2400 = ~30 messages) */
   pixelThreshold?: number;
   /** Enable debug logging */
@@ -76,8 +72,6 @@ export function useNewMessageAutoscroll(
     isKeyboardOpen,
     isAtBottom,
     distanceRef,
-    distanceFromBottom = 0,
-    messageThreshold = DEFAULT_MESSAGE_THRESHOLD,
     pixelThreshold = DEFAULT_PIXEL_THRESHOLD,
     debug = false,
   } = config;
@@ -122,7 +116,7 @@ export function useNewMessageAutoscroll(
     // Rule: Within threshold distance → scroll
     // Read from the ref for a real-time value (avoids stale closure from
     // state-based distanceFromBottom which lagged behind by a render cycle).
-    const distance = distanceRef?.current ?? distanceFromBottom;
+    const distance = distanceRef?.current ?? Number.POSITIVE_INFINITY;
     if (distance <= pixelThreshold) {
       if (debug) {
         log.debug("Auto-scroll: within threshold", {
@@ -153,7 +147,6 @@ export function useNewMessageAutoscroll(
     isKeyboardOpen,
     isAtBottom,
     distanceRef,
-    distanceFromBottom,
     pixelThreshold,
     debug,
   ]);

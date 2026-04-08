@@ -600,7 +600,7 @@ export function withGameV4Shell<P extends GameShellProps>(
           {
             text: "Leave & Resign",
             style: "destructive",
-                onPress: async () => {
+            onPress: async () => {
               // Await resign so the session is resolved server-side before
               // we tear down snapshot listeners via navigation. This prevents
               // the "Missing Firebase permissions" error that occurred when
@@ -637,12 +637,11 @@ export function withGameV4Shell<P extends GameShellProps>(
     useEffect(() => {
       if (isTerminal && !hasNavigatedToResult.current && !isPersistent) {
         hasNavigatedToResult.current = true;
-        // PERF: Reduced delay from 1500ms to 600ms. The terminal state
-        // renders a brief "game ending" visual, then navigates quickly.
-        // Result doc is loaded async by GameOverScreenV4.
+        // PERF: Reduced delay from 600ms to 150ms. The loading spinner
+        // in GameOverScreenV4 handles async result arrival gracefully.
         const timer = setTimeout(() => {
           navigation.replace("GameOverV4", { sessionId });
-        }, 600);
+        }, 150);
         return () => clearTimeout(timer);
       }
     }, [isTerminal, sessionId, navigation]);

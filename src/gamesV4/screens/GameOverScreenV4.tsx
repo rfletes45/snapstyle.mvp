@@ -82,15 +82,19 @@ export default function GameOverScreenV4() {
   const [error, setError] = useState<string | null>(null);
   const [rematchLoading, setRematchLoading] = useState(false);
 
-  // Subscribe to result doc
+  // Subscribe to result doc.
+  // IMPORTANT: The Firestore snapshot fires immediately with null when the doc
+  // doesn't exist yet (backend is still computing). We must NOT set loading=false
+  // in that case, otherwise the loading spinner is replaced by the fallback UI
+  // before results have a chance to arrive.
   useEffect(() => {
     const unsub = subscribeToResult(
       sessionId,
       (r) => {
         setResult(r);
-        setLoading(false);
-        // Refresh user profile so XP bars everywhere pick up the new level/XP
         if (r) {
+          setLoading(false);
+          // Refresh user profile so XP bars everywhere pick up the new level/XP
           refreshProfile().catch(() => {});
         }
       },
@@ -113,14 +117,14 @@ export default function GameOverScreenV4() {
   }, [sessionId]);
 
   // Fallback: two-phase timeout while waiting for results.
-  // Phase 1 (8s)  → show "taking longer than expected" with an exit option.
-  // Phase 2 (20s) → stop spinner but keep subscription alive in case it arrives.
+  // Phase 1 (8s)  → show "taking longer than expected" subtext.
+  // Phase 2 (30s) → stop spinner, show gentle fallback (subscription stays alive).
   useEffect(() => {
     if (!loading) return;
     const slow = setTimeout(() => setLoadingSlow(true), 8_000);
     const stop = setTimeout(() => {
       if (loading) setLoading(false);
-    }, 20_000);
+    }, 30_000);
     return () => {
       clearTimeout(slow);
       clearTimeout(stop);
@@ -326,6 +330,8 @@ export default function GameOverScreenV4() {
   }
 
   if (!result) {
+    // Result doc hasn't arrived yet (subscription is still active).
+    // Show a polished waiting state — NOT an error.
     return (
       <SafeAreaView
         style={[
@@ -334,34 +340,39 @@ export default function GameOverScreenV4() {
         ]}
       >
         <View style={styles.centerContent}>
-          <MaterialCommunityIcons
-            name="alert-circle-outline"
-            size={48}
-            color="#FF9500"
-          />
+          <ActivityIndicator size="large" color={colors.primary} />
           <Text
             style={[
-              styles.errorMainText,
-              { color: theme.isDark ? "#FFF" : "#000" },
+              styles.loadingText,
+              {
+                color: theme.isDark ? "#CCC" : "#555",
+                fontSize: 15,
+                fontWeight: "600",
+                marginTop: 12,
+              },
             ]}
           >
-            Results not available yet
+            Finishing up…
           </Text>
           <Text
             style={[
-              styles.errorSubText,
-              { color: theme.isDark ? "#AAA" : "#666" },
+              styles.loadingText,
+              {
+                color: theme.isDark ? "#888" : "#999",
+                fontSize: 13,
+                marginTop: 4,
+                textAlign: "center",
+              },
             ]}
           >
-            {error ??
-              "The game has ended but results are still being calculated. They'll appear automatically if they arrive."}
+            Results will appear momentarily.
           </Text>
           <TouchableOpacity
-            style={[styles.primaryButton, { backgroundColor: colors.primary }]}
             onPress={handleSafeExit}
+            style={styles.safeExitButton}
           >
-            <Text style={styles.primaryButtonText}>
-              {isChatGame ? "Return to Chat" : "Back to Games"}
+            <Text style={[styles.linkText, { color: colors.primary }]}>
+              {isChatGame ? "Return to Chat" : "Exit Game"}
             </Text>
           </TouchableOpacity>
         </View>

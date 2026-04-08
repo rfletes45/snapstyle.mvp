@@ -12,8 +12,11 @@ import {
   PermissionStatus,
 } from "@/types/camera";
 import * as FileSystem from "@/utils/fileSystem";
+import {
+  getImageDimensions,
+  manipulateImage,
+} from "@/utils/imageManipulation";
 import { Camera as ExpoCamera } from "expo-camera";
-import * as ImageManipulator from "expo-image-manipulator";
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("services/camera/cameraService");
@@ -407,9 +410,8 @@ export async function compressImage(
     logger.info(`[Camera Service] Compressing image from ${sourceUri}`);
 
     // Get original image dimensions
-    const result = await ImageManipulator.manipulateAsync(sourceUri, [], {
+    const result = await manipulateImage(sourceUri, undefined, {
       compress: targetQuality,
-      format: ImageManipulator.SaveFormat.JPEG,
     });
 
     // Get file size
@@ -437,25 +439,20 @@ export async function compressImageToSize(
 ): Promise<{ uri: string; width: number; height: number; size: number }> {
   try {
     // First get original dimensions to maintain aspect ratio
-    const probe = await ImageManipulator.manipulateAsync(sourceUri, [], {
-      compress: 1,
-      format: ImageManipulator.SaveFormat.JPEG,
-    });
-
+    const probe = await getImageDimensions(sourceUri);
     const origW = probe.width;
     const origH = probe.height;
     const scale = Math.min(maxWidth / origW, maxHeight / origH, 1);
 
-    // Only resize if the image is larger than the max
-    const actions =
-      scale < 1 ? [{ resize: { width: Math.round(origW * scale) } }] : [];
-
-    const result = await ImageManipulator.manipulateAsync(
+    const result = await manipulateImage(
       sourceUri,
-      actions as any,
+      scale < 1
+        ? (context) => {
+            context.resize({ width: Math.round(origW * scale) });
+          }
+        : undefined,
       {
         compress: 0.8,
-        format: ImageManipulator.SaveFormat.JPEG,
       },
     );
 
@@ -519,12 +516,13 @@ export async function generateThumbnail(
 ): Promise<string> {
   try {
     if (mediaType === "photo") {
-      const result = await ImageManipulator.manipulateAsync(
+      const result = await manipulateImage(
         mediaUri,
-        [{ resize: { width: size, height: size } }],
+        (context) => {
+          context.resize({ width: size, height: size });
+        },
         {
           compress: 0.7,
-          format: ImageManipulator.SaveFormat.JPEG,
         },
       );
       return result.uri;

@@ -10,7 +10,11 @@ import { Spacing } from "@/constants/theme";
 import { useAppTheme } from "@/store/ThemeContext";
 import React, { useEffect, useState } from "react";
 import { StyleSheet, Text } from "react-native";
-import Animated, { FadeIn, FadeOut, Layout } from "react-native-reanimated";
+import Animated, {
+  FadeIn,
+  FadeOut,
+  LinearTransition,
+} from "react-native-reanimated";
 
 export interface InlineNoticeProps {
   /** The message to display */
@@ -55,7 +59,7 @@ export function InlineNotice({
     <Animated.View
       entering={FadeIn.duration(200)}
       exiting={FadeOut.duration(200)}
-      layout={Layout.springify()}
+      layout={LinearTransition.springify()}
       style={styles.container}
     >
       <Text style={[styles.text, { color: accentMap[severity] }]}>

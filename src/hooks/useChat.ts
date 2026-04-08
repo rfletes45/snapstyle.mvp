@@ -264,6 +264,7 @@ export function useChat(config: UseChatConfig): UseChatReturn {
     sendReadReceipts,
     atBottomThreshold = 200,
     autoscrollMessageThreshold = 30,
+    senderStyle,
     debug = false,
   } = config;
 
@@ -294,9 +295,17 @@ export function useChat(config: UseChatConfig): UseChatReturn {
     initialLimit,
     autoRefresh: true,
   });
+  const {
+    messages: localRows,
+    isLoading: isLocalLoading,
+    error: localError,
+    hasMore: localHasMore,
+    loadMore: loadMoreLocalMessages,
+    refresh: refreshLocalMessages,
+  } = localMessagesHook;
 
-  // === FIRESTORE MODE (fallback) ===
-  // Use Firestore subscription when USE_LOCAL_STORAGE is disabled
+  // === FIRESTORE COMPATIBILITY MODE ===
+  // Use Firestore subscriptions when the local database runtime is disabled.
   const firestoreMessagesHook = useUnifiedMessages({
     enabled: !USE_LOCAL_STORAGE,
     scope,
@@ -312,38 +321,38 @@ export function useChat(config: UseChatConfig): UseChatReturn {
   // Convert local messages to MessageV2 format
   const localMessages = useMemo<MessageV2[]>(() => {
     if (!USE_LOCAL_STORAGE) return [];
-    const normalized = localMessagesHook.messages
+    const normalized = localRows
       .map((row) => rowToMessageV2(row, currentUid))
       .filter((m): m is MessageV2 => m !== null);
     return dedupeAndSortMessages(normalized);
-  }, [localMessagesHook.messages, currentUid]);
+  }, [localRows, currentUid]);
 
   // Select which data source to use based on feature flag
   const messagesHook = useMemo(() => {
     if (USE_LOCAL_STORAGE) {
       return {
         messages: localMessages,
-        loading: localMessagesHook.isLoading,
-        error: localMessagesHook.error
-          ? new Error(localMessagesHook.error)
+        loading: isLocalLoading,
+        error: localError
+          ? new Error(localError)
           : null,
         pagination: {
-          hasMoreOlder: localMessagesHook.hasMore,
+          hasMoreOlder: localHasMore,
           isLoadingOlder: false,
         },
-        loadOlder: async () => localMessagesHook.loadMore(),
-        refresh: localMessagesHook.refresh,
+        loadOlder: async () => loadMoreLocalMessages(),
+        refresh: refreshLocalMessages,
         pendingItems: [] as OutboxItem[],
       };
     }
     return firestoreMessagesHook;
   }, [
     localMessages,
-    localMessagesHook.isLoading,
-    localMessagesHook.error,
-    localMessagesHook.hasMore,
-    localMessagesHook.loadMore,
-    localMessagesHook.refresh,
+    isLocalLoading,
+    localError,
+    localHasMore,
+    loadMoreLocalMessages,
+    refreshLocalMessages,
     firestoreMessagesHook,
   ]);
 
@@ -408,7 +417,6 @@ export function useChat(config: UseChatConfig): UseChatReturn {
     isKeyboardOpen: keyboard.isKeyboardOpen,
     isAtBottom: scroll.isAtBottom,
     distanceRef: scroll.distanceRef,
-    messageThreshold: autoscrollMessageThreshold,
     pixelThreshold: autoscrollMessageThreshold * 80, // ~80px per message
     debug,
   });
@@ -464,9 +472,7 @@ export function useChat(config: UseChatConfig): UseChatReturn {
   // -------------------------------------------------------------------------
   const setFlatListRef = useCallback(
     (ref: FlatList<MessageV2> | null) => {
-      (
-        flatListRef as React.MutableRefObject<FlatList<MessageV2> | null>
-      ).current = ref;
+      flatListRef.current = ref;
       autoscroll.setFlatListRef(ref);
     },
     [autoscroll],
@@ -568,7 +574,7 @@ export function useChat(config: UseChatConfig): UseChatReturn {
           }
 
           // Refresh local messages to show the new one
-          localMessagesHook.refresh();
+          refreshLocalMessages();
 
           if (clearReplyOnSend) {
             clearReplyTo();
@@ -582,7 +588,7 @@ export function useChat(config: UseChatConfig): UseChatReturn {
           return { success: true };
         }
 
-        // === FIRESTORE MODE (fallback) ===
+        // === FIRESTORE COMPATIBILITY MODE ===
         const { sendPromise } = await sendMessageService({
           scope,
           conversationId,
@@ -593,7 +599,7 @@ export function useChat(config: UseChatConfig): UseChatReturn {
           mentionUids,
           mentionSpans,
           localAttachments: attachments,
-          senderStyle: config.senderStyle,
+          senderStyle,
         });
 
         const result = await sendPromise;
@@ -625,7 +631,8 @@ export function useChat(config: UseChatConfig): UseChatReturn {
       currentUserName,
       replyTo,
       clearReplyTo,
-      localMessagesHook,
+      refreshLocalMessages,
+      senderStyle,
       debug,
     ],
   );

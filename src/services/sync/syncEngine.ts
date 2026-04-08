@@ -19,7 +19,11 @@ import {
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 
-import { getDatabase } from "@/services/database";
+import {
+  getDatabase,
+  getDatabaseUnavailableReason,
+  isDatabaseRuntimeAvailable,
+} from "@/services/database";
 import {
   getPendingMessages,
   markMessagePermanentlyFailed,
@@ -42,7 +46,6 @@ import { LocalAttachment, uploadMultipleAttachments } from "@/services/storage";
 import { AttachmentV2, MessageV2, ReplyToMetadata } from "@/types/messaging";
 import type { GroupMessage } from "@/types/models";
 import { toTimestamp } from "@/utils/dates";
-import { Platform } from "react-native";
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("services/sync/syncEngine");
@@ -606,18 +609,17 @@ export async function pullMessages(
 
 /**
  * Full sync for a conversation (used on first load)
- * NOTE: This function requires SQLite and should not be called on web.
- * Returns 0 if SQLite is not available.
+ * Returns 0 when the active runtime does not support the local database.
  */
 export async function fullSyncConversation(
   scope: "dm" | "group",
   conversationId: string,
   messageLimit: number = 50,
 ): Promise<number> {
-  // SQLite is not available on web
-  if (Platform.OS === "web") {
+  if (!isDatabaseRuntimeAvailable()) {
     logger.warn(
-      "[SyncEngine] fullSyncConversation called on web - SQLite not available",
+      "[SyncEngine] fullSyncConversation skipped:",
+      getDatabaseUnavailableReason(),
     );
     return 0;
   }
@@ -751,20 +753,19 @@ export async function fullSyncConversation(
 
 /**
  * Subscribe to real-time message updates for a conversation
- * NOTE: This function requires SQLite and should not be called on web.
- * Returns a no-op unsubscribe function if SQLite is not available.
+ * Returns a no-op unsubscribe function when the local database is unavailable.
  */
 export function subscribeToConversation(
   scope: "dm" | "group",
   conversationId: string,
   onNewMessage?: (message: MessageV2) => void,
 ): () => void {
-  // SQLite is not available on web
-  if (Platform.OS === "web") {
+  if (!isDatabaseRuntimeAvailable()) {
     logger.warn(
-      "[SyncEngine] subscribeToConversation called on web - SQLite not available",
+      "[SyncEngine] subscribeToConversation skipped:",
+      getDatabaseUnavailableReason(),
     );
-    return () => {}; // Return no-op unsubscribe
+    return () => {};
   }
 
   const db = getDatabase();
@@ -964,7 +965,6 @@ export function getActiveSubscriptionCount(): number {
 // =============================================================================
 
 let syncIntervalId: ReturnType<typeof setInterval> | null = null;
-let cleanupIntervalId: ReturnType<typeof setInterval> | null = null;
 
 /**
  * Start background sync worker

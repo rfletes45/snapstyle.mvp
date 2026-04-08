@@ -80,8 +80,6 @@ const GRID_PADDING = Spacing.lg;
 const ITEM_SIZE =
   (SCREEN_WIDTH - GRID_PADDING * 2 - GRID_GAP * (GRID_COLUMNS - 1)) /
   GRID_COLUMNS;
-const THEME_CARD_GAP = Spacing.md;
-const THEME_CARD_WIDTH = (SCREEN_WIDTH - GRID_PADDING * 2 - THEME_CARD_GAP) / 2;
 const FEATURED_CARD_WIDTH = SCREEN_WIDTH * 0.65;
 
 const RARITY_COLORS: Record<string, string> = {
@@ -1770,7 +1768,7 @@ function CosmeticPurchaseSheet({
                       { color: colors.text },
                     ]}
                   >
-                    Hey, how's it going?
+                    Hey, how&apos;s it going?
                   </Text>
                 </View>
                 <View
@@ -1834,7 +1832,7 @@ function CosmeticPurchaseSheet({
                       { fontFamily: chatFontFamily },
                     ]}
                   >
-                    It's my new chat font!
+                    It&apos;s my new chat font!
                   </Text>
                 </View>
                 <View

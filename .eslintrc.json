@@ -1,6 +1,0 @@
-{
-  "extends": "expo",
-  "ignorePatterns": [
-    "src/shims/tslib.js"
-  ]
-}

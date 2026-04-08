@@ -72,7 +72,7 @@ Scope-specific behavior is injected instead of forked:
 The runtime split is still:
 
 - native: `useChat` -> `useLocalMessages` -> SQLite + sync engine
-- web: `useChat` -> `useUnifiedMessages` compatibility path
+- web: `useChat` -> `useUnifiedMessages` -> Firestore compatibility services (`messaging/send`, `messaging/subscribe`, `messageList`, `outbox`)
 
 The important detail is that both screen types consume the same `useChat` surface even though the storage backend differs by platform.
 

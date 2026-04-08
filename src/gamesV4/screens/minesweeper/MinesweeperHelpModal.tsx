@@ -62,8 +62,8 @@ export function MinesweeperHelpModal({ visible, onClose }: HelpModalProps) {
 
             <Text style={styles.subTitle}>Reveal a Cell</Text>
             <Text style={styles.body}>
-              Tap any hidden cell to reveal it. If it contains a number, that's
-              how many mines are adjacent to it. If it's empty (0 mines nearby),
+              Tap any hidden cell to reveal it. If it contains a number, that&apos;s
+              how many mines are adjacent to it. If it&apos;s empty (0 mines nearby),
               all connected empty cells are revealed automatically.
             </Text>
 
@@ -82,7 +82,7 @@ export function MinesweeperHelpModal({ visible, onClose }: HelpModalProps) {
             <Text style={styles.body}>
               Tap an already-revealed numbered cell where the number of adjacent
               flags matches the number. This automatically reveals all
-              non-flagged neighbors. Be careful — if any flag is wrong, you'll
+              non-flagged neighbors. Be careful — if any flag is wrong, you&apos;ll
               hit a mine!
             </Text>
 
@@ -149,7 +149,7 @@ export function MinesweeperHelpModal({ visible, onClose }: HelpModalProps) {
             <Text style={styles.body}>
               • Your first click is always safe.{"\n"}• Start by clicking near
               the center for bigger openings.{"\n"}• Use chord reveal to clear
-              cells faster once you've flagged correctly.{"\n"}• The mine
+              cells faster once you&apos;ve flagged correctly.{"\n"}• The mine
               counter shows mines minus flags — keep it balanced.{"\n"}• Expert
               boards may need scrolling to see the full board.
             </Text>

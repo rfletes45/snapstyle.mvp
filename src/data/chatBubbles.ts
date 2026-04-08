@@ -525,6 +525,7 @@ export function getBubbleStyleCountByRarity(): Record<
 > {
   const counts: Record<ExtendedCosmeticRarity, number> = {
     common: 0,
+    uncommon: 0,
     rare: 0,
     epic: 0,
     legendary: 0,

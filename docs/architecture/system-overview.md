@@ -125,6 +125,7 @@ Messaging is intentionally asymmetric:
 
 - native uses the local-first SQLite runtime through [useLocalMessages.ts](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/src/hooks/useLocalMessages.ts) and the sync engine
 - web uses the Firestore-first compatibility path through [useUnifiedMessages.ts](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/src/hooks/useUnifiedMessages.ts)
+- Expo's experimental web SQLite path is not enabled by default; it requires wasm bundling plus SharedArrayBuffer/COOP/COEP hosting support
 - `useChat` ensures only one runtime owns a conversation screen at a time
 
 Notification routing is backend-authoritative:

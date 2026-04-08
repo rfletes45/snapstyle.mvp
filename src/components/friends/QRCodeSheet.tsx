@@ -7,7 +7,6 @@
 
 import { BorderRadius, Spacing } from "@/constants/theme";
 import { buildProfileUrl } from "@/services/invites";
-import { createLogger } from "@/utils/log";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import React, { useCallback, useState } from "react";
@@ -21,8 +20,6 @@ import {
   View,
 } from "react-native";
 import { Button, IconButton, Text, useTheme } from "react-native-paper";
-
-const logger = createLogger("components/friends/QRCodeSheet");
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const QR_SIZE = Math.min(SCREEN_WIDTH - 80, 240);
@@ -244,7 +241,7 @@ export function ScanCodeView({ onScan, onClose }: ScanCodeViewProps) {
       <View style={styles.scanOverlay}>
         <View style={styles.scanFrame} />
         <Text variant="bodySmall" style={styles.scanHintText}>
-          Point your camera at a friend's QR code
+          Point your camera at a friend&apos;s QR code
         </Text>
       </View>
     </View>

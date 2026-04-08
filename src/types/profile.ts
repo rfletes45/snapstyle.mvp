@@ -6,6 +6,8 @@
  * @see docs/PROFILE_SCREEN_OVERHAUL_PLAN.md
  */
 
+import type { AvatarConfig } from "./models";
+
 // =============================================================================
 // Badge Tier Types
 // =============================================================================
@@ -25,8 +27,6 @@ export const TIER_COLORS: Record<AchievementTier, string> = {
   diamond: "#B9F2FF",
 };
 
-import type { AvatarConfig } from "./models";
-
 // =============================================================================
 // Extended Cosmetic System Types
 // =============================================================================
@@ -39,6 +39,7 @@ export type ExtendedCosmeticSlot =
   | "hat"
   | "glasses"
   | "background"
+  | "decoration"
   // New avatar appearance slots
   | "clothing_top"
   | "clothing_bottom"
@@ -49,15 +50,21 @@ export type ExtendedCosmeticSlot =
   | "profile_frame"
   | "profile_banner"
   | "profile_theme"
+  | "theme"
   // Chat customization
   | "chat_bubble"
+  | "chat_font"
+  | "chat_theme"
+  | "badge"
+  | "item"
   | "name_effect";
 
 /**
- * Extended rarity system with 5 tiers
+ * Extended rarity system with 6 tiers
  */
 export type ExtendedCosmeticRarity =
   | "common" // Gray - most items
+  | "uncommon" // Green - easy-to-get premium flavor
   | "rare" // Blue - some effort to obtain
   | "epic" // Purple - significant effort
   | "legendary" // Orange - very rare
@@ -68,6 +75,7 @@ export type ExtendedCosmeticRarity =
  */
 export const RARITY_COLORS: Record<ExtendedCosmeticRarity, string> = {
   common: "#9E9E9E",
+  uncommon: "#4CAF50",
   rare: "#2196F3",
   epic: "#9C27B0",
   legendary: "#FF9800",

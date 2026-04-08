@@ -61,10 +61,10 @@ import {
 } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { Chip, IconButton, Searchbar, Text } from "react-native-paper";
+import { scheduleOnRN } from "react-native-worklets";
 import Animated, {
   Extrapolation,
   interpolate,
-  runOnJS,
   useAnimatedStyle,
   useSharedValue,
   withSpring,
@@ -223,7 +223,7 @@ export function SearchSheet({ visible, onDismiss }: SearchSheetProps) {
     Keyboard.dismiss();
     translateY.value = withSpring(DISMISS_Y, SPRING_CONFIG, (finished) => {
       if (finished) {
-        runOnJS(doFinalClose)();
+        scheduleOnRN(doFinalClose);
       }
     });
   }, [translateY, doFinalClose]);
@@ -273,7 +273,7 @@ export function SearchSheet({ visible, onDismiss }: SearchSheetProps) {
     })
     .onEnd((event) => {
       if (event.translationY > DISMISS_THRESHOLD || event.velocityY > 500) {
-        runOnJS(closeSheet)();
+        scheduleOnRN(closeSheet);
       } else {
         translateY.value = withSpring(OPEN_Y, SPRING_CONFIG);
       }

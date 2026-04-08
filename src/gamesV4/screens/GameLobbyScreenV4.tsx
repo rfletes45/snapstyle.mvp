@@ -704,7 +704,7 @@ export default function GameLobbyScreenV4() {
                 { color: theme.isDark ? "#FFD60A" : "#856404" },
               ]}
             >
-              This game is coming soon and can't be started yet.
+              This game is coming soon and can&apos;t be started yet.
             </Text>
           </View>
         )}

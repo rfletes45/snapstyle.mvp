@@ -1314,10 +1314,10 @@ export interface ThemeColors {
 // ============================================================================
 
 export const CatppuccinLatteColors: ThemeColors = {
-  background: Latte.base,
-  surface: "#ffffff",
+  background: "#ffffff",
+  surface: Latte.base,
   surfaceVariant: Latte.mantle,
-  surfaceElevated: "#ffffff",
+  surfaceElevated: Latte.base,
   primary: Latte.mauve,
   primaryContainer: "#f3e8ff",
   onPrimary: "#ffffff",
@@ -1354,7 +1354,7 @@ export const CatppuccinLatteColors: ThemeColors = {
   overlayLight: "rgba(76, 79, 105, 0.3)",
   tabActive: Latte.mauve,
   tabInactive: Latte.overlay1,
-  headerBackground: "#ffffff",
+  headerBackground: Latte.base,
   headerText: "#000000",
 };
 
@@ -1556,10 +1556,10 @@ export const RetroWaveColors: ThemeColors = {
 };
 
 export const RoseGardenColors: ThemeColors = {
-  background: RoseGarden.base,
-  surface: "#ffffff",
+  background: "#ffffff",
+  surface: RoseGarden.base,
   surfaceVariant: RoseGarden.mantle,
-  surfaceElevated: "#ffffff",
+  surfaceElevated: RoseGarden.base,
   primary: RoseGarden.rose,
   primaryContainer: "#fce4ec",
   onPrimary: "#ffffff",
@@ -1596,15 +1596,15 @@ export const RoseGardenColors: ThemeColors = {
   overlayLight: "rgba(92, 61, 71, 0.3)",
   tabActive: RoseGarden.rose,
   tabInactive: RoseGarden.overlay1,
-  headerBackground: "#ffffff",
+  headerBackground: RoseGarden.base,
   headerText: RoseGarden.text,
 };
 
 export const OceanBreezeColors: ThemeColors = {
-  background: OceanBreeze.base,
-  surface: "#ffffff",
+  background: "#ffffff",
+  surface: OceanBreeze.base,
   surfaceVariant: OceanBreeze.mantle,
-  surfaceElevated: "#ffffff",
+  surfaceElevated: OceanBreeze.base,
   primary: OceanBreeze.oceanBlue,
   primaryContainer: "#e1f5fe",
   onPrimary: "#ffffff",
@@ -1641,15 +1641,15 @@ export const OceanBreezeColors: ThemeColors = {
   overlayLight: "rgba(26, 58, 92, 0.3)",
   tabActive: OceanBreeze.oceanBlue,
   tabInactive: OceanBreeze.overlay1,
-  headerBackground: "#ffffff",
+  headerBackground: OceanBreeze.base,
   headerText: OceanBreeze.text,
 };
 
 export const MintFreshColors: ThemeColors = {
-  background: MintFresh.base,
-  surface: "#ffffff",
+  background: "#ffffff",
+  surface: MintFresh.base,
   surfaceVariant: MintFresh.mantle,
-  surfaceElevated: "#ffffff",
+  surfaceElevated: MintFresh.base,
   primary: MintFresh.mint,
   primaryContainer: "#e8f5e9",
   onPrimary: "#ffffff",
@@ -1686,15 +1686,15 @@ export const MintFreshColors: ThemeColors = {
   overlayLight: "rgba(27, 67, 50, 0.3)",
   tabActive: MintFresh.mint,
   tabInactive: MintFresh.overlay1,
-  headerBackground: "#ffffff",
+  headerBackground: MintFresh.base,
   headerText: MintFresh.text,
 };
 
 export const SunsetGlowColors: ThemeColors = {
-  background: SunsetGlow.base,
-  surface: "#ffffff",
+  background: "#ffffff",
+  surface: SunsetGlow.base,
   surfaceVariant: SunsetGlow.mantle,
-  surfaceElevated: "#ffffff",
+  surfaceElevated: SunsetGlow.base,
   primary: SunsetGlow.coral,
   primaryContainer: "#ffecb3",
   onPrimary: "#ffffff",
@@ -1731,15 +1731,15 @@ export const SunsetGlowColors: ThemeColors = {
   overlayLight: "rgba(92, 61, 30, 0.3)",
   tabActive: SunsetGlow.coral,
   tabInactive: SunsetGlow.overlay1,
-  headerBackground: "#ffffff",
+  headerBackground: SunsetGlow.base,
   headerText: SunsetGlow.text,
 };
 
 export const LavenderDreamColors: ThemeColors = {
-  background: LavenderDream.base,
-  surface: "#ffffff",
+  background: "#ffffff",
+  surface: LavenderDream.base,
   surfaceVariant: LavenderDream.mantle,
-  surfaceElevated: "#ffffff",
+  surfaceElevated: LavenderDream.base,
   primary: LavenderDream.lavender,
   primaryContainer: "#ede7f6",
   onPrimary: "#ffffff",
@@ -1776,7 +1776,7 @@ export const LavenderDreamColors: ThemeColors = {
   overlayLight: "rgba(61, 45, 92, 0.3)",
   tabActive: LavenderDream.lavender,
   tabInactive: LavenderDream.overlay1,
-  headerBackground: "#ffffff",
+  headerBackground: LavenderDream.base,
   headerText: LavenderDream.text,
 };
 
@@ -1877,10 +1877,10 @@ export const NordColors: ThemeColors = {
 };
 
 export const SolarizedLightColors: ThemeColors = {
-  background: SolarizedLight.base,
-  surface: "#ffffff",
+  background: "#ffffff",
+  surface: SolarizedLight.base,
   surfaceVariant: SolarizedLight.mantle,
-  surfaceElevated: "#ffffff",
+  surfaceElevated: SolarizedLight.base,
   primary: SolarizedLight.blue,
   primaryContainer: "#e8f0f8",
   onPrimary: "#ffffff",
@@ -1917,7 +1917,7 @@ export const SolarizedLightColors: ThemeColors = {
   overlayLight: "rgba(101, 123, 131, 0.3)",
   tabActive: SolarizedLight.blue,
   tabInactive: SolarizedLight.overlay1,
-  headerBackground: "#ffffff",
+  headerBackground: SolarizedLight.base,
   headerText: SolarizedLight.text,
 };
 
@@ -2621,10 +2621,10 @@ export const AmoledSunsetOrangeColors: ThemeColors = {
 };
 
 export const PeachBlossomColors: ThemeColors = {
-  background: PeachBlossom.base,
-  surface: "#ffffff",
+  background: "#ffffff",
+  surface: PeachBlossom.base,
   surfaceVariant: PeachBlossom.mantle,
-  surfaceElevated: "#ffffff",
+  surfaceElevated: PeachBlossom.base,
   primary: PeachBlossom.peach,
   primaryContainer: "#ffe4e0",
   onPrimary: "#ffffff",
@@ -2661,15 +2661,15 @@ export const PeachBlossomColors: ThemeColors = {
   overlayLight: "rgba(92, 61, 48, 0.3)",
   tabActive: PeachBlossom.peach,
   tabInactive: PeachBlossom.overlay1,
-  headerBackground: "#ffffff",
+  headerBackground: PeachBlossom.base,
   headerText: PeachBlossom.text,
 };
 
 export const SkyCottonColors: ThemeColors = {
-  background: SkyCotton.base,
-  surface: "#ffffff",
+  background: "#ffffff",
+  surface: SkyCotton.base,
   surfaceVariant: SkyCotton.mantle,
-  surfaceElevated: "#ffffff",
+  surfaceElevated: SkyCotton.base,
   primary: SkyCotton.sky,
   primaryContainer: "#e0f4ff",
   onPrimary: "#1a3a5c",
@@ -2706,15 +2706,15 @@ export const SkyCottonColors: ThemeColors = {
   overlayLight: "rgba(26, 58, 92, 0.3)",
   tabActive: SkyCotton.azure,
   tabInactive: SkyCotton.overlay1,
-  headerBackground: "#ffffff",
+  headerBackground: SkyCotton.base,
   headerText: SkyCotton.text,
 };
 
 export const HoneydewMintColors: ThemeColors = {
-  background: HoneydewMint.base,
-  surface: "#ffffff",
+  background: "#ffffff",
+  surface: HoneydewMint.base,
   surfaceVariant: HoneydewMint.mantle,
-  surfaceElevated: "#ffffff",
+  surfaceElevated: HoneydewMint.base,
   primary: HoneydewMint.honeydew,
   primaryContainer: "#e0ffe0",
   onPrimary: "#1b4332",
@@ -2751,7 +2751,7 @@ export const HoneydewMintColors: ThemeColors = {
   overlayLight: "rgba(27, 67, 50, 0.3)",
   tabActive: HoneydewMint.mint,
   tabInactive: HoneydewMint.overlay1,
-  headerBackground: "#ffffff",
+  headerBackground: HoneydewMint.base,
   headerText: HoneydewMint.text,
 };
 
@@ -2789,52 +2789,9 @@ export const THEME_COLORS: Record<ThemeId, ThemeColors> = {
   jellyfish: JellyfishColors,
 };
 
-// ============================================================================
-// LEGACY COMPATIBILITY (AppColors maps to light theme)
-// ============================================================================
-
 // Aliases for backward compatibility
 export const LightColors = CatppuccinLatteColors;
 export const DarkColors = CatppuccinMochaColors;
-
-/**
- * @deprecated Use theme colors via useAppTheme() hook instead
- * Kept for gradual migration
- */
-export const AppColors = {
-  primary: LightColors.primary,
-  primaryLight: "#c4b5fd",
-  primaryDark: "#6d28d9",
-  secondary: LightColors.secondary,
-  secondaryLight: "#b3e0f0",
-  secondaryDark: "#1a7a94",
-  success: LightColors.success,
-  successLight: LightColors.successContainer,
-  warning: LightColors.warning,
-  warningLight: LightColors.warningContainer,
-  error: LightColors.error,
-  errorLight: LightColors.errorContainer,
-  info: LightColors.info,
-  infoLight: LightColors.infoContainer,
-  streak: LightColors.ritual,
-  streakGlow: LightColors.ritualGlow,
-  background: LightColors.background,
-  surface: LightColors.surface,
-  surfaceVariant: LightColors.surfaceVariant,
-  friendCard: LightColors.cardConnection,
-  friendCardBorder: LightColors.cardConnectionBorder,
-  requestCard: LightColors.cardRequest,
-  requestCardBorder: LightColors.cardRequestBorder,
-  sentRequestCard: LightColors.cardSent,
-  textPrimary: LightColors.text,
-  textSecondary: LightColors.textSecondary,
-  textMuted: LightColors.textMuted,
-  textOnPrimary: LightColors.textOnPrimary,
-  border: LightColors.border,
-  divider: LightColors.divider,
-  overlay: LightColors.overlay,
-  overlayLight: LightColors.overlayLight,
-};
 
 // ============================================================================
 // SPACING & LAYOUT
@@ -3123,14 +3080,6 @@ export function getThemeById(themeId: ThemeId): AppTheme {
     elevation: Elevation,
     isDark: meta.isDark,
   };
-}
-
-/**
- * @deprecated Use getThemeById instead
- * Kept for backward compatibility
- */
-export function getTheme(isDark: boolean): AppTheme {
-  return getThemeById(isDark ? "catppuccin-mocha" : "catppuccin-latte");
 }
 
 // Get all available themes

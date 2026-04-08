@@ -47,7 +47,7 @@ export default React.memo(function ContactsPermissionCard({
         variant="bodySmall"
         style={[styles.description, { color: colors.onSurfaceVariant }]}
       >
-        We'll check your contacts to find friends already on SnapStyle and help
+        We&apos;ll check your contacts to find friends already on SnapStyle and help
         you invite others. Your contacts are only used for matching — never
         stored or shared.
       </Text>

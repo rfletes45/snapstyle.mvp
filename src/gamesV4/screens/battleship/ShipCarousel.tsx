@@ -18,7 +18,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import Animated, { FadeIn, Layout } from "react-native-reanimated";
+import Animated, { FadeIn, LinearTransition } from "react-native-reanimated";
 import type { ShipDef } from "../../adapters/battleship/battleshipTypes";
 import type { BattleshipTokens } from "./battleshipTheme";
 import { BS } from "./battleshipTheme";
@@ -63,7 +63,10 @@ const ShipCard = React.memo(function ShipCard({
   const bg = isPlaced ? tokens.setupCardPlacedBg : tokens.setupCardBg;
 
   return (
-    <Animated.View entering={FadeIn.duration(200)} layout={Layout}>
+    <Animated.View
+      entering={FadeIn.duration(200)}
+      layout={LinearTransition}
+    >
       <TouchableOpacity
         style={[
           styles.card,

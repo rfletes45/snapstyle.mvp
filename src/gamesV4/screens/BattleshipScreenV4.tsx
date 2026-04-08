@@ -36,7 +36,11 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import Animated, { FadeIn, FadeInDown, Layout } from "react-native-reanimated";
+import Animated, {
+  FadeIn,
+  FadeInDown,
+  LinearTransition,
+} from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   autoPlaceFleet,
@@ -765,7 +769,7 @@ function BattlePhase({
       {/* Turn Banner */}
       <Animated.View
         entering={FadeIn.duration(200)}
-        layout={Layout}
+        layout={LinearTransition}
         style={[
           styles.turnBanner,
           {

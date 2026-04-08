@@ -31,8 +31,8 @@ import type {
   UserReport,
 } from "@/types/userProfile";
 import { applyPrivacyFilters, getFriendshipDetails } from "@/types/userProfile";
+import { manipulateImage } from "@/utils/imageManipulation";
 import { log } from "@/utils/log";
-import * as ImageManipulator from "expo-image-manipulator";
 import {
   addDoc,
   collection,
@@ -342,17 +342,21 @@ export async function uploadProfilePicture(
     const db = getFirestoreInstance();
 
     // Compress and resize main image (max 1024x1024)
-    const mainImage = await ImageManipulator.manipulateAsync(
+    const mainImage = await manipulateImage(
       imageUri,
-      [{ resize: { width: 1024, height: 1024 } }],
-      { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG },
+      (context) => {
+        context.resize({ width: 1024, height: 1024 });
+      },
+      { compress: 0.8 },
     );
 
     // Create thumbnail (128x128)
-    const thumbnail = await ImageManipulator.manipulateAsync(
+    const thumbnail = await manipulateImage(
       imageUri,
-      [{ resize: { width: 128, height: 128 } }],
-      { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG },
+      (context) => {
+        context.resize({ width: 128, height: 128 });
+      },
+      { compress: 0.7 },
     );
 
     // Upload main image

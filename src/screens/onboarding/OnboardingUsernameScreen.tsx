@@ -253,7 +253,7 @@ export default function OnboardingUsernameScreen({ navigation }: any) {
             variant="bodyMedium"
             style={[styles.subtitle, { color: theme.colors.onSurfaceVariant }]}
           >
-            Pick a unique username and how you'd like to be called
+            Pick a unique username and how you&apos;d like to be called
           </Text>
 
           {/* Username */}

@@ -1,70 +1,46 @@
 /**
  * Unified Message Send Service
  *
- * Provides a unified API for sending messages across both
- * DM and Group conversations. Uses the V2 system with outbox
- * support for offline resilience.
+ * Canonical client entry point for optimistic sends across DM and group
+ * conversations. Native local-first screens write into SQLite before the sync
+ * engine publishes to Firestore; this module remains the queue/send runtime for
+ * the Firestore-backed compatibility path on web and rollback scenarios.
  *
  * Features:
- * - Outbox-based sending (offline support)
+ * - AsyncStorage-backed optimistic queue
  * - Automatic retry on failure
- * - Optimistic UI support
- * - Idempotent sends via Cloud Function
+ * - Idempotent Cloud Function sends
+ * - Shared API across DM and group conversations
  *
  * @module services/messaging/send
- *
- * @example
- * ```typescript
- * import { sendMessage, retryMessage } from "@/services/messaging";
- *
- * // Send a text message to a group
- * const { outboxItem, sendPromise } = await sendMessage({
- *   scope: "group",
- *   conversationId: groupId,
- *   kind: "text",
- *   text: "Hello everyone!",
- * });
- *
- * // Use outboxItem for optimistic UI
- * setMessages(prev => [...prev, optimisticMessage]);
- *
- * // Handle result
- * const result = await sendPromise;
- * if (!result.success) {
- *   console.error("Send failed:", result.error);
- * }
- *
- * // Retry a failed message
- * const success = await retryMessage(messageId);
- * ```
  */
 
 import { DEBUG_UNIFIED_MESSAGING } from "@/constants/featureFlags";
 import type { SenderStyle } from "@/cosmetics/types";
+import { getAppInstance } from "@/services/firebase";
+import {
+  enqueueMessage,
+  generateMessageId,
+  getClientId,
+  getFailedItems,
+  getOutboxForConversation,
+  getPendingItems,
+  processOutbox,
+  removeFromOutbox,
+  retryItem,
+  updateOutboxItem,
+} from "@/services/outbox";
 import {
   AttachmentV2,
   LocalAttachment,
   MentionSpan,
   MessageKind,
+  MessageV2,
   OutboxItem,
   ReplyToMetadata,
 } from "@/types/messaging";
 import { createLogger } from "@/utils/log";
-
-// Import existing send functions
-import {
-  processPendingMessages as processPendingMessagesV2,
-  retryFailedMessage as retryFailedMessageV2,
-  sendMessageWithOutbox as sendMessageWithOutboxV2,
-} from "@/services/chatV2";
-
-// Import outbox functions
-import {
-  generateMessageId,
-  getClientId,
-  getFailedItems,
-  getPendingItems,
-} from "@/services/outbox";
+import { getFunctions, httpsCallable } from "firebase/functions";
 
 const log = createLogger("messaging:send");
 
@@ -122,8 +98,9 @@ export interface SendMessageParams {
   mentionSpans?: MentionSpan[];
 
   /**
-   * Local attachments to upload
-   * Note: Attachments are uploaded during send process
+   * Local attachments to upload.
+   * The compatibility runtime does not upload these directly; native local-first
+   * flows handle attachment persistence through SQLite + syncEngine instead.
    */
   localAttachments?: LocalAttachment[];
 
@@ -158,53 +135,78 @@ export interface ProcessPendingResult {
   pending: number;
 }
 
+interface SendMessageV2Params {
+  conversationId: string;
+  scope: ConversationScope;
+  kind: MessageKind;
+  text?: string;
+  animalId?: string;
+  replyTo?: ReplyToMetadata;
+  mentionUids?: string[];
+  mentionSpans?: MentionSpan[];
+  attachments?: AttachmentV2[];
+  clientId: string;
+  messageId: string;
+  createdAt?: number;
+  traceId?: string;
+  senderStyle?: {
+    bubbleColorId?: string | null;
+    bubbleColorHex?: string | null;
+    fontId?: string | null;
+    fontKey?: string | null;
+    animalThemeId?: string | null;
+    v: 1;
+  };
+}
+
+interface SendMessageV2Response {
+  success: boolean;
+  message: MessageV2;
+  isExisting: boolean;
+}
+
+// =============================================================================
+// Cloud Function Calls
+// =============================================================================
+
+let functionsInstance: ReturnType<typeof getFunctions> | null = null;
+
+function getFunctionsInstance() {
+  if (!functionsInstance) {
+    functionsInstance = getFunctions(getAppInstance());
+  }
+  return functionsInstance;
+}
+
+async function sendMessageV2(
+  params: SendMessageV2Params,
+): Promise<SendMessageV2Response> {
+  const callable = httpsCallable<SendMessageV2Params, SendMessageV2Response>(
+    getFunctionsInstance(),
+    "sendMessageV2",
+  );
+
+  if (DEBUG_UNIFIED_MESSAGING) {
+    log.debug("Calling sendMessageV2", {
+      operation: "sendCallable",
+      data: {
+        messageId: `${params.messageId.substring(0, 8)}...`,
+        scope: params.scope,
+        kind: params.kind,
+      },
+    });
+  }
+
+  const result = await callable(params);
+  return result.data;
+}
+
 // =============================================================================
 // Send Functions
 // =============================================================================
 
 /**
- * Send a message with outbox support
- *
- * This is the primary way to send messages. The message is:
- * 1. Immediately persisted to the outbox
- * 2. An OutboxItem is returned for optimistic UI
- * 3. Send is attempted in the background
- * 4. Failed sends are automatically queued for retry
- *
- * @param params - Send parameters
- * @returns OutboxItem for optimistic UI and send promise
- *
- * @example
- * ```typescript
- * // Send a text message
- * const { outboxItem, sendPromise } = await sendMessage({
- *   scope: "group",
- *   conversationId: "group123",
- *   kind: "text",
- *   text: "Hello!",
- * });
- *
- * // Add optimistic message to UI
- * setMessages(prev => [
- *   ...prev,
- *   {
- *     id: outboxItem.messageId,
- *     text: outboxItem.text,
- *     status: "sending",
- *     createdAt: outboxItem.createdAt,
- *     senderId: currentUser.uid,
- *   },
- * ]);
- *
- * // Wait for result
- * const result = await sendPromise;
- * if (result.success) {
- *   // Message will appear from real-time subscription
- * } else {
- *   // Update UI to show failed state
- *   updateMessageStatus(outboxItem.messageId, "failed", result.error);
- * }
- * ```
+ * Send a message with optimistic queue support.
  */
 export async function sendMessage(
   params: SendMessageParams,
@@ -224,67 +226,102 @@ export async function sendMessage(
     });
   }
 
-  // Delegate to existing V2 send function
-  return sendMessageWithOutboxV2({
-    conversationId: params.conversationId,
+  const outboxItem = await enqueueMessage({
     scope: params.scope,
+    conversationId: params.conversationId,
     kind: params.kind,
     text: params.text,
-    animalId: params.animalId,
     replyTo: params.replyTo,
     mentionUids: params.mentionUids,
     mentionSpans: params.mentionSpans,
-    senderStyle: params.senderStyle,
   });
+
+  const clientId = await getClientId();
+
+  const sendPromise = (async (): Promise<{
+    success: boolean;
+    error?: string;
+  }> => {
+    try {
+      await updateOutboxItem(outboxItem.messageId, { state: "sending" });
+
+      const result = await sendMessageV2({
+        conversationId: params.conversationId,
+        scope: params.scope,
+        kind: params.kind,
+        text: params.text,
+        animalId: params.animalId,
+        replyTo: params.replyTo,
+        mentionUids: params.mentionUids,
+        mentionSpans: params.mentionSpans,
+        attachments: [],
+        clientId,
+        messageId: outboxItem.messageId,
+        createdAt: outboxItem.createdAt,
+        traceId: outboxItem.traceId,
+        senderStyle: params.senderStyle,
+      });
+
+      if (!result.success) {
+        throw new Error("Server returned success: false");
+      }
+
+      await removeFromOutbox(outboxItem.messageId);
+      return { success: true };
+    } catch (error: unknown) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+
+      await updateOutboxItem(outboxItem.messageId, {
+        state: "failed",
+        lastError: errorMessage,
+        attemptCount: outboxItem.attemptCount + 1,
+        nextRetryAt:
+          Date.now() + Math.pow(2, outboxItem.attemptCount + 1) * 1000,
+      });
+
+      return { success: false, error: errorMessage };
+    }
+  })();
+
+  return { outboxItem, sendPromise };
 }
 
 /**
- * Retry sending a failed message
- *
- * Use this to retry a message that previously failed to send.
- *
- * @param messageId - The message ID to retry
- * @returns true if sent successfully, false otherwise
- *
- * @example
- * ```typescript
- * // Retry a failed message
- * const success = await retryMessage("msg_abc123");
- *
- * if (success) {
- *   // Update UI to show sent status
- * } else {
- *   // Still failed, maybe show error to user
- * }
- * ```
+ * Retry sending a failed message.
  */
 export async function retryMessage(messageId: string): Promise<boolean> {
   if (DEBUG_UNIFIED_MESSAGING) {
     log.debug("retryMessage called", {
       operation: "retry",
-      data: { messageId: messageId.substring(0, 8) + "..." },
+      data: { messageId: `${messageId.substring(0, 8)}...` },
     });
   }
 
-  return retryFailedMessageV2(messageId);
+  const clientId = await getClientId();
+
+  return retryItem(messageId, async (item) => {
+    const result = await sendMessageV2({
+      conversationId: item.conversationId,
+      scope: item.scope,
+      kind: item.kind,
+      text: item.text,
+      replyTo: item.replyTo,
+      mentionUids: item.mentionUids,
+      mentionSpans: item.mentionSpans,
+      attachments: [],
+      clientId,
+      messageId: item.messageId,
+      createdAt: item.createdAt,
+      traceId: item.traceId,
+    });
+
+    return result.success;
+  });
 }
 
 /**
- * Process all pending/failed messages in outbox
- *
- * Call this:
- * - On app startup
- * - When network connectivity is restored
- * - Periodically in background
- *
- * @returns Statistics about processed messages
- *
- * @example
- * ```typescript
- * // Process pending messages on app start
- * const { sent, failed, skipped } = await processPendingMessages();
- * console.log(`Processed: ${sent} sent, ${failed} failed, ${skipped} skipped`);
- * ```
+ * Process all pending/failed messages in the compatibility queue.
  */
 export async function processPendingMessages(): Promise<{
   sent: number;
@@ -297,43 +334,65 @@ export async function processPendingMessages(): Promise<{
     });
   }
 
-  return processPendingMessagesV2();
+  const clientId = await getClientId();
+
+  return processOutbox(async (item) => {
+    const result = await sendMessageV2({
+      conversationId: item.conversationId,
+      scope: item.scope,
+      kind: item.kind,
+      text: item.text,
+      replyTo: item.replyTo,
+      mentionUids: item.mentionUids,
+      mentionSpans: item.mentionSpans,
+      attachments: [],
+      clientId,
+      messageId: item.messageId,
+      createdAt: item.createdAt,
+      traceId: item.traceId,
+    });
+
+    return result.success;
+  });
 }
 
 // =============================================================================
-// Outbox Query Functions
+// Queue Query Functions
 // =============================================================================
 
 /**
- * Get pending messages for a specific conversation
- *
- * Useful for showing optimistic UI for messages still being sent.
- *
- * @param scope - "dm" or "group"
- * @param conversationId - Chat/Group ID
- * @returns Array of outbox items for this conversation
+ * Get pending messages for a specific conversation.
  */
 export async function getPendingForConversation(
   scope: ConversationScope,
   conversationId: string,
 ): Promise<OutboxItem[]> {
   const pending = await getPendingItems();
-  return pending.filter((item) => item.conversationId === conversationId);
+  return pending.filter(
+    (item) =>
+      item.scope === scope && item.conversationId === conversationId,
+  );
 }
 
 /**
- * Get all pending messages (across all conversations)
- *
- * @returns Array of pending outbox items
+ * Get all queued/sending/failed items for a specific conversation.
+ */
+export async function getQueueItemsForConversation(
+  conversationId: string,
+  scope?: ConversationScope,
+): Promise<OutboxItem[]> {
+  return getOutboxForConversation(conversationId, scope);
+}
+
+/**
+ * Get all pending messages (across all conversations).
  */
 export async function getPendingMessages(): Promise<OutboxItem[]> {
   return getPendingItems();
 }
 
 /**
- * Get all failed messages (across all conversations)
- *
- * @returns Array of failed outbox items
+ * Get all failed messages (across all conversations).
  */
 export async function getFailedMessages(): Promise<OutboxItem[]> {
   return getFailedItems();
@@ -343,23 +402,7 @@ export async function getFailedMessages(): Promise<OutboxItem[]> {
 // Utility Functions
 // =============================================================================
 
-/**
- * Generate a new message ID
- *
- * Use this if you need to create a message ID before calling sendMessage.
- * This is rarely needed as sendMessage generates IDs automatically.
- *
- * @returns New unique message ID
- */
 export { generateMessageId };
-
-/**
- * Get the client ID for this device
- *
- * The client ID is used for idempotency in message sending.
- *
- * @returns Client ID string
- */
 export { getClientId };
 
 // =============================================================================

@@ -493,6 +493,7 @@ const CameraScreen: React.FC = () => {
   const [capturedMedia, setCapturedMedia] = useState<CapturedMedia | null>(
     null,
   );
+  const isEditorMode = capturedMedia !== null;
 
   // -- Camera isActive computation ---------------------------------------------
   // Camera should be active ONLY when the screen is focused, the app is in
@@ -582,8 +583,6 @@ const CameraScreen: React.FC = () => {
     },
     [],
   );
-
-  const isEditorMode = capturedMedia !== null;
 
   // -- Active live filter -----------------------------------------------------
   const activeFilter: FilterConfig | null = useMemo(() => {

@@ -10,6 +10,10 @@
 import type { SQLiteDatabase } from "expo-sqlite";
 import { Platform } from "react-native";
 
+import {
+  EXPERIMENTAL_WEB_SQLITE,
+  USE_LOCAL_STORAGE,
+} from "@/constants/featureFlags";
 import { createLogger } from "@/utils/log";
 const logger = createLogger("services/database/index");
 // =============================================================================
@@ -19,12 +23,46 @@ const logger = createLogger("services/database/index");
 const DATABASE_NAME = "snapstyle.db";
 const DATABASE_VERSION = 4;
 
+function hasSharedArrayBufferSupport(): boolean {
+  return typeof SharedArrayBuffer !== "undefined";
+}
+
 /**
- * Check if SQLite is available on this platform
- * SQLite sync operations require SharedArrayBuffer on web, which needs COOP/COEP headers
- * Also not fully supported in Expo Go for certain operations
+ * Whether the current runtime can open the synchronous SQLite database.
+ *
+ * Native builds always support the current implementation. Web only supports
+ * it when the experimental Expo SQLite runtime is explicitly enabled and the
+ * page is running with SharedArrayBuffer support.
  */
-const IS_SQLITE_AVAILABLE = Platform.OS !== "web";
+export function isDatabaseRuntimeAvailable(): boolean {
+  if (Platform.OS !== "web") {
+    return true;
+  }
+
+  return USE_LOCAL_STORAGE && hasSharedArrayBufferSupport();
+}
+
+export function getDatabaseUnavailableReason(): string {
+  if (Platform.OS !== "web") {
+    return "SQLite is not available on this platform";
+  }
+
+  if (!EXPERIMENTAL_WEB_SQLITE) {
+    return (
+      "SQLite web runtime is disabled. Enable " +
+      "EXPO_PUBLIC_ENABLE_WEB_SQLITE=1 after wiring Expo's wasm + COOP/COEP setup."
+    );
+  }
+
+  if (!hasSharedArrayBufferSupport()) {
+    return (
+      "SQLite web runtime requires SharedArrayBuffer. Serve the app with " +
+      "COOP/COEP headers before enabling local-first messaging on web."
+    );
+  }
+
+  return "SQLite is not available on this platform";
+}
 
 // =============================================================================
 // Lazy-loaded SQLite module
@@ -51,12 +89,11 @@ let db: SQLiteDatabase | null = null;
 
 /**
  * Get or create the database instance.
- * Throws on web platform where SQLite sync operations are not available.
+ * Throws when the current runtime cannot support synchronous SQLite.
  */
 export function getDatabase(): SQLiteDatabase {
-  // SQLite sync operations are not available on web
-  if (!IS_SQLITE_AVAILABLE) {
-    throw new Error("SQLite is not available on this platform");
+  if (!isDatabaseRuntimeAvailable()) {
+    throw new Error(getDatabaseUnavailableReason());
   }
 
   if (!db) {

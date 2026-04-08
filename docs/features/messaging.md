@@ -47,7 +47,8 @@ Hooks and services:
 - [sendDraft.ts](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/src/chat/sendDraft.ts)
 - [groupMembers.ts](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/src/services/groupMembers.ts)
 - `src/services/messaging/*`
-- `src/services/chatV2.ts`
+- `src/services/outbox.ts`
+- `src/services/messageList.ts`
 - `src/services/sync/syncEngine.ts`
 
 Backend:
@@ -78,7 +79,9 @@ Web uses the Firestore-first compatibility path:
 
 - `USE_LOCAL_STORAGE = false`
 - `useChat` delegates to `useUnifiedMessages`
-- this path still relies on older compatibility services such as `chatV2.ts`
+- send orchestration flows through `src/services/messaging/send.ts`
+- subscriptions flow through `src/services/messaging/subscribe.ts` and `src/services/messageList.ts`
+- optimistic queue state is persisted by `src/services/outbox.ts`
 
 ### Important invariant
 

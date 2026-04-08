@@ -328,8 +328,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 10,
-    paddingVertical: 6,
-    minHeight: 72,
+    paddingVertical: 2,
+    minHeight: 60,
   },
   avatarContainer: {
     position: "relative",

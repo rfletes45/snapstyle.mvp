@@ -353,7 +353,7 @@ function TurnRecapCard({
         The word was: <Text style={{ fontWeight: "800" }}>{word}</Text>
       </Text>
       <Text style={[styles.recapClarity, { color: textColor }]}>
-        {drawerName}'s clarity: {guessers}/{totalGuessers} guessed
+        {drawerName}&apos;s clarity: {guessers}/{totalGuessers} guessed
       </Text>
       {topGuessers.length > 0 && (
         <View style={styles.recapGuessers}>

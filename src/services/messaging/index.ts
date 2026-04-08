@@ -99,6 +99,7 @@ export {
   // Outbox queries
   getPendingForConversation,
   getPendingMessages,
+  getQueueItemsForConversation,
   processPendingMessages,
   retryMessage,
   // Main send function

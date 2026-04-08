@@ -44,6 +44,7 @@ export interface WidgetSizeSelectorProps {
 // =============================================================================
 
 const SIZE_LABELS: Record<WidgetSizeKey, string> = {
+  mega: "Mega",
   small: "Small",
   medium: "Medium",
   wide: "Wide",
@@ -52,6 +53,7 @@ const SIZE_LABELS: Record<WidgetSizeKey, string> = {
 };
 
 const SIZE_DESCRIPTIONS: Record<WidgetSizeKey, string> = {
+  mega: "4 x 4 - Full board statement",
   small: "2 × 1 — Compact",
   medium: "2 × 2 — Standard",
   wide: "4 × 1 — Full width, short",

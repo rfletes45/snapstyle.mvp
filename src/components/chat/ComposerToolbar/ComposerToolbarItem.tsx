@@ -59,9 +59,9 @@ import React, {
 } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import { scheduleOnRN } from "react-native-worklets";
 import Animated, {
   ReduceMotion,
-  runOnJS,
   useAnimatedStyle,
   useSharedValue,
   withSpring,
@@ -233,12 +233,12 @@ function ComposerToolbarItemBase({
       gestureEnded.value = false;
       scale.value = withSpring(1.08, SNAP_SPRING);
       zIndex.value = 100;
-      runOnJS(triggerDragStartHaptic)();
+      scheduleOnRN(triggerDragStartHaptic);
     })
     .onUpdate((e) => {
       "worklet";
       translateX.value = e.translationX;
-      runOnJS(triggerDragUpdate)(e.translationX);
+      scheduleOnRN(triggerDragUpdate, e.translationX);
     })
     .onEnd((e) => {
       "worklet";
@@ -247,7 +247,7 @@ function ComposerToolbarItemBase({
       // smooth animation from the visual drag position to the new slot.
       scale.value = withSpring(1, SPRING_CONFIG);
       zIndex.value = 0;
-      runOnJS(triggerDragEnd)(e.translationX);
+      scheduleOnRN(triggerDragEnd, e.translationX);
     })
     .onFinalize(() => {
       "worklet";
@@ -266,7 +266,7 @@ function ComposerToolbarItemBase({
     .onStart(() => {
       "worklet";
       if (onLongPress) {
-        runOnJS(onLongPress)();
+        scheduleOnRN(onLongPress);
       }
     });
 

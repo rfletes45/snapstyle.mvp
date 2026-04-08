@@ -39,9 +39,6 @@ const log = createLogger("useMessageSearch");
 export type ScopeFilter = "all" | "dms" | "groups";
 export type ContentFilter = "all" | "media" | "links" | "files";
 
-/** @deprecated Use ScopeFilter + ContentFilter instead */
-export type SearchFilter = ScopeFilter | ContentFilter;
-
 /** Date range filter for narrowing search results */
 export interface DateRangeFilter {
   after?: number; // epoch ms – results after this date
