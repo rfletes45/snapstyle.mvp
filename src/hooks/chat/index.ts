@@ -28,3 +28,6 @@ export {
   type AutoscrollConfig,
   type AutoscrollState,
 } from "./useNewMessageAutoscroll";
+
+// New message enter-animation tracking
+export { useMessageEnterAnimationQueue } from "./useMessageEnterAnimationQueue";

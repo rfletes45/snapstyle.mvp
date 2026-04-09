@@ -15,16 +15,9 @@
 
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import React, { useCallback, useEffect } from "react";
+import React, { useCallback } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useTheme } from "react-native-paper";
-import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-  withDelay,
-  withSequence,
-  withTiming,
-} from "react-native-reanimated";
 
 import type { MessageViewModel } from "@/chat/displayMode";
 import { FEED_LAYOUT } from "@/chat/displayMode";
@@ -32,6 +25,7 @@ import FeedImage from "@/components/AppImage";
 import { SwipeableMessage } from "@/components/chat";
 import { AnimalBubble } from "@/components/chat/AnimalBubble";
 import { LinkPreviewCard } from "@/components/chat/LinkPreviewCard";
+import { MessageHighlightOverlay } from "@/components/chat/MessageHighlightOverlay";
 import { ReactionPills } from "@/components/chat/ReactionBar";
 import { StackedReplyReference } from "@/components/chat/StackedReplyReference";
 import { ThreadIndicator } from "@/components/chat/ThreadIndicator";
@@ -156,31 +150,6 @@ export const StackedMessageRenderer: React.FC<StackedMessageRendererProps> =
       );
       const { linkPreviews, loadingPreviews } =
         useLinkPreviews(messagesForPreview);
-
-      // ── Highlight animation ───────────────────────────────────────────
-      const highlightOpacity = useSharedValue(0);
-
-      useEffect(() => {
-        if (isHighlighted) {
-          highlightOpacity.value = withSequence(
-            withTiming(1, { duration: 200 }),
-            withDelay(1500, withTiming(0, { duration: 400 })),
-          );
-        } else {
-          highlightOpacity.value = 0;
-        }
-      }, [isHighlighted, highlightOpacity]);
-
-      const highlightStyle = useAnimatedStyle(() => ({
-        position: "absolute" as const,
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        backgroundColor: theme.colors.primary,
-        opacity: highlightOpacity.value * 0.1,
-        zIndex: -1,
-      }));
 
       // ── Handlers ──────────────────────────────────────────────────────
       const handlePress = useCallback(() => {
@@ -318,7 +287,7 @@ export const StackedMessageRenderer: React.FC<StackedMessageRendererProps> =
             ]}
           >
             {/* Highlight overlay for reply navigation */}
-            <Animated.View style={highlightStyle} pointerEvents="none" />
+            <MessageHighlightOverlay isHighlighted={isHighlighted} />
 
             {/* ── Message row: [avatar/spacer] [content column] ──────── */}
             <TouchableOpacity
@@ -386,10 +355,7 @@ export const StackedMessageRenderer: React.FC<StackedMessageRendererProps> =
 
                   {/* Message content — no bubble wrapper */}
                   <View
-                    style={[
-                      message.status === "sending" && { opacity: 0.6 },
-                      message.status === "failed" && s.failedContent,
-                    ]}
+                    style={[message.status === "failed" && s.failedContent]}
                   >
                     {renderContent()}
                   </View>

@@ -147,8 +147,10 @@ async function resolveSessionV4Internal(input) {
         }
     }
     // ─── Phase 3: Compute result data ──────────────────────────────────
+    // PERF: Start countMoves in parallel with scoreboard computation.
+    // countMoves is an independent Firestore query that doesn't block scoreboard.
+    const countMovesPromise = countMoves(db, input.sessionId);
     const durationMs = computeDuration(session);
-    const totalMoves = await countMoves(db, input.sessionId);
     // Use adapter-driven scoreboard (with proper scores + stats) when available
     let scoreboard;
     let performanceMetrics = input.performanceMetrics ?? {};
@@ -204,6 +206,39 @@ async function resolveSessionV4Internal(input) {
         scoreboard = buildDefaultScoreboard(session, input.winnerIds ?? []);
     }
     const xpAwards = computeXPAwards(session, input.resolutionType, input.winnerIds ?? [], scoreboard);
+    // Await the parallel countMoves query
+    const totalMoves = await countMovesPromise;
+    const weekKey = (0, helpers_1.currentWeekKey)();
+    const leaderboardUpdates = []; // Populated below
+    const result = {
+        sessionId: session.sessionId,
+        inviteId: session.inviteId,
+        conversationId: session.conversationId,
+        gameId: session.gameId,
+        resolutionType: input.resolutionType,
+        winnerIds: input.winnerIds ?? [],
+        scoreboard,
+        xpAwards,
+        achievementUnlocks: [], // Written initially empty; updated below
+        leaderboardUpdates,
+        durationMs,
+        totalMoves,
+        createdAt: admin.firestore.Timestamp.now(),
+        participantIds: session.participantUids,
+        performanceMetrics,
+    };
+    // ─── Phase 4: Write result doc EARLY ───────────────────────────────
+    // PERF: Write the result doc immediately with scoreboard + XP so the
+    // client's onSnapshot listener fires as soon as possible. Achievements
+    // are evaluated and patched in afterward — the client will receive
+    // the update automatically via its live subscription.
+    const resultRef = db
+        .collection(types_1.COLLECTIONS.GAME_RESULTS)
+        .doc(input.sessionId);
+    await resultRef.set(result);
+    // ─── Phase 4.5: Evaluate achievements (deferred from Phase 3) ─────
+    // This runs AFTER the result doc is written so the client sees
+    // scoreboard/XP immediately. Achievement unlocks are patched in.
     const achievementUnlocks = await (0, achievements_1.evaluateAchievementsV4)(db, session, {
         sessionId: session.sessionId,
         inviteId: session.inviteId,
@@ -220,30 +255,11 @@ async function resolveSessionV4Internal(input) {
         participantIds: session.participantUids,
         performanceMetrics,
     });
-    const weekKey = (0, helpers_1.currentWeekKey)();
-    const leaderboardUpdates = []; // Populated below
-    const result = {
-        sessionId: session.sessionId,
-        inviteId: session.inviteId,
-        conversationId: session.conversationId,
-        gameId: session.gameId,
-        resolutionType: input.resolutionType,
-        winnerIds: input.winnerIds ?? [],
-        scoreboard,
-        xpAwards,
-        achievementUnlocks,
-        leaderboardUpdates,
-        durationMs,
-        totalMoves,
-        createdAt: admin.firestore.Timestamp.now(),
-        participantIds: session.participantUids,
-        performanceMetrics,
-    };
-    // ─── Phase 4: Write result doc ─────────────────────────────────────
-    await db
-        .collection(types_1.COLLECTIONS.GAME_RESULTS)
-        .doc(input.sessionId)
-        .set(result);
+    result.achievementUnlocks = achievementUnlocks;
+    // Patch achievement unlocks into the result doc if any were earned
+    if (achievementUnlocks.length > 0) {
+        await resultRef.update({ achievementUnlocks });
+    }
     // ─── Phases 5-7: Apply rewards in parallel ─────────────────────────
     // PERF: XP, leaderboard, and PB writes are independent of each other.
     // Running them in parallel saves ~300-800ms compared to sequential.

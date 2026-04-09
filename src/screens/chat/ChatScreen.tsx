@@ -78,6 +78,7 @@ import {
   TypingBar,
   TypingBubble,
 } from "@/components/chat";
+import { AnimatedMessageRow } from "@/components/chat/AnimatedMessageRow";
 import { CameraLongPressButton } from "@/components/chat/CameraLongPressButton";
 import type { ChatMessageListRef } from "@/components/chat/ChatMessageList";
 import { ChatSkeleton } from "@/components/chat/ChatSkeleton";
@@ -572,6 +573,14 @@ export default function ChatScreen({
   // Derived State
   // ==========================================================================
 
+  // Destructure the stable callback ref outside useMemo so the dependency
+  // is reference-stable (getMessageStatus is wrapped in useCallback inside
+  // useReadReceipts).  Using the whole `readReceipts` object would create a
+  // new dependency every render because the hook returns a plain object
+  // literal, which in turn would churn the DM timeline and visible row props
+  // more than necessary.
+  const getReceiptStatus = readReceipts.getMessageStatus;
+
   const displayMessages: MessageV2[] = useMemo(
     () =>
       chatId
@@ -587,16 +596,13 @@ export default function ChatScreen({
                   : msg.status;
               return {
                 ...msg,
-                status: readReceipts.getMessageStatus(
-                  msg.serverReceivedAt,
-                  baseStatus,
-                ),
+                status: getReceiptStatus(msg.serverReceivedAt, baseStatus),
               };
             }
             return msg;
           })
         : [],
-    [chatId, screen.messages, uid, readReceipts],
+    [chatId, screen.messages, uid, getReceiptStatus],
   );
 
   const areMessagesGrouped = useCallback(
@@ -1006,10 +1012,18 @@ export default function ChatScreen({
     await retryMessage(msg.id);
   }, []);
 
+  // Keep a live ref to timelineData so scrollToMessage can read the latest
+  // value at call-time without appearing in useCallback deps.  This prevents
+  // renderTimelineItem from being recreated on every message change (since
+  // scrollToMessage is in its dep array), which in turn prevents FlatList
+  // from re-rendering every visible cell.
+  const timelineDataRef = useRef(timelineData);
+  timelineDataRef.current = timelineData;
+
   // Enhanced scroll-to-message with highlight animation
   const scrollToMessage = useCallback(
     (messageId: string) => {
-      const targetIndex = timelineData.findIndex(
+      const targetIndex = timelineDataRef.current.findIndex(
         (item) => item.type === "message" && item.data.id === messageId,
       );
       if (targetIndex === -1 || !messageListRef.current) return;
@@ -1037,7 +1051,8 @@ export default function ChatScreen({
         }, 2100); // Match animation duration
       }, 300); // Wait for scroll to settle
     },
-    [timelineData],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
   );
 
   // Handle return button press
@@ -1252,37 +1267,44 @@ export default function ChatScreen({
         return <SystemMessageChip text={safeSystemText(msg.text)} />;
       }
       return (
-        <ChatMessageRenderer
-          message={msg}
-          currentUid={uid}
-          chatId={chatId}
-          friendProfile={friendProfile}
-          chatAppearance={chatAppearance}
-          onReply={handleReply}
-          onLongPress={handleMessageLongPress}
-          onScrollToMessage={scrollToMessage}
-          onRetry={handleRetryMessage}
-          onImagePress={handleOpenMediaViewer}
-          isHighlighted={msg.id === highlightedMessageId}
-          reactions={messageReactions.get(msg.id) || []}
-          onOptimisticReaction={handleOptimisticReaction}
-          displayMode={displayMode}
-          isGroupChat={false}
-          isGroupedWithPrevious={item.isGroupedWithPrevious}
-          isGroupedWithNext={item.isGroupedWithNext}
-          currentUserDisplayName={
-            profile?.displayName ||
-            profile?.username ||
-            currentFirebaseUser?.displayName ||
-            "Me"
+        <AnimatedMessageRow
+          messageId={msg.id}
+          shouldAnimateOnMount={
+            screen.chat.messageEnterAnimation.shouldAnimateOnMount
           }
-          currentUserProfilePictureUrl={
-            (profile as any)?.profilePicture?.url ?? null
-          }
-          currentUserDecorationId={
-            (profile as any)?.avatarDecoration?.decorationId ?? null
-          }
-        />
+        >
+          <ChatMessageRenderer
+            message={msg}
+            currentUid={uid}
+            chatId={chatId}
+            friendProfile={friendProfile}
+            chatAppearance={chatAppearance}
+            onReply={handleReply}
+            onLongPress={handleMessageLongPress}
+            onScrollToMessage={scrollToMessage}
+            onRetry={handleRetryMessage}
+            onImagePress={handleOpenMediaViewer}
+            isHighlighted={msg.id === highlightedMessageId}
+            reactions={messageReactions.get(msg.id) || []}
+            onOptimisticReaction={handleOptimisticReaction}
+            displayMode={displayMode}
+            isGroupChat={false}
+            isGroupedWithPrevious={item.isGroupedWithPrevious}
+            isGroupedWithNext={item.isGroupedWithNext}
+            currentUserDisplayName={
+              profile?.displayName ||
+              profile?.username ||
+              currentFirebaseUser?.displayName ||
+              "Me"
+            }
+            currentUserProfilePictureUrl={
+              (profile as any)?.profilePicture?.url ?? null
+            }
+            currentUserDecorationId={
+              (profile as any)?.avatarDecoration?.decorationId ?? null
+            }
+          />
+        </AnimatedMessageRow>
       );
     },
     [
@@ -1298,6 +1320,7 @@ export default function ChatScreen({
       highlightedMessageId,
       messageReactions,
       handleOptimisticReaction,
+      screen.chat.messageEnterAnimation,
       displayMode,
       profile?.displayName,
       profile?.username,

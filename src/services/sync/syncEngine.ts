@@ -116,6 +116,28 @@ function getSubscriptionKey(
   return `${scope}:${conversationId}`;
 }
 
+/**
+ * Notify all UI listeners for a conversation that data has changed.
+ * Used after local sync completion so the UI re-reads SQLite immediately
+ * instead of waiting for the Firestore onSnapshot round-trip.
+ */
+function notifyConversationListeners(
+  scope: "dm" | "group",
+  conversationId: string,
+): void {
+  const key = getSubscriptionKey(scope, conversationId);
+  const sub = activeSubscriptions.get(key);
+  if (sub) {
+    sub.listeners.forEach((cb) => {
+      try {
+        cb({} as MessageV2);
+      } catch (e) {
+        logger.warn("[SyncEngine] Listener notification error:", e);
+      }
+    });
+  }
+}
+
 // =============================================================================
 // State Management
 // =============================================================================
@@ -467,6 +489,10 @@ async function syncSingleMessage(
     // Mark as synced in local database
     markMessageSynced(message.id, serverData.serverReceivedAt);
 
+    // Notify active UI subscribers so they refresh immediately instead of
+    // waiting for the Firestore onSnapshot round-trip.
+    notifyConversationListeners(message.scope, message.conversation_id);
+
     logger.info(`[SyncEngine] Message synced: ${message.id}`);
   } catch (error: any) {
     logger.error("[SyncEngine] Failed to sync message:", message.id, error);
@@ -494,6 +520,9 @@ async function syncSingleMessage(
     } else {
       markMessageSyncFailed(message.id, errorMessage);
     }
+
+    // Notify UI so the failed status is reflected immediately
+    notifyConversationListeners(message.scope, message.conversation_id);
 
     throw error;
   }

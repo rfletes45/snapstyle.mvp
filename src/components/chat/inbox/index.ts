@@ -55,3 +55,6 @@ export type { GroupInviteItemProps } from "./GroupInviteItem";
 
 export { ContactsOnboardingCard } from "./ContactsOnboardingCard";
 export type { ContactsOnboardingCardProps } from "./ContactsOnboardingCard";
+
+export { MessageStatusIcon } from "./MessageStatusIcon";
+export type { MessageStatusIconProps } from "./MessageStatusIcon";

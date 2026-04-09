@@ -1361,13 +1361,17 @@ service cloud.firestore {
         // Read: any authenticated user (simplify to avoid chicken-egg issues)
         allow read: if isAuth();
         
-        // Create: user can add self, or owner/admin can add others
+        // Create: user can add self, or owner/admin can add others,
+        // or group owner adding initial members during batch creation
         allow create: if isAuth() && (
                         // User creating self (owner during creation, or member when accepting invite)
                         memberId == request.auth.uid ||
-                        // Owner or admin adding someone else
+                        // Owner or admin adding someone else (existing group)
                         (isGroupMember() &&
-                         getMemberRole() in ['owner', 'admin'])
+                         getMemberRole() in ['owner', 'admin']) ||
+                        // Batch group creation: owner can add initial members
+                        // Uses getAfter() to see the Group doc being created in the same batch
+                        getAfter(/databases/$(database)/documents/Groups/$(groupId)).data.ownerId == request.auth.uid
                       );
         
         // Update: owner can change roles, or member updating their own data

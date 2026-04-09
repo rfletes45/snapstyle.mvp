@@ -81,6 +81,7 @@ import {
   useChatKeyboard,
   type ChatKeyboardState,
 } from "./chat/useChatKeyboard";
+import { useMessageEnterAnimationQueue } from "./chat/useMessageEnterAnimationQueue";
 import {
   useNewMessageAutoscroll,
   type AutoscrollState,
@@ -237,6 +238,10 @@ export interface UseChatReturn {
   }>;
   /** Whether currently sending a message */
   sending: boolean;
+  /** One-shot enter animation queue for locally sent messages */
+  messageEnterAnimation: {
+    shouldAnimateOnMount: (id: string) => boolean;
+  };
 
   // -------------------------------------------------------------------------
   // Utility
@@ -282,6 +287,13 @@ export function useChat(config: UseChatConfig): UseChatReturn {
     null,
   );
   const [sending, setSending] = useState(false);
+  const messageEnterAnimation = useMessageEnterAnimationQueue();
+  const messageEnterAnimationControls = useMemo(
+    () => ({
+      shouldAnimateOnMount: messageEnterAnimation.shouldAnimateOnMount,
+    }),
+    [messageEnterAnimation.shouldAnimateOnMount],
+  );
 
   // -------------------------------------------------------------------------
   // Composed Hooks
@@ -333,9 +345,7 @@ export function useChat(config: UseChatConfig): UseChatReturn {
       return {
         messages: localMessages,
         loading: isLocalLoading,
-        error: localError
-          ? new Error(localError)
-          : null,
+        error: localError ? new Error(localError) : null,
         pagination: {
           hasMoreOlder: localHasMore,
           isLoadingOlder: false,
@@ -359,6 +369,10 @@ export function useChat(config: UseChatConfig): UseChatReturn {
   useEffect(() => {
     lastLocalReadWatermarkRef.current = 0;
   }, [scope, conversationId, currentUid]);
+
+  useEffect(() => {
+    messageEnterAnimation.clear();
+  }, [messageEnterAnimation, scope, conversationId]);
 
   useEffect(() => {
     if (!USE_LOCAL_STORAGE || !autoMarkRead) return;
@@ -566,10 +580,15 @@ export function useChat(config: UseChatConfig): UseChatReturn {
             localAttachments: attachments, // Pass local attachments for upload
           });
 
+          messageEnterAnimation.queueAnimation(messageRow.id);
+
           if (debug) {
-            log.debug("Message saved to SQLite", {
+            log.debug("Message saved to SQLite — animation queued", {
               operation: "localInsert",
-              data: { messageId: messageRow.id.substring(0, 8) },
+              data: {
+                messageId: messageRow.id.substring(0, 8),
+                animationQueued: true,
+              },
             });
           }
 
@@ -589,7 +608,7 @@ export function useChat(config: UseChatConfig): UseChatReturn {
         }
 
         // === FIRESTORE COMPATIBILITY MODE ===
-        const { sendPromise } = await sendMessageService({
+        const { outboxItem, sendPromise } = await sendMessageService({
           scope,
           conversationId,
           kind,
@@ -602,6 +621,7 @@ export function useChat(config: UseChatConfig): UseChatReturn {
           senderStyle,
         });
 
+        messageEnterAnimation.queueAnimation(outboxItem.messageId);
         const result = await sendPromise;
 
         if (result.success && clearReplyOnSend) {
@@ -632,6 +652,7 @@ export function useChat(config: UseChatConfig): UseChatReturn {
       replyTo,
       clearReplyTo,
       refreshLocalMessages,
+      messageEnterAnimation,
       senderStyle,
       debug,
     ],
@@ -689,6 +710,7 @@ export function useChat(config: UseChatConfig): UseChatReturn {
       // Send
       sendMessage,
       sending,
+      messageEnterAnimation: messageEnterAnimationControls,
 
       // Utility
       scrollToBottom,
@@ -716,6 +738,7 @@ export function useChat(config: UseChatConfig): UseChatReturn {
       clearSelection,
       sendMessage,
       sending,
+      messageEnterAnimationControls,
       scrollToBottom,
       scope,
       conversationId,

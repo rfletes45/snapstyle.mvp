@@ -80,16 +80,13 @@ interface CachedGroupMemberIdentity {
 
 /** Default number of messages to load per page */
 const DEFAULT_PAGE_SIZE = 30;
-const GROUP_MEMBER_IDENTITY_CACHE_TTL_MS = 5 * 60 * 1000;
+const GROUP_MEMBER_IDENTITY_CACHE_TTL_MS = 3 * 60 * 1000;
 const groupMemberIdentityCache = new Map<string, CachedGroupMemberIdentity>();
 
 /** Invite expiry in milliseconds (7 days) */
 const INVITE_EXPIRY_MS = GROUP_LIMITS.INVITE_EXPIRY_DAYS * 24 * 60 * 60 * 1000;
 
-function hasOwnField(
-  value: Record<string, unknown>,
-  field: string,
-): boolean {
+function hasOwnField(value: Record<string, unknown>, field: string): boolean {
   return Object.prototype.hasOwnProperty.call(value, field);
 }
 
@@ -107,10 +104,13 @@ function cacheGroupMemberIdentity(
 
 async function getCachedGroupMemberIdentity(
   uid: string,
-): Promise<CachedGroupMemberIdentity | null> {
+): Promise<{ identity: CachedGroupMemberIdentity; fromCache: boolean } | null> {
   const cached = groupMemberIdentityCache.get(uid);
-  if (cached && Date.now() - cached.fetchedAt <= GROUP_MEMBER_IDENTITY_CACHE_TTL_MS) {
-    return cached;
+  if (
+    cached &&
+    Date.now() - cached.fetchedAt <= GROUP_MEMBER_IDENTITY_CACHE_TTL_MS
+  ) {
+    return { identity: cached, fromCache: true };
   }
 
   const profile = await getUserProfileByUid(uid);
@@ -122,7 +122,7 @@ async function getCachedGroupMemberIdentity(
     fetchedAt: Date.now(),
   };
   groupMemberIdentityCache.set(uid, identity);
-  return identity;
+  return { identity, fromCache: false };
 }
 
 // =============================================================================
@@ -170,18 +170,33 @@ export async function createGroup(
     throw new Error("Creator profile not found");
   }
 
+  // Fetch all selected member profiles in parallel so we can populate
+  // their Member sub-documents in the same atomic batch write.
+  const memberProfiles = await Promise.all(
+    input.memberUids.map(async (memberUid) => {
+      const profile = await getUserProfileByUid(memberUid);
+      return { uid: memberUid, profile };
+    }),
+  );
+
   const now = Date.now();
-  const groupRef = doc(collection(db, "Groups"));
+  const groupRef = input.groupId
+    ? doc(db, "Groups", input.groupId)
+    : doc(collection(db, "Groups"));
   const groupId = groupRef.id;
+
+  // Build the full memberIds array: creator + all selected members
+  const allMemberIds = [creatorUid, ...input.memberUids];
 
   const batch = writeBatch(db);
 
-  // Create group document with memberIds array for queries
+  // Create group document with ALL members included from the start
   const groupData: Omit<Group, "id"> & { memberIds: string[] } = {
     name: input.name.trim(),
     ownerId: creatorUid,
-    memberIds: [creatorUid], // Track members for array-contains queries
-    memberCount: 1, // Just creator initially
+    memberIds: allMemberIds,
+    memberCount: allMemberIds.length,
+    ...(input.avatarUrl ? { avatarUrl: input.avatarUrl } : {}),
     createdAt: now,
     updatedAt: now,
     // Initialize capability-based permissions config
@@ -207,6 +222,26 @@ export async function createGroup(
   };
   batch.set(creatorMemberRef, { uid: creatorUid, ...creatorMemberData });
 
+  // Add all selected members directly to the Members subcollection
+  for (const { uid: memberUid, profile: memberProfile } of memberProfiles) {
+    const memberRef = doc(db, "Groups", groupId, "Members", memberUid);
+    const memberData: GroupMember = {
+      uid: memberUid,
+      role: "member",
+      joinedAt: now,
+      displayName: memberProfile?.displayName || "Unknown",
+      username: memberProfile?.username || "unknown",
+      avatarConfig: memberProfile?.avatarConfig ?? undefined,
+      profilePictureUrl: memberProfile?.profilePicture?.url || null,
+      decorationId: memberProfile?.avatarDecoration?.decorationId || null,
+    };
+    batch.set(memberRef, memberData);
+
+    logger.debug(
+      `[createGroup] Adding member ${memberUid} (${memberData.displayName}) to group ${groupId}`,
+    );
+  }
+
   // Add system message for group creation
   const systemMessageRef = doc(collection(db, "Groups", groupId, "Messages"));
   const systemMessage: Omit<GroupMessage, "id"> = {
@@ -222,14 +257,9 @@ export async function createGroup(
 
   await batch.commit();
 
-  logger.debug(`[groups] Created group "${input.name}" with ID: ${groupId}`);
-
-  // Send invites to initial members (non-blocking)
-  for (const memberUid of input.memberUids) {
-    sendGroupInvite(groupId, input.name, creatorUid, memberUid).catch((error) =>
-      logger.error(`Failed to send invite to ${memberUid}:`, error),
-    );
-  }
+  logger.info(
+    `[createGroup] Created group "${input.name}" (${groupId}) with ${allMemberIds.length} members`,
+  );
 
   return {
     id: groupId,
@@ -675,6 +705,57 @@ export function subscribeToUserGroups(
 }
 
 /**
+ * Subscribe to real-time group document changes.
+ * Returns unsubscribe function.
+ */
+export function subscribeToGroup(
+  groupId: string,
+  onUpdate: (group: Group | null) => void,
+): () => void {
+  const db = getFirestoreInstance();
+  const groupRef = doc(db, "Groups", groupId);
+
+  return onSnapshot(
+    groupRef,
+    (snap) => {
+      if (!snap.exists()) {
+        onUpdate(null);
+        return;
+      }
+      const data = snap.data();
+      onUpdate({
+        id: snap.id,
+        name: data.name,
+        ownerId: data.ownerId,
+        memberIds: data.memberIds || [],
+        avatarPath: data.avatarPath,
+        avatarUrl: data.avatarUrl,
+        memberCount: data.memberCount,
+        createdAt:
+          data.createdAt instanceof Timestamp
+            ? data.createdAt.toMillis()
+            : data.createdAt,
+        updatedAt:
+          data.updatedAt instanceof Timestamp
+            ? data.updatedAt.toMillis()
+            : data.updatedAt,
+        lastMessageText: data.lastMessageText,
+        lastMessageAt:
+          data.lastMessageAt instanceof Timestamp
+            ? data.lastMessageAt.toMillis()
+            : data.lastMessageAt,
+        lastMessageSenderId: data.lastMessageSenderId,
+        permissionsConfig: data.permissionsConfig,
+      });
+    },
+    (error) => {
+      logger.error("[groups] Error subscribing to group:", error);
+      onUpdate(null);
+    },
+  );
+}
+
+/**
  * Get group details
  */
 export async function getGroup(groupId: string): Promise<Group | null> {
@@ -709,6 +790,7 @@ export async function getGroup(groupId: string): Promise<Group | null> {
         ? data.lastMessageAt.toMillis()
         : data.lastMessageAt,
     lastMessageSenderId: data.lastMessageSenderId,
+    permissionsConfig: data.permissionsConfig,
   };
 }
 
@@ -758,12 +840,18 @@ export async function hydrateGroupMembersForDisplay(
 ): Promise<GroupMember[]> {
   if (members.length === 0) return members;
 
-  return Promise.all(
+  let mirrored = 0;
+  let cacheHit = 0;
+  let freshFetch = 0;
+
+  const result = await Promise.all(
     members.map(async (member) => {
       const hasMirroredIdentity =
-        member.profilePictureUrl !== undefined && member.decorationId !== undefined;
+        member.profilePictureUrl !== undefined &&
+        member.decorationId !== undefined;
 
       if (hasMirroredIdentity) {
+        mirrored++;
         cacheGroupMemberIdentity(
           member.uid,
           member.profilePictureUrl ?? null,
@@ -773,19 +861,22 @@ export async function hydrateGroupMembersForDisplay(
       }
 
       try {
-        const identity = await getCachedGroupMemberIdentity(member.uid);
+        const result = await getCachedGroupMemberIdentity(member.uid);
+        if (result?.fromCache) cacheHit++;
+        else freshFetch++;
         return {
           ...member,
           profilePictureUrl:
             member.profilePictureUrl !== undefined
               ? member.profilePictureUrl
-              : (identity?.profilePictureUrl ?? null),
+              : (result?.identity.profilePictureUrl ?? null),
           decorationId:
             member.decorationId !== undefined
               ? member.decorationId
-              : (identity?.decorationId ?? null),
+              : (result?.identity.decorationId ?? null),
         };
       } catch {
+        freshFetch++;
         return {
           ...member,
           profilePictureUrl:
@@ -798,6 +889,15 @@ export async function hydrateGroupMembersForDisplay(
       }
     }),
   );
+
+  logger.debug("[groups] Hydrated member identities", {
+    total: members.length,
+    mirrored,
+    cacheHit,
+    freshFetch,
+  });
+
+  return result;
 }
 
 export async function getGroupMembersForDisplay(
@@ -1340,13 +1440,16 @@ export async function deleteGroup(
     details: {},
   });
 
-  // Note: In production, you'd use a Cloud Function to delete subcollections
-  // For now, we just mark the group as deleted or remove the main doc
-  // Messages and members would need cleanup via scheduled function
+  // Subcollection cleanup (Members, Messages, MembersPrivate, AuditLog)
+  // and storage cleanup are handled by the onGroupDeleted Cloud Function
+  // trigger that fires automatically when this document is deleted.
 
   await deleteDoc(doc(db, "Groups", groupId));
 
-  logger.debug(`[groups] Deleted group ${groupId}`);
+  logger.debug(
+    "[groups] Deleted group root doc — Cloud Function will handle subcollection + storage cleanup",
+    { groupId },
+  );
 }
 
 // =============================================================================

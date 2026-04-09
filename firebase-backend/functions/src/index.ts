@@ -103,6 +103,9 @@ import { getRateLimitStatus } from "./rateLimiter";
 // Account Deletion (comprehensive server-side cleanup)
 import { deleteAccountFunction } from "./deleteAccount";
 
+// Group Cleanup (cascading subcollection + storage cleanup on group delete)
+import { onGroupDeleted } from "./groupCleanup";
+
 // Stream Video token issuance
 import { ensureStreamUsers, getStreamVideoToken } from "./streamToken";
 
@@ -235,6 +238,9 @@ export {
 
 // ─── Account Deletion ──────────────────────────────────────────────────────
 export const deleteAccount = deleteAccountFunction;
+
+// ─── Group Cleanup ─────────────────────────────────────────────────────────
+export { onGroupDeleted };
 
 // ─── Stream Video ──────────────────────────────────────────────────────────
 export { ensureStreamUsers, getStreamVideoToken, streamCallWebhook };

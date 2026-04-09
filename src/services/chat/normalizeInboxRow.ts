@@ -66,10 +66,7 @@ export function computeUnreadCount(input: ComputeUnreadCountInput): number {
     return 1;
   }
 
-  if (
-    lastActivityAt >
-    memberState.lastSeenAtPrivate + UNREAD_TOLERANCE_MS
-  ) {
+  if (lastActivityAt > memberState.lastSeenAtPrivate + UNREAD_TOLERANCE_MS) {
     return 1;
   }
 

@@ -11,21 +11,15 @@
 
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import React, { useCallback, useEffect } from "react";
+import React, { useCallback } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useTheme } from "react-native-paper";
-import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-  withDelay,
-  withSequence,
-  withTiming,
-} from "react-native-reanimated";
 
 import MessageImage from "@/components/AppImage";
 import { ReplyBubble, SwipeableMessage } from "@/components/chat";
 import { AnimalBubble } from "@/components/chat/AnimalBubble";
 import { LinkPreviewCard } from "@/components/chat/LinkPreviewCard";
+import { MessageHighlightOverlay } from "@/components/chat/MessageHighlightOverlay";
 import { ReactionPills } from "@/components/chat/ReactionBar";
 import { ThreadIndicator } from "@/components/chat/ThreadIndicator";
 import { VoiceMessagePlayer } from "@/components/chat/VoiceMessagePlayer";
@@ -187,33 +181,6 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
     );
     const { linkPreviews, loadingPreviews } =
       useLinkPreviews(messagesForPreview);
-
-    // Highlight animation
-    const highlightOpacity = useSharedValue(0);
-
-    useEffect(() => {
-      if (isHighlighted) {
-        // Animate: fade in → hold → fade out
-        highlightOpacity.value = withSequence(
-          withTiming(1, { duration: 200 }),
-          withDelay(1500, withTiming(0, { duration: 400 })),
-        );
-      } else {
-        highlightOpacity.value = 0;
-      }
-    }, [isHighlighted, highlightOpacity]);
-
-    const highlightStyle = useAnimatedStyle(() => ({
-      position: "absolute" as const,
-      top: -4,
-      left: -8,
-      right: -8,
-      bottom: -4,
-      backgroundColor: theme.colors.primary,
-      opacity: highlightOpacity.value * 0.15,
-      borderRadius: 12,
-      zIndex: -1,
-    }));
 
     // Handle message tap
     const handlePress = useCallback(() => {
@@ -406,7 +373,7 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
           ]}
         >
           {/* Highlight overlay for reply navigation */}
-          <Animated.View style={highlightStyle} pointerEvents="none" />
+          <MessageHighlightOverlay isHighlighted={isHighlighted} />
 
           <View style={styles.messageBubbleWrapper}>
             {/* Reply preview - Apple Messages style (above main bubble) */}
@@ -465,7 +432,7 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
                       message.kind === "media" &&
                         imageAttachment &&
                         styles.imageOnlyBubble,
-                      message.status === "sending" && styles.sendingBubble,
+
                       message.status === "failed" && [
                         styles.failedBubble,
                         {
@@ -610,9 +577,6 @@ const styles = StyleSheet.create({
   statusLabel: {
     fontSize: 10,
     fontWeight: "700",
-  },
-  sendingBubble: {
-    opacity: 0.7,
   },
   failedBubble: {
     borderWidth: 1,

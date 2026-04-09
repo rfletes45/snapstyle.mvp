@@ -1,6 +1,4 @@
-import {
-  normalizeConversationRow,
-} from "@/services/chat/normalizeInboxRow";
+import { normalizeConversationRow } from "@/services/chat/normalizeInboxRow";
 import type { InboxConversation, MemberStatePrivate } from "@/types/messaging";
 
 export interface FanoutDMConversationInput {
@@ -31,7 +29,8 @@ export function normalizeFanoutDMConversation(
     type: "dm",
     name: input.profile.displayName,
     avatarUrl: input.profile.avatarUrl,
-    avatarConfig: input.profile.avatarConfig as InboxConversation["avatarConfig"],
+    avatarConfig: input.profile
+      .avatarConfig as InboxConversation["avatarConfig"],
     profilePictureUrl: input.profile.profilePictureUrl,
     decorationId: input.profile.decorationId,
     otherUserId: input.otherUserId,

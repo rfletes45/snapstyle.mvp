@@ -195,6 +195,19 @@ service firebase.storage {
                      validFileSize(10 * 1024 * 1024);
     }
 
+    // Path: /groups/{groupId}/avatar/{filename}
+    // Used for group profile pictures (set during creation or later)
+    match /groups/{groupId}/avatar/{allPaths=**} {
+      // Read: Any authenticated user
+      allow read: if isAuth();
+
+      // Write: Any authenticated user (membership verified at Firestore level)
+      allow write: if isAuth() && 
+                     isValidImageType() &&
+                     // Max 5MB for group avatars
+                     validFileSize(5 * 1024 * 1024);
+    }
+
     // ============================================================
     // CHAT-STAGING: Temporary uploads before server commit (Segment 3)
     // ============================================================

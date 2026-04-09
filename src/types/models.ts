@@ -967,6 +967,8 @@ export interface ChatListItem {
 export interface CreateGroupInput {
   name: string;
   memberUids: string[]; // Initial members to invite (excluding creator)
+  avatarUrl?: string; // Pre-uploaded avatar download URL
+  groupId?: string; // Pre-generated group ID (used when avatar is uploaded first)
 }
 
 /**

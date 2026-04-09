@@ -117,6 +117,7 @@ import {
   VoiceMessagePlayer,
   VoiceRecordButton,
 } from "@/components/chat";
+import { AnimatedMessageRow } from "@/components/chat/AnimatedMessageRow";
 import type { ChatMessageListRef } from "@/components/chat/ChatMessageList";
 import { ChatSkeleton } from "@/components/chat/ChatSkeleton";
 import { FullEmojiPicker } from "@/components/chat/FullEmojiPicker";
@@ -143,9 +144,9 @@ import { registerGifShare } from "@/services/gif/gifService";
 import type { GifItem } from "@/services/gif/types";
 import { getGroupMemberPrivate } from "@/services/groupMembers";
 import {
-  getGroup,
   hydrateGroupMembersForDisplay,
   isGroupMember,
+  subscribeToGroup,
   subscribeToGroupMembers,
 } from "@/services/groups";
 import { extractUrls, fetchPreview, hasUrls } from "@/services/linkPreview";
@@ -688,38 +689,64 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   // ==========================================================================
 
   useEffect(() => {
-    async function loadGroup() {
-      if (!groupId || !uid) return;
+    if (!groupId || !uid) return;
 
+    let cancelled = false;
+
+    // Verify membership first, then attach real-time subscription
+    async function initGroupSubscription() {
       try {
         setGroupLoading(true);
         setError(null);
 
-        const isMember = await isGroupMember(groupId, uid);
+        const isMember = await isGroupMember(groupId, uid!);
         if (!isMember) {
           setError("You are not a member of this group");
+          setGroupLoading(false);
           return;
         }
 
-        const groupData = await getGroup(groupId);
-        if (!groupData) {
-          setError("Group not found");
-          return;
-        }
+        if (cancelled) return;
 
-        setGroup(groupData);
-        setPermissionsConfig(groupData.permissionsConfig);
-        navigation.setOptions({ title: groupData.name });
+        logger.debug("[GroupChatScreen] Subscribing to group doc", { groupId });
+
+        const unsub = subscribeToGroup(groupId, (groupData) => {
+          if (cancelled) return;
+
+          if (!groupData) {
+            setError("Group not found");
+            setGroupLoading(false);
+            return;
+          }
+
+          setGroup(groupData);
+          setPermissionsConfig(groupData.permissionsConfig);
+          setGroupLoading(false);
+        });
+
+        // Store the unsubscribe for cleanup
+        unsubRef.current = unsub;
       } catch (err: any) {
-        logger.error("Error loading group:", err);
+        if (cancelled) return;
+        logger.error("Error initializing group subscription:", err);
         setError(err.message || "Failed to load group");
-      } finally {
         setGroupLoading(false);
       }
     }
 
-    loadGroup();
-  }, [groupId, uid, navigation]);
+    const unsubRef = { current: null as (() => void) | null };
+    initGroupSubscription();
+
+    return () => {
+      cancelled = true;
+      if (unsubRef.current) {
+        logger.debug("[GroupChatScreen] Unsubscribing from group doc", {
+          groupId,
+        });
+        unsubRef.current();
+      }
+    };
+  }, [groupId, uid]);
 
   useEffect(() => {
     if (!groupId) return;
@@ -986,38 +1013,41 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     setActionsSheetVisible(true);
   }, []);
 
+  // Keep a live ref to timelineData so scrollToMessage can read the latest
+  // value at call-time without forcing renderMessage to be recreated on every
+  // message change.
+  const timelineDataRef = useRef(timelineData);
+  timelineDataRef.current = timelineData;
+
   // Enhanced scroll-to-message with highlight animation
-  const scrollToMessage = useCallback(
-    (messageId: string) => {
-      const targetIndex = timelineData.findIndex(
-        (item) => item.type === "message" && item.data.id === messageId,
-      );
-      if (targetIndex === -1 || !messageListRef.current) return;
+  const scrollToMessage = useCallback((messageId: string) => {
+    const targetIndex = timelineDataRef.current.findIndex(
+      (item) => item.type === "message" && item.data.id === messageId,
+    );
+    if (targetIndex === -1 || !messageListRef.current) return;
 
-      // Clear any existing highlight timeout
-      if (highlightTimeoutRef.current) {
-        clearTimeout(highlightTimeoutRef.current);
-      }
+    // Clear any existing highlight timeout
+    if (highlightTimeoutRef.current) {
+      clearTimeout(highlightTimeoutRef.current);
+    }
 
-      // Store current position for return navigation
-      returnIndexRef.current = 0;
-      setShowReturnButton(true);
+    // Store current position for return navigation
+    returnIndexRef.current = 0;
+    setShowReturnButton(true);
 
-      // Scroll to target message
-      messageListRef.current.scrollToIndex(targetIndex, true);
+    // Scroll to target message
+    messageListRef.current.scrollToIndex(targetIndex, true);
 
-      // Highlight the target message after scroll settles
-      setTimeout(() => {
-        setHighlightedMessageId(messageId);
+    // Highlight the target message after scroll settles
+    setTimeout(() => {
+      setHighlightedMessageId(messageId);
 
-        // Auto-clear highlight after animation
-        highlightTimeoutRef.current = setTimeout(() => {
-          setHighlightedMessageId(null);
-        }, 2100);
-      }, 300);
-    },
-    [timelineData],
-  );
+      // Auto-clear highlight after animation
+      highlightTimeoutRef.current = setTimeout(() => {
+        setHighlightedMessageId(null);
+      }, 2100);
+    }, 300);
+  }, []);
 
   // Handle return button press
   const handleReturnToReply = useCallback(() => {
@@ -1375,53 +1405,60 @@ export default function GroupChatScreen({ route, navigation }: Props) {
         );
 
         return (
-          <GroupStackedMessageRenderer
-            item={item}
-            uid={uid}
-            groupId={groupId}
-            vm={vm}
-            senderDisplayName={senderDisplayName}
-            senderProfilePictureUrl={senderProfile.profilePictureUrl}
-            senderDecorationId={senderProfile.decorationId}
-            bubbleTextColor={txtColor}
-            bubbleFontFamily={fntFamily}
-            fontColorHex={fntColorHex}
-            isHighlighted={item.id === highlightedMessageId}
-            reactions={messageReactions.get(item.id) || []}
-            linkPreview={
-              linkPreviews.get(item.id) ||
-              (hasUrls(item.text || "")
-                ? {
-                    url: extractUrls(item.text || "")[0] || "",
-                    fetchedAt: Date.now(),
-                  }
-                : undefined)
+          <AnimatedMessageRow
+            messageId={item.id}
+            shouldAnimateOnMount={
+              screen.chat.messageEnterAnimation.shouldAnimateOnMount
             }
-            loadingPreview={loadingPreviews.has(item.id)}
-            mentionableMembers={mentionableMembers}
-            colors={colors}
-            onReply={handleReply}
-            onMessageLongPress={handleMessageLongPress}
-            onScrollToMessage={scrollToMessage}
-            onImagePress={() => {
-              if (item.kind === "media" && imageAttachmentStacked) {
-                handleOpenMediaViewer(
-                  [imageAttachmentStacked],
-                  0,
-                  senderDisplayName,
-                  item.createdAt,
-                );
+          >
+            <GroupStackedMessageRenderer
+              item={item}
+              uid={uid}
+              groupId={groupId}
+              vm={vm}
+              senderDisplayName={senderDisplayName}
+              senderProfilePictureUrl={senderProfile.profilePictureUrl}
+              senderDecorationId={senderProfile.decorationId}
+              bubbleTextColor={txtColor}
+              bubbleFontFamily={fntFamily}
+              fontColorHex={fntColorHex}
+              isHighlighted={item.id === highlightedMessageId}
+              reactions={messageReactions.get(item.id) || []}
+              linkPreview={
+                linkPreviews.get(item.id) ||
+                (hasUrls(item.text || "")
+                  ? {
+                      url: extractUrls(item.text || "")[0] || "",
+                      fetchedAt: Date.now(),
+                    }
+                  : undefined)
               }
-            }}
-            onOptimisticReaction={handleOptimisticReaction}
-            onThreadPress={() =>
-              navigation.navigate("ThreadView", {
-                conversationId: groupId,
-                scope: "group" as const,
-                rootMessageId: item.id,
-              })
-            }
-          />
+              loadingPreview={loadingPreviews.has(item.id)}
+              mentionableMembers={mentionableMembers}
+              colors={colors}
+              onReply={handleReply}
+              onMessageLongPress={handleMessageLongPress}
+              onScrollToMessage={scrollToMessage}
+              onImagePress={() => {
+                if (item.kind === "media" && imageAttachmentStacked) {
+                  handleOpenMediaViewer(
+                    [imageAttachmentStacked],
+                    0,
+                    senderDisplayName,
+                    item.createdAt,
+                  );
+                }
+              }}
+              onOptimisticReaction={handleOptimisticReaction}
+              onThreadPress={() =>
+                navigation.navigate("ThreadView", {
+                  conversationId: groupId,
+                  scope: "group" as const,
+                  rootMessageId: item.id,
+                })
+              }
+            />
+          </AnimatedMessageRow>
         );
       }
 
@@ -1477,234 +1514,251 @@ export default function GroupChatScreen({ route, navigation }: Props) {
       };
 
       return (
-        <SwipeableMessage
-          message={item}
-          onReply={handleReply}
-          enabled={true}
-          currentUid={uid}
+        <AnimatedMessageRow
+          messageId={item.id}
+          shouldAnimateOnMount={
+            screen.chat.messageEnterAnimation.shouldAnimateOnMount
+          }
         >
-          <View
-            style={[
-              styles.messageContainer,
-              isOwnMessage && styles.ownMessageContainer,
-              isGrouped && styles.groupedMessageContainer,
-              isGroupedWithNextMsg && styles.groupedMessageContainerTight,
-            ]}
+          <SwipeableMessage
+            message={item}
+            onReply={handleReply}
+            enabled={true}
+            currentUid={uid}
           >
-            {/* Highlight overlay for reply navigation */}
-            <MessageHighlightOverlay
-              isHighlighted={item.id === highlightedMessageId}
-            />
-
-            {item.replyTo && (
-              <View
-                style={!isOwnMessage ? styles.replyBubbleIndent : undefined}
-              >
-                <ReplyBubble
-                  replyTo={item.replyTo}
-                  isSentByMe={isOwnMessage}
-                  isReplyToMe={item.replyTo.senderId === uid}
-                  onPress={() => scrollToMessage(item.replyTo!.messageId)}
-                />
-              </View>
-            )}
-
             <View
               style={[
-                styles.messageRow,
-                isOwnMessage ? styles.ownMessageRow : styles.receivedMessageRow,
+                styles.messageContainer,
+                isOwnMessage && styles.ownMessageContainer,
+                isGrouped && styles.groupedMessageContainer,
+                isGroupedWithNextMsg && styles.groupedMessageContainerTight,
               ]}
             >
-              {/* Show avatar for received messages - only on last message of group */}
-              {!isOwnMessage && (
-                <View style={styles.avatarColumn}>
-                  {showAvatar ? (
-                    <ProfilePictureWithDecoration
-                      pictureUrl={senderProfile.profilePictureUrl}
-                      name={senderDisplayName}
-                      decorationId={senderProfile.decorationId}
-                      size={32}
-                    />
-                  ) : (
-                    <View style={styles.avatarSpacer} />
-                  )}
+              {/* Highlight overlay for reply navigation */}
+              <MessageHighlightOverlay
+                isHighlighted={item.id === highlightedMessageId}
+              />
+
+              {item.replyTo && (
+                <View
+                  style={!isOwnMessage ? styles.replyBubbleIndent : undefined}
+                >
+                  <ReplyBubble
+                    replyTo={item.replyTo}
+                    isSentByMe={isOwnMessage}
+                    isReplyToMe={item.replyTo.senderId === uid}
+                    onPress={() => scrollToMessage(item.replyTo!.messageId)}
+                  />
                 </View>
               )}
 
-              <View style={styles.bubbleColumn}>
-                {!isOwnMessage && showSender && (
-                  <Text style={[styles.senderName, { color: colors.primary }]}>
-                    {senderDisplayName}
-                  </Text>
+              <View
+                style={[
+                  styles.messageRow,
+                  isOwnMessage
+                    ? styles.ownMessageRow
+                    : styles.receivedMessageRow,
+                ]}
+              >
+                {/* Show avatar for received messages - only on last message of group */}
+                {!isOwnMessage && (
+                  <View style={styles.avatarColumn}>
+                    {showAvatar ? (
+                      <ProfilePictureWithDecoration
+                        pictureUrl={senderProfile.profilePictureUrl}
+                        name={senderDisplayName}
+                        decorationId={senderProfile.decorationId}
+                        size={32}
+                      />
+                    ) : (
+                      <View style={styles.avatarSpacer} />
+                    )}
+                  </View>
                 )}
 
-                <TouchableOpacity
-                  activeOpacity={0.8}
-                  onPress={item.kind === "media" ? handleImagePress : undefined}
-                  onLongPress={() => handleMessageLongPress(item)}
-                  delayLongPress={300}
-                >
-                  {/* Animal message — render data-driven AnimalBubble */}
-                  {(() => {
-                    if (item.kind === "animal") {
-                      return item.animalId ? (
-                        <AnimalBubble
-                          animalId={item.animalId}
-                          isMine={isOwnMessage}
-                        />
-                      ) : (
+                <View style={styles.bubbleColumn}>
+                  {!isOwnMessage && showSender && (
+                    <Text
+                      style={[styles.senderName, { color: colors.primary }]}
+                    >
+                      {senderDisplayName}
+                    </Text>
+                  )}
+
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    onPress={
+                      item.kind === "media" ? handleImagePress : undefined
+                    }
+                    onLongPress={() => handleMessageLongPress(item)}
+                    delayLongPress={300}
+                  >
+                    {/* Animal message — render data-driven AnimalBubble */}
+                    {(() => {
+                      if (item.kind === "animal") {
+                        return item.animalId ? (
+                          <AnimalBubble
+                            animalId={item.animalId}
+                            isMine={isOwnMessage}
+                          />
+                        ) : (
+                          <View
+                            style={[
+                              styles.messageBubble,
+                              isOwnMessage
+                                ? styles.ownMessage
+                                : styles.otherMessage,
+                            ]}
+                          >
+                            <Text
+                              style={{
+                                fontSize: 13,
+                                fontStyle: "italic",
+                                opacity: 0.5,
+                              }}
+                            >
+                              (Animal unavailable)
+                            </Text>
+                          </View>
+                        );
+                      }
+                      return (
                         <View
                           style={[
                             styles.messageBubble,
                             isOwnMessage
-                              ? styles.ownMessage
-                              : styles.otherMessage,
+                              ? [
+                                  styles.ownMessage,
+                                  { backgroundColor: bubbleBgColor },
+                                ]
+                              : [
+                                  styles.otherMessage,
+                                  {
+                                    backgroundColor: bubbleBgColor,
+                                  },
+                                ],
+                            item.kind === "media" && styles.imageOnlyBubble,
+                            item.kind === "voice" && styles.voiceBubble,
                           ]}
                         >
-                          <Text
-                            style={{
-                              fontSize: 13,
-                              fontStyle: "italic",
-                              opacity: 0.5,
-                            }}
-                          >
-                            (Animal unavailable)
-                          </Text>
+                          {item.kind === "media" && imageAttachment ? (
+                            <AppImage
+                              source={{ uri: imageAttachment.url }}
+                              style={[
+                                styles.standaloneImage,
+                                getImageBubbleSize(
+                                  imageAttachment.width,
+                                  imageAttachment.height,
+                                ),
+                              ]}
+                              contentFit="cover"
+                              debugLabel="GroupChatImage"
+                            />
+                          ) : item.kind === "voice" && voiceAttachment ? (
+                            <VoiceMessagePlayer
+                              url={voiceAttachment.url}
+                              durationMs={voiceAttachment.durationMs || 0}
+                              isOwn={isOwnMessage}
+                            />
+                          ) : (
+                            <>
+                              <MessageWithMentions
+                                text={item.text || ""}
+                                mentionSpans={
+                                  item.mentionSpans ??
+                                  ((item.mentionUids?.length ?? 0) > 0
+                                    ? extractMentionsExact(
+                                        item.text || "",
+                                        mentionableMembers,
+                                      ).mentionSpans
+                                    : undefined)
+                                }
+                                currentUid={uid}
+                                textStyle={[
+                                  styles.messageText,
+                                  {
+                                    color: resolvedBubbleTextColor,
+                                    ...(bubbleFontFamily
+                                      ? { fontFamily: bubbleFontFamily }
+                                      : {}),
+                                  },
+                                ]}
+                              />
+                              {hasUrls(item.text || "") && (
+                                <LinkPreviewCard
+                                  preview={
+                                    linkPreviews.get(item.id) || {
+                                      url:
+                                        extractUrls(item.text || "")[0] || "",
+                                      fetchedAt: Date.now(),
+                                    }
+                                  }
+                                  isOwn={isOwnMessage}
+                                  loading={loadingPreviews.has(item.id)}
+                                />
+                              )}
+                            </>
+                          )}
                         </View>
                       );
-                    }
-                    return (
-                      <View
+                    })()}
+                  </TouchableOpacity>
+
+                  {showTimestamp && (
+                    <View
+                      style={[
+                        styles.timestampRow,
+                        isOwnMessage
+                          ? styles.timestampRowSent
+                          : styles.timestampRowReceived,
+                      ]}
+                      pointerEvents="none"
+                    >
+                      <Text
                         style={[
-                          styles.messageBubble,
-                          isOwnMessage
-                            ? [
-                                styles.ownMessage,
-                                { backgroundColor: bubbleBgColor },
-                              ]
-                            : [
-                                styles.otherMessage,
-                                {
-                                  backgroundColor: bubbleBgColor,
-                                },
-                              ],
-                          item.kind === "media" && styles.imageOnlyBubble,
-                          item.kind === "voice" && styles.voiceBubble,
+                          styles.messageTime,
+                          { color: colors.textMuted },
                         ]}
                       >
-                        {item.kind === "media" && imageAttachment ? (
-                          <AppImage
-                            source={{ uri: imageAttachment.url }}
-                            style={[
-                              styles.standaloneImage,
-                              getImageBubbleSize(
-                                imageAttachment.width,
-                                imageAttachment.height,
-                              ),
-                            ]}
-                            contentFit="cover"
-                            debugLabel="GroupChatImage"
-                          />
-                        ) : item.kind === "voice" && voiceAttachment ? (
-                          <VoiceMessagePlayer
-                            url={voiceAttachment.url}
-                            durationMs={voiceAttachment.durationMs || 0}
-                            isOwn={isOwnMessage}
-                          />
-                        ) : (
-                          <>
-                            <MessageWithMentions
-                              text={item.text || ""}
-                              mentionSpans={
-                                item.mentionSpans ??
-                                ((item.mentionUids?.length ?? 0) > 0
-                                  ? extractMentionsExact(
-                                      item.text || "",
-                                      mentionableMembers,
-                                    ).mentionSpans
-                                  : undefined)
-                              }
-                              currentUid={uid}
-                              textStyle={[
-                                styles.messageText,
-                                {
-                                  color: resolvedBubbleTextColor,
-                                  ...(bubbleFontFamily
-                                    ? { fontFamily: bubbleFontFamily }
-                                    : {}),
-                                },
-                              ]}
-                            />
-                            {hasUrls(item.text || "") && (
-                              <LinkPreviewCard
-                                preview={
-                                  linkPreviews.get(item.id) || {
-                                    url: extractUrls(item.text || "")[0] || "",
-                                    fetchedAt: Date.now(),
-                                  }
-                                }
-                                isOwn={isOwnMessage}
-                                loading={loadingPreviews.has(item.id)}
-                              />
-                            )}
-                          </>
-                        )}
-                      </View>
-                    );
-                  })()}
-                </TouchableOpacity>
-
-                {showTimestamp && (
-                  <View
-                    style={[
-                      styles.timestampRow,
-                      isOwnMessage
-                        ? styles.timestampRowSent
-                        : styles.timestampRowReceived,
-                    ]}
-                    pointerEvents="none"
-                  >
-                    <Text
-                      style={[styles.messageTime, { color: colors.textMuted }]}
-                    >
-                      {formatTime(item.createdAt)}
-                    </Text>
-                  </View>
-                )}
+                        {formatTime(item.createdAt)}
+                      </Text>
+                    </View>
+                  )}
+                </View>
               </View>
-            </View>
 
-            {/* Reaction pills — anchored below the bubble, aligned to sender */}
-            {(messageReactions.get(item.id) || []).length > 0 && (
-              <View style={!isOwnMessage ? { paddingLeft: 40 } : undefined}>
-                <ReactionPills
-                  reactions={messageReactions.get(item.id) || []}
-                  isOwnMessage={isOwnMessage}
-                  scope="group"
-                  conversationId={groupId}
-                  messageId={item.id}
-                  currentUid={uid || ""}
-                  onOptimisticToggle={handleOptimisticReaction}
+              {/* Reaction pills — anchored below the bubble, aligned to sender */}
+              {(messageReactions.get(item.id) || []).length > 0 && (
+                <View style={!isOwnMessage ? { paddingLeft: 40 } : undefined}>
+                  <ReactionPills
+                    reactions={messageReactions.get(item.id) || []}
+                    isOwnMessage={isOwnMessage}
+                    scope="group"
+                    conversationId={groupId}
+                    messageId={item.id}
+                    currentUid={uid || ""}
+                    onOptimisticToggle={handleOptimisticReaction}
+                  />
+                </View>
+              )}
+
+              {/* Thread indicator — show when this message is the root of a thread */}
+              {!!item.replyCount && item.replyCount > 0 && (
+                <ThreadIndicator
+                  replyCount={item.replyCount}
+                  isOutgoing={isOwnMessage}
+                  onPress={() =>
+                    navigation.navigate("ThreadView", {
+                      conversationId: groupId,
+                      scope: "group" as const,
+                      rootMessageId: item.id,
+                    })
+                  }
                 />
-              </View>
-            )}
-
-            {/* Thread indicator — show when this message is the root of a thread */}
-            {!!item.replyCount && item.replyCount > 0 && (
-              <ThreadIndicator
-                replyCount={item.replyCount}
-                isOutgoing={isOwnMessage}
-                onPress={() =>
-                  navigation.navigate("ThreadView", {
-                    conversationId: groupId,
-                    scope: "group" as const,
-                    rootMessageId: item.id,
-                  })
-                }
-              />
-            )}
-          </View>
-        </SwipeableMessage>
+              )}
+            </View>
+          </SwipeableMessage>
+        </AnimatedMessageRow>
       );
     },
     [
@@ -1723,6 +1777,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
       handleOpenMediaViewer,
       scrollToMessage,
       handleOptimisticReaction,
+      screen.chat.messageEnterAnimation,
       displayMode,
       mentionableMembers,
       highlightedMessageId,

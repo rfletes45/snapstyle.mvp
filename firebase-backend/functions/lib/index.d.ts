@@ -17,6 +17,7 @@ import { cleanupStagingOrphans, mintChatMediaUrl } from "./chatMedia";
 import { markInboxRead, onDMMessageInbox, onGroupMessageInbox } from "./inboxTriggers";
 import { acceptMessageRequest, declineMessageRequest } from "./messageRequests";
 import { getRateLimitStatus } from "./rateLimiter";
+import { onGroupDeleted } from "./groupCleanup";
 import { ensureStreamUsers, getStreamVideoToken } from "./streamToken";
 import { streamCallWebhook } from "./streamCallHistory";
 import { onChatSettingsChanged, onInboxSettingsChanged, publishDeliveryReceipt, publishReadReceipt, publishTypingIndicator } from "./privacyPublish";
@@ -31,6 +32,7 @@ export declare const toggleReactionV2: import("firebase-functions/v1").HttpsFunc
 export declare const fetchLinkPreview: import("firebase-functions/v1").HttpsFunction & import("firebase-functions/v1").Runnable<any>;
 export { acceptMessageRequest, adminApplyStrike, adminApplyWarning, adminLiftBan, adminResolveReport, adminSetAdminClaim, adminSetBan, checkMessageRateLimit, claimTaskReward, cleanupExpiredPushTokens, cleanupExpiredSnaps, cleanupExpiredStories, cleanupOldDeals, cleanupOldScheduledMessages, cleanupStagingOrphans, declineMessageRequest, expireGifts, generateDailyDeals, generateWeeklyDeals, getGiftHistory, getPurchaseHistory, getRateLimitStatus, grantCosmeticEntitlement, grantItem, incrementProfileViews, initializeExistingWallets, initializeFirstAdmin, markInboxRead, mintChatMediaUrl, onDeleteMessage, onDMMessageInbox, onFriendAddedTaskProgress, onFriendRequestAccepted, onGroupMessageInbox, onMessageRequestCreatedNotification, onMessageSentTaskProgress, onNewFriendRequest, onNewGroupMessageV2, onNewMessage, onNewMessageEvent, onNewReport, onPushTokenRegistered, onScheduledMessageCreated, onStoryPostedTaskProgress, onStoryViewed, onStoryViewedTaskProgress, onUserCreated, openGift, processScheduledMessages, publishDeliveryReceipt, publishReadReceipt, publishTypingIndicator, purchaseCosmeticWithTokens, purchaseWithTokens, recordDailyLogin, restorePurchases, seedDailyTasks, seedMonthlyTasks, seedShopCatalog, sendFriendRequestWithRateLimit, sendGift, streakReminder, triggerDailyDeals, updateExpiredBans, validateReceipt, };
 export declare const deleteAccount: import("firebase-functions/v1").HttpsFunction & import("firebase-functions/v1").Runnable<any>;
+export { onGroupDeleted };
 export { ensureStreamUsers, getStreamVideoToken, streamCallWebhook };
 export declare const verifyIAPPurchase: import("firebase-functions/v1").HttpsFunction & import("firebase-functions/v1").Runnable<any>;
 export { onChatSettingsChanged, onInboxSettingsChanged };

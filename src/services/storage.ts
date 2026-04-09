@@ -318,6 +318,60 @@ export async function uploadGroupImage(
 }
 
 // =============================================================================
+// Group Avatar Upload
+// =============================================================================
+
+/**
+ * Upload a group avatar image to Firebase Storage.
+ * Compresses and resizes to 512×512 before uploading.
+ * Stores at groups/{groupId}/avatar/picture.jpg
+ *
+ * @param groupId - Group ID
+ * @param imageUri - Local file URI or data URL
+ * @returns Download URL for the uploaded avatar
+ */
+export async function uploadGroupAvatarImage(
+  groupId: string,
+  imageUri: string,
+): Promise<string> {
+  logger.info(
+    `[uploadGroupAvatarImage] Starting avatar upload for group ${groupId}`,
+  );
+  try {
+    // Compress and resize to 512×512
+    const compressed = await manipulateImage(
+      imageUri,
+      (context) => {
+        context.resize({ width: 512, height: 512 });
+      },
+      { compress: 0.8 },
+    );
+
+    const storagePath = `groups/${groupId}/avatar/picture.jpg`;
+    const storage = getStorage();
+    const storageRef = ref(storage, storagePath);
+
+    logger.info(
+      `[uploadGroupAvatarImage] Uploading compressed avatar to ${storagePath}`,
+    );
+
+    const response = await fetch(compressed.uri);
+    const blob = await response.blob();
+    await uploadBytes(storageRef, blob, { contentType: "image/jpeg" });
+
+    const downloadUrl = await getDownloadURL(storageRef);
+    logger.info(`[uploadGroupAvatarImage] Upload complete: ${downloadUrl}`);
+    return downloadUrl;
+  } catch (error) {
+    logger.error(
+      "[uploadGroupAvatarImage] Failed to upload group avatar:",
+      error,
+    );
+    throw error;
+  }
+}
+
+// =============================================================================
 // H10: Multi-Attachment Upload Support
 // =============================================================================
 
