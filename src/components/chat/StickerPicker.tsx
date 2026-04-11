@@ -56,6 +56,7 @@ import {
   DraggableBottomSheet,
   type DraggableBottomSheetHandle,
 } from "./DraggableBottomSheet";
+import { getKeyboardReplacementSnapFraction } from "./bottomSheetLayout";
 
 const log = createLogger("StickerPicker");
 
@@ -189,9 +190,10 @@ export const StickerPicker = forwardRef<
   // ── Snap points — keyboard-equivalent initial, expanded secondary ───────
   const snapPoints = useMemo(() => {
     if (keyboardHeight && keyboardHeight > 0) {
-      const kbFraction = Math.min(
-        (keyboardHeight + 7) / STICKER_SCREEN_HEIGHT,
-        STICKER_EXPANDED_SNAP - 0.05,
+      const kbFraction = getKeyboardReplacementSnapFraction(
+        keyboardHeight,
+        STICKER_SCREEN_HEIGHT,
+        STICKER_EXPANDED_SNAP,
       );
       return [kbFraction, STICKER_EXPANDED_SNAP];
     }
@@ -406,6 +408,7 @@ export const StickerPicker = forwardRef<
       sharedTranslateY={sharedTranslateY}
       surfaceColor={sheetSurface}
       handleColor={colors.divider}
+      dragGestureArea="handle"
     >
       {/* Search bar */}
       <View
@@ -453,66 +456,78 @@ export const StickerPicker = forwardRef<
         ) : null}
       </View>
 
-      {/* Content area */}
-      {loading && stickers.length === 0 ? (
-        /* Loading skeleton — 3-column uniform grid */
-        <View style={styles.gridContainer}>
-          {skeletonItems.map((i) => (
-            <SkeletonCell
-              key={`sk-${i}`}
-              backgroundColor={surfaceVariantColor}
+      <View style={styles.sheetBody}>
+        <View style={styles.scrollRegion}>
+          {/* Content area */}
+          {loading && stickers.length === 0 ? (
+            /* Loading skeleton — 3-column uniform grid */
+            <View style={styles.gridContainer}>
+              {skeletonItems.map((i) => (
+                <SkeletonCell
+                  key={`sk-${i}`}
+                  backgroundColor={surfaceVariantColor}
+                />
+              ))}
+            </View>
+          ) : error ? (
+            /* Error state */
+            <View style={styles.stateContainer}>
+              <Text style={{ color: onSurfaceVariantColor, fontSize: 16 }}>
+                ⚠️
+              </Text>
+              <Text
+                style={[styles.stateText, { color: onSurfaceVariantColor }]}
+              >
+                {error}
+              </Text>
+              <TouchableOpacity
+                onPress={handleRetry}
+                style={[styles.retryButton, { borderColor: outlineColor }]}
+                accessibilityLabel="Retry loading stickers"
+                accessibilityRole="button"
+              >
+                <Text style={{ color: onSurfaceColor }}>Retry</Text>
+              </TouchableOpacity>
+            </View>
+          ) : stickers.length === 0 && debouncedQuery.trim() ? (
+            /* Empty search results */
+            <View style={styles.stateContainer}>
+              <Text style={{ fontSize: 40 }}>🤷</Text>
+              <Text
+                style={[styles.stateText, { color: onSurfaceVariantColor }]}
+              >
+                No stickers found for &quot;{debouncedQuery}&quot;
+              </Text>
+            </View>
+          ) : (
+            /* 3-column grid */
+            <FlatList
+              ref={flatListRef}
+              data={stickers}
+              keyExtractor={(item) => item.id}
+              numColumns={NUM_COLUMNS}
+              style={styles.flexFill}
+              showsVerticalScrollIndicator={false}
+              nestedScrollEnabled
+              keyboardShouldPersistTaps="handled"
+              onEndReached={handleLoadMore}
+              onEndReachedThreshold={0.5}
+              contentContainerStyle={styles.flatListContent}
+              columnWrapperStyle={styles.columnWrapper}
+              renderItem={({ item }) => (
+                <StickerCell sticker={item} onPress={handleStickerPress} />
+              )}
+              ListFooterComponent={
+                loadingMore ? (
+                  <View style={styles.loadingMore}>
+                    <ActivityIndicator size="small" color={colors.primary} />
+                  </View>
+                ) : null
+              }
             />
-          ))}
-        </View>
-      ) : error ? (
-        /* Error state */
-        <View style={styles.stateContainer}>
-          <Text style={{ color: onSurfaceVariantColor, fontSize: 16 }}>⚠️</Text>
-          <Text style={[styles.stateText, { color: onSurfaceVariantColor }]}>
-            {error}
-          </Text>
-          <TouchableOpacity
-            onPress={handleRetry}
-            style={[styles.retryButton, { borderColor: outlineColor }]}
-            accessibilityLabel="Retry loading stickers"
-            accessibilityRole="button"
-          >
-            <Text style={{ color: onSurfaceColor }}>Retry</Text>
-          </TouchableOpacity>
-        </View>
-      ) : stickers.length === 0 && debouncedQuery.trim() ? (
-        /* Empty search results */
-        <View style={styles.stateContainer}>
-          <Text style={{ fontSize: 40 }}>🤷</Text>
-          <Text style={[styles.stateText, { color: onSurfaceVariantColor }]}>
-            No stickers found for &quot;{debouncedQuery}&quot;
-          </Text>
-        </View>
-      ) : (
-        /* 3-column grid */
-        <FlatList
-          ref={flatListRef}
-          data={stickers}
-          keyExtractor={(item) => item.id}
-          numColumns={NUM_COLUMNS}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-          onEndReached={handleLoadMore}
-          onEndReachedThreshold={0.5}
-          contentContainerStyle={styles.flatListContent}
-          columnWrapperStyle={styles.columnWrapper}
-          renderItem={({ item }) => (
-            <StickerCell sticker={item} onPress={handleStickerPress} />
           )}
-          ListFooterComponent={
-            loadingMore ? (
-              <View style={styles.loadingMore}>
-                <ActivityIndicator size="small" color={colors.primary} />
-              </View>
-            ) : null
-          }
-        />
-      )}
+        </View>
+      </View>
 
       {/* Attribution footer — "Powered by KLIPY" */}
       <View
@@ -554,12 +569,24 @@ const styles = StyleSheet.create({
     fontSize: 16,
     padding: 0,
   },
+  sheetBody: {
+    flex: 1,
+    minHeight: 0,
+  },
+  scrollRegion: {
+    flex: 1,
+    minHeight: 0,
+  },
   gridContainer: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: GRID_GAP,
     paddingHorizontal: GRID_PADDING,
     flex: 1,
+  },
+  flexFill: {
+    flex: 1,
+    minHeight: 0,
   },
   flatListContent: {
     paddingHorizontal: GRID_PADDING,

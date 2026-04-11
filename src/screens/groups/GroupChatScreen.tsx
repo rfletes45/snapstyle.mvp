@@ -176,10 +176,7 @@ import { buildMessageViewModel } from "@/chat/displayMode";
 import { AnimalBubble } from "@/components/chat/AnimalBubble";
 import { DateDivider } from "@/components/chat/DateDivider";
 import { GroupStackedMessageRenderer } from "@/components/chat/GroupStackedMessageRenderer";
-import {
-  ComposerSheetProvider,
-  useComposerSheet,
-} from "@/contexts/ComposerSheetContext";
+import { useComposerSheet } from "@/contexts/ComposerSheetContext";
 import { useAnimalEntitlement } from "@/hooks/useAnimalEntitlement";
 import { playAnimalSound } from "@/services/chat/animalSoundService";
 import { useConversationDisplayMode } from "@/store/ConversationDisplayModeContext";
@@ -193,7 +190,6 @@ import { getVoiceChannelId } from "@/services/stream/voiceChannelIds";
 // Types
 import {
   CALL_FEATURES,
-  DEBUG_CHAT_V2,
   GAMES_V4_ENABLED,
   GIF_PICKER_ENABLED,
   STICKER_PICKER_ENABLED,
@@ -213,6 +209,7 @@ import { createGameInvite } from "@/gamesV4/services/gameServiceV4";
 import type { GameId } from "@/gamesV4/types";
 
 import { clearLastOpenChat, saveLastOpenChat } from "@/services/lastOpenChat";
+import { syncMessagesAroundTarget } from "@/services/sync/syncEngine";
 
 // Keyboard-sync (KCSV + fallback animated container)
 import {
@@ -230,6 +227,13 @@ const logger = createLogger("screens/groups/GroupChatScreen");
 // =============================================================================
 
 const NOOP = () => {};
+
+/**
+ * Stable empty array shared across all message cells that have no reactions.
+ * Prevents React.memo on renderers from seeing a new `[]` reference every
+ * render, which would force ALL visible cells to re-render on every update.
+ */
+const EMPTY_REACTIONS: ReactionSummary[] = [];
 interface Props {
   route: any;
   navigation: any;
@@ -244,6 +248,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     groupId,
     groupName: initialGroupName,
     targetMessageId,
+    jumpRequestId,
     initialGroupData,
   } = route.params;
   const { colors, isDark } = useAppTheme();
@@ -448,7 +453,6 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     mentionableMembers,
     maxMentionSuggestions: 5,
     senderStyle,
-    debug: DEBUG_CHAT_V2,
   });
 
   // Messages come directly from the unified hook (SQLite-backed)
@@ -548,7 +552,6 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     scope: "group",
     conversationId: groupId || "",
     currentUid: uid || "",
-    debug: DEBUG_CHAT_V2,
   });
 
   /** Resolve typing user UIDs to display names for the indicator */
@@ -1038,36 +1041,52 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     // Scroll to target message
     messageListRef.current.scrollToIndex(targetIndex, true);
 
-    // Highlight the target message after scroll settles
-    setTimeout(() => {
+    requestAnimationFrame(() => {
       setHighlightedMessageId(messageId);
 
       // Auto-clear highlight after animation
       highlightTimeoutRef.current = setTimeout(() => {
         setHighlightedMessageId(null);
       }, 2100);
-    }, 300);
+    });
   }, []);
 
   // Handle return button press
   const handleReturnToReply = useCallback(() => {
-    if (returnIndexRef.current !== null && messageListRef.current) {
-      messageListRef.current.scrollToIndex(returnIndexRef.current, true);
-    }
+    const returnIndex = returnIndexRef.current;
+    screen.chat.clearMessageAnchor();
     setShowReturnButton(false);
     returnIndexRef.current = null;
-  }, []);
+    if (returnIndex !== null && messageListRef.current) {
+      requestAnimationFrame(() => {
+        messageListRef.current?.scrollToIndex(returnIndex, true);
+      });
+    }
+  }, [screen.chat]);
 
-  // Auto-scroll to targetMessageId from search navigation (deep jump)
+  // Auto-scroll to targetMessageId from navigation (deep jump)
   const hasScrolledToTargetRef = useRef(false);
-  const deepJumpAttemptsRef = useRef(0);
-  const MAX_DEEP_JUMP_ATTEMPTS = 8;
+  const deepJumpSyncingRef = useRef(false);
+
+  // Reset deep-jump refs when targetMessageId changes (e.g. navigating back
+  // from GroupInfo with a new target). Without this reset, a previous
+  // successful jump would block all future jump attempts.
+  const targetJumpKey = jumpRequestId ?? targetMessageId ?? null;
+  const prevTargetJumpKeyRef = useRef(targetJumpKey);
+  useEffect(() => {
+    if (targetJumpKey !== prevTargetJumpKeyRef.current) {
+      prevTargetJumpKeyRef.current = targetJumpKey;
+      hasScrolledToTargetRef.current = false;
+      deepJumpSyncingRef.current = false;
+    }
+  }, [targetJumpKey]);
 
   useEffect(() => {
     if (
       !targetMessageId ||
+      !groupId ||
       hasScrolledToTargetRef.current ||
-      timelineData.length === 0
+      deepJumpSyncingRef.current
     ) {
       return;
     }
@@ -1077,27 +1096,47 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     );
     if (targetIndex !== -1) {
       hasScrolledToTargetRef.current = true;
-      deepJumpAttemptsRef.current = 0;
-      // Delay to let list render
-      setTimeout(() => {
+      requestAnimationFrame(() => {
         scrollToMessage(targetMessageId);
-      }, 500);
-    } else if (
-      deepJumpAttemptsRef.current < MAX_DEEP_JUMP_ATTEMPTS &&
-      screen.chat.pagination.hasMoreOlder
-    ) {
-      // Message not in current timeline — load older messages and retry
-      deepJumpAttemptsRef.current += 1;
-      screen.chat.loadOlder?.();
+      });
+      return;
     }
+
+    if (screen.chat.loadAroundMessage(targetMessageId)) {
+      return;
+    }
+
+    deepJumpSyncingRef.current = true;
+    syncMessagesAroundTarget("group", groupId, targetMessageId, 30)
+      .then((found) => {
+        if (found) {
+          if (!screen.chat.loadAroundMessage(targetMessageId)) {
+            screen.chat.refresh();
+          }
+        } else {
+          Alert.alert(
+            "Message unavailable",
+            "That message couldn't be found. It may have been deleted.",
+          );
+          logger.warn(
+            `[GroupChat] Target message ${targetMessageId} not found on server`,
+          );
+        }
+      })
+      .catch((err) => {
+        logger.warn("[GroupChat] syncMessagesAroundTarget failed:", err);
+      })
+      .finally(() => {
+        deepJumpSyncingRef.current = false;
+      });
   }, [
     targetMessageId,
     timelineData,
     scrollToMessage,
-    screen.chat.loadOlder,
-    screen.chat.pagination.hasMoreOlder,
+    screen.chat.loadAroundMessage,
+    screen.chat.refresh,
+    groupId,
   ]);
-
   // Auto-hide return button callback
   const handleReturnButtonAutoHide = useCallback(() => {
     setShowReturnButton(false);
@@ -1373,7 +1412,8 @@ export default function GroupChatScreen({ route, navigation }: Props) {
           isGroupedWithPrevious: isGroupedWithPrev,
           isGroupedWithNext: isGroupedWithNextMsg,
           isSystemMessage: false,
-          hasReactions: (messageReactions.get(item.id) || []).length > 0,
+          hasReactions:
+            (messageReactions.get(item.id) ?? EMPTY_REACTIONS).length > 0,
           hasReplyPreview: !!item.replyTo,
           hasThread: !!item.replyCount && item.replyCount > 0,
           displayMode: "stacked",
@@ -1423,7 +1463,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
               bubbleFontFamily={fntFamily}
               fontColorHex={fntColorHex}
               isHighlighted={item.id === highlightedMessageId}
-              reactions={messageReactions.get(item.id) || []}
+              reactions={messageReactions.get(item.id) ?? EMPTY_REACTIONS}
               linkPreview={
                 linkPreviews.get(item.id) ||
                 (hasUrls(item.text || "")
@@ -1728,10 +1768,11 @@ export default function GroupChatScreen({ route, navigation }: Props) {
               </View>
 
               {/* Reaction pills — anchored below the bubble, aligned to sender */}
-              {(messageReactions.get(item.id) || []).length > 0 && (
+              {(messageReactions.get(item.id) ?? EMPTY_REACTIONS).length >
+                0 && (
                 <View style={!isOwnMessage ? { paddingLeft: 40 } : undefined}>
                   <ReactionPills
-                    reactions={messageReactions.get(item.id) || []}
+                    reactions={messageReactions.get(item.id) ?? EMPTY_REACTIONS}
                     isOwnMessage={isOwnMessage}
                     scope="group"
                     conversationId={groupId}
@@ -1851,7 +1892,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
           </TouchableOpacity>
         )}
         <IconButton
-          icon="information-outline"
+          icon="dots-vertical"
           onPress={() => navigation.navigate("GroupChatInfo", { groupId })}
         />
       </View>
@@ -1896,7 +1937,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   // ==========================================================================
 
   return (
-    <ComposerSheetProvider>
+    <>
       <ChatKeyboardContainer
         style={[styles.container, { backgroundColor: colors.background }]}
       >
@@ -2098,7 +2139,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
           visible={showReturnButton}
           onPress={handleReturnToReply}
           onAutoHide={handleReturnButtonAutoHide}
-          autoHideDelay={5000}
+          autoHideDelay={screen.chat.isMessageAnchorActive ? 0 : 5000}
         />
       </ChatKeyboardContainer>
 
@@ -2160,7 +2201,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
           </View>
         </View>
       )}
-    </ComposerSheetProvider>
+    </>
   );
 }
 
@@ -2180,7 +2221,7 @@ const styles = StyleSheet.create({
   },
   messageContainer: { marginBottom: 14, width: "100%" },
   groupedMessageContainer: {}, // Visual grouping (hides some elements) — no spacing change
-  groupedMessageContainerTight: { marginBottom: 6 }, // Tight spacing when grouped with next
+  groupedMessageContainerTight: { marginBottom: 2 }, // Tight spacing when grouped with next
   ownMessageContainer: {},
   replyBubbleIndent: { marginLeft: 40 }, // 32px avatar + 8px margin
   messageRow: { maxWidth: "80%", flexDirection: "row", alignItems: "flex-end" },

@@ -17,8 +17,10 @@ export interface FanoutDMConversationInput {
     lastMessageType?: string;
     lastMessageAt?: number;
     createdAt?: number;
+    lastMessageSenderId?: string;
   };
   recentlyReadAt?: number;
+  currentUserId?: string;
 }
 
 export function normalizeFanoutDMConversation(
@@ -41,6 +43,8 @@ export function normalizeFanoutDMConversation(
     createdAt: input.chatData.createdAt ?? input.chatData.lastMessageAt ?? 0,
     memberState: input.memberState,
     recentlyReadAt: input.recentlyReadAt,
+    lastMessageSenderId: input.chatData.lastMessageSenderId,
+    currentUserId: input.currentUserId,
   });
 }
 
@@ -56,9 +60,11 @@ export interface FanoutGroupConversationInput {
     lastMessageAt?: number;
     createdAt?: number;
     memberCount?: number;
+    lastMessageSenderId?: string;
   };
   memberState: MemberStatePrivate;
   recentlyReadAt?: number;
+  currentUserId?: string;
 }
 
 export function normalizeFanoutGroupConversation(
@@ -79,5 +85,7 @@ export function normalizeFanoutGroupConversation(
     recentlyReadAt: input.recentlyReadAt,
     participantCount:
       input.groupData.memberCount || input.groupData.memberIds?.length || 0,
+    lastMessageSenderId: input.groupData.lastMessageSenderId,
+    currentUserId: input.currentUserId,
   });
 }

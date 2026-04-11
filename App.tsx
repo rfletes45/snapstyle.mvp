@@ -32,12 +32,9 @@ SplashScreen.preventAutoHideAsync().catch(() => {
   // Already hidden or not available — safe to ignore
 });
 
-console.log("[BOOT] Module-level init starting");
-
 // Initialize Firebase synchronously before rendering
 try {
   initializeFirebase(firebaseConfig);
-  console.log("[BOOT] Firebase initialized");
 } catch (e) {
   console.error("[BOOT] Firebase init failed:", e);
 }
@@ -65,7 +62,6 @@ function AppContent() {
 
   useEffect(() => {
     let mounted = true;
-    console.log("[BOOT] Font loading started");
 
     // Race font loading against a 5-second timeout so a corrupt/missing
     // font asset can never hang the app indefinitely.
@@ -78,7 +74,6 @@ function AppContent() {
 
     Promise.race([loadCustomFonts(), fontTimeout])
       .then((ok) => {
-        console.log("[BOOT] Font loading completed, success:", ok);
         if (mounted) setFontsReady(true);
         if (!ok) {
           console.warn(
@@ -95,7 +90,6 @@ function AppContent() {
       })
       .finally(() => {
         // Hide the native splash screen once fonts are resolved
-        console.log("[BOOT] Hiding splash screen");
         SplashScreen.hideAsync().catch(() => {});
       });
 

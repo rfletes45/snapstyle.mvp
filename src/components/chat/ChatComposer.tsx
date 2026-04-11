@@ -539,6 +539,7 @@ export function ChatComposer({
               onSend={handleSend}
               canSend={canSend}
               isSending={isSending}
+              disableHaptic={scope === "dm"}
             />
           );
 

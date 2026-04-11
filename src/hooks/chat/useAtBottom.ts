@@ -7,11 +7,8 @@
  * @module hooks/chat/useAtBottom
  */
 
-import { createLogger } from "@/utils/log";
 import { useCallback, useRef, useState } from "react";
 import type { NativeScrollEvent, NativeSyntheticEvent } from "react-native";
-
-const log = createLogger("useAtBottom");
 
 // =============================================================================
 // Types
@@ -20,8 +17,6 @@ const log = createLogger("useAtBottom");
 export interface AtBottomConfig {
   /** Pixel threshold to consider "at bottom" (default: 200) */
   threshold?: number;
-  /** Enable debug logging */
-  debug?: boolean;
 }
 
 export interface AtBottomState {
@@ -56,7 +51,7 @@ const DEFAULT_THRESHOLD = 200; // ~2-3 messages worth of scroll
 // =============================================================================
 
 export function useAtBottom(config: AtBottomConfig = {}): AtBottomState {
-  const { threshold = DEFAULT_THRESHOLD, debug = false } = config;
+  const { threshold = DEFAULT_THRESHOLD } = config;
 
   const [isAtBottom, setIsAtBottom] = useState(true); // Start at bottom
   // Distance lives in a ref so high-frequency scroll events don't trigger
@@ -73,17 +68,10 @@ export function useAtBottom(config: AtBottomConfig = {}): AtBottomState {
     (offset: number): boolean => {
       const atBottom = offset <= threshold;
 
-      if (debug && atBottom !== isAtBottomRef.current) {
-        log.debug("At bottom state changed", {
-          operation: "checkAtBottom",
-          data: { offset, threshold, atBottom },
-        });
-      }
-
       isAtBottomRef.current = atBottom;
       return atBottom;
     },
-    [threshold, debug],
+    [threshold],
   );
 
   // Scroll event handler — only commits state on threshold boundary crossing

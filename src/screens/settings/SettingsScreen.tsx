@@ -759,35 +759,6 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
         </>
       )}
 
-      {/* Debug Section (Development only) */}
-      {__DEV__ && (
-        <>
-          <List.Section>
-            <List.Subheader style={styles.sectionHeader}>
-              Developer
-            </List.Subheader>
-
-            <List.Item
-              title="Debug Tools"
-              description="Streaks & cosmetics debugging"
-              left={(props) => <List.Icon {...props} icon="bug" />}
-              right={(props) => <List.Icon {...props} icon="chevron-right" />}
-              onPress={() => navigation.navigate("Debug")}
-            />
-
-            <List.Item
-              title="Local Storage Debug"
-              description="SQLite database, sync & cache testing"
-              left={(props) => <List.Icon {...props} icon="database" />}
-              right={(props) => <List.Icon {...props} icon="chevron-right" />}
-              onPress={() => navigation.navigate("LocalStorageDebug")}
-            />
-          </List.Section>
-
-          <Divider />
-        </>
-      )}
-
       {/* Account Actions */}
       <View style={styles.actionsSection}>
         <Button

@@ -15,7 +15,6 @@
  * @module services/messaging/send
  */
 
-import { DEBUG_UNIFIED_MESSAGING } from "@/constants/featureFlags";
 import type { SenderStyle } from "@/cosmetics/types";
 import { getAppInstance } from "@/services/firebase";
 import {
@@ -39,10 +38,7 @@ import {
   OutboxItem,
   ReplyToMetadata,
 } from "@/types/messaging";
-import { createLogger } from "@/utils/log";
 import { getFunctions, httpsCallable } from "firebase/functions";
-
-const log = createLogger("messaging:send");
 
 // =============================================================================
 // Types
@@ -186,17 +182,6 @@ async function sendMessageV2(
     "sendMessageV2",
   );
 
-  if (DEBUG_UNIFIED_MESSAGING) {
-    log.debug("Calling sendMessageV2", {
-      operation: "sendCallable",
-      data: {
-        messageId: `${params.messageId.substring(0, 8)}...`,
-        scope: params.scope,
-        kind: params.kind,
-      },
-    });
-  }
-
   const result = await callable(params);
   return result.data;
 }
@@ -211,21 +196,6 @@ async function sendMessageV2(
 export async function sendMessage(
   params: SendMessageParams,
 ): Promise<SendMessageResult> {
-  if (DEBUG_UNIFIED_MESSAGING) {
-    log.debug("sendMessage called", {
-      operation: "send",
-      data: {
-        scope: params.scope,
-        conversationId: params.conversationId,
-        kind: params.kind,
-        hasText: !!params.text,
-        hasReplyTo: !!params.replyTo,
-        mentionCount: params.mentionUids?.length ?? 0,
-        attachmentCount: params.localAttachments?.length ?? 0,
-      },
-    });
-  }
-
   const outboxItem = await enqueueMessage({
     scope: params.scope,
     conversationId: params.conversationId,
@@ -291,13 +261,6 @@ export async function sendMessage(
  * Retry sending a failed message.
  */
 export async function retryMessage(messageId: string): Promise<boolean> {
-  if (DEBUG_UNIFIED_MESSAGING) {
-    log.debug("retryMessage called", {
-      operation: "retry",
-      data: { messageId: `${messageId.substring(0, 8)}...` },
-    });
-  }
-
   const clientId = await getClientId();
 
   return retryItem(messageId, async (item) => {
@@ -328,12 +291,6 @@ export async function processPendingMessages(): Promise<{
   failed: number;
   skipped: number;
 }> {
-  if (DEBUG_UNIFIED_MESSAGING) {
-    log.debug("processPendingMessages called", {
-      operation: "processAll",
-    });
-  }
-
   const clientId = await getClientId();
 
   return processOutbox(async (item) => {

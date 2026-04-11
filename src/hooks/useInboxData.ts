@@ -268,7 +268,12 @@ export function useInboxData(uid: string): UseInboxDataResult {
   const aggregation = useInboxAggregation(uid);
   const useAggregatedInbox = CHAT_FEATURES.CHAT_INBOX_AGGREGATION;
 
-  // State
+  // ── Rendered state ──────────────────────────────────────────────────────
+  // These arrays are the source of truth for React rendering.
+  // Snapshot handlers NEVER call the setters directly.  Instead they write
+  // to the staging refs below and call `commitStagedData()` which pushes
+  // both lists to state in a single synchronous call (React 18 batches this
+  // into one render, eliminating the mixed-old/new intermediate flashes).
   const [dmConversations, setDmConversations] = useState<InboxConversation[]>(
     [],
   );
@@ -280,6 +285,20 @@ export function useInboxData(uid: string): UseInboxDataResult {
   const [error, setError] = useState<Error | null>(null);
   const [filter, setFilter] = useState<InboxFilter>("all");
 
+  // ── Staging infrastructure ────────────────────────────────────────────
+  // Snapshot handlers store processed results HERE first.
+  // `commitStagedData` then pushes both to state atomically.
+  const dmStagedRef = useRef<InboxConversation[]>([]);
+  const groupStagedRef = useRef<InboxConversation[]>([]);
+  const commitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Snapshot version tracking: each snapshot callback increments this
+  // before starting async work.  When the async work completes it checks
+  // that its version is still current – if not, a newer snapshot has
+  // already started processing, so the stale result is discarded.
+  const dmVersionRef = useRef(0);
+  const groupVersionRef = useRef(0);
+
   // Track if we've loaded cached data (to avoid double-loading)
   const cacheLoadedRef = useRef(false);
 
@@ -287,7 +306,7 @@ export function useInboxData(uid: string): UseInboxDataResult {
   // This prevents the partial flash where groups appear before DMs.
   // IMPORTANT: Once set to true, never reset — real-time listeners stay
   // active and will automatically push updates without needing a restart.
-  const [bothLiveReady, setBothLiveReady] = useState(false);
+  const bothLiveReadyRef = useRef(false);
   const dmReadyRef = useRef(false);
   const groupReadyRef = useRef(false);
 
@@ -300,6 +319,43 @@ export function useInboxData(uid: string): UseInboxDataResult {
   // Entries expire after 30 seconds (more than enough for the write to land).
   const recentlyReadRef = useRef<Map<string, number>>(new Map());
 
+  // ── Commit functions ──────────────────────────────────────────────────
+
+  /**
+   * Push staged DM + Group data to state in a single synchronous call.
+   * React 18 batches both `setState` calls into one render.
+   */
+  const commitStagedData = useCallback(() => {
+    if (commitTimerRef.current) {
+      clearTimeout(commitTimerRef.current);
+      commitTimerRef.current = null;
+    }
+    log.debug("[sort-pipeline] commitStagedData", {
+      data: {
+        dmCount: dmStagedRef.current.length,
+        groupCount: groupStagedRef.current.length,
+      },
+    });
+    setDmConversations(dmStagedRef.current);
+    setGroupConversations(groupStagedRef.current);
+  }, []);
+
+  /**
+   * Schedule a commit after a short delay to coalesce rapid DM + Group
+   * snapshot completions into a single render.
+   *
+   * @param delayMs – debounce window (default 50 ms ≈ 3 frames).
+   *   During the initial load the "other" subscription usually
+   *   completes within this window, producing one atomic commit.
+   */
+  const scheduleCommit = useCallback(
+    (delayMs = 50) => {
+      if (commitTimerRef.current) clearTimeout(commitTimerRef.current);
+      commitTimerRef.current = setTimeout(commitStagedData, delayMs);
+    },
+    [commitStagedData],
+  );
+
   // Loading: show loading state until we have EITHER cached data OR both live
   // subscriptions have resolved. This prevents a partial list flash where
   // groups appear before DMs or vice versa.
@@ -307,10 +363,11 @@ export function useInboxData(uid: string): UseInboxDataResult {
   const hasCachedData =
     cacheLoadedRef.current &&
     (dmConversations.length > 0 || groupConversations.length > 0);
-  if (hasCachedData || bothLiveReady) {
+  if (hasCachedData || bothLiveReadyRef.current) {
     hasEverLoadedRef.current = true;
   }
-  const loading = !hasEverLoadedRef.current && !hasCachedData && !bothLiveReady;
+  const loading =
+    !hasEverLoadedRef.current && !hasCachedData && !bothLiveReadyRef.current;
 
   // =============================================================================
   // Load Cached Data on Mount (INSTANT LOAD)
@@ -340,12 +397,15 @@ export function useInboxData(uid: string): UseInboxDataResult {
       }
 
       if (cached) {
-        log.debug("Loaded inbox from cache", {
+        log.debug("[sort-pipeline] Loaded inbox from cache", {
           data: {
             dmCount: cached.dmConversations.length,
             groupCount: cached.groupConversations.length,
           },
         });
+        // Populate staging refs AND set state directly (immediate display).
+        dmStagedRef.current = cached.dmConversations;
+        groupStagedRef.current = cached.groupConversations;
         setDmConversations(cached.dmConversations);
         setGroupConversations(cached.groupConversations);
         cacheLoadedRef.current = true;
@@ -369,8 +429,9 @@ export function useInboxData(uid: string): UseInboxDataResult {
     setError(null);
   }, [aggregation, useAggregatedInbox]);
 
-  // Optimistically mark a conversation as read in local state
-  // This immediately updates the UI while the actual Firestore write happens in the background
+  // Optimistically mark a conversation as read in local state.
+  // Updates both the staging refs (so the next snapshot commit won't clobber
+  // the optimistic state) and React state directly (immediate UI feedback).
   const markConversationReadOptimistic = useCallback(
     (conversationId: string, conversationType?: "dm" | "group") => {
       if (useAggregatedInbox) {
@@ -392,42 +453,29 @@ export function useInboxData(uid: string): UseInboxDataResult {
         }
       }
 
+      const applyRead = (c: InboxConversation): InboxConversation =>
+        c.id === conversationId
+          ? {
+              ...c,
+              unreadCount: 0,
+              memberState: {
+                ...c.memberState,
+                lastSeenAtPrivate: Date.now(),
+                lastMarkedUnreadAt: undefined,
+              },
+            }
+          : c;
+
       // Update DM conversations
       if (!conversationType || conversationType === "dm") {
-        setDmConversations((prev) =>
-          prev.map((c) =>
-            c.id === conversationId
-              ? {
-                  ...c,
-                  unreadCount: 0,
-                  memberState: {
-                    ...c.memberState,
-                    lastSeenAtPrivate: Date.now(),
-                    lastMarkedUnreadAt: undefined,
-                  },
-                }
-              : c,
-          ),
-        );
+        dmStagedRef.current = dmStagedRef.current.map(applyRead);
+        setDmConversations((prev) => prev.map(applyRead));
       }
 
       // Update Group conversations
       if (!conversationType || conversationType === "group") {
-        setGroupConversations((prev) =>
-          prev.map((c) =>
-            c.id === conversationId
-              ? {
-                  ...c,
-                  unreadCount: 0,
-                  memberState: {
-                    ...c.memberState,
-                    lastSeenAtPrivate: Date.now(),
-                    lastMarkedUnreadAt: undefined,
-                  },
-                }
-              : c,
-          ),
-        );
+        groupStagedRef.current = groupStagedRef.current.map(applyRead);
+        setGroupConversations((prev) => prev.map(applyRead));
       }
     },
     [aggregation, useAggregatedInbox],
@@ -443,36 +491,25 @@ export function useInboxData(uid: string): UseInboxDataResult {
 
       const now = Date.now();
 
+      const applyPin = (c: InboxConversation): InboxConversation =>
+        c.id === conversationId
+          ? {
+              ...c,
+              memberState: {
+                ...c.memberState,
+                pinnedAt: c.memberState.pinnedAt ? null : now,
+              },
+            }
+          : c;
+
       if (!conversationType || conversationType === "dm") {
-        setDmConversations((prev) =>
-          prev.map((c) =>
-            c.id === conversationId
-              ? {
-                  ...c,
-                  memberState: {
-                    ...c.memberState,
-                    pinnedAt: c.memberState.pinnedAt ? null : now,
-                  },
-                }
-              : c,
-          ),
-        );
+        dmStagedRef.current = dmStagedRef.current.map(applyPin);
+        setDmConversations((prev) => prev.map(applyPin));
       }
 
       if (!conversationType || conversationType === "group") {
-        setGroupConversations((prev) =>
-          prev.map((c) =>
-            c.id === conversationId
-              ? {
-                  ...c,
-                  memberState: {
-                    ...c.memberState,
-                    pinnedAt: c.memberState.pinnedAt ? null : now,
-                  },
-                }
-              : c,
-          ),
-        );
+        groupStagedRef.current = groupStagedRef.current.map(applyPin);
+        setGroupConversations((prev) => prev.map(applyPin));
       }
     },
     [aggregation, useAggregatedInbox],
@@ -486,7 +523,10 @@ export function useInboxData(uid: string): UseInboxDataResult {
     if (useAggregatedInbox || !uid) {
       setDmLoading(false);
       dmReadyRef.current = true;
-      if (groupReadyRef.current) setBothLiveReady(true);
+      if (groupReadyRef.current) {
+        bothLiveReadyRef.current = true;
+        commitStagedData();
+      }
       return;
     }
 
@@ -502,6 +542,10 @@ export function useInboxData(uid: string): UseInboxDataResult {
     const unsubscribe = onSnapshot(
       dmQuery,
       async (snapshot) => {
+        // Snapshot version: if a newer snapshot fires while this one
+        // is still doing async work, the result will be discarded.
+        const version = ++dmVersionRef.current;
+
         try {
           // STEP 1: Extract all chat data and user IDs first (synchronous)
           const chatEntries: Array<{
@@ -602,17 +646,42 @@ export function useInboxData(uid: string): UseInboxDataResult {
                   lastMessageType: chatData.lastMessageType,
                   lastMessageAt: lastMessageAt,
                   createdAt: toMillis(chatData.createdAt),
+                  lastMessageSenderId: chatData.lastMessageSenderId,
                 },
                 recentlyReadAt,
+                currentUserId: uid,
               }),
             );
           }
 
-          if (!cancelled) {
-            setDmConversations(conversations);
+          if (!cancelled && version === dmVersionRef.current) {
+            dmStagedRef.current = conversations;
             setDmLoading(false);
             dmReadyRef.current = true;
-            if (groupReadyRef.current) setBothLiveReady(true);
+
+            if (groupReadyRef.current) {
+              // Both subscriptions ready — commit atomically now.
+              bothLiveReadyRef.current = true;
+              commitStagedData();
+            } else {
+              // Groups haven't arrived yet.  Schedule a debounced commit
+              // so that if groups follow within the window we get one
+              // atomic render.  If groups are slow, this still commits
+              // after the timeout so DMs aren't invisible.
+              scheduleCommit();
+            }
+
+            log.debug("[sort-pipeline] DM snapshot committed", {
+              data: {
+                count: conversations.length,
+                version,
+                groupReady: groupReadyRef.current,
+              },
+            });
+          } else if (!cancelled) {
+            log.debug("[sort-pipeline] DM snapshot discarded (stale)", {
+              data: { version, current: dmVersionRef.current },
+            });
           }
         } catch (e) {
           log.error("Error processing DM conversations", { error: e });
@@ -620,7 +689,10 @@ export function useInboxData(uid: string): UseInboxDataResult {
             setError(e as Error);
             setDmLoading(false);
             dmReadyRef.current = true;
-            if (groupReadyRef.current) setBothLiveReady(true);
+            if (groupReadyRef.current) {
+              bothLiveReadyRef.current = true;
+              commitStagedData();
+            }
           }
         }
       },
@@ -630,7 +702,10 @@ export function useInboxData(uid: string): UseInboxDataResult {
           setError(err);
           setDmLoading(false);
           dmReadyRef.current = true;
-          if (groupReadyRef.current) setBothLiveReady(true);
+          if (groupReadyRef.current) {
+            bothLiveReadyRef.current = true;
+            commitStagedData();
+          }
         }
       },
     );
@@ -638,8 +713,13 @@ export function useInboxData(uid: string): UseInboxDataResult {
     return () => {
       cancelled = true;
       unsubscribe();
+      // Clean up any pending commit timer owned by this subscription cycle
+      if (commitTimerRef.current) {
+        clearTimeout(commitTimerRef.current);
+        commitTimerRef.current = null;
+      }
     };
-  }, [uid, useAggregatedInbox]);
+  }, [uid, useAggregatedInbox, commitStagedData, scheduleCommit]);
 
   // =============================================================================
   // Group Subscription (OPTIMIZED - Parallel fetching)
@@ -649,7 +729,10 @@ export function useInboxData(uid: string): UseInboxDataResult {
     if (useAggregatedInbox || !uid) {
       setGroupLoading(false);
       groupReadyRef.current = true;
-      if (dmReadyRef.current) setBothLiveReady(true);
+      if (dmReadyRef.current) {
+        bothLiveReadyRef.current = true;
+        commitStagedData();
+      }
       return;
     }
 
@@ -666,6 +749,10 @@ export function useInboxData(uid: string): UseInboxDataResult {
     const unsubscribe = onSnapshot(
       groupQuery,
       async (snapshot) => {
+        // Snapshot version: if a newer snapshot fires while this one
+        // is still doing async work, the result will be discarded.
+        const version = ++groupVersionRef.current;
+
         try {
           // STEP 1: Extract all group data (synchronous)
           const groupEntries = snapshot.docs.map((groupDoc) => ({
@@ -740,18 +827,39 @@ export function useInboxData(uid: string): UseInboxDataResult {
                   lastMessageAt: lastMessageAt,
                   createdAt: toMillis(groupData.createdAt),
                   memberCount: groupData.memberCount,
+                  lastMessageSenderId: groupData.lastMessageSenderId,
                 },
                 memberState,
                 recentlyReadAt,
+                currentUserId: uid,
               }),
             );
           }
 
-          if (!cancelled) {
-            setGroupConversations(conversations);
+          if (!cancelled && version === groupVersionRef.current) {
+            groupStagedRef.current = conversations;
             setGroupLoading(false);
             groupReadyRef.current = true;
-            if (dmReadyRef.current) setBothLiveReady(true);
+
+            if (dmReadyRef.current) {
+              // Both subscriptions ready — commit atomically now.
+              bothLiveReadyRef.current = true;
+              commitStagedData();
+            } else {
+              scheduleCommit();
+            }
+
+            log.debug("[sort-pipeline] Group snapshot committed", {
+              data: {
+                count: conversations.length,
+                version,
+                dmReady: dmReadyRef.current,
+              },
+            });
+          } else if (!cancelled) {
+            log.debug("[sort-pipeline] Group snapshot discarded (stale)", {
+              data: { version, current: groupVersionRef.current },
+            });
           }
         } catch (e) {
           log.error("Error processing group conversations", { error: e });
@@ -759,7 +867,10 @@ export function useInboxData(uid: string): UseInboxDataResult {
             setError(e as Error);
             setGroupLoading(false);
             groupReadyRef.current = true;
-            if (dmReadyRef.current) setBothLiveReady(true);
+            if (dmReadyRef.current) {
+              bothLiveReadyRef.current = true;
+              commitStagedData();
+            }
           }
         }
       },
@@ -769,7 +880,10 @@ export function useInboxData(uid: string): UseInboxDataResult {
           setError(err);
           setGroupLoading(false);
           groupReadyRef.current = true;
-          if (dmReadyRef.current) setBothLiveReady(true);
+          if (dmReadyRef.current) {
+            bothLiveReadyRef.current = true;
+            commitStagedData();
+          }
         }
       },
     );
@@ -778,36 +892,34 @@ export function useInboxData(uid: string): UseInboxDataResult {
       cancelled = true;
       unsubscribe();
     };
-  }, [uid, useAggregatedInbox]);
+  }, [uid, useAggregatedInbox, commitStagedData, scheduleCommit]);
 
   // =============================================================================
   // Combined & Filtered List
   // =============================================================================
 
+  // STEP 1: Sort ONCE.  All downstream derivations (filter, pinned, search)
+  // are subsets of this single sorted array, so no redundant re-sorts.
+  const sortedAll = useMemo(() => {
+    const all = [...dmConversations, ...groupConversations];
+    return sortInboxConversations(all.filter((c) => !c.memberState.archived));
+  }, [dmConversations, groupConversations]);
+
+  // STEP 2: Apply the tab filter (subset of the sorted list — order preserved).
   const conversations = useMemo(() => {
-    let all = [...dmConversations, ...groupConversations];
-
-    // Exclude archived conversations (archive feature removed)
-    all = all.filter((c) => !c.memberState.archived);
-
-    // Apply filter
     switch (filter) {
       case "unread":
-        all = all.filter(
+        return sortedAll.filter(
           (c) => c.unreadCount > 0 || c.memberState.lastMarkedUnreadAt,
         );
-        break;
       case "groups":
-        all = all.filter((c) => c.type === "group");
-        break;
+        return sortedAll.filter((c) => c.type === "group");
       case "dms":
-        all = all.filter((c) => c.type === "dm");
-        break;
-      // "requests" is handled separately in the UI
+        return sortedAll.filter((c) => c.type === "dm");
+      default:
+        return sortedAll;
     }
-
-    return sortInboxConversations(all);
-  }, [dmConversations, groupConversations, filter]);
+  }, [sortedAll, filter]);
 
   // Separate pinned and regular
   const pinnedConversations = useMemo(
@@ -820,18 +932,27 @@ export function useInboxData(uid: string): UseInboxDataResult {
     [conversations],
   );
 
-  // Total unread count
-  // All non-archived conversations (for search - bypasses filter)
-  const allConversations = useMemo(() => {
-    const all = [...dmConversations, ...groupConversations];
-    // Only filter by archive status, not by the inbox filter
-    return sortInboxConversations(all.filter((c) => !c.memberState.archived));
-  }, [dmConversations, groupConversations]);
+  // All non-archived conversations (for search - bypasses inbox filter).
+  // This IS the pre-sorted `sortedAll` — no extra work needed.
+  const allConversations = sortedAll;
 
   const totalUnread = useMemo(
-    () => allConversations.reduce((sum, c) => sum + c.unreadCount, 0),
-    [allConversations],
+    () => sortedAll.reduce((sum, c) => sum + c.unreadCount, 0),
+    [sortedAll],
   );
+
+  // =============================================================================
+  // Commit Timer Cleanup
+  // =============================================================================
+
+  useEffect(() => {
+    return () => {
+      if (commitTimerRef.current) {
+        clearTimeout(commitTimerRef.current);
+        commitTimerRef.current = null;
+      }
+    };
+  }, []);
 
   // =============================================================================
   // Save to Cache when Data Changes

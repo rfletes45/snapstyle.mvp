@@ -28,8 +28,6 @@ export type ProfileTabStackParamList = {
   Customization:
     | { initialTab?: string; initialSection?: "profile" | "chat" }
     | undefined;
-  Debug: undefined;
-  LocalStorageDebug: undefined;
   BlockedUsers: undefined;
   PrivacySettings: undefined;
   BadgeCollection: { userId?: string } | undefined;

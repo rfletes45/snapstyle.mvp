@@ -27,6 +27,8 @@ export interface SendButtonProps {
   isSending?: boolean;
   /** Button size in pixels. */
   size?: number;
+  /** Disable haptic feedback on press. */
+  disableHaptic?: boolean;
 }
 
 // =============================================================================
@@ -38,15 +40,18 @@ function SendButtonBase({
   canSend,
   isSending = false,
   size = 24,
+  disableHaptic = false,
 }: SendButtonProps) {
   const theme = useTheme();
   const disabled = !canSend || isSending;
 
   const handlePress = useCallback(() => {
     if (disabled) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (!disableHaptic) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
     onSend();
-  }, [onSend, disabled]);
+  }, [onSend, disabled, disableHaptic]);
 
   return (
     <IconButton

@@ -641,7 +641,12 @@ const ProfileHeaderHero = memo(function ProfileHeaderHero({
               { backgroundColor: colors.primary },
             ]}
           >
-            <Text style={headerStyles.heroLevelBadgeText}>
+            <Text
+              style={[
+                headerStyles.heroLevelBadgeText,
+                { color: colors.onPrimary },
+              ]}
+            >
               {data.level?.current ?? 1}
             </Text>
           </View>
@@ -969,7 +974,12 @@ const ProfileHeaderMega = memo(function ProfileHeaderMega({
               { backgroundColor: colors.primary },
             ]}
           >
-            <Text style={headerStyles.megaLevelBadgeText}>
+            <Text
+              style={[
+                headerStyles.megaLevelBadgeText,
+                { color: colors.onPrimary },
+              ]}
+            >
               {data.level?.current ?? 1}
             </Text>
           </View>

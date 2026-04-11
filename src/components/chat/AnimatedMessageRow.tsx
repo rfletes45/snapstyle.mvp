@@ -42,9 +42,9 @@ import Animated, {
 const log = createLogger("AnimatedMessageRow");
 
 /** Subtle slide distance in pixels — start below, animate up */
-const SLIDE_PX = 12;
+const SLIDE_PX = 8;
 /** Animation duration in milliseconds */
-const DURATION_MS = 200;
+const DURATION_MS = 120;
 
 const TIMING_CONFIG = {
   duration: DURATION_MS,

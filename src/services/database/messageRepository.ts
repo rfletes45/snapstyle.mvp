@@ -89,6 +89,14 @@ export interface MessageWithAttachments extends MessageRow {
   attachments: AttachmentRow[];
 }
 
+export interface MessageWindowResult {
+  messages: MessageWithAttachments[];
+  olderCount: number;
+  newerCount: number;
+  hasOlder: boolean;
+  hasNewer: boolean;
+}
+
 // =============================================================================
 // Insert Operations
 // =============================================================================
@@ -444,7 +452,7 @@ export function getMessagesForConversation(
   scope: "dm" | "group",
   limit: number = 50,
 ): MessageWithAttachments[] {
-  return getMessages(conversationId, { limit });
+  return getMessages(conversationId, { limit, scope });
 }
 
 /**
@@ -479,6 +487,7 @@ export function getMessages(
     beforeTimestamp?: number;
     afterTimestamp?: number;
     includeDeleted?: boolean;
+    scope?: "dm" | "group";
   } = {},
 ): MessageWithAttachments[] {
   const db = getDatabase();
@@ -487,10 +496,16 @@ export function getMessages(
     beforeTimestamp,
     afterTimestamp,
     includeDeleted = false,
+    scope,
   } = options;
 
   let whereClause = "conversation_id = ?";
   const params: (string | number)[] = [conversationId];
+
+  if (scope) {
+    whereClause += " AND scope = ?";
+    params.push(scope);
+  }
 
   if (!includeDeleted) {
     whereClause += " AND deleted_for_all = 0";
@@ -518,6 +533,60 @@ export function getMessages(
 
   // Batch-load attachments for all messages (avoids N+1)
   return attachBatchAttachments(messages);
+}
+
+/**
+ * Get a bounded message window around a target message without loading the
+ * entire conversation into memory.
+ */
+export function getMessageWindowAroundMessage(
+  conversationId: string,
+  scope: "dm" | "group",
+  messageId: string,
+  olderLimit: number = 50,
+  newerLimit: number = 50,
+): MessageWindowResult | null {
+  const db = getDatabase();
+  const target = db.getFirstSync<MessageRow>(
+    `SELECT * FROM messages
+     WHERE id = ? AND conversation_id = ? AND scope = ?
+     LIMIT 1`,
+    [messageId, conversationId, scope],
+  );
+
+  if (!target) {
+    return null;
+  }
+
+  const newerRowsRaw = db.getAllSync<MessageRow>(
+    `SELECT * FROM messages
+     WHERE conversation_id = ? AND scope = ? AND deleted_for_all = 0
+     AND created_at > ?
+     ORDER BY created_at DESC
+     LIMIT ?`,
+    [conversationId, scope, target.created_at, newerLimit + 1],
+  );
+  const olderRowsRaw = db.getAllSync<MessageRow>(
+    `SELECT * FROM messages
+     WHERE conversation_id = ? AND scope = ? AND deleted_for_all = 0
+     AND created_at < ?
+     ORDER BY created_at DESC
+     LIMIT ?`,
+    [conversationId, scope, target.created_at, olderLimit + 1],
+  );
+
+  const hasNewer = newerRowsRaw.length > newerLimit;
+  const hasOlder = olderRowsRaw.length > olderLimit;
+  const newerRows = newerRowsRaw.slice(0, newerLimit);
+  const olderRows = olderRowsRaw.slice(0, olderLimit);
+
+  return {
+    messages: attachBatchAttachments([...newerRows, target, ...olderRows]),
+    newerCount: newerRows.length,
+    olderCount: olderRows.length,
+    hasNewer,
+    hasOlder,
+  };
 }
 
 /**

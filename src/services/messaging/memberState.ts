@@ -26,9 +26,6 @@
  * ```
  */
 
-import { DEBUG_UNIFIED_MESSAGING } from "@/constants/featureFlags";
-import { createLogger } from "@/utils/log";
-
 // Import DM member functions
 import {
   clearTypingIndicator as clearDMTypingIndicator,
@@ -49,8 +46,6 @@ import {
   updateGroupReadWatermark,
   updateGroupTypingIndicator,
 } from "@/services/groupMembers";
-
-const log = createLogger("messaging:memberState");
 
 // =============================================================================
 // Types
@@ -93,18 +88,6 @@ export async function updateReadWatermark(
   uid: string,
   serverReceivedAt: number,
 ): Promise<void> {
-  if (DEBUG_UNIFIED_MESSAGING) {
-    log.debug("updateReadWatermark called", {
-      operation: "updateWatermark",
-      data: {
-        scope,
-        conversationId,
-        uid: uid.substring(0, 8) + "...",
-        serverReceivedAt,
-      },
-    });
-  }
-
   if (scope === "dm") {
     await updateDMReadWatermark(conversationId, uid, serverReceivedAt);
   } else {
@@ -129,13 +112,6 @@ export async function updateLastSeenPrivate(
   uid: string,
   timestamp: number,
 ): Promise<void> {
-  if (DEBUG_UNIFIED_MESSAGING) {
-    log.debug("updateLastSeenPrivate called", {
-      operation: "updateLastSeen",
-      data: { scope, conversationId, timestamp },
-    });
-  }
-
   if (scope === "dm") {
     // For DMs, use updateReadWatermark with sendPublicReceipt: false
     // to update only the private lastSeenAtPrivate without broadcasting
@@ -180,13 +156,6 @@ export async function setTypingIndicator(
   uid: string,
   isTyping: boolean,
 ): Promise<void> {
-  if (DEBUG_UNIFIED_MESSAGING) {
-    log.debug("setTypingIndicator called", {
-      operation: "typing",
-      data: { scope, conversationId, isTyping },
-    });
-  }
-
   if (scope === "dm") {
     if (isTyping) {
       await updateDMTypingIndicator(conversationId, uid);
@@ -249,13 +218,6 @@ export async function setMuted(
   uid: string,
   mutedUntil: number | null,
 ): Promise<void> {
-  if (DEBUG_UNIFIED_MESSAGING) {
-    log.debug("setMuted called", {
-      operation: "setMuted",
-      data: { scope, conversationId, mutedUntil },
-    });
-  }
-
   if (scope === "dm") {
     await setDMMuted(conversationId, uid, mutedUntil);
   } else {
@@ -299,13 +261,6 @@ export async function setArchived(
   uid: string,
   archived: boolean,
 ): Promise<void> {
-  if (DEBUG_UNIFIED_MESSAGING) {
-    log.debug("setArchived called", {
-      operation: "setArchived",
-      data: { scope, conversationId, archived },
-    });
-  }
-
   if (scope === "dm") {
     await setDMArchived(conversationId, uid, archived);
   } else {
@@ -337,13 +292,6 @@ export async function setNotifyLevel(
   uid: string,
   level: NotifyLevel,
 ): Promise<void> {
-  if (DEBUG_UNIFIED_MESSAGING) {
-    log.debug("setNotifyLevel called", {
-      operation: "setNotifyLevel",
-      data: { scope, conversationId, level },
-    });
-  }
-
   if (scope === "dm") {
     await setDMNotifyLevel(conversationId, uid, level);
   } else {
@@ -374,13 +322,6 @@ export async function setReadReceipts(
   uid: string,
   sendReadReceipts: boolean,
 ): Promise<void> {
-  if (DEBUG_UNIFIED_MESSAGING) {
-    log.debug("setReadReceipts called", {
-      operation: "setReadReceipts",
-      data: { scope, conversationId, sendReadReceipts },
-    });
-  }
-
   if (scope === "dm") {
     await setDMReadReceipts(conversationId, uid, sendReadReceipts);
   } else {

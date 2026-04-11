@@ -31,6 +31,7 @@ import {
 import { Text } from "react-native-paper";
 import type { SharedValue } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { getKeyboardReplacementSnapFraction } from "./bottomSheetLayout";
 import {
   DraggableBottomSheet,
   type DraggableBottomSheetHandle,
@@ -137,10 +138,10 @@ export const FullEmojiPicker = forwardRef<
   // ── Snap points — keyboard-equivalent initial, expanded secondary ───────
   const snapPoints = useMemo(() => {
     if (keyboardHeight && keyboardHeight > 0) {
-      // +8 aligns the modal with the keyboard height
-      const kbFraction = Math.min(
-        (keyboardHeight + 7) / EMOJI_SCREEN_HEIGHT,
-        EXPANDED_SNAP - 0.05, // ensure there's room for an expanded snap above
+      const kbFraction = getKeyboardReplacementSnapFraction(
+        keyboardHeight,
+        EMOJI_SCREEN_HEIGHT,
+        EXPANDED_SNAP,
       );
       return [kbFraction, EXPANDED_SNAP];
     }
@@ -280,6 +281,7 @@ export const FullEmojiPicker = forwardRef<
       sharedTranslateY={sharedTranslateY}
       surfaceColor={colors.keyboardSurface ?? colors.surface}
       handleColor={colors.divider}
+      dragGestureArea="handle"
     >
       {/* Search bar */}
       <View
@@ -329,6 +331,7 @@ export const FullEmojiPicker = forwardRef<
         keyExtractor={keyExtractor}
         stickySectionHeadersEnabled
         showsVerticalScrollIndicator={false}
+        nestedScrollEnabled
         keyboardShouldPersistTaps="handled"
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={viewabilityConfig}

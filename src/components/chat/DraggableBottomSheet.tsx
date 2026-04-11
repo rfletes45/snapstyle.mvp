@@ -19,7 +19,6 @@ import React, {
 import { BackHandler, Dimensions, StyleSheet, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { Portal, useTheme } from "react-native-paper";
-import { scheduleOnRN } from "react-native-worklets";
 import Animated, {
   Extrapolation,
   interpolate,
@@ -29,13 +28,10 @@ import Animated, {
   withSpring,
   type SharedValue,
 } from "react-native-reanimated";
+import { scheduleOnRN } from "react-native-worklets";
+import { HANDLE_ZONE_HEIGHT } from "./bottomSheetLayout";
 
 const { height: SCREEN_HEIGHT } = Dimensions.get("window");
-
-/** Total vertical height of the drag handle zone (padding + handle).
- *  Used by pickers to add this to the keyboard fraction so the visible
- *  content area exactly matches the keyboard height. */
-export const HANDLE_ZONE_HEIGHT = 23; // paddingTop(10) + handle(5) + paddingBottom(8)
 
 const SPRING_CONFIG = {
   damping: 28,
@@ -75,6 +71,8 @@ export interface DraggableBottomSheetProps {
   surfaceColor?: string;
   /** Override drag handle color. */
   handleColor?: string;
+  /** Which area should capture drag gestures. */
+  dragGestureArea?: "sheet" | "handle";
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -94,6 +92,7 @@ export const DraggableBottomSheet = forwardRef<
     sharedTranslateY,
     surfaceColor,
     handleColor,
+    dragGestureArea = "sheet",
   },
   ref,
 ) {
@@ -303,10 +302,57 @@ export const DraggableBottomSheet = forwardRef<
     };
   });
 
+  // ── Content area height — constrain children to the visible portion ──────
+  // The sheet's Animated.View is SCREEN_HEIGHT tall so content isn't clipped
+  // during animations, but only (SCREEN_HEIGHT - translateY) is on-screen.
+  // Without this wrapper, FlatLists/ScrollViews inside the sheet extend into
+  // the off-screen area, making bottom content unreachable via scrolling.
+  const contentAreaStyle = useAnimatedStyle(() => ({
+    height: Math.max(0, SCREEN_HEIGHT - translateY.value - HANDLE_ZONE_HEIGHT),
+  }));
+
   if (!open) return null;
 
   // Determine whether to show standard backdrop (never in keyboard-replacement mode)
   const shouldShowBackdrop = showBackdrop && !isKeyboardReplacement;
+
+  const handleNode = (
+    <View style={styles.handleZone}>
+      <View
+        style={[
+          styles.handle,
+          {
+            backgroundColor: handleColor ?? theme.colors.outlineVariant,
+          },
+        ]}
+      />
+    </View>
+  );
+
+  const sheetNode = (
+    <Animated.View
+      style={[
+        isKeyboardReplacement ? styles.sheetFlat : styles.sheet,
+        sheetStyle,
+        {
+          backgroundColor: surfaceColor ?? theme.colors.surface,
+          borderTopLeftRadius: borderRadius,
+          borderTopRightRadius: borderRadius,
+        },
+      ]}
+    >
+      {dragGestureArea === "handle" ? (
+        <GestureDetector gesture={panGesture}>{handleNode}</GestureDetector>
+      ) : (
+        handleNode
+      )}
+
+      {/* Content wrapper constrains children to the visible sheet area */}
+      <Animated.View style={[styles.contentArea, contentAreaStyle]}>
+        {children}
+      </Animated.View>
+    </Animated.View>
+  );
 
   return (
     <Portal>
@@ -351,33 +397,11 @@ export const DraggableBottomSheet = forwardRef<
         )}
 
         {/* Sheet */}
-        <GestureDetector gesture={panGesture}>
-          <Animated.View
-            style={[
-              isKeyboardReplacement ? styles.sheetFlat : styles.sheet,
-              sheetStyle,
-              {
-                backgroundColor: surfaceColor ?? theme.colors.surface,
-                borderTopLeftRadius: borderRadius,
-                borderTopRightRadius: borderRadius,
-              },
-            ]}
-          >
-            {/* Drag handle */}
-            <View style={styles.handleZone}>
-              <View
-                style={[
-                  styles.handle,
-                  {
-                    backgroundColor: handleColor ?? theme.colors.outlineVariant,
-                  },
-                ]}
-              />
-            </View>
-
-            {children}
-          </Animated.View>
-        </GestureDetector>
+        {dragGestureArea === "sheet" ? (
+          <GestureDetector gesture={panGesture}>{sheetNode}</GestureDetector>
+        ) : (
+          sheetNode
+        )}
       </View>
     </Portal>
   );
@@ -425,7 +449,13 @@ const styles = StyleSheet.create({
     height: 5,
     borderRadius: 2.5,
   },
+  contentArea: {
+    flex: 1,
+    minHeight: 0,
+    overflow: "hidden",
+  },
 });
 
 export { SCREEN_HEIGHT as SHEET_SCREEN_HEIGHT };
+export { HANDLE_ZONE_HEIGHT };
 export default DraggableBottomSheet;

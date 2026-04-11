@@ -1,28 +1,38 @@
 /**
- * GroupChatInfoScreen — Overhauled
+ * GroupChatInfoScreen — V2 Redesign
  *
- * Full group info, management, and editing screen.
- * Real-time subscriptions for group data and members.
- * Permission-aware UI with card-based modern layout.
+ * Modern group hub with:
+ * - Compact hero with settings gear in header
+ * - Live voice room module
+ * - Shared content browser entry
+ * - Collapsible members preview
+ * - Clean danger zone
  *
  * Architecture:
- * - Subscribes to group doc + members in real time
- * - Uses useGroupPermissions hook for reactive capabilities
- * - Uses app-wide SnackbarContext for feedback
- * - Card-based layout with clear section hierarchy
+ * - Real-time subscriptions for group + members
+ * - useGroupPermissions for reactive capability checks
+ * - useVoiceRoomOccupancy for live room state
+ * - Modular card-based layout
  */
 
 import { AppImage } from "@/components/AppImage";
 import { ProfilePictureWithDecoration } from "@/components/profile/ProfilePicture";
+import { ProfilePicture } from "@/components/profile/ProfilePicture/ProfilePicture";
 import { ErrorState, LoadingState } from "@/components/ui";
+import { CALL_FEATURES } from "@/constants/featureFlags";
 import {
   BorderRadius,
-  Elevation,
   FontSizes,
   FontWeights,
   Spacing,
 } from "@/constants/theme";
+import { useStreamCall } from "@/contexts/StreamCallContext";
+import {
+  useGroupContentBrowser,
+  type ContentTab,
+} from "@/hooks/useGroupContentBrowser";
 import { useGroupPermissions } from "@/hooks/useGroupPermissions";
+import { useVoiceRoomOccupancy } from "@/hooks/useVoiceRoomOccupancy";
 import { GroupPermission } from "@/permissions/groupPermissions";
 import { getFriends, getUserProfileByUid } from "@/services/friends";
 import {
@@ -39,12 +49,14 @@ import {
   updateGroupPhoto,
 } from "@/services/groups";
 import { uploadGroupAvatarImage } from "@/services/storage";
+import { getVoiceChannelId } from "@/services/stream/voiceChannelIds";
 import { useAuth } from "@/store/AuthContext";
 import { useSnackbar } from "@/store/SnackbarContext";
 import { useColors } from "@/store/ThemeContext";
 import { Group, GROUP_LIMITS, GroupMember, GroupRole } from "@/types/models";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
+import { StackActions } from "@react-navigation/native";
 import React, {
   useCallback,
   useEffect,
@@ -54,7 +66,11 @@ import React, {
 } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Animated,
+  Dimensions,
+  Easing,
+  Linking,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -70,6 +86,7 @@ import {
   Menu,
   Modal,
   Portal,
+  Searchbar,
   Text,
   TextInput,
 } from "react-native-paper";
@@ -77,6 +94,23 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("screens/groups/GroupChatInfoScreen");
+
+const MEMBER_PREVIEW_LIMIT = 5;
+
+type InfoTab = "members" | ContentTab;
+
+const SCREEN_WIDTH = Dimensions.get("window").width;
+const GRID_COLUMNS = 3;
+const GRID_GAP = 2;
+const GRID_ITEM_SIZE =
+  (SCREEN_WIDTH - GRID_GAP * (GRID_COLUMNS - 1)) / GRID_COLUMNS;
+
+const INFO_TABS: { key: InfoTab; label: string; icon: string }[] = [
+  { key: "members", label: "Members", icon: "account-group" },
+  { key: "media", label: "Media", icon: "image-multiple" },
+  { key: "messages", label: "Messages", icon: "message-text" },
+  { key: "links", label: "Links", icon: "link-variant" },
+];
 
 // =============================================================================
 // Main Component
@@ -116,6 +150,14 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
   );
   const [menuVisible, setMenuVisible] = useState<string | null>(null);
 
+  // ─── Members expansion ────────────────────────────────────────────────
+  const [membersExpanded, setMembersExpanded] = useState(false);
+
+  // ─── Info tab state (Members / Media / Messages / Links) ──────────────
+  const [activeInfoTab, setActiveInfoTab] = useState<InfoTab>("members");
+  const [memberSearchQuery, setMemberSearchQuery] = useState("");
+  const browser = useGroupContentBrowser(groupId);
+
   // ─── Permissions (reactive) ───────────────────────────────────────────
   const {
     can,
@@ -123,6 +165,16 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
     role: userRole,
     loading: permLoading,
   } = useGroupPermissions(groupId);
+
+  // ─── Voice Room ───────────────────────────────────────────────────────
+  const voiceRoom = useVoiceRoomOccupancy(groupId);
+  const { activeSession, isBusy, joinChannel } = CALL_FEATURES.CALLS_ENABLED
+    ? useStreamCall()
+    : { activeSession: null, isBusy: false, joinChannel: async () => {} };
+  const channelId = getVoiceChannelId(groupId);
+  const isCurrentUserInRoom =
+    activeSession?.type === "voice_channel" &&
+    activeSession.channelId === channelId;
 
   // ─── Animations ───────────────────────────────────────────────────────
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -136,6 +188,31 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
       }).start();
     }
   }, [loading, group]);
+
+  // Pulse animation for live voice indicator
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    if (voiceRoom.isActive) {
+      const loop = Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, {
+            toValue: 0.3,
+            duration: 900,
+            easing: Easing.inOut(Easing.ease),
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulseAnim, {
+            toValue: 1,
+            duration: 900,
+            easing: Easing.inOut(Easing.ease),
+            useNativeDriver: true,
+          }),
+        ]),
+      );
+      loop.start();
+      return () => loop.stop();
+    }
+  }, [voiceRoom.isActive]);
 
   // ─── Real-time group subscription ─────────────────────────────────────
   useEffect(() => {
@@ -225,57 +302,99 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
     });
   }, [group?.createdAt]);
 
+  const visibleMembers = useMemo(() => {
+    if (membersExpanded) return members;
+    return members.slice(0, MEMBER_PREVIEW_LIMIT);
+  }, [members, membersExpanded]);
+
+  const hiddenMemberCount = memberCount - MEMBER_PREVIEW_LIMIT;
+
+  // Search-filtered members
+  const filteredMembers = useMemo(() => {
+    if (!memberSearchQuery.trim())
+      return membersExpanded ? members : visibleMembers;
+    const q = memberSearchQuery.toLowerCase().trim();
+    return members.filter(
+      (m) =>
+        m.displayName.toLowerCase().includes(q) ||
+        m.username?.toLowerCase().includes(q),
+    );
+  }, [members, memberSearchQuery, membersExpanded, visibleMembers]);
+
   // =====================================================================
   // ACTION HANDLERS
   // =====================================================================
 
-  /** Change group photo — permission-gated, with upload + DB write */
-  const handleChangePhoto = useCallback(async () => {
+  /** Pick and upload a group photo from camera or library */
+  const processPhoto = useCallback(
+    async (picker: () => Promise<ImagePicker.ImagePickerResult>) => {
+      if (actionLockRef.current) return;
+      try {
+        const result = await picker();
+        if (result.canceled || !result.assets?.[0]) return;
+
+        actionLockRef.current = true;
+        setUploadingPhoto(true);
+        logger.debug("[GroupInfo] Uploading group photo", { groupId });
+
+        const imageUri = result.assets[0].uri;
+        const downloadUrl = await uploadGroupAvatarImage(groupId, imageUri);
+
+        logger.debug("[GroupInfo] Upload complete, updating group doc", {
+          groupId,
+        });
+        await updateGroupPhoto(groupId, uid!, downloadUrl);
+
+        showSuccess("Group photo updated");
+        logger.debug("[GroupInfo] Group photo updated successfully", {
+          groupId,
+        });
+      } catch (err: any) {
+        logger.error("[GroupInfo] Failed to update group photo", {
+          groupId,
+          error: err.message,
+        });
+        showErrorWithRetry(
+          err.message || "Failed to update group photo",
+          handleChangePhoto,
+        );
+      } finally {
+        setUploadingPhoto(false);
+        actionLockRef.current = false;
+      }
+    },
+    [uid, groupId, showSuccess, showErrorWithRetry],
+  );
+
+  /** Change group photo — permission-gated, popup to choose camera or library */
+  const handleChangePhoto = useCallback(() => {
     if (!uid || !can(GroupPermission.EDIT_GROUP_PHOTO)) {
       showError("You don't have permission to change the group photo");
       return;
     }
     if (actionLockRef.current) return;
 
-    try {
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ["images"],
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.8,
-      });
+    const pickerOpts: ImagePicker.ImagePickerOptions = {
+      mediaTypes: ["images"],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    };
 
-      if (result.canceled || !result.assets?.[0]) return;
-
-      actionLockRef.current = true;
-      setUploadingPhoto(true);
-      logger.debug("[GroupInfo] Uploading group photo", { groupId });
-
-      const imageUri = result.assets[0].uri;
-      const downloadUrl = await uploadGroupAvatarImage(groupId, imageUri);
-
-      logger.debug("[GroupInfo] Upload complete, updating group doc", {
-        groupId,
-      });
-      await updateGroupPhoto(groupId, uid, downloadUrl);
-
-      // No need to setGroup — real-time subscription will pick it up
-      showSuccess("Group photo updated");
-      logger.debug("[GroupInfo] Group photo updated successfully", { groupId });
-    } catch (err: any) {
-      logger.error("[GroupInfo] Failed to update group photo", {
-        groupId,
-        error: err.message,
-      });
-      showErrorWithRetry(
-        err.message || "Failed to update group photo",
-        handleChangePhoto,
-      );
-    } finally {
-      setUploadingPhoto(false);
-      actionLockRef.current = false;
-    }
-  }, [uid, groupId, can, showSuccess, showErrorWithRetry]);
+    Alert.alert("Change Group Photo", "Choose an option", [
+      {
+        text: "Take Photo",
+        onPress: () =>
+          processPhoto(() => ImagePicker.launchCameraAsync(pickerOpts)),
+      },
+      {
+        text: "Choose from Library",
+        onPress: () =>
+          processPhoto(() => ImagePicker.launchImageLibraryAsync(pickerOpts)),
+      },
+      { text: "Cancel", style: "cancel" },
+    ]);
+  }, [uid, can, showError, processPhoto]);
 
   /** Update group name */
   const handleUpdateName = useCallback(async () => {
@@ -484,6 +603,32 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
       }
     },
     [uid, group, groupId, showSuccess, showError],
+  );
+
+  const handleJoinVoiceChannel = useCallback(() => {
+    if (!group) return;
+    navigation.navigate("VoiceChannel", {
+      channelId,
+      channelName: `${group.name} Voice`,
+      groupId,
+    });
+  }, [navigation, channelId, group, groupId]);
+
+  const navigateToGroupMessage = useCallback(
+    (messageId: string) => {
+      navigation.dispatch(
+        StackActions.popTo(
+          "GroupChat",
+          {
+            groupId,
+            targetMessageId: messageId,
+            jumpRequestId: `${messageId}:${Date.now()}`,
+          },
+          { merge: true },
+        ),
+      );
+    },
+    [groupId, navigation],
   );
 
   // =====================================================================
@@ -704,22 +849,71 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
   return (
     <SafeAreaView
       style={[styles.container, { backgroundColor: colors.background }]}
-      edges={["bottom"]}
+      edges={["top", "bottom"]}
     >
-      {/* ── Header ──────────────────────────────────────────────────── */}
-      <Appbar.Header
-        style={{ backgroundColor: colors.background }}
-        elevated={false}
+      {/* ── Compact header with circular icon buttons ──────────────── */}
+      <View
+        style={[styles.compactHeader, { backgroundColor: colors.background }]}
       >
-        <Appbar.BackAction
+        <TouchableOpacity
+          style={[
+            styles.headerCircle,
+            { backgroundColor: colors.surfaceVariant },
+          ]}
+          activeOpacity={0.7}
           onPress={() => navigation.goBack()}
-          iconColor={colors.text}
-        />
-        <Appbar.Content
-          title="Group Info"
-          titleStyle={{ color: colors.text }}
-        />
-      </Appbar.Header>
+          accessibilityLabel="Go back"
+        >
+          <MaterialCommunityIcons
+            name="arrow-left"
+            size={20}
+            color={colors.text}
+          />
+        </TouchableOpacity>
+
+        <View style={styles.headerRight}>
+          {can(GroupPermission.MANAGE_PERMISSIONS) && (
+            <TouchableOpacity
+              style={[
+                styles.headerCircle,
+                { backgroundColor: colors.surfaceVariant },
+              ]}
+              activeOpacity={0.7}
+              onPress={() =>
+                navigation.navigate("GroupPermissions", { groupId })
+              }
+              accessibilityLabel="Admin permissions"
+            >
+              <MaterialCommunityIcons
+                name="shield-key-outline"
+                size={20}
+                color={colors.textSecondary}
+              />
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity
+            style={[
+              styles.headerCircle,
+              { backgroundColor: colors.surfaceVariant },
+            ]}
+            activeOpacity={0.7}
+            onPress={() =>
+              navigation.navigate("ChatSettings", {
+                groupId,
+                chatType: "group",
+                chatName: group.name,
+              })
+            }
+            accessibilityLabel="Group settings"
+          >
+            <MaterialCommunityIcons
+              name="cog-outline"
+              size={20}
+              color={colors.textSecondary}
+            />
+          </TouchableOpacity>
+        </View>
+      </View>
 
       {/* ── Action loading overlay ──────────────────────────────────── */}
       {actionLoading && (
@@ -737,13 +931,7 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
           {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
            *  HERO SECTION — Group identity
            * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
-          <View
-            style={[
-              styles.heroCard,
-              { backgroundColor: colors.surface },
-              Elevation.sm,
-            ]}
-          >
+          <View style={styles.heroCard}>
             {/* Group Avatar */}
             <TouchableOpacity
               onPress={handleChangePhoto}
@@ -821,156 +1009,729 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
           </View>
 
           {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-           *  QUICK ACTIONS
+           *  VOICE ROOM MODULE
            * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
-          <View
-            style={[
-              styles.sectionCard,
-              { backgroundColor: colors.surface },
-              Elevation.sm,
-            ]}
-          >
-            <TouchableOpacity
-              style={styles.actionRow}
-              activeOpacity={0.6}
-              onPress={() =>
-                navigation.navigate("ChatSettings", {
-                  groupId,
-                  chatType: "group",
-                  chatName: group.name,
-                })
-              }
-            >
-              <View
-                style={[
-                  styles.actionIconContainer,
-                  { backgroundColor: colors.primary + "15" },
-                ]}
-              >
-                <MaterialCommunityIcons
-                  name="bell-outline"
-                  size={20}
-                  color={colors.primary}
-                />
+          {CALL_FEATURES.CALLS_ENABLED && (
+            <View>
+              <View style={styles.voiceHeader}>
+                <View style={styles.voiceHeaderLeft}>
+                  <MaterialCommunityIcons
+                    name="headphones"
+                    size={20}
+                    color={
+                      voiceRoom.isActive ? colors.success : colors.textSecondary
+                    }
+                  />
+                  <Text style={[styles.voiceTitle, { color: colors.text }]}>
+                    Voice Room
+                  </Text>
+                  {voiceRoom.isActive && (
+                    <Animated.View
+                      style={[
+                        styles.liveDot,
+                        {
+                          backgroundColor: colors.success,
+                          opacity: pulseAnim,
+                        },
+                      ]}
+                    />
+                  )}
+                </View>
+                {voiceRoom.isActive && (
+                  <Text
+                    style={[styles.voiceCount, { color: colors.textSecondary }]}
+                  >
+                    {voiceRoom.occupants.length}{" "}
+                    {voiceRoom.occupants.length === 1 ? "person" : "people"}
+                  </Text>
+                )}
               </View>
-              <Text style={[styles.actionRowText, { color: colors.text }]}>
-                Notifications & Settings
-              </Text>
-              <MaterialCommunityIcons
-                name="chevron-right"
-                size={22}
-                color={colors.textSecondary}
-              />
-            </TouchableOpacity>
 
-            {can(GroupPermission.MANAGE_PERMISSIONS) && (
-              <>
-                <View
-                  style={[
-                    styles.actionDivider,
-                    { backgroundColor: colors.border },
-                  ]}
-                />
-                <TouchableOpacity
-                  style={styles.actionRow}
-                  activeOpacity={0.6}
-                  onPress={() =>
-                    navigation.navigate("GroupPermissions", { groupId })
-                  }
-                >
-                  <View
+              {voiceRoom.isActive ? (
+                <>
+                  {/* Occupant avatars */}
+                  <View style={styles.voiceOccupants}>
+                    {voiceRoom.occupants.slice(0, 6).map((occupant) => (
+                      <View
+                        key={occupant.userId}
+                        style={styles.voiceOccupantItem}
+                      >
+                        <ProfilePicture
+                          url={occupant.image ?? null}
+                          name={occupant.name}
+                          size={36}
+                          showLoading={false}
+                        />
+                        <Text
+                          style={[
+                            styles.voiceOccupantName,
+                            { color: colors.textSecondary },
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {occupant.userId === uid
+                            ? "You"
+                            : occupant.name.split(" ")[0]}
+                        </Text>
+                      </View>
+                    ))}
+                    {voiceRoom.occupants.length > 6 && (
+                      <View style={styles.voiceOccupantItem}>
+                        <View
+                          style={[
+                            styles.voiceOverflowCircle,
+                            { backgroundColor: colors.surfaceVariant },
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.voiceOverflowText,
+                              { color: colors.textSecondary },
+                            ]}
+                          >
+                            +{voiceRoom.occupants.length - 6}
+                          </Text>
+                        </View>
+                      </View>
+                    )}
+                  </View>
+
+                  {/* Join / Return button */}
+                  <TouchableOpacity
                     style={[
-                      styles.actionIconContainer,
-                      { backgroundColor: colors.primary + "15" },
+                      styles.voiceJoinButton,
+                      {
+                        backgroundColor: isCurrentUserInRoom
+                          ? colors.success + "18"
+                          : colors.success,
+                      },
                     ]}
+                    activeOpacity={0.7}
+                    onPress={handleJoinVoiceChannel}
+                    disabled={isBusy && !isCurrentUserInRoom}
                   >
                     <MaterialCommunityIcons
-                      name="shield-key-outline"
-                      size={20}
-                      color={colors.primary}
+                      name="headphones"
+                      size={18}
+                      color={isCurrentUserInRoom ? colors.success : "#FFF"}
                     />
-                  </View>
-                  <Text style={[styles.actionRowText, { color: colors.text }]}>
-                    Admin Permissions
+                    <Text
+                      style={[
+                        styles.voiceJoinText,
+                        {
+                          color: isCurrentUserInRoom ? colors.success : "#FFF",
+                        },
+                      ]}
+                    >
+                      {isCurrentUserInRoom
+                        ? "Return to Room"
+                        : isBusy
+                          ? "In Another Call"
+                          : "Join Voice Room"}
+                    </Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <>
+                  <Text
+                    style={[styles.voiceEmptyText, { color: colors.textMuted }]}
+                  >
+                    No one is in the voice room right now
                   </Text>
-                  <MaterialCommunityIcons
-                    name="chevron-right"
-                    size={22}
-                    color={colors.textSecondary}
-                  />
-                </TouchableOpacity>
-              </>
-            )}
-          </View>
+                  <TouchableOpacity
+                    style={[
+                      styles.voiceStartButton,
+                      { borderColor: colors.border },
+                    ]}
+                    activeOpacity={0.7}
+                    onPress={handleJoinVoiceChannel}
+                    disabled={isBusy}
+                  >
+                    <MaterialCommunityIcons
+                      name="headphones"
+                      size={18}
+                      color={isBusy ? colors.textMuted : colors.primary}
+                    />
+                    <Text
+                      style={[
+                        styles.voiceStartText,
+                        {
+                          color: isBusy ? colors.textMuted : colors.primary,
+                        },
+                      ]}
+                    >
+                      {isBusy ? "In Another Call" : "Start Voice Room"}
+                    </Text>
+                  </TouchableOpacity>
+                </>
+              )}
+            </View>
+          )}
 
           {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-           *  MEMBERS SECTION
+           *  UNIFIED CONTENT SECTION (Members / Media / Messages / Links)
            * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
           <View
             style={[
-              styles.sectionCard,
-              { backgroundColor: colors.surface },
-              Elevation.sm,
+              styles.contentSectionFullWidth,
+              { borderTopColor: colors.border },
             ]}
           >
-            <View style={styles.sectionHeader}>
-              <Text style={[styles.sectionTitle, { color: colors.text }]}>
-                Members
-              </Text>
-              <Text
-                style={[styles.sectionBadge, { color: colors.textSecondary }]}
-              >
-                {memberCount}
-              </Text>
-            </View>
-
-            {/* Invite button */}
-            {can(GroupPermission.MANAGE_INVITES) &&
-              memberCount < GROUP_LIMITS.MAX_MEMBERS && (
-                <TouchableOpacity
-                  style={[
-                    styles.inviteRow,
-                    { borderBottomColor: colors.border },
-                  ]}
-                  activeOpacity={0.6}
-                  onPress={() => {
-                    loadInvitableFriends();
-                    setInviteModalVisible(true);
-                  }}
-                >
-                  <View
+            {/* Tab bar */}
+            <View
+              style={[styles.infoTabBar, { borderBottomColor: colors.border }]}
+            >
+              {INFO_TABS.map((tab) => {
+                const isActive = activeInfoTab === tab.key;
+                const count =
+                  tab.key === "members"
+                    ? memberCount
+                    : (browser.counts[tab.key as keyof typeof browser.counts] ??
+                      0);
+                return (
+                  <TouchableOpacity
+                    key={tab.key}
                     style={[
-                      styles.inviteIconContainer,
-                      { backgroundColor: colors.primary + "15" },
+                      styles.infoTab,
+                      isActive && {
+                        borderBottomColor: colors.primary,
+                        borderBottomWidth: 2,
+                      },
                     ]}
+                    onPress={() => {
+                      setActiveInfoTab(tab.key);
+                      if (tab.key !== "members") {
+                        browser.setActiveTab(
+                          tab.key as "media" | "messages" | "links",
+                        );
+                      }
+                    }}
+                    activeOpacity={0.7}
                   >
                     <MaterialCommunityIcons
-                      name="account-plus"
-                      size={22}
-                      color={colors.primary}
+                      name={tab.icon as any}
+                      size={16}
+                      color={isActive ? colors.primary : colors.textSecondary}
                     />
-                  </View>
-                  <Text style={[styles.inviteText, { color: colors.primary }]}>
-                    Invite Friends
-                  </Text>
-                </TouchableOpacity>
-              )}
+                    <Text
+                      style={[
+                        styles.infoTabLabel,
+                        {
+                          color: isActive
+                            ? colors.primary
+                            : colors.textSecondary,
+                          fontWeight: isActive
+                            ? FontWeights.semibold
+                            : FontWeights.regular,
+                        },
+                      ]}
+                    >
+                      {tab.label}
+                    </Text>
+                    {count > 0 && (
+                      <Text
+                        style={[
+                          styles.infoTabCount,
+                          {
+                            color: isActive ? colors.primary : colors.textMuted,
+                          },
+                        ]}
+                      >
+                        {count > 999 ? "999+" : count}
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
 
-            {/* Member list */}
-            {members.map(renderMember)}
+            {/* Search bar */}
+            <View style={styles.infoSearchContainer}>
+              <Searchbar
+                placeholder={
+                  activeInfoTab === "members"
+                    ? "Search members..."
+                    : `Search ${activeInfoTab}...`
+                }
+                onChangeText={
+                  activeInfoTab === "members"
+                    ? setMemberSearchQuery
+                    : browser.setSearchQuery
+                }
+                value={
+                  activeInfoTab === "members"
+                    ? memberSearchQuery
+                    : browser.searchQuery
+                }
+                style={[
+                  styles.infoSearchBar,
+                  { backgroundColor: colors.background },
+                ]}
+                inputStyle={[styles.infoSearchInput, { color: colors.text }]}
+                iconColor={colors.textSecondary}
+                placeholderTextColor={colors.textMuted}
+                elevation={0}
+              />
+            </View>
+
+            {/* Divider after search bar */}
+            <View
+              style={[
+                styles.infoSearchDivider,
+                { backgroundColor: colors.border },
+              ]}
+            />
+
+            {/* ─── Members tab content ───────────────────────────────── */}
+            {activeInfoTab === "members" && (
+              <View>
+                {/* Invite button */}
+                {can(GroupPermission.MANAGE_INVITES) &&
+                  memberCount < GROUP_LIMITS.MAX_MEMBERS && (
+                    <TouchableOpacity
+                      style={styles.inviteRow}
+                      activeOpacity={0.6}
+                      onPress={() => {
+                        loadInvitableFriends();
+                        setInviteModalVisible(true);
+                      }}
+                    >
+                      <View
+                        style={[
+                          styles.inviteIconContainer,
+                          { backgroundColor: colors.primary + "15" },
+                        ]}
+                      >
+                        <MaterialCommunityIcons
+                          name="account-plus"
+                          size={22}
+                          color={colors.primary}
+                        />
+                      </View>
+                      <Text
+                        style={[styles.inviteText, { color: colors.primary }]}
+                      >
+                        Invite Friends
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+
+                {/* Member list */}
+                {filteredMembers.map(renderMember)}
+
+                {/* See all / collapse (only when not searching) */}
+                {!memberSearchQuery.trim() &&
+                  memberCount > MEMBER_PREVIEW_LIMIT && (
+                    <TouchableOpacity
+                      style={[
+                        styles.seeAllRow,
+                        { borderTopColor: colors.border },
+                      ]}
+                      activeOpacity={0.6}
+                      onPress={() => setMembersExpanded(!membersExpanded)}
+                    >
+                      <Text
+                        style={[styles.seeAllText, { color: colors.primary }]}
+                      >
+                        {membersExpanded
+                          ? "Show less"
+                          : `See all ${memberCount} members`}
+                      </Text>
+                      <MaterialCommunityIcons
+                        name={membersExpanded ? "chevron-up" : "chevron-down"}
+                        size={20}
+                        color={colors.primary}
+                      />
+                    </TouchableOpacity>
+                  )}
+
+                {/* Empty state for member search */}
+                {memberSearchQuery.trim() && filteredMembers.length === 0 && (
+                  <View style={styles.inlineEmptyContainer}>
+                    <MaterialCommunityIcons
+                      name="account-search-outline"
+                      size={40}
+                      color={colors.textMuted}
+                    />
+                    <Text
+                      style={[
+                        styles.inlineEmptyText,
+                        { color: colors.textSecondary },
+                      ]}
+                    >
+                      No members match "{memberSearchQuery}"
+                    </Text>
+                  </View>
+                )}
+              </View>
+            )}
+
+            {/* ─── Media tab content ─────────────────────────────────── */}
+            {activeInfoTab === "media" && (
+              <View>
+                {browser.loading ? (
+                  <View style={styles.inlineLoadingContainer}>
+                    <ActivityIndicator size="large" color={colors.primary} />
+                  </View>
+                ) : browser.mediaItems.length === 0 ? (
+                  <View style={styles.inlineEmptyContainer}>
+                    <MaterialCommunityIcons
+                      name={
+                        browser.searchQuery.trim()
+                          ? "image-search-outline"
+                          : "image-off-outline"
+                      }
+                      size={40}
+                      color={colors.textMuted}
+                    />
+                    <Text
+                      style={[
+                        styles.inlineEmptyText,
+                        { color: colors.textSecondary },
+                      ]}
+                    >
+                      {browser.searchQuery.trim()
+                        ? "No media found"
+                        : "No shared media yet"}
+                    </Text>
+                  </View>
+                ) : (
+                  <>
+                    <View style={styles.mediaGrid}>
+                      {browser.mediaItems.map((item) => {
+                        const imageSource =
+                          item.thumbUrl || item.remoteUrl || item.localUri;
+                        const isVideo = item.kind === "video";
+                        return (
+                          <TouchableOpacity
+                            key={item.attachmentId}
+                            style={[
+                              styles.mediaGridItem,
+                              {
+                                backgroundColor: colors.surfaceVariant,
+                              },
+                            ]}
+                            activeOpacity={0.8}
+                            onPress={() =>
+                              navigateToGroupMessage(item.messageId)
+                            }
+                          >
+                            {imageSource ? (
+                              <AppImage
+                                source={{ uri: imageSource }}
+                                style={styles.mediaGridImage}
+                                debugLabel="GroupMediaThumb"
+                              />
+                            ) : (
+                              <View
+                                style={[
+                                  styles.mediaGridPlaceholder,
+                                  {
+                                    backgroundColor: colors.surfaceVariant,
+                                  },
+                                ]}
+                              >
+                                <MaterialCommunityIcons
+                                  name={
+                                    isVideo ? "video-outline" : "image-outline"
+                                  }
+                                  size={24}
+                                  color={colors.textMuted}
+                                />
+                              </View>
+                            )}
+                            {isVideo && (
+                              <View style={styles.mediaVideoBadge}>
+                                <MaterialCommunityIcons
+                                  name="play-circle"
+                                  size={20}
+                                  color="#FFF"
+                                />
+                              </View>
+                            )}
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                    {browser.hasMore && (
+                      <TouchableOpacity
+                        style={[
+                          styles.loadMoreRow,
+                          { borderTopColor: colors.border },
+                        ]}
+                        activeOpacity={0.6}
+                        onPress={browser.loadMore}
+                      >
+                        {browser.loadingMore ? (
+                          <ActivityIndicator
+                            size="small"
+                            color={colors.primary}
+                          />
+                        ) : (
+                          <Text
+                            style={[
+                              styles.loadMoreText,
+                              { color: colors.primary },
+                            ]}
+                          >
+                            Load more media
+                          </Text>
+                        )}
+                      </TouchableOpacity>
+                    )}
+                  </>
+                )}
+              </View>
+            )}
+
+            {/* ─── Messages tab content ──────────────────────────────── */}
+            {activeInfoTab === "messages" && (
+              <View>
+                {browser.loading ? (
+                  <View style={styles.inlineLoadingContainer}>
+                    <ActivityIndicator size="large" color={colors.primary} />
+                  </View>
+                ) : browser.messageItems.length === 0 ? (
+                  <View style={styles.inlineEmptyContainer}>
+                    <MaterialCommunityIcons
+                      name={
+                        browser.searchQuery.trim()
+                          ? "message-off-outline"
+                          : "message-off-outline"
+                      }
+                      size={40}
+                      color={colors.textMuted}
+                    />
+                    <Text
+                      style={[
+                        styles.inlineEmptyText,
+                        { color: colors.textSecondary },
+                      ]}
+                    >
+                      {browser.searchQuery.trim()
+                        ? "No messages found"
+                        : "No messages yet"}
+                    </Text>
+                  </View>
+                ) : (
+                  <>
+                    {browser.messageItems.map((item) => {
+                      const timeStr = formatRelativeTime(item.timestamp);
+                      const snippet =
+                        item.text.length > 200
+                          ? item.text.slice(0, 200) + "…"
+                          : item.text;
+                      return (
+                        <TouchableOpacity
+                          key={item.messageId}
+                          style={[
+                            styles.inlineMessageRow,
+                            { borderBottomColor: colors.border },
+                          ]}
+                          activeOpacity={0.6}
+                          onPress={() =>
+                            navigateToGroupMessage(item.messageId)
+                          }
+                        >
+                          <View style={styles.inlineMessageContent}>
+                            <View style={styles.inlineMessageHeader}>
+                              <Text
+                                style={[
+                                  styles.inlineMessageSender,
+                                  { color: colors.text },
+                                ]}
+                                numberOfLines={1}
+                              >
+                                {item.senderName || "Unknown"}
+                              </Text>
+                              <Text
+                                style={[
+                                  styles.inlineMessageTime,
+                                  { color: colors.textMuted },
+                                ]}
+                              >
+                                {timeStr}
+                              </Text>
+                            </View>
+                            <Text
+                              style={[
+                                styles.inlineMessageText,
+                                { color: colors.textSecondary },
+                              ]}
+                              numberOfLines={3}
+                            >
+                              {snippet}
+                            </Text>
+                          </View>
+                          <MaterialCommunityIcons
+                            name="chevron-right"
+                            size={16}
+                            color={colors.textMuted}
+                          />
+                        </TouchableOpacity>
+                      );
+                    })}
+                    {browser.hasMore && (
+                      <TouchableOpacity
+                        style={[
+                          styles.loadMoreRow,
+                          { borderTopColor: colors.border },
+                        ]}
+                        activeOpacity={0.6}
+                        onPress={browser.loadMore}
+                      >
+                        {browser.loadingMore ? (
+                          <ActivityIndicator
+                            size="small"
+                            color={colors.primary}
+                          />
+                        ) : (
+                          <Text
+                            style={[
+                              styles.loadMoreText,
+                              { color: colors.primary },
+                            ]}
+                          >
+                            Load more messages
+                          </Text>
+                        )}
+                      </TouchableOpacity>
+                    )}
+                  </>
+                )}
+              </View>
+            )}
+
+            {/* ─── Links tab content ─────────────────────────────────── */}
+            {activeInfoTab === "links" && (
+              <View>
+                {browser.loading ? (
+                  <View style={styles.inlineLoadingContainer}>
+                    <ActivityIndicator size="large" color={colors.primary} />
+                  </View>
+                ) : browser.linkItems.length === 0 ? (
+                  <View style={styles.inlineEmptyContainer}>
+                    <MaterialCommunityIcons
+                      name={
+                        browser.searchQuery.trim() ? "link-off" : "link-off"
+                      }
+                      size={40}
+                      color={colors.textMuted}
+                    />
+                    <Text
+                      style={[
+                        styles.inlineEmptyText,
+                        { color: colors.textSecondary },
+                      ]}
+                    >
+                      {browser.searchQuery.trim()
+                        ? "No links found"
+                        : "No shared links yet"}
+                    </Text>
+                  </View>
+                ) : (
+                  <>
+                    {browser.linkItems.map((item) => {
+                      const timeStr = formatRelativeTime(item.timestamp);
+                      let displayUrl = item.url;
+                      try {
+                        const parsed = new URL(item.url);
+                        displayUrl =
+                          parsed.hostname +
+                          (parsed.pathname !== "/" ? parsed.pathname : "");
+                      } catch {
+                        // keep raw
+                      }
+                      return (
+                        <TouchableOpacity
+                          key={`${item.messageId}-${item.url}`}
+                          style={[
+                            styles.inlineLinkRow,
+                            { borderBottomColor: colors.border },
+                          ]}
+                          activeOpacity={0.6}
+                          onPress={() => {
+                            Linking.openURL(item.url).catch(() => {});
+                          }}
+                        >
+                          <View
+                            style={[
+                              styles.inlineLinkIcon,
+                              {
+                                backgroundColor: colors.primary + "15",
+                              },
+                            ]}
+                          >
+                            <MaterialCommunityIcons
+                              name="link-variant"
+                              size={18}
+                              color={colors.primary}
+                            />
+                          </View>
+                          <View style={styles.inlineLinkContent}>
+                            <Text
+                              style={[
+                                styles.inlineLinkUrl,
+                                { color: colors.primary },
+                              ]}
+                              numberOfLines={1}
+                            >
+                              {displayUrl}
+                            </Text>
+                            <Text
+                              style={[
+                                styles.inlineLinkMeta,
+                                { color: colors.textMuted },
+                              ]}
+                              numberOfLines={1}
+                            >
+                              {item.senderName || "Unknown"} • {timeStr}
+                            </Text>
+                          </View>
+                          <MaterialCommunityIcons
+                            name="open-in-new"
+                            size={14}
+                            color={colors.textMuted}
+                          />
+                        </TouchableOpacity>
+                      );
+                    })}
+                    {browser.hasMore && (
+                      <TouchableOpacity
+                        style={[
+                          styles.loadMoreRow,
+                          { borderTopColor: colors.border },
+                        ]}
+                        activeOpacity={0.6}
+                        onPress={browser.loadMore}
+                      >
+                        {browser.loadingMore ? (
+                          <ActivityIndicator
+                            size="small"
+                            color={colors.primary}
+                          />
+                        ) : (
+                          <Text
+                            style={[
+                              styles.loadMoreText,
+                              { color: colors.primary },
+                            ]}
+                          >
+                            Load more links
+                          </Text>
+                        )}
+                      </TouchableOpacity>
+                    )}
+                  </>
+                )}
+              </View>
+            )}
           </View>
 
           {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
            *  DANGER ZONE
            * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
-          <View
-            style={[
-              styles.sectionCard,
-              styles.dangerCard,
-              { backgroundColor: colors.surface },
-              Elevation.sm,
-            ]}
-          >
+          <View style={styles.dangerCard}>
             {!isOwner && (
               <TouchableOpacity
                 style={styles.dangerRow}
@@ -1391,6 +2152,31 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
 }
 
 // =============================================================================
+// HELPERS
+// =============================================================================
+
+function formatRelativeTime(ts: number): string {
+  const now = Date.now();
+  const diff = now - ts;
+  const minute = 60_000;
+  const hour = 3_600_000;
+  const day = 86_400_000;
+
+  if (diff < minute) return "Just now";
+  if (diff < hour) return `${Math.floor(diff / minute)}m ago`;
+  if (diff < day) return `${Math.floor(diff / hour)}h ago`;
+  if (diff < day * 7) return `${Math.floor(diff / day)}d ago`;
+
+  const date = new Date(ts);
+  return date.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year:
+      date.getFullYear() !== new Date().getFullYear() ? "numeric" : undefined,
+  });
+}
+
+// =============================================================================
 // STYLES
 // =============================================================================
 
@@ -1398,12 +2184,33 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+
+  // ── Compact Header ──────────────────────────────────────────────────
+  compactHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+  },
+  headerCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+  },
+
   scrollContent: {
     flex: 1,
   },
   scrollContainer: {
     paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.sm,
   },
 
   // ── Action overlay ──────────────────────────────────────────────────
@@ -1417,14 +2224,15 @@ const styles = StyleSheet.create({
 
   // ── Hero Card ───────────────────────────────────────────────────────
   heroCard: {
-    borderRadius: BorderRadius.xl,
-    padding: Spacing.xl,
+    paddingHorizontal: Spacing.xl,
+    paddingTop: Spacing.md,
+    paddingBottom: Spacing.lg,
     alignItems: "center",
     marginBottom: Spacing.md,
   },
   heroAvatarContainer: {
     position: "relative",
-    marginBottom: Spacing.lg,
+    marginBottom: Spacing.md,
   },
   heroAvatarImage: {
     width: 120,
@@ -1478,10 +2286,11 @@ const styles = StyleSheet.create({
   },
 
   // ── Section Cards ───────────────────────────────────────────────────
-  sectionCard: {
-    borderRadius: BorderRadius.xl,
+  contentSectionFullWidth: {
+    marginHorizontal: -Spacing.lg,
+    borderTopWidth: StyleSheet.hairlineWidth,
     marginBottom: Spacing.md,
-    overflow: "hidden",
+    marginTop: Spacing.sm,
   },
   sectionHeader: {
     flexDirection: "row",
@@ -1491,7 +2300,7 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.md,
   },
   sectionTitle: {
-    fontSize: FontSizes.lg,
+    fontSize: FontSizes.md,
     fontWeight: FontWeights.semibold,
     flex: 1,
   },
@@ -1500,30 +2309,247 @@ const styles = StyleSheet.create({
     fontWeight: FontWeights.medium,
   },
 
-  // ── Action Rows ─────────────────────────────────────────────────────
-  actionRow: {
+  // ── Voice Room Module ───────────────────────────────────────────────
+  voiceHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.lg,
+    paddingBottom: Spacing.sm,
+  },
+  voiceHeaderLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+  },
+  voiceTitle: {
+    fontSize: FontSizes.md,
+    fontWeight: FontWeights.semibold,
+  },
+  liveDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  voiceCount: {
+    fontSize: FontSizes.sm,
+  },
+  voiceOccupants: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
+    gap: Spacing.md,
+  },
+  voiceOccupantItem: {
+    alignItems: "center",
+    width: 48,
+  },
+  voiceOccupantName: {
+    fontSize: 10,
+    marginTop: 3,
+    textAlign: "center",
+  },
+  voiceOverflowCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  voiceOverflowText: {
+    fontSize: FontSizes.xs,
+    fontWeight: FontWeights.semibold,
+  },
+  voiceJoinButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: Spacing.sm,
+    marginHorizontal: Spacing.lg,
+    marginBottom: Spacing.lg,
+    marginTop: Spacing.xs,
+    paddingVertical: Spacing.md,
+    borderRadius: BorderRadius.lg,
+  },
+  voiceJoinText: {
+    fontSize: FontSizes.md,
+    fontWeight: FontWeights.semibold,
+  },
+  voiceEmptyText: {
+    fontSize: FontSizes.sm,
+    textAlign: "center",
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
+  },
+  voiceStartButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: Spacing.sm,
+    marginHorizontal: Spacing.lg,
+    marginBottom: Spacing.lg,
+    marginTop: Spacing.xs,
+    paddingVertical: Spacing.md,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+  },
+  voiceStartText: {
+    fontSize: FontSizes.md,
+    fontWeight: FontWeights.medium,
+  },
+
+  // ── Inline Content Tab Bar ───────────────────────────────────────
+  infoTabBar: {
+    flexDirection: "row",
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  infoTab: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
+    paddingVertical: Spacing.md,
+    borderBottomWidth: 2,
+    borderBottomColor: "transparent",
+  },
+  infoTabLabel: {
+    fontSize: FontSizes.xs,
+  },
+  infoTabCount: {
+    fontSize: FontSizes.xs - 1,
+  },
+
+  // ── Inline Search ──────────────────────────────────────────────────
+  infoSearchContainer: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+  },
+  infoSearchBar: {
+    borderRadius: BorderRadius.md,
+    height: 36,
+  },
+  infoSearchInput: {
+    fontSize: FontSizes.sm,
+    minHeight: 0,
+  },
+  infoSearchDivider: {
+    height: StyleSheet.hairlineWidth,
+  },
+
+  // ── Inline Media Grid ──────────────────────────────────────────────
+  mediaGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: GRID_GAP,
+  },
+  mediaGridItem: {
+    width: GRID_ITEM_SIZE,
+    height: GRID_ITEM_SIZE,
+    overflow: "hidden",
+  },
+  mediaGridImage: {
+    width: "100%",
+    height: "100%",
+  },
+  mediaGridPlaceholder: {
+    width: "100%",
+    height: "100%",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  mediaVideoBadge: {
+    position: "absolute",
+    bottom: 4,
+    right: 4,
+  },
+
+  // ── Inline Message/Link Rows ───────────────────────────────────────
+  inlineMessageRow: {
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.md + 2,
+    paddingVertical: Spacing.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  actionIconContainer: {
+  inlineMessageContent: {
+    flex: 1,
+    marginRight: Spacing.sm,
+  },
+  inlineMessageHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 2,
+  },
+  inlineMessageSender: {
+    fontSize: FontSizes.sm,
+    fontWeight: FontWeights.semibold,
+    flex: 1,
+    marginRight: Spacing.sm,
+  },
+  inlineMessageTime: {
+    fontSize: FontSizes.xs,
+  },
+  inlineMessageText: {
+    fontSize: FontSizes.sm,
+    lineHeight: 18,
+  },
+  inlineLinkRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: Spacing.md,
+  },
+  inlineLinkIcon: {
     width: 36,
     height: 36,
-    borderRadius: BorderRadius.md,
+    borderRadius: 18,
     alignItems: "center",
     justifyContent: "center",
-    marginRight: Spacing.md,
   },
-  actionRowText: {
-    fontSize: FontSizes.md,
-    fontWeight: FontWeights.medium,
+  inlineLinkContent: {
     flex: 1,
   },
-  actionDivider: {
-    height: StyleSheet.hairlineWidth,
-    marginLeft: Spacing.lg + 36 + Spacing.md,
-    marginRight: Spacing.lg,
+  inlineLinkUrl: {
+    fontSize: FontSizes.sm,
+    fontWeight: FontWeights.medium,
+  },
+  inlineLinkMeta: {
+    fontSize: FontSizes.xs,
+    marginTop: 1,
+  },
+
+  // ── Inline Empty / Loading / Load More ─────────────────────────────
+  inlineEmptyContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: Spacing.xxxl,
+    gap: Spacing.md,
+  },
+  inlineEmptyText: {
+    fontSize: FontSizes.sm,
+    textAlign: "center",
+  },
+  inlineLoadingContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: Spacing.xxxl,
+  },
+  loadMoreRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: Spacing.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  loadMoreText: {
+    fontSize: FontSizes.sm,
+    fontWeight: FontWeights.semibold,
   },
 
   // ── Invite Row ──────────────────────────────────────────────────────
@@ -1532,7 +2558,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.md,
-    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   inviteIconContainer: {
     width: 44,
@@ -1601,9 +2626,24 @@ const styles = StyleSheet.create({
     fontWeight: FontWeights.semibold,
   },
 
+  // ── See All / Collapse ──────────────────────────────────────────────
+  seeAllRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: Spacing.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    gap: Spacing.xs,
+  },
+  seeAllText: {
+    fontSize: FontSizes.sm,
+    fontWeight: FontWeights.semibold,
+  },
+
   // ── Danger Zone ─────────────────────────────────────────────────────
   dangerCard: {
     marginTop: Spacing.sm,
+    marginBottom: Spacing.xl,
   },
   dangerRow: {
     flexDirection: "row",

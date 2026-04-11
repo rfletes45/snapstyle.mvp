@@ -10,9 +10,9 @@
 
 import {
   DraggableBottomSheet,
-  HANDLE_ZONE_HEIGHT,
   type DraggableBottomSheetHandle,
 } from "@/components/chat/DraggableBottomSheet";
+import { getKeyboardReplacementSnapFraction } from "@/components/chat/bottomSheetLayout";
 import {
   GAME_METADATA,
   IMPLEMENTED_GAME_IDS,
@@ -31,6 +31,7 @@ import {
   View,
 } from "react-native";
 import type { SharedValue } from "react-native-reanimated";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 // =============================================================================
 // Constants
@@ -81,6 +82,7 @@ export const GamePickerModal = forwardRef<
   ref,
 ) {
   const { colors, isDark } = useAppTheme();
+  const insets = useSafeAreaInsets();
   const sheetRef = useRef<DraggableBottomSheetHandle>(null);
 
   useImperativeHandle(ref, () => ({
@@ -90,9 +92,10 @@ export const GamePickerModal = forwardRef<
   // ── Snap points — keyboard-equivalent initial, expanded secondary ─────
   const snapPoints = useMemo(() => {
     if (keyboardHeight && keyboardHeight > 0) {
-      const kbFraction = Math.min(
-        (keyboardHeight + 7) / GAME_SCREEN_HEIGHT,
-        GAME_EXPANDED_SNAP - 0.05,
+      const kbFraction = getKeyboardReplacementSnapFraction(
+        keyboardHeight,
+        GAME_SCREEN_HEIGHT,
+        GAME_EXPANDED_SNAP,
       );
       return [kbFraction, GAME_EXPANDED_SNAP];
     }
@@ -100,13 +103,6 @@ export const GamePickerModal = forwardRef<
   }, [keyboardHeight]);
 
   const initialSnapIndex = keyboardHeight ? 0 : 1;
-
-  // Constrain FlatList to visible snap area so content scrolls properly
-  // instead of rendering below the fold.
-  const HEADER_HEIGHT = 50;
-  const visibleSnap = snapPoints[initialSnapIndex];
-  const listMaxHeight =
-    GAME_SCREEN_HEIGHT * visibleSnap - HANDLE_ZONE_HEIGHT - HEADER_HEIGHT;
 
   const sections = useMemo(() => {
     const all = Object.values(GAME_METADATA);
@@ -220,6 +216,7 @@ export const GamePickerModal = forwardRef<
       sharedTranslateY={sharedTranslateY}
       surfaceColor={sheetSurface}
       handleColor={colors.divider}
+      dragGestureArea="handle"
     >
       {/* Header */}
       <View style={[styles.headerRow, { borderBottomColor: borderColor }]}>
@@ -228,16 +225,20 @@ export const GamePickerModal = forwardRef<
         </Text>
       </View>
 
-      {/* Content */}
-      <FlatList
-        data={sections}
-        renderItem={({ item }) => renderSection(item)}
-        keyExtractor={(item) => item.title}
-        contentContainerStyle={styles.content}
-        style={{ maxHeight: listMaxHeight }}
-        showsVerticalScrollIndicator={false}
-        nestedScrollEnabled
-      />
+      <View style={styles.scrollRegion}>
+        <FlatList
+          data={sections}
+          renderItem={({ item }) => renderSection(item)}
+          keyExtractor={(item) => item.title}
+          contentContainerStyle={[
+            styles.content,
+            { paddingBottom: Math.max(insets.bottom, 16) + 600 },
+          ]}
+          style={styles.flexFill}
+          showsVerticalScrollIndicator={false}
+          nestedScrollEnabled
+        />
+      </View>
     </DraggableBottomSheet>
   );
 });
@@ -259,8 +260,16 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "700",
   },
+  scrollRegion: {
+    flex: 1,
+    minHeight: 0,
+  },
+  flexFill: {
+    flex: 1,
+    minHeight: 0,
+  },
   content: {
-    paddingBottom: 40,
+    paddingBottom: 800,
   },
   sectionTitle: {
     fontSize: 13,

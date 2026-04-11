@@ -108,7 +108,6 @@ export async function startDirectCall(
     mode === "video" ? "speaker" : toStreamDevice(config.audio.defaultOutput);
   try {
     await startCallAudioSession(deviceEndpoint);
-    console.log(`${TAG} callManager.start succeeded (${deviceEndpoint})`);
   } catch (err) {
     console.warn(`${TAG} callManager.start failed:`, err);
   }
@@ -117,8 +116,6 @@ export async function startDirectCall(
     enableMicrophone: true,
     enableCamera: cameraOn,
   });
-
-  console.log(`${TAG} Call ${callId} started (${mode}) -> ${calleeId}`);
   return call;
 }
 
@@ -139,9 +136,6 @@ export async function acceptDirectCall(
     mode === "video" ? "speaker" : toStreamDevice(config.audio.defaultOutput);
   try {
     await startCallAudioSession(deviceEndpoint);
-    console.log(
-      `${TAG} acceptDirectCall callManager.start succeeded (${deviceEndpoint})`,
-    );
   } catch (err) {
     console.warn(`${TAG} callManager.start failed:`, err);
   }

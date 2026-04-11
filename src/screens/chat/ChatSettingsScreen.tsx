@@ -328,8 +328,14 @@ export default function ChatSettingsScreen({
         edges={["bottom"]}
       >
         <Appbar.Header style={{ backgroundColor: colors.background }}>
-          <Appbar.BackAction onPress={() => navigation.goBack()} />
-          <Appbar.Content title="Settings" />
+          <Appbar.BackAction
+            onPress={() => navigation.goBack()}
+            iconColor={colors.text}
+          />
+          <Appbar.Content
+            title="Settings"
+            titleStyle={{ color: colors.text }}
+          />
         </Appbar.Header>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
@@ -344,9 +350,13 @@ export default function ChatSettingsScreen({
       edges={["bottom"]}
     >
       <Appbar.Header style={{ backgroundColor: colors.background }}>
-        <Appbar.BackAction onPress={() => navigation.goBack()} />
+        <Appbar.BackAction
+          onPress={() => navigation.goBack()}
+          iconColor={colors.text}
+        />
         <Appbar.Content
           title={chatName ? `${chatName} Settings` : "Chat Settings"}
+          titleStyle={{ color: colors.text }}
         />
       </Appbar.Header>
 

@@ -133,24 +133,6 @@ export const GIF_PICKER_ENABLED = true;
 export const STICKER_PICKER_ENABLED = true;
 
 // =============================================================================
-// Debug Features
-// =============================================================================
-
-/**
- * Log V2 message events to console
- */
-export const DEBUG_CHAT_V2 = __DEV__;
-
-/**
- * Debug logging for unified messaging
- *
- * Logs adapter conversions, subscription events, outbox operations.
- *
- * @default __DEV__
- */
-export const DEBUG_UNIFIED_MESSAGING = __DEV__;
-
-// =============================================================================
 // New Profile System Feature Flags (Profile V2)
 // =============================================================================
 
@@ -298,7 +280,6 @@ export const CALL_FEATURES = {
  * - Inbox aggregation (single collection)
  * - Delivery acknowledgements (watermarks)
  * - Server-enforced privacy (callables for typing/read/delivery)
- * - Debug HUD (dev-only)
  *
  * Phase plan:
  *   Phase 1: Add types/resolvers/collections; no behavior change by default.
@@ -354,10 +335,4 @@ export const CHAT_FEATURES = {
   /** Route typing/read/delivery writes through Cloud Function callables */
   CHAT_PRIVACY_SERVER_ENFORCED: false,
 
-  // =========================================================================
-  // Debug
-  // =========================================================================
-
-  /** Show ChatDebugHUD overlay (dev-only, default true in __DEV__) */
-  CHAT_DEBUG_HUD: __DEV__,
 } as const;

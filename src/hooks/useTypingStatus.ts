@@ -21,10 +21,7 @@ import { subscribeToInboxSettings } from "@/services/inboxSettings";
 import { setTypingIndicator } from "@/services/messaging";
 import { resolveFromInboxSettings } from "@/services/messaging/resolveChatSettings";
 import { DEFAULT_INBOX_SETTINGS, InboxSettings } from "@/types/messaging";
-import { createLogger } from "@/utils/log";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-
-const log = createLogger("useTypingStatus");
 
 /** Auto-clear after idle (no further typing events) */
 const TYPING_IDLE_TIMEOUT_MS = 5000;
@@ -44,8 +41,6 @@ export interface UseTypingStatusConfig {
   currentUid: string;
   /** Other user's UID (for DM only — ignored for groups) */
   otherUid?: string;
-  /** Enable debug logging */
-  debug?: boolean;
 }
 
 export interface UseTypingStatusReturn {
@@ -84,7 +79,7 @@ export interface UseTypingStatusReturn {
 export function useTypingStatus(
   config: UseTypingStatusConfig,
 ): UseTypingStatusReturn {
-  const { scope, conversationId, currentUid, otherUid, debug = false } = config;
+  const { scope, conversationId, currentUid, otherUid } = config;
 
   // ── State ──────────────────────────────────────────────────────────────
   const [typingUserIds, setTypingUserIds] = useState<string[]>([]);
@@ -127,13 +122,6 @@ export function useTypingStatus(
         return;
       }
 
-      if (debug) {
-        log.debug("Subscribing to DM typing", {
-          operation: "subscribe",
-          data: { conversationId, otherUid },
-        });
-      }
-
       const unsubscribe = subscribeToTyping(
         conversationId,
         otherUid,
@@ -145,13 +133,6 @@ export function useTypingStatus(
     }
 
     // Group: watch the whole Members subcollection
-    if (debug) {
-      log.debug("Subscribing to group typing", {
-        operation: "subscribe",
-        data: { conversationId },
-      });
-    }
-
     const unsubscribe = subscribeToGroupTyping(
       conversationId,
       currentUid,
@@ -166,7 +147,6 @@ export function useTypingStatus(
     scope,
     currentUid,
     effective.publishTyping,
-    debug,
   ]);
 
   // ── Emit typing state (debounce + keepalive) ──────────────────────────
@@ -175,12 +155,7 @@ export function useTypingStatus(
       if (!conversationId || !currentUid) return;
       lastWriteRef.current = Date.now();
       setTypingIndicator(scope, conversationId, currentUid, isTyping).catch(
-        (error) => {
-          log.error("Failed to set typing indicator", {
-            operation: "setTyping",
-            error,
-          });
-        },
+        () => {},
       );
     },
     [scope, conversationId, currentUid],

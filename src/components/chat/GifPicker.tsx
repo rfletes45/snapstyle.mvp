@@ -55,6 +55,7 @@ import {
 import { Text } from "react-native-paper";
 import type { SharedValue } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { getKeyboardReplacementSnapFraction } from "./bottomSheetLayout";
 import { CategoryGrid, type CategoryTile } from "./CategoryGrid";
 import {
   DraggableBottomSheet,
@@ -229,10 +230,10 @@ export const GifPicker = forwardRef<DraggableBottomSheetHandle, GifPickerProps>(
     // ── Snap points — keyboard-equivalent initial, expanded secondary ───────
     const snapPoints = useMemo(() => {
       if (keyboardHeight && keyboardHeight > 0) {
-        // +8 aligns the modal with the keyboard height
-        const kbFraction = Math.min(
-          (keyboardHeight + 7) / GIF_SCREEN_HEIGHT,
-          GIF_EXPANDED_SNAP - 0.05,
+        const kbFraction = getKeyboardReplacementSnapFraction(
+          keyboardHeight,
+          GIF_SCREEN_HEIGHT,
+          GIF_EXPANDED_SNAP,
         );
         return [kbFraction, GIF_EXPANDED_SNAP];
       }
@@ -559,6 +560,7 @@ export const GifPicker = forwardRef<DraggableBottomSheetHandle, GifPickerProps>(
         sharedTranslateY={sharedTranslateY}
         surfaceColor={sheetSurface}
         handleColor={colors.divider}
+        dragGestureArea="handle"
       >
         {/* Search bar — "Search KLIPY" placeholder per attribution requirement */}
         <View
@@ -609,116 +611,134 @@ export const GifPicker = forwardRef<DraggableBottomSheetHandle, GifPickerProps>(
           ) : null}
         </View>
 
-        {/* Suggestion chips (only in search/category mode) */}
-        {browseState !== "landing" && suggestions.length > 0 && (
-          <View style={styles.suggestionsRow}>
-            {suggestions.map((term) => (
-              <SuggestionChip
-                key={term}
-                term={term}
-                onPress={handleSuggestionPress}
-                surfaceColor={surfaceVariantColor}
-                textColor={onSurfaceVariantColor}
-              />
-            ))}
-          </View>
-        )}
+        <View style={styles.sheetBody}>
+          {/* Suggestion chips (only in search/category mode) */}
+          {browseState !== "landing" && suggestions.length > 0 && (
+            <View style={styles.suggestionsRow}>
+              {suggestions.map((term) => (
+                <SuggestionChip
+                  key={term}
+                  term={term}
+                  onPress={handleSuggestionPress}
+                  surfaceColor={surfaceVariantColor}
+                  textColor={onSurfaceVariantColor}
+                />
+              ))}
+            </View>
+          )}
 
-        {/* Content area — state machine: landing / category / search */}
-        {browseState === "landing" ? (
-          /* Category landing screen */
-          <CategoryGrid
-            categories={gifCategories}
-            loading={categoriesLoading}
-            onSelect={handleCategorySelect}
-            colors={{
-              surface: sheetSurface,
-              surfaceVariant: surfaceVariantColor,
-              text: onSurfaceColor,
-            }}
-          />
-        ) : loading && gifs.length === 0 ? (
-          /* Loading skeleton */
-          <View style={styles.masonryContainer}>
-            <View style={styles.masonryColumn}>
-              {skeletonHeights.slice(0, 4).map((h, i) => (
-                <SkeletonCell
-                  key={`sl-${i}`}
-                  height={h}
-                  backgroundColor={surfaceVariantColor}
-                />
-              ))}
-            </View>
-            <View style={styles.masonryColumn}>
-              {skeletonHeights.slice(4).map((h, i) => (
-                <SkeletonCell
-                  key={`sr-${i}`}
-                  height={h}
-                  backgroundColor={surfaceVariantColor}
-                />
-              ))}
-            </View>
-          </View>
-        ) : error ? (
-          /* Error state */
-          <View style={styles.stateContainer}>
-            <Text style={{ color: onSurfaceVariantColor, fontSize: 16 }}>
-              ⚠️
-            </Text>
-            <Text style={[styles.stateText, { color: onSurfaceVariantColor }]}>
-              {error}
-            </Text>
-            <TouchableOpacity
-              onPress={handleRetry}
-              style={[styles.retryButton, { borderColor: outlineColor }]}
-              accessibilityLabel="Retry loading GIFs"
-              accessibilityRole="button"
-            >
-              <Text style={{ color: onSurfaceColor }}>Retry</Text>
-            </TouchableOpacity>
-          </View>
-        ) : gifs.length === 0 && debouncedQuery.trim() ? (
-          /* Empty search results */
-          <View style={styles.stateContainer}>
-            <Text style={{ fontSize: 40 }}>🤷</Text>
-            <Text style={[styles.stateText, { color: onSurfaceVariantColor }]}>
-              {`No GIFs found for "${debouncedQuery}"`}
-            </Text>
-          </View>
-        ) : (
-          /* Masonry grid */
-          <FlatList
-            ref={flatListRef}
-            data={[1]} // Single item wrapper for masonry
-            keyExtractor={() => "masonry"}
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-            onEndReached={handleLoadMore}
-            onEndReachedThreshold={0.5}
-            contentContainerStyle={styles.flatListContent}
-            renderItem={() => (
+          <View style={styles.scrollRegion}>
+            {/* Content area — state machine: landing / category / search */}
+            {browseState === "landing" ? (
+              /* Category landing screen */
+              <CategoryGrid
+                categories={gifCategories}
+                loading={categoriesLoading}
+                onSelect={handleCategorySelect}
+                colors={{
+                  surface: sheetSurface,
+                  surfaceVariant: surfaceVariantColor,
+                  text: onSurfaceColor,
+                }}
+              />
+            ) : loading && gifs.length === 0 ? (
+              /* Loading skeleton */
               <View style={styles.masonryContainer}>
                 <View style={styles.masonryColumn}>
-                  {leftColumn.map((gif) => (
-                    <GifCell key={gif.id} gif={gif} onPress={handleGifPress} />
+                  {skeletonHeights.slice(0, 4).map((h, i) => (
+                    <SkeletonCell
+                      key={`sl-${i}`}
+                      height={h}
+                      backgroundColor={surfaceVariantColor}
+                    />
                   ))}
                 </View>
                 <View style={styles.masonryColumn}>
-                  {rightColumn.map((gif) => (
-                    <GifCell key={gif.id} gif={gif} onPress={handleGifPress} />
+                  {skeletonHeights.slice(4).map((h, i) => (
+                    <SkeletonCell
+                      key={`sr-${i}`}
+                      height={h}
+                      backgroundColor={surfaceVariantColor}
+                    />
                   ))}
                 </View>
               </View>
+            ) : error ? (
+              /* Error state */
+              <View style={styles.stateContainer}>
+                <Text style={{ color: onSurfaceVariantColor, fontSize: 16 }}>
+                  ⚠️
+                </Text>
+                <Text
+                  style={[styles.stateText, { color: onSurfaceVariantColor }]}
+                >
+                  {error}
+                </Text>
+                <TouchableOpacity
+                  onPress={handleRetry}
+                  style={[styles.retryButton, { borderColor: outlineColor }]}
+                  accessibilityLabel="Retry loading GIFs"
+                  accessibilityRole="button"
+                >
+                  <Text style={{ color: onSurfaceColor }}>Retry</Text>
+                </TouchableOpacity>
+              </View>
+            ) : gifs.length === 0 && debouncedQuery.trim() ? (
+              /* Empty search results */
+              <View style={styles.stateContainer}>
+                <Text style={{ fontSize: 40 }}>🤷</Text>
+                <Text
+                  style={[styles.stateText, { color: onSurfaceVariantColor }]}
+                >
+                  {`No GIFs found for "${debouncedQuery}"`}
+                </Text>
+              </View>
+            ) : (
+              /* Masonry grid */
+              <FlatList
+                ref={flatListRef}
+                data={[1]} // Single item wrapper for masonry
+                keyExtractor={() => "masonry"}
+                style={styles.flexFill}
+                showsVerticalScrollIndicator={false}
+                nestedScrollEnabled
+                keyboardShouldPersistTaps="handled"
+                onEndReached={handleLoadMore}
+                onEndReachedThreshold={0.5}
+                contentContainerStyle={styles.flatListContent}
+                renderItem={() => (
+                  <View style={styles.masonryContainer}>
+                    <View style={styles.masonryColumn}>
+                      {leftColumn.map((gif) => (
+                        <GifCell
+                          key={gif.id}
+                          gif={gif}
+                          onPress={handleGifPress}
+                        />
+                      ))}
+                    </View>
+                    <View style={styles.masonryColumn}>
+                      {rightColumn.map((gif) => (
+                        <GifCell
+                          key={gif.id}
+                          gif={gif}
+                          onPress={handleGifPress}
+                        />
+                      ))}
+                    </View>
+                  </View>
+                )}
+                ListFooterComponent={
+                  loadingMore ? (
+                    <View style={styles.loadingMore}>
+                      <ActivityIndicator size="small" color={colors.primary} />
+                    </View>
+                  ) : null
+                }
+              />
             )}
-            ListFooterComponent={
-              loadingMore ? (
-                <View style={styles.loadingMore}>
-                  <ActivityIndicator size="small" color={colors.primary} />
-                </View>
-              ) : null
-            }
-          />
-        )}
+          </View>
+        </View>
 
         {/* Attribution footer — "Powered by KLIPY" */}
         <View
@@ -777,8 +797,20 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "500",
   },
+  sheetBody: {
+    flex: 1,
+    minHeight: 0,
+  },
+  scrollRegion: {
+    flex: 1,
+    minHeight: 0,
+  },
+  flexFill: {
+    flex: 1,
+    minHeight: 0,
+  },
   flatListContent: {
-    paddingBottom: 8,
+    paddingBottom: 560,
   },
   masonryContainer: {
     flexDirection: "row",

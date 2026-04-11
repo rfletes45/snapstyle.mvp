@@ -205,6 +205,7 @@ export function useInboxAggregation(uid: string): UseInboxAggregationResult {
               entry,
               memberStates[index] || getDefaultMemberState(uid),
               recentlyReadRef.current.get(entry.conversationId),
+              uid,
             ),
           );
 

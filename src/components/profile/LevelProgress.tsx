@@ -5,6 +5,7 @@
  */
 
 import { MAX_REWARD_LEVEL } from "@/data/levelRewards";
+import { contrastTextColor } from "@/cosmetics/chatAppearanceResolver";
 import { useColors } from "@/store/ThemeContext";
 import type { LevelInfo } from "@/types/profile";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -34,6 +35,7 @@ function LevelProgressBase({
     : level.xpToNextLevel > 0
       ? level.xp / level.xpToNextLevel
       : 1;
+  const compactBadgeTextColor = contrastTextColor(colors.primary);
 
   if (compact) {
     return (
@@ -41,7 +43,11 @@ function LevelProgressBase({
         <View
           style={[styles.levelBadgeSmall, { backgroundColor: colors.primary }]}
         >
-          <Text style={styles.levelTextSmall}>{level.current}</Text>
+          <Text
+            style={[styles.levelTextSmall, { color: compactBadgeTextColor }]}
+          >
+            {level.current}
+          </Text>
         </View>
         <View style={styles.compactProgressWrapper}>
           <ProgressBar

@@ -7,11 +7,13 @@
  * @file src/hooks/useLocalMessages.ts
  */
 
+import { USE_LOCAL_STORAGE } from "@/constants/featureFlags";
 import {
   getOrCreateDMConversation,
   getOrCreateGroupConversation,
 } from "@/services/database/conversationRepository";
 import {
+  getMessageWindowAroundMessage,
   getMessagesByStatus,
   getMessagesForConversation,
   MessageWithAttachments,
@@ -19,10 +21,9 @@ import {
 import {
   fullSyncConversation,
   subscribeToConversation,
+  syncOlderMessages,
 } from "@/services/sync/syncEngine";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { USE_LOCAL_STORAGE } from "@/constants/featureFlags";
-
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("hooks/useLocalMessages");
@@ -86,14 +87,44 @@ export interface UseLocalMessagesReturn {
   refresh: () => void;
 
   /**
+   * Prepend a newly-created message row to the in-memory list without
+   * re-reading the entire conversation from SQLite.  This gives the
+   * FlatList the new item immediately (sub-ms) and avoids rebuilding
+   * every existing message object reference.
+   */
+  prependMessage: (msg: MessageWithAttachments) => void;
+
+  /**
    * Load more (older) messages
    */
   loadMore: () => void;
 
   /**
+   * Replace the latest-page view with a bounded window around a target
+   * message that already exists in local storage.
+   */
+  loadAroundMessage: (messageId: string) => boolean;
+
+  /**
+   * Return from an anchored message window back to the latest page.
+   */
+  clearMessageAnchor: () => void;
+
+  /**
    * Whether there are more messages to load
    */
   hasMore: boolean;
+
+  /**
+   * Whether the hook is currently rendering an anchored target-message window.
+   */
+  isMessageAnchorActive: boolean;
+}
+
+interface MessageAnchorState {
+  targetMessageId: string;
+  olderLimit: number;
+  newerLimit: number;
 }
 
 // =============================================================================
@@ -122,8 +153,12 @@ export interface UseLocalMessagesReturn {
 export function useLocalMessages(
   options: UseLocalMessagesOptions,
 ): UseLocalMessagesReturn {
-  const { conversationId, scope, initialLimit = 50, autoRefresh = true } =
-    options;
+  const {
+    conversationId,
+    scope,
+    initialLimit = 50,
+    autoRefresh = true,
+  } = options;
 
   // OPTIMIZATION: Initialize state synchronously from SQLite
   // This eliminates the loading flicker by reading cached data immediately
@@ -167,8 +202,27 @@ export function useLocalMessages(
   const [failedCount, setFailedCount] = useState(0);
   const [currentLimit, setCurrentLimit] = useState(initialLimit);
   const [hasMore, setHasMore] = useState(initialState.hasMore);
+  const [messageAnchor, setMessageAnchor] = useState<MessageAnchorState | null>(
+    null,
+  );
   const unsubscribeRef = useRef<(() => void) | null>(null);
   const hasSyncedRef = useRef(false);
+  const latestLimitRef = useRef(initialLimit);
+
+  const updateStatusCounts = useCallback(
+    (loadedMessages: MessageWithAttachments[]) => {
+      const pending = loadedMessages.filter(
+        (m: MessageWithAttachments) => m.sync_status === "pending",
+      ).length;
+      const failed = loadedMessages.filter(
+        (m: MessageWithAttachments) => m.sync_status === "failed",
+      ).length;
+
+      setPendingCount(pending);
+      setFailedCount(failed);
+    },
+    [],
+  );
 
   // Reset per-conversation state when route params change so pagination,
   // sync bootstrap, and visible rows never bleed across threads.
@@ -179,16 +233,16 @@ export function useLocalMessages(
     setHasMore(initialState.hasMore);
     setIsLoading(initialState.messages.length === 0);
     setError(null);
-
-    const pending = initialState.messages.filter(
-      (m: MessageWithAttachments) => m.sync_status === "pending",
-    ).length;
-    const failed = initialState.messages.filter(
-      (m: MessageWithAttachments) => m.sync_status === "failed",
-    ).length;
-    setPendingCount(pending);
-    setFailedCount(failed);
-  }, [conversationId, scope, initialLimit, initialState]);
+    setMessageAnchor(null);
+    latestLimitRef.current = initialLimit;
+    updateStatusCounts(initialState.messages);
+  }, [
+    conversationId,
+    scope,
+    initialLimit,
+    initialState,
+    updateStatusCounts,
+  ]);
 
   // Load messages from SQLite
   const loadMessages = useCallback(() => {
@@ -198,6 +252,26 @@ export function useLocalMessages(
     }
 
     try {
+      if (messageAnchor) {
+        const window = getMessageWindowAroundMessage(
+          conversationId,
+          scope,
+          messageAnchor.targetMessageId,
+          messageAnchor.olderLimit,
+          messageAnchor.newerLimit,
+        );
+
+        if (window) {
+          setMessages(window.messages);
+          setHasMore(window.hasOlder);
+          setError(null);
+          updateStatusCounts(window.messages);
+          return;
+        }
+
+        setMessageAnchor(null);
+      }
+
       const loadedMessages = getMessagesForConversation(
         conversationId,
         scope,
@@ -207,24 +281,20 @@ export function useLocalMessages(
       setMessages(loadedMessages);
       setHasMore(loadedMessages.length >= currentLimit);
       setError(null);
-
-      // Count pending and failed messages
-      const pending = loadedMessages.filter(
-        (m: MessageWithAttachments) => m.sync_status === "pending",
-      ).length;
-      const failed = loadedMessages.filter(
-        (m: MessageWithAttachments) => m.sync_status === "failed",
-      ).length;
-
-      setPendingCount(pending);
-      setFailedCount(failed);
+      updateStatusCounts(loadedMessages);
     } catch (err: any) {
       logger.error("[useLocalMessages] Failed to load messages:", err);
       setError(err.message || "Failed to load messages");
     } finally {
       setIsLoading(false);
     }
-  }, [conversationId, scope, currentLimit]);
+  }, [
+    conversationId,
+    scope,
+    currentLimit,
+    messageAnchor,
+    updateStatusCounts,
+  ]);
 
   // Initial load + sync from Firestore
   useEffect(() => {
@@ -292,11 +362,188 @@ export function useLocalMessages(
     loadMessages();
   }, [loadMessages]);
 
-  // Load more function
+  const loadAroundMessage = useCallback(
+    (messageId: string) => {
+      if (!USE_LOCAL_STORAGE || !conversationId) return false;
+
+      const windowSize = Math.max(initialLimit, 30);
+      const nextAnchor: MessageAnchorState = {
+        targetMessageId: messageId,
+        olderLimit: windowSize,
+        newerLimit: windowSize,
+      };
+
+      const window = getMessageWindowAroundMessage(
+        conversationId,
+        scope,
+        messageId,
+        nextAnchor.olderLimit,
+        nextAnchor.newerLimit,
+      );
+
+      if (!window) {
+        return false;
+      }
+
+      latestLimitRef.current = currentLimit;
+      setMessageAnchor(nextAnchor);
+      setMessages(window.messages);
+      setHasMore(window.hasOlder);
+      setError(null);
+      updateStatusCounts(window.messages);
+      return true;
+    },
+    [
+      conversationId,
+      currentLimit,
+      initialLimit,
+      scope,
+      updateStatusCounts,
+    ],
+  );
+
+  const clearMessageAnchor = useCallback(() => {
+    if (!messageAnchor) return;
+
+    setMessageAnchor(null);
+    setCurrentLimit(latestLimitRef.current);
+
+    const latestMessages = getMessagesForConversation(
+      conversationId,
+      scope,
+      latestLimitRef.current,
+    );
+    setMessages(latestMessages);
+    setHasMore(latestMessages.length >= latestLimitRef.current);
+    setError(null);
+    updateStatusCounts(latestMessages);
+  }, [conversationId, messageAnchor, scope, updateStatusCounts]);
+
+  // Prepend a single message without full reload
+  const prependMessage = useCallback((msg: MessageWithAttachments) => {
+    setMessages((prev) => {
+      // Dedup: if already present, skip
+      if (prev.some((m) => m.id === msg.id)) return prev;
+      return [msg, ...prev];
+    });
+    // Update pending count inline for the new pending message
+    if (msg.sync_status === "pending") {
+      setPendingCount((c) => c + 1);
+    }
+  }, []);
+
+  // Load more function — increases local limit, and when SQLite is exhausted,
+  // fetches older messages from Firestore into the local cache.
+  const isSyncingOlderRef = useRef(false);
+
   const loadMore = useCallback(() => {
-    if (!hasMore) return;
-    setCurrentLimit((prev) => prev + initialLimit);
-  }, [hasMore, initialLimit]);
+    if (!hasMore || !USE_LOCAL_STORAGE) return;
+
+    if (messageAnchor) {
+      const nextOlderLimit = messageAnchor.olderLimit + initialLimit;
+      const currentWindow = getMessageWindowAroundMessage(
+        conversationId,
+        scope,
+        messageAnchor.targetMessageId,
+        nextOlderLimit,
+        messageAnchor.newerLimit,
+      );
+
+      if (!currentWindow) {
+        setHasMore(false);
+        return;
+      }
+
+      if (
+        currentWindow.olderCount < nextOlderLimit &&
+        !isSyncingOlderRef.current
+      ) {
+        isSyncingOlderRef.current = true;
+        const oldestTimestamp =
+          currentWindow.messages.length > 0
+            ? currentWindow.messages[currentWindow.messages.length - 1]
+                .created_at
+            : Date.now();
+
+        syncOlderMessages(scope, conversationId, oldestTimestamp, initialLimit)
+          .then((count) => {
+            if (count > 0) {
+              setMessageAnchor((prev) =>
+                prev
+                  ? {
+                      ...prev,
+                      olderLimit: nextOlderLimit,
+                    }
+                  : prev,
+              );
+            } else {
+              setHasMore(false);
+            }
+          })
+          .catch((err) => {
+            logger.warn("[useLocalMessages] syncOlderMessages failed:", err);
+          })
+          .finally(() => {
+            isSyncingOlderRef.current = false;
+          });
+      } else {
+        setMessageAnchor((prev) =>
+          prev
+            ? {
+                ...prev,
+                olderLimit: nextOlderLimit,
+              }
+            : prev,
+        );
+      }
+      return;
+    }
+
+    const nextLimit = currentLimit + initialLimit;
+    // Peek at how many messages SQLite actually has right now
+    const currentMessages = getMessagesForConversation(
+      conversationId,
+      scope,
+      nextLimit,
+    );
+
+    if (currentMessages.length < nextLimit && !isSyncingOlderRef.current) {
+      // SQLite doesn't have enough messages — fetch from Firestore
+      isSyncingOlderRef.current = true;
+      const oldestTimestamp =
+        currentMessages.length > 0
+          ? currentMessages[currentMessages.length - 1].created_at
+          : Date.now();
+
+      syncOlderMessages(scope, conversationId, oldestTimestamp, initialLimit)
+        .then((count) => {
+          if (count > 0) {
+            latestLimitRef.current = nextLimit;
+            setCurrentLimit(nextLimit);
+          } else {
+            // No more on server either
+            setHasMore(false);
+          }
+        })
+        .catch((err) => {
+          logger.warn("[useLocalMessages] syncOlderMessages failed:", err);
+        })
+        .finally(() => {
+          isSyncingOlderRef.current = false;
+        });
+    } else {
+      // SQLite has enough — just increase the limit
+      latestLimitRef.current = nextLimit;
+      setCurrentLimit(nextLimit);
+    }
+  }, [
+    hasMore,
+    messageAnchor,
+    currentLimit,
+    initialLimit,
+    conversationId,
+    scope,
+  ]);
 
   return {
     messages,
@@ -305,8 +552,12 @@ export function useLocalMessages(
     pendingCount,
     failedCount,
     refresh,
+    prependMessage,
     loadMore,
+    loadAroundMessage,
+    clearMessageAnchor,
     hasMore,
+    isMessageAnchorActive: messageAnchor !== null,
   };
 }
 

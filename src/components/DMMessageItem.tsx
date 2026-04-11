@@ -517,7 +517,7 @@ const styles = StyleSheet.create({
     // Visual grouping (hides some elements) — no spacing override here
   },
   groupedMessageContainerTight: {
-    marginBottom: 6,
+    marginBottom: 2,
   },
   messageBubbleWrapper: {
     flexDirection: "column",

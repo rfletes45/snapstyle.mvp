@@ -30,10 +30,7 @@ export async function ensureStreamUsersExist(userIds: string[]): Promise<void> {
       { userIds: string[] },
       { provisioned: number }
     >(functions, "ensureStreamUsers");
-    const result = await callable({ userIds: uniqueIds });
-    console.log(
-      `${TAG} Provisioned ${result.data.provisioned} users in Stream`,
-    );
+    await callable({ userIds: uniqueIds });
   } catch (err) {
     console.error(`${TAG} Failed to ensure Stream users:`, err);
     throw err;

@@ -101,8 +101,6 @@ export interface UseUnifiedMessagesOptions {
   sendReadReceipts?: boolean;
   /** Callback when messages change */
   onMessagesChange?: (messages: MessageV2[]) => void;
-  /** Enable debug logging */
-  debug?: boolean;
 }
 
 export interface UseUnifiedMessagesReturn {
@@ -149,7 +147,6 @@ export function useUnifiedMessages(
     autoMarkRead = true,
     sendReadReceipts: sendReadReceiptsOption,
     onMessagesChange,
-    debug = false,
   } = options;
 
   // State
@@ -220,16 +217,10 @@ export function useUnifiedMessages(
 
     const unsubscribe = subscribeToInboxSettings(currentUid, (settings) => {
       setInboxSettings(settings);
-      if (debug) {
-        log.debug("Inbox settings updated", {
-          operation: "inboxSettings",
-          data: { showReadReceipts: settings.showReadReceipts },
-        });
-      }
     });
 
     return unsubscribe;
-  }, [enabled, currentUid, scope, debug]);
+  }, [enabled, currentUid, scope]);
 
   // Merge server messages with outbox items for optimistic UI
   const messages = useMemo(() => {
@@ -254,13 +245,6 @@ export function useUnifiedMessages(
       return;
     }
 
-    if (debug) {
-      log.info("Subscribing to messages", {
-        operation: "subscribe",
-        data: { scope, conversationId },
-      });
-    }
-
     setLoading(true);
     setError(null);
 
@@ -271,7 +255,6 @@ export function useUnifiedMessages(
       conversationId,
       initialLimit,
       currentUid,
-      debug,
       onMessages: (msgs) => {
         if (
           !runIfMounted(isMountedRef, () => {
@@ -346,7 +329,6 @@ export function useUnifiedMessages(
     currentUid,
     initialLimit,
     autoMarkRead,
-    debug,
     refreshKey,
   ]);
 
@@ -443,12 +425,6 @@ export function useUnifiedMessages(
     // Debounce
     const now = Date.now();
     if (now - lastLoadOlderTimeRef.current < LOAD_OLDER_DEBOUNCE_MS) {
-      if (debug) {
-        log.debug("loadOlder debounced", {
-          operation: "loadOlder",
-          data: { timeSinceLastCall: now - lastLoadOlderTimeRef.current },
-        });
-      }
       return;
     }
     lastLoadOlderTimeRef.current = now;
@@ -477,15 +453,6 @@ export function useUnifiedMessages(
         return;
       }
 
-      if (debug) {
-        log.debug("Loaded older messages", {
-          operation: "loadOlder",
-          data: {
-            loaded: result.messages.length,
-            hasMore: result.hasMore,
-          },
-        });
-      }
     } catch (err) {
       log.error("Failed to load older messages", err);
       runIfMounted(isMountedRef, () => {
@@ -503,7 +470,6 @@ export function useUnifiedMessages(
     serverMessages,
     isLoadingOlder,
     hasMoreOlder,
-    debug,
   ]);
 
   // Refresh (re-subscribe)

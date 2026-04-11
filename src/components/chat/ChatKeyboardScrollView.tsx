@@ -133,8 +133,8 @@ export function ChatFooterWrapper({ children }: { children: React.ReactNode }) {
   //   sheetVisibleHeight = how much of the sheet is on-screen
   //   clamp to initialSnapHeight (keyboard-equivalent) = "follow zone"
   //   subtract keyboard contribution to avoid double-offset
-  //   +2 COMPOSER_SHEET_LIFT so the composer sits flush with the keyboard
-  //   position even though the modal snap is 2px shorter than the keyboard.
+  //   +2 COMPOSER_SHEET_LIFT for a small visual lift so the composer sits
+  //   flush against the sheet when the keyboard is replaced.
   const COMPOSER_SHEET_LIFT = 2;
   const composerOffset = useDerivedValue(() => {
     if (isSheetActive.value === 0) return 0;

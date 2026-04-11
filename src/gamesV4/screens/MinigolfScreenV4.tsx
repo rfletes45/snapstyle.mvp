@@ -79,7 +79,6 @@ function MiniGolfGameUI(props: GameShellProps) {
 
   const [zoom, setZoom] = useState(1);
   const [panOffset, setPanOffset] = useState<Vec2>({ x: 0, y: 0 });
-  const [showDebug, setShowDebug] = useState(false);
 
   // Parse state
   const state = publicState as unknown as MiniGolfPublicState | null;
@@ -102,15 +101,9 @@ function MiniGolfGameUI(props: GameShellProps) {
   // Finish roll handler — submits finish_roll move
   const handleFinishRoll = useCallback(
     async (shotId: string) => {
-      if (__DEV__) {
-        console.log(`[MiniGolf] handleFinishRoll: shotId=${shotId}`);
-      }
       try {
         await submitMove({ type: "finish_roll", shotId });
       } catch (err) {
-        if (__DEV__) {
-          console.warn("[MiniGolf] finish_roll failed:", err);
-        }
         // Idempotent — safe to swallow
       }
     },
@@ -141,50 +134,11 @@ function MiniGolfGameUI(props: GameShellProps) {
   ]);
 
   // ── __DEV__ interaction diagnostics ─────────────────────────────────
-  if (__DEV__) {
-    // eslint-disable-next-line react-hooks/rules-of-hooks
-    useEffect(() => {
-      console.log("[MiniGolf] interaction state:", {
-        canShoot,
-        isMyTurn,
-        isTerminal,
-        isSpectator,
-        actionLoading,
-        phase: state?.phase,
-        myUid,
-        ballSunk: state?.ballSunkByUid[myUid],
-        strokesThisHole: state?.strokesThisHoleByUid[myUid],
-        isRolling,
-        rollingShotId: rolling?.shotId ?? null,
-      });
-    }, [
-      canShoot,
-      isMyTurn,
-      isTerminal,
-      isSpectator,
-      actionLoading,
-      state?.phase,
-      myUid,
-      isRolling,
-      rolling?.shotId,
-    ]);
-  }
 
   // Handle shot
   const handleShot = useCallback(
     async (angleQ: number, powerQ: number) => {
-      if (__DEV__) {
-        console.log(
-          `[MiniGolf] handleShot called: angleQ=${angleQ} powerQ=${powerQ} canShoot=${canShoot}`,
-        );
-      }
-      if (!canShoot) {
-        if (__DEV__)
-          console.warn("[MiniGolf] handleShot BLOCKED: canShoot is false");
-        return;
-      }
-      if (__DEV__)
-        console.log("[MiniGolf] submitting move: shot", { angleQ, powerQ });
+      if (!canShoot) return;
       await submitMove({ type: "shot", angleQ, powerQ });
     },
     [canShoot, submitMove],
@@ -221,7 +175,6 @@ function MiniGolfGameUI(props: GameShellProps) {
             `Player ${turnOrder.indexOf(uid) + 1}`;
         }
       }
-      if (__DEV__) console.log("[MiniGolf] resolved playerNames:", result);
       setPlayerNames(result);
     })();
     return () => {
@@ -336,7 +289,6 @@ function MiniGolfGameUI(props: GameShellProps) {
           offsetX={panOffset.x}
           offsetY={panOffset.y}
           scale={50 * zoom}
-          showDebug={showDebug}
         />
 
         {/* AimInputOverlay — always mounted; canInteract gates input */}
@@ -355,11 +307,7 @@ function MiniGolfGameUI(props: GameShellProps) {
         {/* Rolling indicator */}
         {state.phase === "rolling" && (
           <View style={styles.rollingOverlay} pointerEvents="none">
-            <Text style={styles.rollingText}>
-              Rolling...{" "}
-              {__DEV__ &&
-                `${frameIndex}/${totalFrames} (${Math.round(progress * 100)}%)`}
-            </Text>
+            <Text style={styles.rollingText}>Rolling...</Text>
           </View>
         )}
       </View>
@@ -422,15 +370,6 @@ function MiniGolfGameUI(props: GameShellProps) {
               </TouchableOpacity>
             )}
 
-          {__DEV__ && (
-            <TouchableOpacity
-              style={[styles.actionBtn, styles.debugBtn]}
-              onPress={() => setShowDebug(!showDebug)}
-            >
-              <MaterialCommunityIcons name="bug" size={20} color="#fff" />
-              <Text style={styles.actionBtnText}>Debug</Text>
-            </TouchableOpacity>
-          )}
         </View>
 
         {/* Error display */}
@@ -445,36 +384,7 @@ function MiniGolfGameUI(props: GameShellProps) {
           />
         )}
 
-        {/* DEV rolling debug */}
-        {__DEV__ && state.phase === "rolling" && rolling && (
-          <View style={styles.devRollingDebug}>
-            <Text style={styles.devRollingText}>
-              Shot: {rolling.shotId.substring(0, 20)}...
-            </Text>
-            <Text style={styles.devRollingText}>
-              Player:{" "}
-              {rolling.uid === myUid ? "ME" : rolling.uid.substring(0, 8)}
-            </Text>
-            <Text style={styles.devRollingText}>
-              Frame: {frameIndex}/{totalFrames} | Progress:{" "}
-              {Math.round(progress * 100)}%
-            </Text>
-            <Text style={styles.devRollingText}>
-              Duration: {rolling.rollDurationMs}ms | Steps: {rolling.totalSteps}
-            </Text>
-            {animatedPos && (
-              <Text style={styles.devRollingText}>
-                Ball: ({animatedPos.x.toFixed(2)}, {animatedPos.y.toFixed(2)})
-              </Text>
-            )}
-            <Text style={styles.devRollingText}>
-              Result:{" "}
               {rolling.sunk ? "SUNK" : rolling.penalty ? "PENALTY" : "STOP"} → (
-              {rolling.finalPosQ.x.toFixed(2)}, {rolling.finalPosQ.y.toFixed(2)}
-              )
-            </Text>
-          </View>
-        )}
       </View>
     </SafeAreaView>
   );

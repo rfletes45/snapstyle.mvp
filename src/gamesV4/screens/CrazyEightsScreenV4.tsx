@@ -59,23 +59,6 @@ import type {
 // Dev-only Logging
 // =============================================================================
 
-const __DEV_TRACE__ = __DEV__;
-
-function moveTrace(tag: string, data: Record<string, unknown>) {
-  if (!__DEV_TRACE__) return;
-  console.log(`[c8][moveTrace][${tag}]`, JSON.stringify(data, null, 0));
-}
-
-function stateTrace(tag: string, data: Record<string, unknown>) {
-  if (!__DEV_TRACE__) return;
-  console.log(`[c8][stateTrace][${tag}]`, JSON.stringify(data, null, 0));
-}
-
-let _traceCounter = 0;
-function nextTraceId(): string {
-  _traceCounter++;
-  return `c8-${Date.now()}-${_traceCounter}`;
-}
 
 // =============================================================================
 // Dimensions / Sizing
@@ -1541,39 +1524,11 @@ function CrazyEightsUI({
       actualIsMyTurn &&
       !playableCardIds.has(selectedCardId)
     ) {
-      stateTrace("auto-deselect", {
-        reason: "selected_card_no_longer_playable",
-        cardId: selectedCardId,
-      });
       setSelectedCardId(null);
     }
   }, [selectedCardId, playableCardIds, actualIsMyTurn]);
 
   // ── Structured logging: state snapshot changes ──
-  useEffect(() => {
-    if (!state) return;
-    stateTrace("snapshot", {
-      currentTurnUid: state.currentTurnUid,
-      turnCounter: state.turnCounter,
-      moveCount: state.moveCount,
-      phase: state.phase,
-      lastMove: state.lastMove,
-      actualIsMyTurn,
-      isMyTurnFromShell: isMyTurn,
-      handSize: hand.length,
-      playableCount: playableCardIds?.size ?? 0,
-    });
-  }, [
-    state?.currentTurnUid,
-    state?.turnCounter,
-    state?.moveCount,
-    state?.phase,
-    actualIsMyTurn,
-    isMyTurn,
-    hand.length,
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    playableCardIds?.size,
-  ]);
 
   // ── Card Play Logic ──
 
@@ -1583,19 +1538,8 @@ function CrazyEightsUI({
 
       // If it's our turn, only allow selecting playable cards
       if (playableCardIds && !playableCardIds.has(cardId)) {
-        moveTrace("card-tap-blocked", {
-          cardId,
-          reason: "unplayable",
-          hint: playableResult?.reasonById[cardId],
-        });
         return;
       }
-
-      moveTrace("card-tap", {
-        cardId,
-        isPlayable: true,
-        reason: playableResult?.reasonById[cardId] ?? "unknown",
-      });
 
       Haptics.selection();
       setSelectedCardId((prev) => (prev === cardId ? null : cardId));
@@ -1620,17 +1564,6 @@ function CrazyEightsUI({
       return;
     }
 
-    const traceId = nextTraceId();
-    moveTrace("play-card", {
-      traceId,
-      cardId: selectedCardId,
-      cardType: card.type,
-      cardColor: card.color,
-      believedTurnUid: state.currentTurnUid,
-      turnCounter: state.turnCounter,
-      handSize: hand.length,
-    });
-
     Haptics.medium();
     const willHaveOne = hand.length === 2;
     setIsSubmitting(true);
@@ -1640,7 +1573,6 @@ function CrazyEightsUI({
         cardId: selectedCardId,
         callCrazy: willHaveOne,
       });
-      moveTrace("play-card-result", { traceId, success });
       if (success) setSelectedCardId(null);
     } finally {
       setIsSubmitting(false);
@@ -1653,7 +1585,6 @@ function CrazyEightsUI({
       // No card selected — hint the player
       if (!selectedCardId && actualIsMyTurn) {
         Haptics.warning();
-        moveTrace("discard-tap-hint", { reason: "no_card_selected" });
       }
       return;
     }
@@ -1666,14 +1597,6 @@ function CrazyEightsUI({
       setColorPickerVisible(false);
       if (!pendingWildCardId) return;
 
-      const traceId = nextTraceId();
-      moveTrace("play-wild", {
-        traceId,
-        cardId: pendingWildCardId,
-        declaredColor: color,
-        believedTurnUid: state?.currentTurnUid,
-      });
-
       Haptics.medium();
       const willHaveOne = hand.length === 2;
       setIsSubmitting(true);
@@ -1684,7 +1607,6 @@ function CrazyEightsUI({
           declaredColor: color,
           callCrazy: willHaveOne,
         });
-        moveTrace("play-wild-result", { traceId, success });
         if (success) {
           setSelectedCardId(null);
           setPendingWildCardId(null);
@@ -1698,13 +1620,10 @@ function CrazyEightsUI({
 
   const handleDraw = useCallback(async () => {
     if (!actualIsMyTurn || actionLoading || isSubmitting) return;
-    const traceId = nextTraceId();
-    moveTrace("draw-card", { traceId, believedTurnUid: state?.currentTurnUid });
     Haptics.light();
     setIsSubmitting(true);
     try {
       await submitMove({ action: "DRAW_CARD" });
-      moveTrace("draw-card-done", { traceId });
     } finally {
       setIsSubmitting(false);
     }
@@ -1719,13 +1638,10 @@ function CrazyEightsUI({
 
   const handlePass = useCallback(async () => {
     if (!actualIsMyTurn || actionLoading || isSubmitting) return;
-    const traceId = nextTraceId();
-    moveTrace("pass", { traceId, believedTurnUid: state?.currentTurnUid });
     Haptics.light();
     setIsSubmitting(true);
     try {
       await submitMove({ action: "PASS" });
-      moveTrace("pass-done", { traceId });
     } finally {
       setIsSubmitting(false);
     }

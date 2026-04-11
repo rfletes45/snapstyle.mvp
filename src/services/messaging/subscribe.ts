@@ -34,8 +34,6 @@
  */
 
 import { MessageV2 } from "@/types/messaging";
-import { createLogger } from "@/utils/log";
-import { DEBUG_UNIFIED_MESSAGING } from "@/constants/featureFlags";
 
 // Import existing messageList functions and types
 import {
@@ -53,8 +51,6 @@ import {
   subscribeToDMMessages as subscribeToDMMessagesV2,
   subscribeToGroupMessages as subscribeToGroupMessagesV2,
 } from "@/services/messageList";
-
-const log = createLogger("messaging:subscribe");
 
 // =============================================================================
 // Types
@@ -79,10 +75,6 @@ export interface UnifiedSubscriptionOptions {
   onError?: (error: Error) => void;
   /** Current user ID for filtering hiddenFor */
   currentUid?: string;
-  /**
-   * If true, enables debug logging for this subscription
-   */
-  debug?: boolean;
 }
 
 // =============================================================================
@@ -119,15 +111,6 @@ export function subscribeToMessages(
   conversationId: string,
   options: UnifiedSubscriptionOptions,
 ): () => void {
-  const shouldDebug = options.debug || DEBUG_UNIFIED_MESSAGING;
-
-  if (shouldDebug) {
-    log.debug("subscribeToMessages called", {
-      operation: "subscribe",
-      data: { scope, conversationId },
-    });
-  }
-
   // Delegate to appropriate subscription function
   if (scope === "dm") {
     return subscribeToDMMessagesV2(conversationId, options);
@@ -187,13 +170,6 @@ export async function loadOlderMessages(
   beforeServerReceivedAt: number,
   messageLimit: number = 25,
 ): Promise<PaginationLoadResult> {
-  if (DEBUG_UNIFIED_MESSAGING) {
-    log.debug("loadOlderMessages called", {
-      operation: "loadOlder",
-      data: { scope, conversationId, beforeServerReceivedAt, messageLimit },
-    });
-  }
-
   return loadOlderMessagesV2(
     scope,
     conversationId,
@@ -217,13 +193,6 @@ export async function loadNewerMessages(
   afterServerReceivedAt: number,
   messageLimit: number = 25,
 ): Promise<PaginationLoadResult> {
-  if (DEBUG_UNIFIED_MESSAGING) {
-    log.debug("loadNewerMessages called", {
-      operation: "loadNewer",
-      data: { scope, conversationId, afterServerReceivedAt, messageLimit },
-    });
-  }
-
   return loadNewerMessagesV2(
     scope,
     conversationId,
@@ -248,13 +217,6 @@ export function resetPaginationCursor(
   scope: ConversationScope,
   conversationId: string,
 ): void {
-  if (DEBUG_UNIFIED_MESSAGING) {
-    log.debug("resetPaginationCursor called", {
-      operation: "resetCursor",
-      data: { scope, conversationId },
-    });
-  }
-
   resetPaginationCursorV2(scope, conversationId);
 }
 
@@ -264,12 +226,6 @@ export function resetPaginationCursor(
  * Call this on user logout or app reset.
  */
 export function clearAllPaginationCursors(): void {
-  if (DEBUG_UNIFIED_MESSAGING) {
-    log.debug("clearAllPaginationCursors called", {
-      operation: "clearCursors",
-    });
-  }
-
   clearAllPaginationCursorsV2();
 }
 

@@ -95,10 +95,7 @@ import { ChatHeader } from "@/components/chat/ChatHeader";
 import { ChatMessageRenderer } from "@/components/chat/ChatMessageRenderer";
 import ReportUserModal from "@/components/ReportUserModal";
 import ScheduleMessageModal from "@/components/ScheduleMessageModal";
-import {
-  ComposerSheetProvider,
-  useComposerSheet,
-} from "@/contexts/ComposerSheetContext";
+import { useComposerSheet } from "@/contexts/ComposerSheetContext";
 import { PinnedInviteBar } from "@/gamesV4/components/PinnedInviteBar";
 import { createGameInvite } from "@/gamesV4/services/gameServiceV4";
 import type { GameId } from "@/gamesV4/types";
@@ -140,7 +137,6 @@ import DirectCallButton from "@/components/stream/DirectCallButton";
 
 // Types & Utils
 import {
-  DEBUG_CHAT_V2,
   GAMES_V4_ENABLED,
   GIF_PICKER_ENABLED,
   STICKER_PICKER_ENABLED,
@@ -158,6 +154,7 @@ import type { ReportReason } from "@/types/models";
 import * as Haptics from "expo-haptics";
 
 import { clearLastOpenChat, saveLastOpenChat } from "@/services/lastOpenChat";
+import { syncMessagesAroundTarget } from "@/services/sync/syncEngine";
 import { createLogger } from "@/utils/log";
 const logger = createLogger("screens/chat/ChatScreen");
 
@@ -174,13 +171,19 @@ function triggerHaptic(style: Haptics.ImpactFeedbackStyle) {
 // Constants
 // ==========================================================================
 
-const DEBUG_CHAT = DEBUG_CHAT_V2;
-
 /** Messages within this window from the same sender are visually grouped */
 const MESSAGE_GROUP_THRESHOLD_MS = 2 * 60 * 1000; // 2 minutes
 
 /** Stable no-op callback to avoid re-renders from inline arrow functions */
 const NOOP = () => {};
+
+/**
+ * Stable empty array shared across all message cells that have no reactions.
+ * Using this constant instead of inline `|| []` prevents React.memo on
+ * ChatMessageRenderer from seeing a new reference every render, which would
+ * force ALL visible cells to re-render on every timeline update.
+ */
+const EMPTY_REACTIONS: ReactionSummary[] = [];
 
 // ==========================================================================
 // Types
@@ -198,6 +201,7 @@ interface ChatScreenParams {
   friendUid: string;
   initialData?: InitialChatData;
   targetMessageId?: string;
+  jumpRequestId?: string;
 }
 
 // ==========================================================================
@@ -307,7 +311,7 @@ export default function ChatScreen({
   );
 
   // OPTIMIZATION: Extract initial data passed from inbox for instant display
-  const { friendUid, initialData, targetMessageId } =
+  const { friendUid, initialData, targetMessageId, jumpRequestId } =
     route.params as ChatScreenParams;
 
   // ==========================================================================
@@ -392,7 +396,6 @@ export default function ChatScreen({
     chatId: chatId || "",
     currentUid: uid || "",
     otherUid: friendUid,
-    debug: DEBUG_CHAT,
   });
 
   const screen = useUnifiedChatScreen({
@@ -412,7 +415,6 @@ export default function ChatScreen({
     onSchedulePress: () => setScheduleModalVisible(true),
     sendReadReceipts: readReceipts.shouldSendReadReceipts,
     senderStyle,
-    debug: DEBUG_CHAT,
   });
 
   // Keep ComposerSheetContext aware of the latest keyboard height
@@ -550,14 +552,12 @@ export default function ChatScreen({
     conversationId: chatId || "",
     currentUid: uid || "",
     otherUid: friendUid,
-    debug: DEBUG_CHAT,
   });
 
   // Presence (online status, last seen)
   const presence = usePresence({
     userId: friendUid,
     currentUserId: uid,
-    debug: DEBUG_CHAT,
   });
 
   // Connectivity state for network banner + offline UX
@@ -594,10 +594,15 @@ export default function ChatScreen({
                 msg.status === "read" || msg.status === "sent"
                   ? "delivered"
                   : msg.status;
-              return {
-                ...msg,
-                status: getReceiptStatus(msg.serverReceivedAt, baseStatus),
-              };
+              const resolved = getReceiptStatus(
+                msg.serverReceivedAt,
+                baseStatus,
+              );
+              // Only allocate a new object when the status actually changed.
+              // Preserving the original reference lets React.memo on
+              // ChatMessageRenderer skip re-renders for unchanged cells.
+              if (resolved === msg.status) return msg;
+              return { ...msg, status: resolved };
             }
             return msg;
           })
@@ -943,9 +948,12 @@ export default function ChatScreen({
     [screen.composer, typing],
   );
 
-  const handleSendMessage = useCallback(async () => {
-    triggerHaptic(Haptics.ImpactFeedbackStyle.Light);
-    await sendChatDraft({
+  const handleSendMessage = useCallback(() => {
+    // Fire-and-forget: the optimistic message is inserted synchronously
+    // inside sendMessage, so the FlatList picks it up on the very next
+    // React render.  Awaiting the result would add unnecessary microtask
+    // hops that delay when React flushes the batched state update.
+    sendChatDraft({
       currentUid: uid,
       conversationId: chatId,
       isSending: screen.sending,
@@ -1041,15 +1049,14 @@ export default function ChatScreen({
       // Scroll to target message
       messageListRef.current.scrollToIndex(targetIndex, true);
 
-      // Highlight the target message after scroll settles
-      setTimeout(() => {
+      requestAnimationFrame(() => {
         setHighlightedMessageId(messageId);
 
         // Auto-clear highlight after animation
         highlightTimeoutRef.current = setTimeout(() => {
           setHighlightedMessageId(null);
         }, 2100); // Match animation duration
-      }, 300); // Wait for scroll to settle
+      });
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
@@ -1057,23 +1064,38 @@ export default function ChatScreen({
 
   // Handle return button press
   const handleReturnToReply = useCallback(() => {
-    if (returnIndexRef.current !== null && messageListRef.current) {
-      messageListRef.current.scrollToIndex(returnIndexRef.current, true);
-    }
+    const returnIndex = returnIndexRef.current;
+    screen.chat.clearMessageAnchor();
     setShowReturnButton(false);
     returnIndexRef.current = null;
-  }, []);
+    if (returnIndex !== null && messageListRef.current) {
+      requestAnimationFrame(() => {
+        messageListRef.current?.scrollToIndex(returnIndex, true);
+      });
+    }
+  }, [screen.chat]);
 
   // Auto-scroll to targetMessageId from search navigation (deep jump)
   const hasScrolledToTargetRef = useRef(false);
-  const deepJumpAttemptsRef = useRef(0);
-  const MAX_DEEP_JUMP_ATTEMPTS = 8;
+  const deepJumpSyncingRef = useRef(false);
+
+  // Reset deep-jump refs when targetMessageId changes
+  const targetJumpKey = jumpRequestId ?? targetMessageId ?? null;
+  const prevTargetJumpKeyRef = useRef(targetJumpKey);
+  useEffect(() => {
+    if (targetJumpKey !== prevTargetJumpKeyRef.current) {
+      prevTargetJumpKeyRef.current = targetJumpKey;
+      hasScrolledToTargetRef.current = false;
+      deepJumpSyncingRef.current = false;
+    }
+  }, [targetJumpKey]);
 
   useEffect(() => {
     if (
       !targetMessageId ||
+      !chatId ||
       hasScrolledToTargetRef.current ||
-      timelineData.length === 0
+      deepJumpSyncingRef.current
     ) {
       return;
     }
@@ -1083,27 +1105,43 @@ export default function ChatScreen({
     );
     if (targetIndex !== -1) {
       hasScrolledToTargetRef.current = true;
-      deepJumpAttemptsRef.current = 0;
-      // Delay to let list render
-      setTimeout(() => {
+      requestAnimationFrame(() => {
         scrollToMessage(targetMessageId);
-      }, 500);
-    } else if (
-      deepJumpAttemptsRef.current < MAX_DEEP_JUMP_ATTEMPTS &&
-      screen.chat.pagination.hasMoreOlder
-    ) {
-      // Message not in current timeline — load older messages and retry
-      deepJumpAttemptsRef.current += 1;
-      screen.loadOlder?.();
+      });
+      return;
     }
+
+    if (screen.chat.loadAroundMessage(targetMessageId)) {
+      return;
+    }
+
+    deepJumpSyncingRef.current = true;
+    syncMessagesAroundTarget("dm", chatId, targetMessageId, 30)
+      .then((found) => {
+        if (found) {
+          if (!screen.chat.loadAroundMessage(targetMessageId)) {
+            screen.chat.refresh();
+          }
+        } else {
+          logger.warn(
+            `[ChatScreen] Target message ${targetMessageId} not found on server`,
+          );
+        }
+      })
+      .catch((err) => {
+        logger.warn("[ChatScreen] syncMessagesAroundTarget failed:", err);
+      })
+      .finally(() => {
+        deepJumpSyncingRef.current = false;
+      });
   }, [
     targetMessageId,
     timelineData,
     scrollToMessage,
-    screen.loadOlder,
-    screen.chat.pagination.hasMoreOlder,
+    screen.chat.loadAroundMessage,
+    screen.chat.refresh,
+    chatId,
   ]);
-
   // Auto-hide return button callback
   const handleReturnButtonAutoHide = useCallback(() => {
     setShowReturnButton(false);
@@ -1285,7 +1323,7 @@ export default function ChatScreen({
             onRetry={handleRetryMessage}
             onImagePress={handleOpenMediaViewer}
             isHighlighted={msg.id === highlightedMessageId}
-            reactions={messageReactions.get(msg.id) || []}
+            reactions={messageReactions.get(msg.id) ?? EMPTY_REACTIONS}
             onOptimisticReaction={handleOptimisticReaction}
             displayMode={displayMode}
             isGroupChat={false}
@@ -1360,7 +1398,7 @@ export default function ChatScreen({
   const renderScrollComponent = useRenderChatScrollComponent();
 
   return (
-    <ComposerSheetProvider>
+    <>
       <ChatKeyboardContainer
         style={[styles.container, { backgroundColor: theme.colors.background }]}
       >
@@ -1559,7 +1597,7 @@ export default function ChatScreen({
           visible={showReturnButton}
           onPress={handleReturnToReply}
           onAutoHide={handleReturnButtonAutoHide}
-          autoHideDelay={5000}
+          autoHideDelay={screen.chat.isMessageAnchorActive ? 0 : 5000}
         />
       </ChatKeyboardContainer>
 
@@ -1627,7 +1665,7 @@ export default function ChatScreen({
           </View>
         </View>
       )}
-    </ComposerSheetProvider>
+    </>
   );
 }
 

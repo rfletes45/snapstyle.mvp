@@ -11,6 +11,7 @@ import { StyleSheet } from "react-native";
 
 import AppGate from "@/components/AppGate";
 import WarningModal from "@/components/WarningModal";
+import { ComposerSheetProvider } from "@/contexts/ComposerSheetContext";
 import { clearLastOpenChat, getLastOpenChat } from "@/services/lastOpenChat";
 import {
   flushPendingNavigation,
@@ -63,14 +64,6 @@ import BlockedUsersScreen from "@/screens/settings/BlockedUsersScreen";
 import PrivacySettingsScreen from "@/screens/settings/PrivacySettingsScreen";
 import SettingsScreen from "@/screens/settings/SettingsScreen";
 import ShopHubScreen from "@/screens/shop/ShopHubScreen";
-
-// Debug screens only loaded in development
-const DebugScreen = __DEV__
-  ? require("@/screens/debug/DebugScreen").default
-  : () => null;
-const LocalStorageDebugScreen = __DEV__
-  ? require("@/screens/debug/LocalStorageDebugScreen").default
-  : () => null;
 
 import TasksScreen from "@/screens/tasks/TasksScreen";
 import WalletScreen from "@/screens/wallet/WalletScreen";
@@ -259,20 +252,6 @@ function ProfileStack() {
         component={CustomizationHubScreen}
         options={{ headerShown: false }}
       />
-      {__DEV__ && (
-        <ProfileStack_Nav.Screen
-          name="Debug"
-          component={DebugScreen}
-          options={{ title: "Debug Info" }}
-        />
-      )}
-      {__DEV__ && (
-        <ProfileStack_Nav.Screen
-          name="LocalStorageDebug"
-          component={LocalStorageDebugScreen}
-          options={{ title: "Local Storage Debug" }}
-        />
-      )}
       <ProfileStack_Nav.Screen
         name="BlockedUsers"
         component={BlockedUsersScreen}
@@ -449,18 +428,28 @@ function MainStack() {
 
       <MainStack_Nav.Screen
         name="ChatDetail"
-        component={ChatScreen}
         options={{
           headerShown: false,
         }}
-      />
+      >
+        {(props) => (
+          <ComposerSheetProvider>
+            <ChatScreen {...props} />
+          </ComposerSheetProvider>
+        )}
+      </MainStack_Nav.Screen>
       <MainStack_Nav.Screen
         name="GroupChat"
-        component={GroupChatScreen}
         options={{
           headerShown: false,
         }}
-      />
+      >
+        {(props) => (
+          <ComposerSheetProvider>
+            <GroupChatScreen {...props} />
+          </ComposerSheetProvider>
+        )}
+      </MainStack_Nav.Screen>
       <MainStack_Nav.Screen
         name="ThreadView"
         component={ThreadScreen}

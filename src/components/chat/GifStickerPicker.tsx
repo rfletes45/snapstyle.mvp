@@ -54,6 +54,7 @@ import {
 import { Text } from "react-native-paper";
 import type { SharedValue } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { getKeyboardReplacementSnapFraction } from "./bottomSheetLayout";
 import { CategoryGrid, type CategoryTile } from "./CategoryGrid";
 import {
   DraggableBottomSheet,
@@ -366,9 +367,10 @@ export const GifStickerPicker = forwardRef<
   // ── Snap points ──────────────────────────────────────────────────────────
   const snapPoints = useMemo(() => {
     if (keyboardHeight && keyboardHeight > 0) {
-      const kbFraction = Math.min(
-        (keyboardHeight + 7) / SCREEN_HEIGHT,
-        EXPANDED_SNAP - 0.05,
+      const kbFraction = getKeyboardReplacementSnapFraction(
+        keyboardHeight,
+        SCREEN_HEIGHT,
+        EXPANDED_SNAP,
       );
       return [kbFraction, EXPANDED_SNAP];
     }
@@ -913,6 +915,7 @@ export const GifStickerPicker = forwardRef<
       sharedTranslateY={sharedTranslateY}
       surfaceColor={sheetSurface}
       handleColor={colors.divider}
+      dragGestureArea="handle"
     >
       {/* ── Tab Switcher Bar ────────────────────────────────────────────── */}
       <TabBar
@@ -926,7 +929,7 @@ export const GifStickerPicker = forwardRef<
 
       {/* ── GIF Tab Content ─────────────────────────────────────────────── */}
       {activeTab === "gifs" && (
-        <>
+        <View style={styles.sheetBody}>
           {/* Search bar */}
           <View
             style={[
@@ -992,114 +995,118 @@ export const GifStickerPicker = forwardRef<
             </View>
           )}
 
-          {/* Content area */}
-          {gifBrowseState === "landing" ? (
-            <CategoryGrid
-              categories={gifCategories}
-              loading={gifCategoriesLoading}
-              onSelect={handleGifCategorySelect}
-              colors={{
-                surface: sheetSurface,
-                surfaceVariant: surfaceVariantColor,
-                text: onSurfaceColor,
-              }}
-            />
-          ) : gifLoading && gifs.length === 0 ? (
-            <View style={styles.gifMasonryContainer}>
-              <View style={styles.gifMasonryColumn}>
-                {gifSkeletonHeights.slice(0, 4).map((h, i) => (
-                  <GifSkeletonCell
-                    key={`sl-${i}`}
-                    height={h}
-                    backgroundColor={surfaceVariantColor}
-                  />
-                ))}
-              </View>
-              <View style={styles.gifMasonryColumn}>
-                {gifSkeletonHeights.slice(4).map((h, i) => (
-                  <GifSkeletonCell
-                    key={`sr-${i}`}
-                    height={h}
-                    backgroundColor={surfaceVariantColor}
-                  />
-                ))}
-              </View>
-            </View>
-          ) : gifError ? (
-            <View style={styles.stateContainer}>
-              <Text style={{ color: onSurfaceVariantColor, fontSize: 16 }}>
-                ⚠️
-              </Text>
-              <Text
-                style={[styles.stateText, { color: onSurfaceVariantColor }]}
-              >
-                {gifError}
-              </Text>
-              <TouchableOpacity
-                onPress={handleGifRetry}
-                style={[styles.retryButton, { borderColor: outlineColor }]}
-                accessibilityLabel="Retry loading GIFs"
-                accessibilityRole="button"
-              >
-                <Text style={{ color: onSurfaceColor }}>Retry</Text>
-              </TouchableOpacity>
-            </View>
-          ) : gifs.length === 0 && gifDebouncedQuery.trim() ? (
-            <View style={styles.stateContainer}>
-              <Text style={{ fontSize: 40 }}>🤷</Text>
-              <Text
-                style={[styles.stateText, { color: onSurfaceVariantColor }]}
-              >
-                No GIFs found for &quot;{gifDebouncedQuery}&quot;
-              </Text>
-            </View>
-          ) : (
-            <FlatList
-              ref={gifFlatListRef}
-              data={[1]}
-              keyExtractor={() => "masonry"}
-              showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-              onEndReached={handleGifLoadMore}
-              onEndReachedThreshold={0.5}
-              contentContainerStyle={styles.flatListContent}
-              renderItem={() => (
-                <View style={styles.gifMasonryContainer}>
-                  <View style={styles.gifMasonryColumn}>
-                    {leftColumn.map((gif) => (
-                      <GifCell
-                        key={gif.id}
-                        gif={gif}
-                        onPress={handleGifPress}
-                      />
-                    ))}
-                  </View>
-                  <View style={styles.gifMasonryColumn}>
-                    {rightColumn.map((gif) => (
-                      <GifCell
-                        key={gif.id}
-                        gif={gif}
-                        onPress={handleGifPress}
-                      />
-                    ))}
-                  </View>
+          <View style={styles.scrollRegion}>
+            {/* Content area */}
+            {gifBrowseState === "landing" ? (
+              <CategoryGrid
+                categories={gifCategories}
+                loading={gifCategoriesLoading}
+                onSelect={handleGifCategorySelect}
+                colors={{
+                  surface: sheetSurface,
+                  surfaceVariant: surfaceVariantColor,
+                  text: onSurfaceColor,
+                }}
+              />
+            ) : gifLoading && gifs.length === 0 ? (
+              <View style={styles.gifMasonryContainer}>
+                <View style={styles.gifMasonryColumn}>
+                  {gifSkeletonHeights.slice(0, 4).map((h, i) => (
+                    <GifSkeletonCell
+                      key={`sl-${i}`}
+                      height={h}
+                      backgroundColor={surfaceVariantColor}
+                    />
+                  ))}
                 </View>
-              )}
-              ListFooterComponent={
-                gifLoadingMore ? (
-                  <View style={styles.loadingMore}>
-                    <ActivityIndicator size="small" color={colors.primary} />
+                <View style={styles.gifMasonryColumn}>
+                  {gifSkeletonHeights.slice(4).map((h, i) => (
+                    <GifSkeletonCell
+                      key={`sr-${i}`}
+                      height={h}
+                      backgroundColor={surfaceVariantColor}
+                    />
+                  ))}
+                </View>
+              </View>
+            ) : gifError ? (
+              <View style={styles.stateContainer}>
+                <Text style={{ color: onSurfaceVariantColor, fontSize: 16 }}>
+                  ⚠️
+                </Text>
+                <Text
+                  style={[styles.stateText, { color: onSurfaceVariantColor }]}
+                >
+                  {gifError}
+                </Text>
+                <TouchableOpacity
+                  onPress={handleGifRetry}
+                  style={[styles.retryButton, { borderColor: outlineColor }]}
+                  accessibilityLabel="Retry loading GIFs"
+                  accessibilityRole="button"
+                >
+                  <Text style={{ color: onSurfaceColor }}>Retry</Text>
+                </TouchableOpacity>
+              </View>
+            ) : gifs.length === 0 && gifDebouncedQuery.trim() ? (
+              <View style={styles.stateContainer}>
+                <Text style={{ fontSize: 40 }}>🤷</Text>
+                <Text
+                  style={[styles.stateText, { color: onSurfaceVariantColor }]}
+                >
+                  No GIFs found for &quot;{gifDebouncedQuery}&quot;
+                </Text>
+              </View>
+            ) : (
+              <FlatList
+                ref={gifFlatListRef}
+                data={[1]}
+                keyExtractor={() => "masonry"}
+                style={styles.flexFill}
+                showsVerticalScrollIndicator={false}
+                nestedScrollEnabled
+                keyboardShouldPersistTaps="handled"
+                onEndReached={handleGifLoadMore}
+                onEndReachedThreshold={0.5}
+                contentContainerStyle={styles.flatListContent}
+                renderItem={() => (
+                  <View style={styles.gifMasonryContainer}>
+                    <View style={styles.gifMasonryColumn}>
+                      {leftColumn.map((gif) => (
+                        <GifCell
+                          key={gif.id}
+                          gif={gif}
+                          onPress={handleGifPress}
+                        />
+                      ))}
+                    </View>
+                    <View style={styles.gifMasonryColumn}>
+                      {rightColumn.map((gif) => (
+                        <GifCell
+                          key={gif.id}
+                          gif={gif}
+                          onPress={handleGifPress}
+                        />
+                      ))}
+                    </View>
                   </View>
-                ) : null
-              }
-            />
-          )}
-        </>
+                )}
+                ListFooterComponent={
+                  gifLoadingMore ? (
+                    <View style={styles.loadingMore}>
+                      <ActivityIndicator size="small" color={colors.primary} />
+                    </View>
+                  ) : null
+                }
+              />
+            )}
+          </View>
+        </View>
       )}
 
       {/* ── Sticker Tab Content ─────────────────────────────────────────── */}
       {activeTab === "stickers" && (
-        <>
+        <View style={styles.sheetBody}>
           {/* Search bar */}
           <View
             style={[
@@ -1146,69 +1153,73 @@ export const GifStickerPicker = forwardRef<
             ) : null}
           </View>
 
-          {/* Content area */}
-          {stickerLoading && stickers.length === 0 ? (
-            <View style={styles.stickerGridContainer}>
-              {stickerSkeletonItems.map((i) => (
-                <StickerSkeletonCell
-                  key={`sk-${i}`}
-                  backgroundColor={surfaceVariantColor}
-                />
-              ))}
-            </View>
-          ) : stickerError ? (
-            <View style={styles.stateContainer}>
-              <Text style={{ color: onSurfaceVariantColor, fontSize: 16 }}>
-                ⚠️
-              </Text>
-              <Text
-                style={[styles.stateText, { color: onSurfaceVariantColor }]}
-              >
-                {stickerError}
-              </Text>
-              <TouchableOpacity
-                onPress={handleStickerRetry}
-                style={[styles.retryButton, { borderColor: outlineColor }]}
-                accessibilityLabel="Retry loading stickers"
-                accessibilityRole="button"
-              >
-                <Text style={{ color: onSurfaceColor }}>Retry</Text>
-              </TouchableOpacity>
-            </View>
-          ) : stickers.length === 0 && stickerDebouncedQuery.trim() ? (
-            <View style={styles.stateContainer}>
-              <Text style={{ fontSize: 40 }}>🤷</Text>
-              <Text
-                style={[styles.stateText, { color: onSurfaceVariantColor }]}
-              >
-                No stickers found for &quot;{stickerDebouncedQuery}&quot;
-              </Text>
-            </View>
-          ) : (
-            <FlatList
-              ref={stickerFlatListRef}
-              data={stickers}
-              keyExtractor={(item) => item.id}
-              numColumns={STICKER_NUM_COLUMNS}
-              showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-              onEndReached={handleStickerLoadMore}
-              onEndReachedThreshold={0.5}
-              contentContainerStyle={styles.flatListContent}
-              columnWrapperStyle={styles.stickerColumnWrapper}
-              renderItem={({ item }) => (
-                <StickerCell sticker={item} onPress={handleStickerPress} />
-              )}
-              ListFooterComponent={
-                stickerLoadingMore ? (
-                  <View style={styles.loadingMore}>
-                    <ActivityIndicator size="small" color={colors.primary} />
-                  </View>
-                ) : null
-              }
-            />
-          )}
-        </>
+          <View style={styles.scrollRegion}>
+            {/* Content area */}
+            {stickerLoading && stickers.length === 0 ? (
+              <View style={styles.stickerGridContainer}>
+                {stickerSkeletonItems.map((i) => (
+                  <StickerSkeletonCell
+                    key={`sk-${i}`}
+                    backgroundColor={surfaceVariantColor}
+                  />
+                ))}
+              </View>
+            ) : stickerError ? (
+              <View style={styles.stateContainer}>
+                <Text style={{ color: onSurfaceVariantColor, fontSize: 16 }}>
+                  ⚠️
+                </Text>
+                <Text
+                  style={[styles.stateText, { color: onSurfaceVariantColor }]}
+                >
+                  {stickerError}
+                </Text>
+                <TouchableOpacity
+                  onPress={handleStickerRetry}
+                  style={[styles.retryButton, { borderColor: outlineColor }]}
+                  accessibilityLabel="Retry loading stickers"
+                  accessibilityRole="button"
+                >
+                  <Text style={{ color: onSurfaceColor }}>Retry</Text>
+                </TouchableOpacity>
+              </View>
+            ) : stickers.length === 0 && stickerDebouncedQuery.trim() ? (
+              <View style={styles.stateContainer}>
+                <Text style={{ fontSize: 40 }}>🤷</Text>
+                <Text
+                  style={[styles.stateText, { color: onSurfaceVariantColor }]}
+                >
+                  No stickers found for &quot;{stickerDebouncedQuery}&quot;
+                </Text>
+              </View>
+            ) : (
+              <FlatList
+                ref={stickerFlatListRef}
+                data={stickers}
+                keyExtractor={(item) => item.id}
+                numColumns={STICKER_NUM_COLUMNS}
+                style={styles.flexFill}
+                showsVerticalScrollIndicator={false}
+                nestedScrollEnabled
+                keyboardShouldPersistTaps="handled"
+                onEndReached={handleStickerLoadMore}
+                onEndReachedThreshold={0.5}
+                contentContainerStyle={styles.flatListContent}
+                columnWrapperStyle={styles.stickerColumnWrapper}
+                renderItem={({ item }) => (
+                  <StickerCell sticker={item} onPress={handleStickerPress} />
+                )}
+                ListFooterComponent={
+                  stickerLoadingMore ? (
+                    <View style={styles.loadingMore}>
+                      <ActivityIndicator size="small" color={colors.primary} />
+                    </View>
+                  ) : null
+                }
+              />
+            )}
+          </View>
+        </View>
       )}
 
       {/* Attribution footer */}
@@ -1294,6 +1305,14 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "500",
   },
+  sheetBody: {
+    flex: 1,
+    minHeight: 0,
+  },
+  scrollRegion: {
+    flex: 1,
+    minHeight: 0,
+  },
 
   // GIF Masonry
   gifMasonryContainer: {
@@ -1344,8 +1363,12 @@ const styles = StyleSheet.create({
   },
 
   // Shared
+  flexFill: {
+    flex: 1,
+    minHeight: 0,
+  },
   flatListContent: {
-    paddingBottom: 8,
+    paddingBottom: 560,
   },
   skeletonCell: {
     borderRadius: 8,

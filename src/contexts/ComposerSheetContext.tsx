@@ -14,6 +14,7 @@
  * 6. On dismiss, deactivateSheet() resets everything
  */
 
+import { getKeyboardReplacementSheetHeight } from "@/components/chat/bottomSheetLayout";
 import React, {
   createContext,
   useCallback,
@@ -125,20 +126,20 @@ export function ComposerSheetProvider({
       // Persist for future use
       if (kbH > 0) setLastKbH(kbH);
 
-      // +10 gives the composer ceiling headroom when the sheet expands
-      initialSnapHeight.value = kbH + 10;
+      const initialSheetHeight = getKeyboardReplacementSheetHeight(kbH);
+
+      // Match the sheet's real keyboard-height snap so the composer/chat
+      // stay aligned during the keyboard -> sheet handoff.
+      initialSnapHeight.value = initialSheetHeight;
       isSheetActive.value = 1;
 
-      // Pre-seed sheetTranslateY to match the actual modal snap position
-      // (+7, same as the pickers' snap fraction offset). This must match
-      // the modal snap exactly so the composer doesn't jump on the first
-      // frame and then settle to a different position on drag-release.
-      sheetTranslateY.value = SCREEN_HEIGHT - (kbH + 7);
+      // Pre-seed sheetTranslateY to the exact keyboard-height snap so the
+      // shared animated value does not jump on the first frame.
+      sheetTranslateY.value = SCREEN_HEIGHT - initialSheetHeight;
 
-      // Dismiss keyboard — the sheet replaces it.
-      // Because sheetTranslateY is pre-seeded above, composerOffset
-      // = max(0, kbH - kbH) = 0 initially, then smoothly rises as
-      // the real keyboard height drops to 0.
+      // Dismiss keyboard — the sheet replaces it. The shared translateY is
+      // already aligned to the sheet's real initial snap, so the keyboard ->
+      // sheet handoff stays visually continuous while the keyboard animates out.
       Keyboard.dismiss();
     },
     [lastKeyboardHeight, initialSnapHeight, isSheetActive, sheetTranslateY],

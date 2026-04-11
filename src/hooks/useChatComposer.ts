@@ -76,7 +76,6 @@ import {
 } from "@/services/mentionParser";
 import { LocalAttachment } from "@/services/storage";
 import { AttachmentV2, ReplyToMetadata } from "@/types/messaging";
-import { createLogger } from "@/utils/log";
 import { useCallback, useMemo, useRef, useState } from "react";
 import {
   useAttachmentPicker,
@@ -92,8 +91,6 @@ import {
   UseVoiceRecorderReturn,
   VoiceRecording,
 } from "./useVoiceRecorder";
-
-const log = createLogger("useChatComposer");
 
 // =============================================================================
 // Types
@@ -217,9 +214,6 @@ export interface UseChatComposerConfig {
 
   /** Reply metadata (controlled externally by useChat, or auto-synced from chatHook) */
   replyTo?: ReplyToMetadata | null;
-
-  /** Enable debug logging */
-  debug?: boolean;
 }
 
 /**
@@ -365,7 +359,6 @@ export function useChatComposer(
     maxAttachments = 10,
     maxVoiceDuration = 60,
     replyTo: configReplyTo = null,
-    debug = false,
   } = config;
 
   // -------------------------------------------------------------------------
@@ -404,27 +397,11 @@ export function useChatComposer(
     members: enableMentions ? mentionableMembers : [],
     excludeUids: currentUid ? [currentUid] : [],
     maxSuggestions: maxMentionSuggestions,
-    onMentionSelected: (member) => {
-      if (debug) {
-        log.debug("Mention selected", {
-          operation: "mentionSelected",
-          data: { uid: member.uid, displayName: member.displayName },
-        });
-      }
-    },
   });
 
   // Attachments
   const attachmentsHook = useAttachmentPicker({
     maxAttachments: enableAttachments ? maxAttachments : 0,
-    onAttachmentsChange: (attachments) => {
-      if (debug) {
-        log.debug("Attachments changed", {
-          operation: "attachmentsChange",
-          data: { count: attachments.length },
-        });
-      }
-    },
   });
 
   // Voice Recording
@@ -547,17 +524,8 @@ export function useChatComposer(
         prev.includes(member.uid) ? prev : [...prev, member.uid],
       );
 
-      if (debug) {
-        log.debug("Mention inserted", {
-          operation: "insertMention",
-          data: {
-            uid: member.uid,
-            newCursorPosition: result.newCursorPosition,
-          },
-        });
-      }
     },
-    [enableMentions, mentionsHook, debug],
+    [enableMentions, mentionsHook],
   );
 
   // -------------------------------------------------------------------------
@@ -594,13 +562,6 @@ export function useChatComposer(
       if (attachmentSnapshot.length > 0 && onUploadAttachments) {
         setUploadProgress({ current: 0, total: attachmentSnapshot.length });
 
-        if (debug) {
-          log.debug("Uploading attachments", {
-            operation: "uploadAttachments",
-            data: { count: attachmentSnapshot.length },
-          });
-        }
-
         await onUploadAttachments(attachmentSnapshot);
         setUploadProgress(null);
       }
@@ -611,19 +572,6 @@ export function useChatComposer(
         attachments:
           attachmentSnapshot.length > 0 ? attachmentSnapshot : undefined,
       };
-
-      if (debug) {
-        log.debug("Sending message", {
-          operation: "send",
-          data: {
-            textLength: textSnapshot.length,
-            hasReply: !!replySnapshot,
-            mentionCount: mentionSnapshot.length,
-            attachmentCount: attachmentSnapshot.length,
-            isIntegrated,
-          },
-        });
-      }
 
       // Use chatHook.sendMessage if integrated, otherwise use onSend callback
       if (chatHook) {
@@ -662,7 +610,6 @@ export function useChatComposer(
     isIntegrated,
     clearText,
     setText,
-    debug,
   ]);
 
   // -------------------------------------------------------------------------
@@ -674,16 +621,6 @@ export function useChatComposer(
   const openScheduleModal = useCallback(() => {
     if (!canSchedule || !onSchedulePress) return;
 
-    if (debug) {
-      log.debug("Opening schedule modal", {
-        operation: "openScheduleModal",
-        data: {
-          textLength: text.length,
-          attachmentCount: attachmentsHook.attachments.length,
-        },
-      });
-    }
-
     onSchedulePress(
       text,
       hasAttachments ? attachmentsHook.attachments : undefined,
@@ -694,7 +631,6 @@ export function useChatComposer(
     text,
     hasAttachments,
     attachmentsHook.attachments,
-    debug,
   ]);
 
   // -------------------------------------------------------------------------

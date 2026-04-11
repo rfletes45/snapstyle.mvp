@@ -60,7 +60,6 @@ export async function joinVoiceChannel(
 
   try {
     await startCallAudioSession("speaker");
-    console.log("[VoiceChannelService] callManager.start succeeded (speaker)");
   } catch (err) {
     console.warn("[VoiceChannelService] callManager.start failed:", err);
   }

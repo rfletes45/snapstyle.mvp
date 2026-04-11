@@ -9,6 +9,8 @@
 
 import {
   collection,
+  doc,
+  getDoc,
   getDocs,
   limit,
   onSnapshot,
@@ -493,9 +495,14 @@ async function syncSingleMessage(
     // waiting for the Firestore onSnapshot round-trip.
     notifyConversationListeners(message.scope, message.conversation_id);
 
-    logger.info(`[SyncEngine] Message synced: ${message.id}`);
+    logger.info(`[SendPipeline] Backend confirmed`, {
+      messageId: message.id.substring(0, 8),
+      scope: message.scope,
+      conversationId: message.conversation_id.substring(0, 8),
+      serverReceivedAt: serverData.serverReceivedAt,
+    });
   } catch (error: any) {
-    logger.error("[SyncEngine] Failed to sync message:", message.id, error);
+    logger.error("[SendPipeline] Sync failed:", message.id, error);
 
     // Detect permanent errors that should NOT be retried
     const errorMessage = error.message || "Unknown error";
@@ -572,7 +579,7 @@ export async function pullMessages(
   try {
     const snapshot = await getDocs(q);
     let newCount = 0;
-    let maxServerReceivedAt = lastSyncedAt;
+    let maxCursorTimestamp = lastSyncedAt;
 
     snapshot.forEach((docSnap) => {
       const data = docSnap.data();
@@ -612,17 +619,17 @@ export async function pullMessages(
       upsertMessageFromServer(message);
       newCount++;
 
-      if (serverReceivedAtNum > maxServerReceivedAt) {
-        maxServerReceivedAt = serverReceivedAtNum;
+      if (createdAtNum > maxCursorTimestamp) {
+        maxCursorTimestamp = createdAtNum;
       }
     });
 
     // Update sync cursor
-    if (maxServerReceivedAt > lastSyncedAt) {
+    if (maxCursorTimestamp > lastSyncedAt) {
       db.runSync(
         `INSERT OR REPLACE INTO sync_cursors (conversation_id, last_synced_at, last_sync_attempt)
          VALUES (?, ?, ?)`,
-        [conversationId, maxServerReceivedAt, Date.now()],
+        [conversationId, maxCursorTimestamp, Date.now()],
       );
     }
 
@@ -750,8 +757,8 @@ export async function fullSyncConversation(
       upsertMessageFromServer(message);
       count++;
 
-      // Use the converted numeric timestamp for cursor
-      const timestamp = serverReceivedAtNum || createdAtNum;
+      // Keep the sync cursor aligned with the field used for sync queries.
+      const timestamp = createdAtNum;
       if (timestamp > maxTimestamp) {
         maxTimestamp = timestamp;
       }
@@ -774,6 +781,281 @@ export async function fullSyncConversation(
     logger.error(`[SyncEngine] Full sync failed for ${conversationId}:`, error);
     throw error;
   }
+}
+
+/**
+ * Sync older messages from Firestore into SQLite.
+ *
+ * Fetches messages older than `beforeTimestamp` and upserts them locally.
+ * Used by useLocalMessages.loadMore when the SQLite cache is exhausted.
+ *
+ * @returns The number of messages synced
+ */
+export async function syncOlderMessages(
+  scope: "dm" | "group",
+  conversationId: string,
+  beforeTimestamp: number,
+  messageLimit: number = 50,
+): Promise<number> {
+  if (!isDatabaseRuntimeAvailable()) {
+    return 0;
+  }
+
+  const firestore = getFirestoreInstance();
+  const collectionPath =
+    scope === "dm"
+      ? `Chats/${conversationId}/Messages`
+      : `Groups/${conversationId}/Messages`;
+
+  const q = query(
+    collection(firestore, collectionPath),
+    orderBy("createdAt", "desc"),
+    where("createdAt", "<", beforeTimestamp),
+    limit(messageLimit),
+  );
+
+  try {
+    const snapshot = await getDocs(q);
+    let count = 0;
+
+    snapshot.forEach((docSnap) => {
+      const data = docSnap.data();
+      const createdAtNum = toTimestamp(data.createdAt) || Date.now();
+      const serverReceivedAtNum =
+        toTimestamp(data.serverReceivedAt) || createdAtNum;
+      const editedAtNum = data.editedAt
+        ? toTimestamp(data.editedAt)
+        : undefined;
+
+      const msgWithId = {
+        ...data,
+        id: docSnap.id,
+        groupId: conversationId,
+        createdAt: createdAtNum,
+      };
+
+      let message: MessageV2;
+      if (scope === "group" && isLegacyGroupMessage(msgWithId)) {
+        message = fromGroupMessage(msgWithId as GroupMessage);
+        message.serverReceivedAt = serverReceivedAtNum;
+      } else {
+        message = {
+          id: docSnap.id,
+          scope,
+          conversationId,
+          senderId: data.senderId || data.sender || "",
+          senderName: data.senderName || data.senderDisplayName || null,
+          kind: data.kind || data.type || "text",
+          text: data.text || data.content || null,
+          animalId: data.animalId || undefined,
+          attachments: data.attachments || null,
+          createdAt: createdAtNum,
+          serverReceivedAt: serverReceivedAtNum,
+          editedAt: editedAtNum,
+          replyTo: data.replyTo || null,
+          mentionUids: data.mentionUids || null,
+          reactionsSummary: data.reactionsSummary || null,
+          deletedForAll: data.deletedForAll || false,
+          hiddenFor: data.hiddenFor || null,
+          linkPreview: data.linkPreview || null,
+          clientId: data.clientId || "",
+          idempotencyKey: data.idempotencyKey || docSnap.id,
+          senderStyle: data.senderStyle || undefined,
+        };
+      }
+
+      upsertMessageFromServer(message);
+      count++;
+    });
+
+    if (count > 0) {
+      notifyConversationListeners(scope, conversationId);
+    }
+
+    logger.info(
+      `[SyncEngine] syncOlderMessages pulled ${count} messages for ${conversationId}`,
+    );
+    return count;
+  } catch (error: any) {
+    logger.error(
+      `[SyncEngine] syncOlderMessages failed for ${conversationId}:`,
+      error,
+    );
+    throw error;
+  }
+}
+
+/**
+ * Load messages around a target message ID.
+ *
+ * 1. Fetches the target message by ID to get its timestamp.
+ * 2. Loads a window of messages around that timestamp.
+ * 3. Upserts them into SQLite so the local cache includes the target.
+ *
+ * Used for jump-to-message when the target is not in the local cache.
+ *
+ * @returns true if the target message was found and synced
+ */
+export async function syncMessagesAroundTarget(
+  scope: "dm" | "group",
+  conversationId: string,
+  targetMessageId: string,
+  windowSize: number = 25,
+): Promise<boolean> {
+  if (!isDatabaseRuntimeAvailable()) {
+    return false;
+  }
+
+  const firestore = getFirestoreInstance();
+  const collectionPath =
+    scope === "dm"
+      ? `Chats/${conversationId}/Messages`
+      : `Groups/${conversationId}/Messages`;
+
+  // Step 1: Fetch the target message by ID
+  const targetRef = doc(firestore, collectionPath, targetMessageId);
+  const targetSnap = await getDoc(targetRef);
+
+  if (!targetSnap.exists()) {
+    logger.warn(
+      `[SyncEngine] Target message ${targetMessageId} not found in Firestore`,
+    );
+    return false;
+  }
+
+  const targetData = targetSnap.data();
+  const targetCreatedAt = toTimestamp(targetData.createdAt) || Date.now();
+
+  // Upsert the target message itself
+  const targetServerReceivedAt =
+    toTimestamp(targetData.serverReceivedAt) || targetCreatedAt;
+  const targetEditedAt = targetData.editedAt
+    ? toTimestamp(targetData.editedAt)
+    : undefined;
+
+  const targetMsgWithId = {
+    ...targetData,
+    id: targetSnap.id,
+    groupId: conversationId,
+    createdAt: targetCreatedAt,
+  };
+
+  let targetMessage: MessageV2;
+  if (scope === "group" && isLegacyGroupMessage(targetMsgWithId)) {
+    targetMessage = fromGroupMessage(targetMsgWithId as GroupMessage);
+    targetMessage.serverReceivedAt = targetServerReceivedAt;
+  } else {
+    targetMessage = {
+      id: targetSnap.id,
+      scope,
+      conversationId,
+      senderId: targetData.senderId || targetData.sender || "",
+      senderName: targetData.senderName || targetData.senderDisplayName || null,
+      kind: targetData.kind || targetData.type || "text",
+      text: targetData.text || targetData.content || null,
+      animalId: targetData.animalId || undefined,
+      attachments: targetData.attachments || null,
+      createdAt: targetCreatedAt,
+      serverReceivedAt: targetServerReceivedAt,
+      editedAt: targetEditedAt,
+      replyTo: targetData.replyTo || null,
+      mentionUids: targetData.mentionUids || null,
+      reactionsSummary: targetData.reactionsSummary || null,
+      deletedForAll: targetData.deletedForAll || false,
+      hiddenFor: targetData.hiddenFor || null,
+      linkPreview: targetData.linkPreview || null,
+      clientId: targetData.clientId || "",
+      idempotencyKey: targetData.idempotencyKey || targetSnap.id,
+      senderStyle: targetData.senderStyle || undefined,
+    };
+  }
+
+  upsertMessageFromServer(targetMessage);
+
+  // Step 2: Load older messages (before the target)
+  const olderQuery = query(
+    collection(firestore, collectionPath),
+    orderBy("createdAt", "desc"),
+    where("createdAt", "<", targetCreatedAt),
+    limit(windowSize),
+  );
+
+  // Step 3: Load newer messages (after the target)
+  const newerQuery = query(
+    collection(firestore, collectionPath),
+    orderBy("createdAt", "asc"),
+    where("createdAt", ">", targetCreatedAt),
+    limit(windowSize),
+  );
+
+  const [olderSnap, newerSnap] = await Promise.all([
+    getDocs(olderQuery),
+    getDocs(newerQuery),
+  ]);
+
+  let count = 1; // target message already upserted
+
+  const processSnapshot = (snap: typeof olderSnap) => {
+    snap.forEach((docSnap) => {
+      const data = docSnap.data();
+      const createdAtNum = toTimestamp(data.createdAt) || Date.now();
+      const serverReceivedAtNum =
+        toTimestamp(data.serverReceivedAt) || createdAtNum;
+      const editedAtNum = data.editedAt
+        ? toTimestamp(data.editedAt)
+        : undefined;
+
+      const msgWithId = {
+        ...data,
+        id: docSnap.id,
+        groupId: conversationId,
+        createdAt: createdAtNum,
+      };
+
+      let message: MessageV2;
+      if (scope === "group" && isLegacyGroupMessage(msgWithId)) {
+        message = fromGroupMessage(msgWithId as GroupMessage);
+        message.serverReceivedAt = serverReceivedAtNum;
+      } else {
+        message = {
+          id: docSnap.id,
+          scope,
+          conversationId,
+          senderId: data.senderId || data.sender || "",
+          senderName: data.senderName || data.senderDisplayName || null,
+          kind: data.kind || data.type || "text",
+          text: data.text || data.content || null,
+          animalId: data.animalId || undefined,
+          attachments: data.attachments || null,
+          createdAt: createdAtNum,
+          serverReceivedAt: serverReceivedAtNum,
+          editedAt: editedAtNum,
+          replyTo: data.replyTo || null,
+          mentionUids: data.mentionUids || null,
+          reactionsSummary: data.reactionsSummary || null,
+          deletedForAll: data.deletedForAll || false,
+          hiddenFor: data.hiddenFor || null,
+          linkPreview: data.linkPreview || null,
+          clientId: data.clientId || "",
+          idempotencyKey: data.idempotencyKey || docSnap.id,
+          senderStyle: data.senderStyle || undefined,
+        };
+      }
+
+      upsertMessageFromServer(message);
+      count++;
+    });
+  };
+
+  processSnapshot(olderSnap);
+  processSnapshot(newerSnap);
+
+  notifyConversationListeners(scope, conversationId);
+
+  logger.info(
+    `[SyncEngine] syncMessagesAroundTarget synced ${count} messages around ${targetMessageId}`,
+  );
+  return true;
 }
 
 // =============================================================================
@@ -833,8 +1115,8 @@ export function subscribeToConversation(
       ? `Chats/${conversationId}/Messages`
       : `Groups/${conversationId}/Messages`;
 
-  // Use createdAt for groups (legacy format), serverReceivedAt for DMs
-  const orderField = scope === "dm" ? "serverReceivedAt" : "createdAt";
+  // Keep real-time cursoring on the same field used by full sync / pagination.
+  const orderField = "createdAt";
 
   const q = query(
     collection(firestore, collectionPath),
@@ -915,8 +1197,8 @@ export function subscribeToConversation(
             });
           }
 
-          // Update sync cursor using the converted numeric timestamp
-          const timestamp = serverReceivedAtNum || createdAtNum;
+          // Update sync cursor using the same field this subscription orders by.
+          const timestamp = createdAtNum;
           if (timestamp) {
             db.runSync(
               `INSERT OR REPLACE INTO sync_cursors (conversation_id, last_synced_at, last_sync_attempt)

@@ -29,7 +29,6 @@ export interface UnifiedMessagesSubscriptionInput {
   conversationId: string;
   initialLimit: number;
   currentUid: string;
-  debug: boolean;
   onMessages: (messages: MessageV2[]) => void;
   onPaginationState: (state: { hasMoreBefore: boolean }) => void;
   onError: (error: Error) => void;
@@ -45,7 +44,6 @@ export interface UnifiedMessagesSubscribeFn {
       onMessages: (messages: MessageV2[]) => void;
       onPaginationState: (state: { hasMoreBefore: boolean }) => void;
       onError: (error: Error) => void;
-      debug: boolean;
     },
   ): () => void;
 }
@@ -81,7 +79,6 @@ export function createUnifiedMessagesSubscriptionManager(
         onMessages: input.onMessages,
         onPaginationState: input.onPaginationState,
         onError: input.onError,
-        debug: input.debug,
       });
       activeKey = `${input.scope}:${input.conversationId}`;
     },

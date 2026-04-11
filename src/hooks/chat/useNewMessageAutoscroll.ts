@@ -9,11 +9,8 @@
  * @module hooks/chat/useNewMessageAutoscroll
  */
 
-import { createLogger } from "@/utils/log";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { FlatList } from "react-native";
-
-const log = createLogger("useNewMessageAutoscroll");
 
 // =============================================================================
 // Types
@@ -34,8 +31,6 @@ export interface AutoscrollConfig {
   distanceRef?: { readonly current: number };
   /** Pixel threshold for "close to bottom" (default: 2400 = ~30 messages) */
   pixelThreshold?: number;
-  /** Enable debug logging */
-  debug?: boolean;
 }
 
 export interface AutoscrollState {
@@ -57,7 +52,6 @@ export interface AutoscrollState {
 // Constants
 // =============================================================================
 
-const DEFAULT_MESSAGE_THRESHOLD = 30;
 const DEFAULT_PIXEL_THRESHOLD = 2400; // ~30 messages * 80px avg height
 
 // =============================================================================
@@ -73,7 +67,6 @@ export function useNewMessageAutoscroll(
     isAtBottom,
     distanceRef,
     pixelThreshold = DEFAULT_PIXEL_THRESHOLD,
-    debug = false,
   } = config;
 
   const [showReturnPill, setShowReturnPill] = useState(false);
@@ -93,23 +86,11 @@ export function useNewMessageAutoscroll(
   const shouldAutoScroll = useCallback((): boolean => {
     // Rule: Keyboard open → always scroll to show new message
     if (isKeyboardOpen) {
-      if (debug) {
-        log.debug("Auto-scroll: keyboard open", {
-          operation: "shouldAutoScroll",
-          data: { reason: "keyboardOpen" },
-        });
-      }
       return true;
     }
 
     // Rule: At bottom or very close → scroll
     if (isAtBottom) {
-      if (debug) {
-        log.debug("Auto-scroll: at bottom", {
-          operation: "shouldAutoScroll",
-          data: { reason: "atBottom", isAtBottom },
-        });
-      }
       return true;
     }
 
@@ -118,37 +99,16 @@ export function useNewMessageAutoscroll(
     // state-based distanceFromBottom which lagged behind by a render cycle).
     const distance = distanceRef?.current ?? Number.POSITIVE_INFINITY;
     if (distance <= pixelThreshold) {
-      if (debug) {
-        log.debug("Auto-scroll: within threshold", {
-          operation: "shouldAutoScroll",
-          data: {
-            reason: "withinThreshold",
-            distanceFromBottom: distance,
-            pixelThreshold,
-          },
-        });
-      }
       return true;
     }
 
     // Too far from bottom → don't scroll, show pill instead
-    if (debug) {
-      log.debug("No auto-scroll: too far from bottom", {
-        operation: "shouldAutoScroll",
-        data: {
-          reason: "tooFar",
-          distanceFromBottom: distance,
-          pixelThreshold,
-        },
-      });
-    }
     return false;
   }, [
     isKeyboardOpen,
     isAtBottom,
     distanceRef,
     pixelThreshold,
-    debug,
   ]);
 
   // Handle new messages arriving
@@ -160,17 +120,6 @@ export function useNewMessageAutoscroll(
         return { shouldScroll: false };
       }
 
-      if (debug) {
-        log.debug("New messages detected", {
-          operation: "onNewMessages",
-          data: {
-            messagesAdded,
-            newCount,
-            prevCount: prevMessageCountRef.current,
-          },
-        });
-      }
-
       prevMessageCountRef.current = newCount;
 
       const scroll = shouldAutoScroll();
@@ -180,17 +129,11 @@ export function useNewMessageAutoscroll(
         setShowReturnPill(true);
         setUnreadCount((prev) => prev + messagesAdded);
 
-        if (debug) {
-          log.debug("Showing return pill", {
-            operation: "onNewMessages",
-            data: { unreadCount: unreadCount + messagesAdded },
-          });
-        }
       }
 
       return { shouldScroll: scroll };
     },
-    [shouldAutoScroll, debug, unreadCount],
+    [shouldAutoScroll],
   );
 
   // Scroll to bottom and dismiss pill
@@ -198,15 +141,11 @@ export function useNewMessageAutoscroll(
     if (flatListRef.current) {
       // For inverted list, scrollToOffset(0) goes to bottom (newest)
       flatListRef.current.scrollToOffset({ offset: 0, animated: true });
-
-      if (debug) {
-        log.debug("Scrolling to bottom", { operation: "scrollToBottom" });
-      }
     }
 
     setShowReturnPill(false);
     setUnreadCount(0);
-  }, [debug]);
+  }, []);
 
   // Dismiss the pill (e.g., when user manually scrolls to bottom)
   const dismissPill = useCallback(() => {
@@ -219,15 +158,9 @@ export function useNewMessageAutoscroll(
     if (isAtBottom && !wasAtBottomRef.current) {
       // User just scrolled to bottom
       dismissPill();
-
-      if (debug) {
-        log.debug("Auto-dismissing pill - user scrolled to bottom", {
-          operation: "autoDissmiss",
-        });
-      }
     }
     wasAtBottomRef.current = isAtBottom;
-  }, [isAtBottom, dismissPill, debug]);
+  }, [isAtBottom, dismissPill]);
 
   // Detect new messages and trigger scroll if needed
   useEffect(() => {

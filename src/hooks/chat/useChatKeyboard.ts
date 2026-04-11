@@ -5,7 +5,6 @@
  * Falls back safely when react-native-keyboard-controller is unavailable.
  */
 
-import { createLogger } from "@/utils/log";
 import {
   useKeyboardHandlerCompat,
   useReanimatedKeyboardAnimationCompat,
@@ -15,12 +14,6 @@ import { scheduleOnRN } from "react-native-worklets";
 import { type SharedValue } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-const log = createLogger("useChatKeyboard");
-
-export interface ChatKeyboardConfig {
-  debug?: boolean;
-}
-
 export interface ChatKeyboardState {
   keyboardHeight: SharedValue<number>;
   keyboardProgress: SharedValue<number>;
@@ -29,11 +22,7 @@ export interface ChatKeyboardState {
   safeAreaBottom: number;
 }
 
-export function useChatKeyboard(
-  config: ChatKeyboardConfig = {},
-): ChatKeyboardState {
-  const { debug = false } = config;
-
+export function useChatKeyboard(): ChatKeyboardState {
   const insets = useSafeAreaInsets();
   const safeAreaBottom = insets.bottom;
   const [finalKeyboardHeight, setFinalKeyboardHeight] = useState(0);
@@ -46,35 +35,13 @@ export function useChatKeyboard(
     (height: number, open: boolean) => {
       setFinalKeyboardHeight(height);
       setIsKeyboardOpen(open);
-
-      if (debug) {
-        log.debug("Keyboard state changed", {
-          operation: "keyboardStateChange",
-          data: { height, open },
-        });
-      }
     },
-    [debug],
-  );
-
-  const logKeyboardStart = useCallback(
-    (targetHeight: number) => {
-      if (debug) {
-        log.debug("Keyboard animation started", {
-          operation: "onStart",
-          data: { target: targetHeight },
-        });
-      }
-    },
-    [debug],
+    [],
   );
 
   useKeyboardHandlerCompat({
-    onStart: (event: { height: number }) => {
+    onStart: () => {
       "worklet";
-      if (debug) {
-        scheduleOnRN(logKeyboardStart, event.height);
-      }
     },
     onMove: () => {
       "worklet";

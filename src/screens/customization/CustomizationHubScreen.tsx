@@ -16,13 +16,7 @@
  */
 
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Alert,
   Dimensions,
@@ -826,17 +820,6 @@ export default function CustomizationHubScreen({
   const sectionTabs = section === "chat" ? CHAT_TABS : PROFILE_TABS;
 
   // ── Dev-only performance metrics ──
-  const mountTimeRef = useRef(Date.now());
-  const renderCountRef = useRef(0);
-  useEffect(() => {
-    if (__DEV__) {
-      renderCountRef.current += 1;
-      if (renderCountRef.current === 1) {
-        const elapsed = Date.now() - mountTimeRef.current;
-        console.log(`[CustomizationHub] time-to-first-render: ${elapsed}ms`);
-      }
-    }
-  });
 
   // ── Prefetch cosmetic assets on mount for fast grid rendering ──
   useEffect(() => {
@@ -845,14 +828,6 @@ export default function CustomizationHubScreen({
     prefetchCustomizationCategory("badge");
     prefetchCustomizationCategory("chat_animal_theme");
   }, []);
-
-  useEffect(() => {
-    if (__DEV__) {
-      console.log(
-        `[CustomizationHub] tab="${hub.activeTab}" items=${hub.filteredItems.length}`,
-      );
-    }
-  }, [hub.activeTab, hub.filteredItems.length]);
 
   // Apply initialTab / initialSection from route params on mount
   useEffect(() => {
@@ -1050,15 +1025,23 @@ export default function CustomizationHubScreen({
           style={[styles.appbar, { backgroundColor: colors.background }]}
           statusBarHeight={0}
         >
-          <Appbar.BackAction onPress={() => navigation.goBack()} />
-          <Appbar.Content title="Customize" />
+          <Appbar.BackAction
+            onPress={() => navigation.goBack()}
+            iconColor={colors.text}
+          />
+          <Appbar.Content
+            title="Customize"
+            titleStyle={{ color: colors.text }}
+          />
           <Appbar.Action
             icon="store"
+            iconColor={colors.text}
             onPress={() => navigation.navigate("CosmeticsShop" as any)}
           />
           {hub.hasPreview && (
             <Appbar.Action
               icon="check"
+              iconColor={colors.text}
               onPress={async () => {
                 try {
                   await hub.applyPreview();
@@ -1069,7 +1052,11 @@ export default function CustomizationHubScreen({
             />
           )}
           {hub.hasPreview && (
-            <Appbar.Action icon="close" onPress={hub.clearPreview} />
+            <Appbar.Action
+              icon="close"
+              iconColor={colors.text}
+              onPress={hub.clearPreview}
+            />
           )}
         </Appbar.Header>
       </View>

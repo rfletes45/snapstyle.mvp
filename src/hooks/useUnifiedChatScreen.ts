@@ -49,8 +49,7 @@ import type { SenderStyle } from "@/cosmetics/types";
 import { MentionableMember } from "@/services/mentionParser";
 import { LocalAttachment } from "@/services/storage";
 import { AttachmentV2 } from "@/types/messaging";
-import { createLogger } from "@/utils/log";
-import { useEffect, useMemo, useRef } from "react";
+import { useMemo } from "react";
 import { useChat, UseChatConfig, UseChatReturn } from "./useChat";
 import {
   useChatComposer,
@@ -58,8 +57,6 @@ import {
   UseChatComposerReturn,
 } from "./useChatComposer";
 import type { VoiceRecording } from "./useVoiceRecorder";
-
-const log = createLogger("useUnifiedChatScreen");
 
 // =============================================================================
 // Types
@@ -180,12 +177,6 @@ export interface UseUnifiedChatScreenConfig {
   /** Sender's chat style snapshot to stamp on outgoing messages */
   senderStyle?: SenderStyle;
 
-  // -------------------------------------------------------------------------
-  // Debug
-  // -------------------------------------------------------------------------
-
-  /** Enable debug logging */
-  debug?: boolean;
 }
 
 /**
@@ -291,7 +282,6 @@ export function useUnifiedChatScreen(
     sendReadReceipts,
     atBottomThreshold = 200,
     autoscrollMessageThreshold = 30,
-    debug = false,
   } = config;
 
   // Extract senderStyle separately (not in destructuring default since it's optional)
@@ -313,7 +303,6 @@ export function useUnifiedChatScreen(
       atBottomThreshold,
       autoscrollMessageThreshold,
       senderStyle,
-      debug,
     }),
     [
       scope,
@@ -326,7 +315,6 @@ export function useUnifiedChatScreen(
       atBottomThreshold,
       autoscrollMessageThreshold,
       senderStyle,
-      debug,
     ],
   );
 
@@ -361,21 +349,12 @@ export function useUnifiedChatScreen(
       onSchedulePress,
       // Send is integrated via chatHook, but we still need a fallback
       onSend: async (text, options) => {
-        // This should rarely be called since chatHook is provided
-        // But we need it for the hook to work
-        if (debug) {
-          log.debug("Fallback onSend called (should use chatHook)", {
-            operation: "fallbackSend",
-            data: { textLength: text.length },
-          });
-        }
         await chat.sendMessage(text, {
           replyTo: options.replyTo,
           mentionUids: options.mentionUids,
           attachments: options.attachments,
         });
       },
-      debug,
     }),
     [
       scope,
@@ -393,45 +372,10 @@ export function useUnifiedChatScreen(
       maxVoiceDuration,
       onSendVoice,
       onSchedulePress,
-      debug,
     ],
   );
 
   const composer = useChatComposer(composerConfig);
-
-  // -------------------------------------------------------------------------
-  // Debug Logging (throttled to only log on actual state changes)
-  // -------------------------------------------------------------------------
-
-  const lastDebugRef = useRef("");
-  useEffect(() => {
-    if (!debug) return;
-    const snapshot = JSON.stringify({
-      messageCount: chat.messages.length,
-      loading: chat.loading,
-      composerText: composer.text.length,
-      canSend: composer.canSend,
-      sending: composer.sending,
-      hasReply: !!chat.replyTo,
-      isUploading: composer.isUploading,
-    });
-    if (snapshot !== lastDebugRef.current) {
-      lastDebugRef.current = snapshot;
-      log.debug("Unified screen state", {
-        operation: "state",
-        data: JSON.parse(snapshot),
-      });
-    }
-  }, [
-    debug,
-    chat.messages.length,
-    chat.loading,
-    composer.text.length,
-    composer.canSend,
-    composer.sending,
-    chat.replyTo,
-    composer.isUploading,
-  ]);
 
   // -------------------------------------------------------------------------
   // Return Memoized Result

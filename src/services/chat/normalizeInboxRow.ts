@@ -37,6 +37,10 @@ export interface ComputeUnreadCountInput {
   recentlyReadAt?: number;
   unreadHintCount?: number;
   now?: number;
+  /** UID of the user who sent the last message in this conversation. */
+  lastMessageSenderId?: string;
+  /** UID of the currently-authenticated user. */
+  currentUserId?: string;
 }
 
 /**
@@ -53,7 +57,18 @@ export function computeUnreadCount(input: ComputeUnreadCountInput): number {
     recentlyReadAt,
     unreadHintCount = 0,
     now = Date.now(),
+    lastMessageSenderId,
+    currentUserId,
   } = input;
+
+  // The sender's own messages should never produce an unread badge.
+  if (
+    currentUserId &&
+    lastMessageSenderId &&
+    lastMessageSenderId === currentUserId
+  ) {
+    return 0;
+  }
 
   if (recentlyReadAt && now - recentlyReadAt < RECENTLY_READ_TTL_MS) {
     return 0;
@@ -98,6 +113,10 @@ export interface NormalizeConversationInput {
   memberState: MemberStatePrivate;
   recentlyReadAt?: number;
   unreadHintCount?: number;
+  /** UID of the user who sent the last message (for sender-exclusion). */
+  lastMessageSenderId?: string;
+  /** UID of the currently-authenticated user. */
+  currentUserId?: string;
 }
 
 export function normalizeConversationRow(
@@ -122,6 +141,8 @@ export function normalizeConversationRow(
     memberState,
     recentlyReadAt,
     unreadHintCount,
+    lastMessageSenderId,
+    currentUserId,
   } = input;
 
   const unreadCount = computeUnreadCount({
@@ -129,6 +150,8 @@ export function normalizeConversationRow(
     memberState,
     recentlyReadAt,
     unreadHintCount,
+    lastMessageSenderId,
+    currentUserId,
   });
 
   return {
@@ -161,6 +184,7 @@ export function normalizeConversationFromInboxEntry(
   entry: InboxEntry,
   memberState: MemberStatePrivate,
   recentlyReadAt?: number,
+  currentUserId?: string,
 ): InboxConversation {
   const isDm = entry.scope === "dm";
   const lastActivityAt =
@@ -183,9 +207,24 @@ export function normalizeConversationFromInboxEntry(
     memberState,
     recentlyReadAt,
     unreadHintCount: entry.unreadCount || 0,
+    lastMessageSenderId: entry.lastSenderId,
+    currentUserId,
   });
 }
 
+/**
+ * Sort conversations with deterministic, stable ordering.
+ *
+ * Order:
+ *  1. Pinned conversations first (most-recently-pinned on top).
+ *  2. Non-pinned sorted by most-recent activity (lastMessage or createdAt).
+ *  3. Tie-break by conversation ID for full determinism.
+ *
+ * The sort key for each conversation is computed from fields that are set
+ * once during normalization and never change until the next snapshot, so
+ * the order is stable across re-renders as long as the underlying data
+ * has not changed.
+ */
 export function sortInboxConversations(
   conversations: InboxConversation[],
 ): InboxConversation[] {
@@ -197,8 +236,8 @@ export function sortInboxConversations(
     if (aPinned && !bPinned) return -1;
     if (!aPinned && bPinned) return 1;
 
-    const aTime = a.lastMessage?.timestamp ?? a.createdAt;
-    const bTime = b.lastMessage?.timestamp ?? b.createdAt;
+    const aTime = a.lastMessage?.timestamp ?? a.createdAt ?? 0;
+    const bTime = b.lastMessage?.timestamp ?? b.createdAt ?? 0;
     if (aTime !== bTime) return bTime - aTime;
 
     return a.id.localeCompare(b.id);

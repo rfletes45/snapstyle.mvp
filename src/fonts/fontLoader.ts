@@ -72,13 +72,6 @@ export async function loadCustomFonts(): Promise<boolean> {
     await Font.loadAsync(CUSTOM_FONT_MAP);
     _fontsLoaded = true;
 
-    if (__DEV__) {
-      console.log(
-        `[fontLoader] Loaded ${CUSTOM_FONT_KEYS.length} custom fonts:`,
-        CUSTOM_FONT_KEYS.join(", "),
-      );
-    }
-
     return true;
   } catch (error) {
     console.error(

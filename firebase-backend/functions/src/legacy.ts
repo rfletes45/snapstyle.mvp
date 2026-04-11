@@ -653,88 +653,64 @@ export const onDeleteMessage = functions.firestore
   });
 
 /**
- * cleanupExpiredSnaps: Scheduled function to clean up expired snaps from Storage
- * Runs daily to remove any snaps that weren't deleted by TTL
+ * cleanupExpiredSnaps: Scheduled function to strip legacy message expiry fields
+ * Runs daily at 2 AM UTC.
  *
- * This is a safety net for snaps that:
- * - Weren't viewed (message TTL expires, but Storage file may persist)
- * - Failed to delete due to errors
- *
- * Future enhancement: Query Messages with expiresAt < now and delete their storage
+ * Older releases stored expiresAt on chat messages and a cleanup job deleted
+ * them later. We now preserve chat history, so this job only removes the
+ * legacy expiresAt field from any old message docs that still have it.
  */
 export const cleanupExpiredSnaps = functions.pubsub
   .schedule("0 2 * * *") // 2 AM UTC daily
   .timeZone("UTC")
   .onRun(async () => {
     try {
-      // Query all messages with expiresAt in the past
       const now = admin.firestore.Timestamp.now();
       const messagesRef = db.collectionGroup("Messages");
       const expiredQuery = await messagesRef.where("expiresAt", "<", now).get();
 
-      console.log(`Found ${expiredQuery.docs.length} expired messages`);
+      console.log(`Found ${expiredQuery.docs.length} messages with legacy expiry`);
 
-      // Batch delete expired messages and their storage files
-      const batch = db.batch();
-      let deletedCount = 0;
+      let batch = db.batch();
+      let updatedCount = 0;
+      let batchCount = 0;
 
       for (const doc of expiredQuery.docs) {
-        const message = doc.data();
+        batch.update(doc.ref, {
+          expiresAt: admin.firestore.FieldValue.delete(),
+        });
+        updatedCount++;
+        batchCount++;
 
-        // If it's an image snap, delete the Storage file
-        if (message.type === "image" && message.content) {
-          try {
-            const bucket = storage.bucket();
-            await bucket.file(message.content).delete();
-            console.log(`Deleted expired snap: ${message.content}`);
-          } catch (error: any) {
-            if (
-              error.code !== 404 &&
-              error.code !== "storage/object-not-found"
-            ) {
-              console.warn(
-                `Failed to delete snap ${message.content}:`,
-                error.message,
-              );
-            }
-          }
-        }
-
-        // Delete the message document
-        batch.delete(doc.ref);
-        deletedCount++;
-
-        // Firestore batch write limit is 500
-        if (deletedCount % 500 === 0) {
+        if (batchCount === 500) {
           await batch.commit();
-          console.log(`Committed batch of 500 deletes`);
+          batch = db.batch();
+          batchCount = 0;
+          console.log("Committed batch of 500 expiry removals");
         }
       }
 
-      // Final commit
-      if (deletedCount % 500 !== 0) {
+      if (batchCount > 0) {
         await batch.commit();
       }
 
       console.log(
-        `✅ Cleanup complete: ${deletedCount} expired messages removed`,
+        `[cleanupExpiredSnaps] Cleanup complete: removed legacy expiry from ${updatedCount} messages`,
       );
       return;
     } catch (error: any) {
-      console.error("❌ Error in cleanupExpiredSnaps:", error);
+      console.error("[cleanupExpiredSnaps] Error:", error);
       throw error;
     }
   });
 
 /**
  * cleanupExpiredStories: Scheduled function to clean up expired stories
- * Runs daily at 2 AM UTC to remove stories past their 24h expiry
+ * Runs daily at 2 AM UTC to remove stories past their 24h expiry.
  *
  * For each expired story:
  * - Delete the storage file from Storage
  * - Delete the story document (views subcollection auto-deletes)
- *
- * This ensures stories expire even if TTL index isn't active
  */
 export const cleanupExpiredStories = functions.pubsub
   .schedule("0 2 * * *") // 2 AM UTC daily (same as snap cleanup)
@@ -882,15 +858,6 @@ export const processScheduledMessages = functions.pubsub
             .collection("Messages")
             .doc();
 
-          // Calculate expiry time (24 hours for text, 5 seconds for images)
-          const expiryMs =
-            scheduledMessage.type === "image"
-              ? 5 * 1000 // 5 seconds for snaps
-              : 24 * 60 * 60 * 1000; // 24 hours for text
-          const expiresAt = admin.firestore.Timestamp.fromMillis(
-            Date.now() + expiryMs,
-          );
-
           const messageData: any = {
             id: newMessageRef.id,
             scope,
@@ -905,10 +872,8 @@ export const processScheduledMessages = functions.pubsub
             type: scheduledMessage.type,
             createdAt: admin.firestore.FieldValue.serverTimestamp(),
             serverReceivedAt: admin.firestore.FieldValue.serverTimestamp(),
-            expiresAt: expiresAt,
             read: false,
           };
-
           // Copy mention UIDs from the scheduled message
           if (
             scheduledMessage.mentionUids &&
@@ -2841,3 +2806,4 @@ export const updateExpiredBans = functions.pubsub
 
 // Re-export Link Preview function
 export const fetchLinkPreview = fetchLinkPreviewFunction;
+

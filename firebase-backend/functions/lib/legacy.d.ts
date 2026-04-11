@@ -59,25 +59,21 @@ export declare const onStoryViewed: functions.CloudFunction<functions.firestore.
  */
 export declare const onDeleteMessage: functions.CloudFunction<functions.firestore.QueryDocumentSnapshot>;
 /**
- * cleanupExpiredSnaps: Scheduled function to clean up expired snaps from Storage
- * Runs daily to remove any snaps that weren't deleted by TTL
+ * cleanupExpiredSnaps: Scheduled function to strip legacy message expiry fields
+ * Runs daily at 2 AM UTC.
  *
- * This is a safety net for snaps that:
- * - Weren't viewed (message TTL expires, but Storage file may persist)
- * - Failed to delete due to errors
- *
- * Future enhancement: Query Messages with expiresAt < now and delete their storage
+ * Older releases stored expiresAt on chat messages and a cleanup job deleted
+ * them later. We now preserve chat history, so this job only removes the
+ * legacy expiresAt field from any old message docs that still have it.
  */
 export declare const cleanupExpiredSnaps: functions.CloudFunction<unknown>;
 /**
  * cleanupExpiredStories: Scheduled function to clean up expired stories
- * Runs daily at 2 AM UTC to remove stories past their 24h expiry
+ * Runs daily at 2 AM UTC to remove stories past their 24h expiry.
  *
  * For each expired story:
  * - Delete the storage file from Storage
  * - Delete the story document (views subcollection auto-deletes)
- *
- * This ensures stories expire even if TTL index isn't active
  */
 export declare const cleanupExpiredStories: functions.CloudFunction<unknown>;
 /**

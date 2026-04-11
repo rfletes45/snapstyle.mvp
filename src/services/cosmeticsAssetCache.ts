@@ -95,12 +95,6 @@ async function prefetchModules(
   _prefetchedCount += loaded;
   _prefetchTimeMs += performance.now() - start;
 
-  if (__DEV__ && loaded > 0) {
-    console.log(
-      `[CosmeticsAssetCache] Prefetched ${loaded} assets in ${Math.round(performance.now() - start)}ms`,
-    );
-  }
-
   return loaded;
 }
 
@@ -203,15 +197,5 @@ export async function prefetchAllCosmetics(): Promise<number> {
     }
   }
 
-  const count = await prefetchModules(allModules);
-
-  if (__DEV__) {
-    console.log(
-      `[CosmeticsAssetCache] Full prefetch complete: ${count} new, ` +
-        `${_prefetchedKeys.size} total cached, ` +
-        `${Math.round(_prefetchTimeMs)}ms total`,
-    );
-  }
-
-  return count;
+  return prefetchModules(allModules);
 }

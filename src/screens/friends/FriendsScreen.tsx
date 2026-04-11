@@ -65,6 +65,7 @@ import React, {
 import {
   ActivityIndicator,
   Alert,
+  Dimensions,
   LayoutAnimation,
   Platform,
   RefreshControl,
@@ -105,11 +106,13 @@ const AnimatedSectionList = Animated.createAnimatedComponent(
 // Header animation constants
 const HEADER_ROW_HEIGHT = 48;
 const SEARCH_ROW_HEIGHT = 38;
-const HEADER_EXPANDED = HEADER_ROW_HEIGHT + SEARCH_ROW_HEIGHT; // content height (excl. inset)
-const HEADER_COLLAPSED = HEADER_ROW_HEIGHT; // content height (excl. inset)
-const SCROLL_RANGE = 60; // scroll distance over which the transition occurs
-const SEARCH_BAR_HEIGHT_EXPANDED = 32;
-const SEARCH_BAR_HEIGHT_COLLAPSED = 30;
+const HEADER_EXPANDED = HEADER_ROW_HEIGHT + SEARCH_ROW_HEIGHT;
+const HEADER_COLLAPSED = HEADER_ROW_HEIGHT;
+const SCROLL_RANGE = 60;
+const SEARCH_BAR_HEIGHT = 32;
+// Horizontal space reserved for back / add-friends IconButtons.
+// react-native-paper IconButton default touch target is 48.
+const ICON_BTN_WIDTH = 48;
 
 // Enable LayoutAnimation on Android
 if (
@@ -522,33 +525,45 @@ export default function FriendsScreen({ navigation }: any) {
 
   // ── Scroll-driven header animation ─────────────────────────────
   const scrollY = useSharedValue(0);
-
+  const { width: screenWidth } = Dimensions.get("window");
   const scrollHandler = useAnimatedScrollHandler({
     onScroll: (event) => {
-      scrollY.value = event.contentOffset.y;
+      scrollY.value = Math.max(0, event.contentOffset.y);
     },
   });
 
-  // Use a shared value for safe area top so the Reanimated worklets always
-  // see the current value.  On cold start, useSafeAreaInsets() may initially
-  // return { top: 0 } before the native provider measures.  A plain JS
-  // variable would be captured in the worklet closure at creation time and
-  // never update, causing the header animation to use wrong interpolation
-  // ranges until the component re-renders.
-  const safeTop = useSharedValue(insets.top);
-  useEffect(() => {
-    safeTop.value = insets.top;
-  }, [insets.top, safeTop]);
+  // ── ANIMATION ARCHITECTURE (jitter-free) ────────────────────
+  // • Header has a FIXED layout height (HEADER_EXPANDED).  NO animated
+  //   height or translateY on the header itself.
+  // • The back/add-friends buttons NEVER move.
+  // • The search bar is ABSOLUTELY POSITIONED inside the header so
+  //   its position/size changes don’t affect any sibling layout.
+  //   It animates from row-2 (full-width) to row-1 (narrower, between
+  //   the back and add-friends buttons).
+  // • The list has a STATIC negative marginTop of -SEARCH_ROW_HEIGHT,
+  //   so it overlaps the header’s empty row-2 area.  As the user
+  //   scrolls, list content covers that space naturally.
+  // • The title text fades out as the search bar takes its place.
 
-  const headerAnimStyle = useAnimatedStyle(() => ({
-    height: interpolate(
-      scrollY.value,
-      [0, SCROLL_RANGE],
-      [safeTop.value + HEADER_EXPANDED, safeTop.value + HEADER_COLLAPSED],
-      Extrapolation.CLAMP,
-    ),
+  // -- Header background slide-up --
+  // The header has a fixed layout height but the visible background
+  // surface needs to shrink as the search bar moves into row 1.
+  // An absolutely-positioned background view translates up to pull
+  // the bottom edge with the search bar.  The headerOuter clips it.
+  const headerBgStyle = useAnimatedStyle(() => ({
+    transform: [
+      {
+        translateY: interpolate(
+          scrollY.value,
+          [0, SCROLL_RANGE],
+          [0, -SEARCH_ROW_HEIGHT],
+          Extrapolation.CLAMP,
+        ),
+      },
+    ],
   }));
 
+  // -- Title fade --
   const titleAnimStyle = useAnimatedStyle(() => ({
     opacity: interpolate(
       scrollY.value,
@@ -568,6 +583,17 @@ export default function FriendsScreen({ navigation }: any) {
     ],
   }));
 
+  // -- Search bar position/size --
+  // Expanded: row 2, full width (inset by Spacing.sm = 8 on each side)
+  // Collapsed: row 1, narrower (between the two 48px icon buttons)
+  const searchExpandedTop =
+    HEADER_ROW_HEIGHT + (SEARCH_ROW_HEIGHT - SEARCH_BAR_HEIGHT) / 2;
+  const searchCollapsedTop = (HEADER_ROW_HEIGHT - SEARCH_BAR_HEIGHT) / 2;
+  const searchExpandedLeft = Spacing.sm; // 8
+  const searchCollapsedLeft = ICON_BTN_WIDTH;
+  const searchExpandedRight = Spacing.sm; // 8
+  const searchCollapsedRight = ICON_BTN_WIDTH;
+
   const searchBarAnimStyle = useAnimatedStyle(() => {
     const progress = interpolate(
       scrollY.value,
@@ -576,12 +602,21 @@ export default function FriendsScreen({ navigation }: any) {
       Extrapolation.CLAMP,
     );
     return {
-      transform: [
-        {
-          translateY: interpolate(progress, [0, 1], [0, -SEARCH_ROW_HEIGHT]),
-        },
-      ],
-      marginHorizontal: interpolate(progress, [0, 1], [Spacing.sm, 48]),
+      top: interpolate(
+        progress,
+        [0, 1],
+        [searchExpandedTop, searchCollapsedTop],
+      ),
+      left: interpolate(
+        progress,
+        [0, 1],
+        [searchExpandedLeft, searchCollapsedLeft],
+      ),
+      right: interpolate(
+        progress,
+        [0, 1],
+        [searchExpandedRight, searchCollapsedRight],
+      ),
     };
   });
 
@@ -1109,63 +1144,15 @@ export default function FriendsScreen({ navigation }: any) {
   // Render
   // =========================================================================
 
-  if (loading) {
-    return (
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <View
-          style={[
-            styles.staticHeader,
-            { backgroundColor: colors.surface, paddingTop: insets.top },
-          ]}
-        >
-          <IconButton
-            icon="arrow-left"
-            size={24}
-            onPress={() => navigation.goBack()}
-            style={styles.headerBtn}
-          />
-          <Text
-            variant="titleLarge"
-            style={[styles.headerTitle, { color: colors.onSurface, flex: 1 }]}
-          >
-            Friends
-          </Text>
-        </View>
-        <LoadingState message="Loading your friends..." />
-      </View>
-    );
-  }
-
-  if (error) {
-    return (
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <View
-          style={[
-            styles.staticHeader,
-            { backgroundColor: colors.surface, paddingTop: insets.top },
-          ]}
-        >
-          <IconButton
-            icon="arrow-left"
-            size={24}
-            onPress={() => navigation.goBack()}
-            style={styles.headerBtn}
-          />
-          <Text
-            variant="titleLarge"
-            style={[styles.headerTitle, { color: colors.onSurface, flex: 1 }]}
-          >
-            Friends
-          </Text>
-        </View>
-        <ErrorState
-          title="Something went wrong"
-          message={error}
-          onRetry={loadData}
-        />
-      </View>
-    );
-  }
+  // NOTE: We intentionally do NOT gate the render with `if (loading)` or
+  // `if (error)` early returns.  Doing so would unmount the
+  // AnimatedSectionList and its Reanimated scroll handler.  On iOS the
+  // native animated-node connection is not fully established on the very
+  // first gesture after a fresh mount, which causes the header-collapse
+  // animation to "stick" on the first scroll.  By always rendering the
+  // animated header + list, the scroll handler stays connected from the
+  // first frame.  Loading / error states are shown inside
+  // ListEmptyComponent instead.
 
   // ---------- Requests header rendered in SectionList ----------
 
@@ -1229,83 +1216,124 @@ export default function FriendsScreen({ navigation }: any) {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* ── Animated Header ─────────────────────────────────────── */}
-      <Animated.View
+      {/* ── Header ─────────────────────────────────────────────── */}
+      {/* Safe-area strip stays fixed; the content below it pulls up
+          on scroll via translateY to visually shrink the header. */}
+      <View
         style={[
-          styles.headerContainer,
-          { backgroundColor: colors.surface, paddingTop: insets.top },
-          headerAnimStyle,
+          styles.headerSafeArea,
+          { backgroundColor: colors.surface, height: insets.top },
         ]}
-      >
-        {/* Top row: back arrow | title | add friend */}
-        <View style={styles.headerTopRow}>
-          <IconButton
-            icon="arrow-left"
-            size={24}
-            onPress={() => navigation.goBack()}
-            style={styles.headerBtn}
-            accessibilityLabel="Go back"
-          />
-          <Animated.View style={[styles.titleContainer, titleAnimStyle]}>
-            <Text
-              variant="titleLarge"
-              style={[styles.headerTitle, { color: colors.onSurface }]}
-              numberOfLines={1}
-            >
-              Friends
-            </Text>
-            {friends.length > 0 && (
+      />
+      <View style={[styles.headerOuter]}>
+        {/* Animated background surface — slides up so the bottom
+            edge rises to meet the collapsed search bar position. */}
+        <Animated.View
+          style={[
+            styles.headerBg,
+            { backgroundColor: colors.surface },
+            headerBgStyle,
+          ]}
+        />
+        <View style={styles.headerContainer}>
+          {/* Top row: back arrow | title | add friend */}
+          <View style={styles.headerTopRow}>
+            <IconButton
+              icon="arrow-left"
+              size={24}
+              onPress={() => navigation.goBack()}
+              style={styles.headerBtn}
+              accessibilityLabel="Go back"
+            />
+            <Animated.View style={[styles.titleContainer, titleAnimStyle]}>
               <Text
-                variant="bodySmall"
-                style={{ color: colors.onSurfaceVariant }}
+                variant="titleLarge"
+                style={[styles.headerTitle, { color: colors.onSurface }]}
+                numberOfLines={1}
               >
-                {friends.length} friend{friends.length !== 1 ? "s" : ""}
+                Friends
               </Text>
-            )}
-          </Animated.View>
-          <IconButton
-            icon="account-plus-outline"
-            size={24}
-            onPress={() => setAddFriendsOpen(true)}
-            style={styles.headerBtn}
-            accessibilityLabel="Add friends"
-          />
-        </View>
+              {friends.length > 0 && (
+                <Text
+                  variant="bodySmall"
+                  style={{ color: colors.onSurfaceVariant }}
+                >
+                  {friends.length} friend{friends.length !== 1 ? "s" : ""}
+                </Text>
+              )}
+            </Animated.View>
+            <IconButton
+              icon="account-plus-outline"
+              size={24}
+              onPress={() => setAddFriendsOpen(true)}
+              style={styles.headerBtn}
+              accessibilityLabel="Add friends"
+            />
+          </View>
 
-        {/* Search bar — animates from row 2 up into row 1 */}
-        <Animated.View style={[styles.searchAnimWrapper, searchBarAnimStyle]}>
-          <Searchbar
-            placeholder="Search friends..."
-            onChangeText={setSearchQuery}
-            value={searchQuery}
+          {/* Search bar — absolutely positioned so its movement
+              doesn't affect sibling layout (no jitter). */}
+          <Animated.View
             style={[
-              styles.searchbar,
+              styles.searchAbsolute,
               { backgroundColor: colors.surfaceVariant },
+              searchBarAnimStyle,
             ]}
-            inputStyle={styles.searchInput}
-            elevation={0}
-            accessibilityLabel="Search friends"
-          />
-        </Animated.View>
-      </Animated.View>
+          >
+            <Searchbar
+              placeholder="Search friends..."
+              onChangeText={setSearchQuery}
+              value={searchQuery}
+              style={styles.searchbar}
+              inputStyle={styles.searchInput}
+              elevation={0}
+              accessibilityLabel="Search friends"
+            />
+          </Animated.View>
+        </View>
+      </View>
 
       {/* ── Main Content — Alphabetical SectionList ─────────────── */}
-      <View style={{ flex: 1 }}>
+      {/* Static negative marginTop overlaps the header’s search row.
+          When the header translateY pulls up, the visual gap closes.
+          paddingTop on content offsets the overlap so items start
+          at the correct visual position.  */}
+      <View style={styles.listWrapper}>
         <AnimatedSectionList
           ref={sectionListRef as any}
           sections={alphaSections}
           keyExtractor={(item: FriendWithProfile) => item.id}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={[
+            styles.listContent,
+            { paddingTop: SEARCH_ROW_HEIGHT },
+          ]}
           stickySectionHeadersEnabled
+          scrollIndicatorInsets={{ top: 0 }}
           onScroll={scrollHandler}
           scrollEventThrottle={16}
+          // iOS scroll-handler stabilisation: prevent the system from
+          // injecting automatic content-inset adjustments that can cause
+          // the first scroll gesture to report wrong offsets.
+          contentInsetAdjustmentBehavior="never"
+          automaticallyAdjustContentInsets={false}
+          automaticallyAdjustsScrollIndicatorInsets={false}
           onScrollToIndexFailed={() => {}}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
           }
-          ListHeaderComponent={normalizedQuery ? null : renderRequestsHeader}
+          ListHeaderComponent={
+            normalizedQuery || loading ? null : renderRequestsHeader
+          }
           ListEmptyComponent={
-            normalizedQuery ? (
+            loading ? (
+              <LoadingState message="Loading your friends..." />
+            ) : error ? (
+              <ErrorState
+                title="Something went wrong"
+                message={error}
+                onRetry={loadData}
+              />
+            ) : normalizedQuery ? (
               <EmptyState
                 icon="account-search-outline"
                 title="No matches"
@@ -1472,9 +1500,27 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 
-  /* Animated header */
-  headerContainer: {
+  /* Header safe-area strip (non-animated, stays fixed at top) */
+  headerSafeArea: {
+    zIndex: 11,
+  },
+  /* Header */
+  headerOuter: {
+    zIndex: 10,
+    elevation: 4,
     overflow: "hidden",
+  },
+  headerBg: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    height: HEADER_EXPANDED,
+  },
+  headerContainer: {
+    height: HEADER_EXPANDED,
+    // No overflow:hidden here — the search bar is absolutely positioned
+    // inside and needs to move freely.  The headerOuter clips instead.
   },
   headerTopRow: {
     height: HEADER_ROW_HEIGHT,
@@ -1501,18 +1547,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
   },
 
-  /* Animated search bar */
-  searchAnimWrapper: {
-    height: SEARCH_BAR_HEIGHT_EXPANDED,
+  /* Search bar — absolutely positioned so movement doesn't affect layout */
+  searchAbsolute: {
+    position: "absolute",
+    height: SEARCH_BAR_HEIGHT,
+    borderRadius: BorderRadius.full,
     justifyContent: "center",
-    marginHorizontal: Spacing.sm,
+    overflow: "hidden",
   },
   searchbar: {
     borderRadius: BorderRadius.full,
     flex: 1,
     justifyContent: "center",
-    height: SEARCH_BAR_HEIGHT_EXPANDED,
+    height: SEARCH_BAR_HEIGHT,
     minHeight: 0,
+    backgroundColor: "transparent",
+    elevation: 0,
   },
   searchInput: {
     fontSize: 13,
@@ -1521,9 +1571,19 @@ const styles = StyleSheet.create({
     minHeight: 0,
   },
 
-  /* List */
+  /* List wrapper — negative marginTop makes the list overlap the
+     header's search-bar row.  The header's zIndex ensures its content
+     renders on top.  When the search bar slides up, the list content
+     peeks through.  */
+  listWrapper: {
+    flex: 1,
+    marginTop: -SEARCH_ROW_HEIGHT,
+  },
   listContent: {
     flexGrow: 1,
+    // paddingTop is also set inline ({ paddingTop: SEARCH_ROW_HEIGHT })
+    // to offset the negative marginTop so items start at the correct
+    // visual position when scrollY = 0.
     paddingBottom: 32,
     paddingRight: 20,
   },

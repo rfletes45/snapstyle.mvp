@@ -260,23 +260,16 @@ function DirectCallContent({
   }, [audioRoutePickerVisible, isInPiPMode]);
 
   useEffect(() => {
-    const nextMessage = !isVideo
+    pipEligibilityLogRef.current = !isVideo
       ? "Native PiP skipped for audio-only direct call"
       : !isJoined
         ? `Native PiP waiting for joined state (current=${callingState})`
         : "Native PiP enabled for joined video call";
-
-    if (pipEligibilityLogRef.current === nextMessage) return;
-    pipEligibilityLogRef.current = nextMessage;
-    console.debug(`[DirectCallScreen] ${nextMessage}`);
   }, [callingState, isJoined, isVideo]);
 
   useEffect(() => {
     if (pipModeLogRef.current === isInPiPMode) return;
     pipModeLogRef.current = isInPiPMode;
-    console.debug(
-      `[DirectCallScreen] Native PiP ${isInPiPMode ? "active" : "inactive"}`,
-    );
   }, [isInPiPMode]);
 
   // Safe mic toggle — only allow when JOINED to prevent permanent track death

@@ -1073,36 +1073,8 @@ export default function CosmeticsShopScreen() {
   const shop = useCosmeticsShop(uid);
 
   // ── Dev-only diagnostics: log shop item counts to catch empty catalog ──
-  useEffect(() => {
-    if (__DEV__) {
-      console.log("[CosmeticsShop] uid:", uid ?? "(not signed in)");
-      console.log("[CosmeticsShop] loading:", shop.loading);
-      console.log("[CosmeticsShop] shopItems count:", shop.shopItems.length);
-      if (shop.shopItems.length > 0) {
-        const types = new Map<string, number>();
-        for (const item of shop.shopItems) {
-          types.set(item.type, (types.get(item.type) ?? 0) + 1);
-        }
-        console.log(
-          "[CosmeticsShop] items by type:",
-          Object.fromEntries(types),
-        );
-      }
-    }
-  }, [uid, shop.loading, shop.shopItems.length]);
 
   // ── Dev-only performance metrics ──
-  const mountTimeRef = useRef(Date.now());
-  const renderCountRef = useRef(0);
-  useEffect(() => {
-    if (__DEV__) {
-      renderCountRef.current += 1;
-      if (renderCountRef.current === 1) {
-        const elapsed = Date.now() - mountTimeRef.current;
-        console.log(`[CosmeticsShop] time-to-first-render: ${elapsed}ms`);
-      }
-    }
-  });
 
   // ── Prefetch cosmetic assets on mount for fast grid rendering ──
   useEffect(() => {
@@ -1134,24 +1106,6 @@ export default function CosmeticsShopScreen() {
   }, [shop.activeTab, shopSection]);
 
   // ── Dev-only assertion: warn about misconfigured purchasable items ────
-  useEffect(() => {
-    if (!__DEV__) return;
-    for (const item of sectionFilteredItems) {
-      if (
-        item.source === "shop" &&
-        (!item.priceTokens || item.priceTokens <= 0)
-      ) {
-        console.warn(
-          `[Shop] Item "${item.id}" is source=shop but has no valid priceTokens (${item.priceTokens}). It will be unpurchasable.`,
-        );
-      }
-      if (item.source !== "shop" && item.priceTokens && item.priceTokens > 0) {
-        console.warn(
-          `[Shop] Item "${item.id}" has priceTokens=${item.priceTokens} but source="${item.source}" (not "shop"). Purchase will be blocked.`,
-        );
-      }
-    }
-  }, [sectionFilteredItems]);
 
   const handleSectionChange = useCallback(
     (section: ShopSection) => {
@@ -1190,11 +1144,6 @@ export default function CosmeticsShopScreen() {
         !item.priceTokens ||
         item.priceTokens <= 0
       ) {
-        if (__DEV__) {
-          console.warn(
-            `[Shop] handlePurchase called for non-purchasable item "${cosmeticId}" (source=${item.source}, price=${item.priceTokens}). Skipping.`,
-          );
-        }
         return;
       }
 

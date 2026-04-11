@@ -13,18 +13,13 @@ import {
   PresenceWithPrivacy,
   subscribeToPresence,
 } from "@/services/presence";
-import { createLogger } from "@/utils/log";
 import { useEffect, useState } from "react";
-
-const log = createLogger("usePresence");
 
 interface UsePresenceConfig {
   /** User ID to watch */
   userId: string;
   /** Current user's ID (to check their own settings) */
   currentUserId?: string;
-  /** Enable debug logging */
-  debug?: boolean;
 }
 
 interface UsePresenceReturn {
@@ -68,7 +63,7 @@ interface UsePresenceReturn {
  * ```
  */
 export function usePresence(config: UsePresenceConfig): UsePresenceReturn {
-  const { userId, currentUserId, debug = false } = config;
+  const { userId, currentUserId } = config;
 
   const [presence, setPresence] = useState<PresenceWithPrivacy>({
     online: false,
@@ -86,25 +81,12 @@ export function usePresence(config: UsePresenceConfig): UsePresenceReturn {
   useEffect(() => {
     if (!userId) return;
 
-    if (debug) {
-      log.debug("Subscribing to presence", {
-        operation: "subscribe",
-        data: { userId },
-      });
-    }
-
     const unsubscribe = subscribeToPresence(userId, (newPresence) => {
-      if (debug) {
-        log.debug("Presence update", {
-          operation: "update",
-          data: { userId, ...newPresence },
-        });
-      }
       setPresence(newPresence);
     });
 
     return unsubscribe;
-  }, [userId, debug]);
+  }, [userId]);
 
   // Subscribe to our own settings (for reciprocal visibility)
   useEffect(() => {

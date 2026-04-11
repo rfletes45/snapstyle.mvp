@@ -57,7 +57,7 @@ export function compareMessagesCanonicalDesc(
   return b.id.localeCompare(a.id);
 }
 
-function getMessageStatusFromSync(
+export function getMessageStatusFromSync(
   syncStatus: MessageSyncStatus,
 ): MessageV2["status"] {
   if (syncStatus === "pending") return "sending";

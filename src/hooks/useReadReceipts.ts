@@ -24,10 +24,7 @@ import {
 import { subscribeToInboxSettings } from "@/services/inboxSettings";
 import { resolveFromInboxSettings } from "@/services/messaging/resolveChatSettings";
 import { DEFAULT_INBOX_SETTINGS, InboxSettings } from "@/types/messaging";
-import { createLogger } from "@/utils/log";
 import { useCallback, useEffect, useMemo, useState } from "react";
-
-const log = createLogger("useReadReceipts");
 
 interface UseReadReceiptsConfig {
   /** Chat/conversation ID */
@@ -36,8 +33,6 @@ interface UseReadReceiptsConfig {
   currentUid: string;
   /** Other user's UID (the person you're chatting with) */
   otherUid: string;
-  /** Enable debug logging */
-  debug?: boolean;
 }
 
 interface UseReadReceiptsReturn {
@@ -116,7 +111,7 @@ interface UseReadReceiptsReturn {
 export function useReadReceipts(
   config: UseReadReceiptsConfig,
 ): UseReadReceiptsReturn {
-  const { chatId, currentUid, otherUid, debug = false } = config;
+  const { chatId, currentUid, otherUid } = config;
 
   // State
   const [otherUserReadWatermark, setOtherUserReadWatermark] = useState<
@@ -140,16 +135,10 @@ export function useReadReceipts(
 
     const unsubscribe = subscribeToInboxSettings(currentUid, (settings) => {
       setMySettings(settings);
-      if (debug) {
-        log.debug("My settings updated", {
-          operation: "settings",
-          data: { showReadReceipts: settings.showReadReceipts },
-        });
-      }
     });
 
     return unsubscribe;
-  }, [currentUid, debug]);
+  }, [currentUid]);
 
   // Subscribe to other user's read watermark (only if I have receipts enabled)
   useEffect(() => {
@@ -162,29 +151,16 @@ export function useReadReceipts(
       return;
     }
 
-    if (debug) {
-      log.debug("Subscribing to read receipts", {
-        operation: "subscribe",
-        data: { chatId, otherUid },
-      });
-    }
-
     const unsubscribe = subscribeToReadReceipt(
       chatId,
       otherUid,
       (watermark) => {
-        if (debug) {
-          log.debug("Read watermark updated", {
-            operation: "watermark",
-            data: { chatId, otherUid, watermark },
-          });
-        }
         setOtherUserReadWatermark(watermark);
       },
     );
 
     return unsubscribe;
-  }, [chatId, otherUid, effective.publishReadReceipts, debug]);
+  }, [chatId, otherUid, effective.publishReadReceipts]);
 
   // Subscribe to other user's delivery watermark (Segment 2)
   useEffect(() => {
@@ -199,29 +175,16 @@ export function useReadReceipts(
       return;
     }
 
-    if (debug) {
-      log.debug("Subscribing to delivery receipts", {
-        operation: "subscribe-delivery",
-        data: { chatId, otherUid },
-      });
-    }
-
     const unsubscribe = subscribeToDeliveryReceipt(
       chatId,
       otherUid,
       (watermark) => {
-        if (debug) {
-          log.debug("Delivery watermark updated", {
-            operation: "delivery-watermark",
-            data: { chatId, otherUid, watermark },
-          });
-        }
         setOtherUserDeliveredWatermark(watermark);
       },
     );
 
     return unsubscribe;
-  }, [chatId, otherUid, effective.publishDeliveryReceipts, debug]);
+  }, [chatId, otherUid, effective.publishDeliveryReceipts]);
 
   // Derived values — use resolved effective settings
   const shouldShowReadReceipts = effective.publishReadReceipts;

@@ -50,7 +50,10 @@
 
 import { USE_LOCAL_STORAGE } from "@/constants/featureFlags";
 import type { SenderStyle } from "@/cosmetics/types";
-import { dedupeAndSortMessages } from "@/services/chat/normalizeMessage";
+import {
+  dedupeAndSortMessages,
+  getMessageStatusFromSync,
+} from "@/services/chat/normalizeMessage";
 import { updateReadWatermark as updateDMReadWatermark } from "@/services/chatMembers";
 import {
   getOrCreateDMConversation,
@@ -64,6 +67,7 @@ import {
 import { updateGroupReadWatermark } from "@/services/groupMembers";
 import { sendMessage as sendMessageService } from "@/services/messaging/send";
 import { syncPendingMessages } from "@/services/sync/syncEngine";
+import type { AttachmentRow } from "@/types/database";
 import {
   AttachmentV2,
   LocalAttachment,
@@ -119,8 +123,6 @@ export interface UseChatConfig {
   autoscrollMessageThreshold?: number;
   /** Sender's chat style snapshot to stamp on outgoing messages */
   senderStyle?: SenderStyle;
-  /** Enable debug logging */
-  debug?: boolean;
 }
 
 /**
@@ -173,6 +175,12 @@ export interface UseChatReturn {
   loadOlder: () => Promise<void>;
   /** Refresh messages (re-subscribe) */
   refresh: () => void;
+  /** Load a bounded message window around a target message already in storage */
+  loadAroundMessage: (messageId: string) => boolean;
+  /** Clear any anchored target-message window and return to the latest page */
+  clearMessageAnchor: () => void;
+  /** Whether the chat is currently showing an anchored target-message window */
+  isMessageAnchorActive: boolean;
 
   // -------------------------------------------------------------------------
   // Keyboard Animation
@@ -270,7 +278,6 @@ export function useChat(config: UseChatConfig): UseChatReturn {
     atBottomThreshold = 200,
     autoscrollMessageThreshold = 30,
     senderStyle,
-    debug = false,
   } = config;
 
   // -------------------------------------------------------------------------
@@ -314,6 +321,10 @@ export function useChat(config: UseChatConfig): UseChatReturn {
     hasMore: localHasMore,
     loadMore: loadMoreLocalMessages,
     refresh: refreshLocalMessages,
+    prependMessage: prependLocalMessage,
+    loadAroundMessage: loadAroundLocalMessage,
+    clearMessageAnchor: clearLocalMessageAnchor,
+    isMessageAnchorActive: isLocalMessageAnchorActive,
   } = localMessagesHook;
 
   // === FIRESTORE COMPATIBILITY MODE ===
@@ -327,14 +338,36 @@ export function useChat(config: UseChatConfig): UseChatReturn {
     initialLimit,
     autoMarkRead,
     sendReadReceipts,
-    debug,
   });
 
-  // Convert local messages to MessageV2 format
+  // ── MessageV2 reference cache ──────────────────────────────────────────
+  // Keeps a Map<messageId, MessageV2> so that unchanged messages preserve
+  // the same JS object reference across re-renders.  FlatList compares
+  // items by key AND reference; if the object is identical, the cell is
+  // skipped entirely, cutting render time from O(n) to O(1) for sends.
+  const messageCacheRef = useRef(new Map<string, MessageV2>());
+
+  // Convert local messages to MessageV2 format (with reference cache)
   const localMessages = useMemo<MessageV2[]>(() => {
     if (!USE_LOCAL_STORAGE) return [];
+    const cache = messageCacheRef.current;
+
     const normalized = localRows
-      .map((row) => rowToMessageV2(row, currentUid))
+      .map((row) => {
+        // Cache hit: same id + same sync_status + same edited_at → reuse
+        const cached = cache.get(row.id);
+        if (
+          cached &&
+          cached.status === getMessageStatusFromSync(row.sync_status) &&
+          (cached.editedAt ?? null) === (row.edited_at ?? null)
+        ) {
+          return cached;
+        }
+        // Cache miss: convert and store
+        const msg = rowToMessageV2(row, currentUid);
+        if (msg) cache.set(msg.id, msg);
+        return msg;
+      })
       .filter((m): m is MessageV2 => m !== null);
     return dedupeAndSortMessages(normalized);
   }, [localRows, currentUid]);
@@ -352,10 +385,18 @@ export function useChat(config: UseChatConfig): UseChatReturn {
         },
         loadOlder: async () => loadMoreLocalMessages(),
         refresh: refreshLocalMessages,
+        loadAroundMessage: loadAroundLocalMessage,
+        clearMessageAnchor: clearLocalMessageAnchor,
+        isMessageAnchorActive: isLocalMessageAnchorActive,
         pendingItems: [] as OutboxItem[],
       };
     }
-    return firestoreMessagesHook;
+    return {
+      ...firestoreMessagesHook,
+      loadAroundMessage: () => false,
+      clearMessageAnchor: () => {},
+      isMessageAnchorActive: false,
+    };
   }, [
     localMessages,
     isLocalLoading,
@@ -363,6 +404,9 @@ export function useChat(config: UseChatConfig): UseChatReturn {
     localHasMore,
     loadMoreLocalMessages,
     refreshLocalMessages,
+    loadAroundLocalMessage,
+    clearLocalMessageAnchor,
+    isLocalMessageAnchorActive,
     firestoreMessagesHook,
   ]);
 
@@ -372,6 +416,8 @@ export function useChat(config: UseChatConfig): UseChatReturn {
 
   useEffect(() => {
     messageEnterAnimation.clear();
+    // Clear the MessageV2 reference cache when navigating to a new thread
+    messageCacheRef.current.clear();
   }, [messageEnterAnimation, scope, conversationId]);
 
   useEffect(() => {
@@ -417,12 +463,11 @@ export function useChat(config: UseChatConfig): UseChatReturn {
   ]);
 
   // Keyboard animation
-  const keyboard = useChatKeyboard({ debug });
+  const keyboard = useChatKeyboard();
 
   // Scroll position tracking
   const scroll = useAtBottom({
     threshold: atBottomThreshold,
-    debug,
   });
 
   // Auto-scroll on new messages
@@ -432,7 +477,6 @@ export function useChat(config: UseChatConfig): UseChatReturn {
     isAtBottom: scroll.isAtBottom,
     distanceRef: scroll.distanceRef,
     pixelThreshold: autoscrollMessageThreshold * 80, // ~80px per message
-    debug,
   });
 
   // -------------------------------------------------------------------------
@@ -441,17 +485,8 @@ export function useChat(config: UseChatConfig): UseChatReturn {
   const setReplyTo = useCallback(
     (reply: ReplyToMetadata | null) => {
       setReplyToState(reply);
-      if (debug) {
-        log.debug("Reply state changed", {
-          operation: "setReplyTo",
-          data: {
-            hasReply: !!reply,
-            messageId: reply?.messageId?.substring(0, 8),
-          },
-        });
-      }
     },
-    [debug],
+    [],
   );
 
   const clearReplyTo = useCallback(() => {
@@ -464,17 +499,8 @@ export function useChat(config: UseChatConfig): UseChatReturn {
   const selectMessage = useCallback(
     (message: MessageV2 | null) => {
       setSelectedMessageState(message);
-      if (debug) {
-        log.debug("Message selection changed", {
-          operation: "selectMessage",
-          data: {
-            hasSelection: !!message,
-            messageId: message?.id?.substring(0, 8),
-          },
-        });
-      }
     },
-    [debug],
+    [],
   );
 
   const clearSelection = useCallback(() => {
@@ -527,19 +553,7 @@ export function useChat(config: UseChatConfig): UseChatReturn {
       setSending(true);
 
       try {
-        if (debug) {
-          log.debug("Sending message", {
-            operation: "send",
-            data: {
-              scope,
-              useLocalStorage: USE_LOCAL_STORAGE,
-              textLength: text.length,
-              hasReply: !!replyToUse,
-              mentionCount: mentionUids?.length ?? 0,
-              attachmentCount: attachments?.length ?? 0,
-            },
-          });
-        }
+        const sendStartMs = Date.now();
 
         // === LOCAL STORAGE MODE ===
         if (USE_LOCAL_STORAGE) {
@@ -582,18 +596,88 @@ export function useChat(config: UseChatConfig): UseChatReturn {
 
           messageEnterAnimation.queueAnimation(messageRow.id);
 
-          if (debug) {
-            log.debug("Message saved to SQLite — animation queued", {
-              operation: "localInsert",
-              data: {
-                messageId: messageRow.id.substring(0, 8),
-                animationQueued: true,
-              },
-            });
+          // ── Optimistic instant injection ──────────────────────────
+          // Build a lightweight MessageWithAttachments from the row we
+          // just inserted and prepend it to the in-memory list.  This
+          // avoids re-reading all 50+ messages from SQLite + a batch
+          // attachment query + full rowToMessageV2 map + dedup/sort
+          // of the entire array.  FlatList only renders the one new
+          // cell.
+          const localAttachmentRows: AttachmentRow[] = (attachments ?? []).map(
+            (att) => ({
+              id: att.id,
+              message_id: messageRow.id,
+              kind: att.kind as AttachmentRow["kind"],
+              mime: att.mime,
+              local_uri: att.uri,
+              remote_url: null,
+              remote_path: null,
+              thumb_local_uri: null,
+              thumb_remote_url: null,
+              size_bytes: null,
+              width: null,
+              height: null,
+              duration_ms: att.durationMs ?? null,
+              caption: att.caption ?? null,
+              view_once: 0 as const,
+              expires_at: null,
+              download_status: "downloaded" as const,
+              upload_status: "pending" as const,
+            }),
+          );
+          const remoteAttachmentRows: AttachmentRow[] = (
+            remoteAttachments ?? []
+          ).map((att) => ({
+            id: att.id,
+            message_id: messageRow.id,
+            kind: att.kind as AttachmentRow["kind"],
+            mime: att.mime,
+            local_uri: null,
+            remote_url: att.url ?? null,
+            remote_path: att.path ?? null,
+            thumb_local_uri: null,
+            thumb_remote_url: att.thumbUrl ?? null,
+            size_bytes: att.sizeBytes ?? null,
+            width: att.width ?? null,
+            height: att.height ?? null,
+            duration_ms: att.durationMs ?? null,
+            caption: att.caption ?? null,
+            view_once: att.viewOnce ? (1 as const) : (0 as const),
+            expires_at: att.expiresAt ?? null,
+            download_status: "none" as const,
+            upload_status: "uploaded" as const,
+          }));
+
+          prependLocalMessage({
+            ...messageRow,
+            attachments: [...localAttachmentRows, ...remoteAttachmentRows],
+          });
+
+          // Also cache the MessageV2 so subsequent useMemo runs reuse
+          // the same object reference instead of creating a new one.
+          const optimisticV2 = rowToMessageV2(
+            {
+              ...messageRow,
+              attachments: [...localAttachmentRows, ...remoteAttachmentRows],
+            },
+            currentUid,
+          );
+          if (optimisticV2) {
+            messageCacheRef.current.set(optimisticV2.id, optimisticV2);
           }
 
-          // Refresh local messages to show the new one
-          refreshLocalMessages();
+          log.info("[SendPipeline] Optimistic message injected", {
+            operation: "optimisticInsert",
+            data: {
+              messageId: messageRow.id.substring(0, 8),
+              scope,
+              kind,
+              textLen: text.length,
+              attachments:
+                localAttachmentRows.length + remoteAttachmentRows.length,
+              elapsedMs: Date.now() - sendStartMs,
+            },
+          });
 
           if (clearReplyOnSend) {
             clearReplyTo();
@@ -622,23 +706,36 @@ export function useChat(config: UseChatConfig): UseChatReturn {
         });
 
         messageEnterAnimation.queueAnimation(outboxItem.messageId);
+
+        log.info("[SendPipeline] Outbox item enqueued (Firestore path)", {
+          operation: "outboxEnqueue",
+          data: {
+            messageId: outboxItem.messageId.substring(0, 8),
+            scope,
+            kind,
+            elapsedMs: Date.now() - sendStartMs,
+          },
+        });
+
         const result = await sendPromise;
 
         if (result.success && clearReplyOnSend) {
           clearReplyTo();
         }
 
-        if (debug) {
-          log.debug("Message send completed", {
-            operation: "sendComplete",
-            data: { success: result.success, error: result.error },
-          });
-        }
+        log.info("[SendPipeline] Backend confirmed (Firestore path)", {
+          operation: "sendComplete",
+          data: {
+            success: result.success,
+            error: result.error,
+            totalMs: Date.now() - sendStartMs,
+          },
+        });
 
         return result;
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : "Send failed";
-        log.error("Message send error", err);
+        log.error("[SendPipeline] Send error", err);
         return { success: false, error: errorMessage };
       } finally {
         setSending(false);
@@ -651,10 +748,9 @@ export function useChat(config: UseChatConfig): UseChatReturn {
       currentUserName,
       replyTo,
       clearReplyTo,
-      refreshLocalMessages,
+      prependLocalMessage,
       messageEnterAnimation,
       senderStyle,
-      debug,
     ],
   );
 
@@ -683,6 +779,9 @@ export function useChat(config: UseChatConfig): UseChatReturn {
       pagination: messagesHook.pagination,
       loadOlder: messagesHook.loadOlder,
       refresh: messagesHook.refresh,
+      loadAroundMessage: messagesHook.loadAroundMessage,
+      clearMessageAnchor: messagesHook.clearMessageAnchor,
+      isMessageAnchorActive: messagesHook.isMessageAnchorActive,
 
       // Keyboard
       keyboard,
@@ -725,6 +824,9 @@ export function useChat(config: UseChatConfig): UseChatReturn {
       messagesHook.pagination,
       messagesHook.loadOlder,
       messagesHook.refresh,
+      messagesHook.loadAroundMessage,
+      messagesHook.clearMessageAnchor,
+      messagesHook.isMessageAnchorActive,
       keyboard,
       scroll,
       autoscroll,

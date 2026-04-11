@@ -168,7 +168,9 @@ export const CategoryGrid = memo(function CategoryGrid({
       data={categories}
       keyExtractor={(item) => item.name}
       numColumns={NUM_COLUMNS}
+      style={styles.flexFill}
       showsVerticalScrollIndicator={false}
+      nestedScrollEnabled
       keyboardShouldPersistTaps="handled"
       contentContainerStyle={styles.gridContent}
       columnWrapperStyle={styles.columnWrapper}
@@ -188,9 +190,13 @@ export const CategoryGrid = memo(function CategoryGrid({
 // =============================================================================
 
 const styles = StyleSheet.create({
+  flexFill: {
+    flex: 1,
+    minHeight: 0,
+  },
   gridContent: {
     paddingHorizontal: GRID_PADDING,
-    paddingBottom: 8,
+    paddingBottom: 560,
   },
   columnWrapper: {
     gap: GRID_GAP,
