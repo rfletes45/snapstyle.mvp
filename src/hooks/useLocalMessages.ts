@@ -13,9 +13,9 @@ import {
   getOrCreateGroupConversation,
 } from "@/services/database/conversationRepository";
 import {
-  getMessageWindowAroundMessage,
   getMessagesByStatus,
   getMessagesForConversation,
+  getMessageWindowAroundMessage,
   MessageWithAttachments,
 } from "@/services/database/messageRepository";
 import {
@@ -209,6 +209,12 @@ export function useLocalMessages(
   const hasSyncedRef = useRef(false);
   const latestLimitRef = useRef(initialLimit);
 
+  // Track whether Firestore has confirmed no more older messages exist.
+  // This prevents loadMessages() from prematurely closing pagination based
+  // on SQLite row count alone — only an explicit Firestore exhaustion can
+  // set hasMore to false.
+  const firestoreExhaustedRef = useRef(false);
+
   const updateStatusCounts = useCallback(
     (loadedMessages: MessageWithAttachments[]) => {
       const pending = loadedMessages.filter(
@@ -228,6 +234,7 @@ export function useLocalMessages(
   // sync bootstrap, and visible rows never bleed across threads.
   useEffect(() => {
     hasSyncedRef.current = false;
+    firestoreExhaustedRef.current = false;
     setCurrentLimit(initialLimit);
     setMessages(initialState.messages);
     setHasMore(initialState.hasMore);
@@ -236,13 +243,7 @@ export function useLocalMessages(
     setMessageAnchor(null);
     latestLimitRef.current = initialLimit;
     updateStatusCounts(initialState.messages);
-  }, [
-    conversationId,
-    scope,
-    initialLimit,
-    initialState,
-    updateStatusCounts,
-  ]);
+  }, [conversationId, scope, initialLimit, initialState, updateStatusCounts]);
 
   // Load messages from SQLite
   const loadMessages = useCallback(() => {
@@ -279,7 +280,15 @@ export function useLocalMessages(
       );
 
       setMessages(loadedMessages);
-      setHasMore(loadedMessages.length >= currentLimit);
+      // Do NOT set hasMore here — only loadMore() should control pagination
+      // state via explicit Firestore confirmation. Setting hasMore based on
+      // SQLite row count caused premature cutoffs when a partial page from
+      // syncOlderMessages left the count below currentLimit.
+      // Exception: on first load (limit = initialLimit), use the heuristic
+      // to avoid unnecessary loadMore attempts on short conversations.
+      if (!firestoreExhaustedRef.current && currentLimit === initialLimit) {
+        setHasMore(loadedMessages.length >= currentLimit);
+      }
       setError(null);
       updateStatusCounts(loadedMessages);
     } catch (err: any) {
@@ -288,13 +297,7 @@ export function useLocalMessages(
     } finally {
       setIsLoading(false);
     }
-  }, [
-    conversationId,
-    scope,
-    currentLimit,
-    messageAnchor,
-    updateStatusCounts,
-  ]);
+  }, [conversationId, scope, currentLimit, messageAnchor, updateStatusCounts]);
 
   // Initial load + sync from Firestore
   useEffect(() => {
@@ -393,13 +396,7 @@ export function useLocalMessages(
       updateStatusCounts(window.messages);
       return true;
     },
-    [
-      conversationId,
-      currentLimit,
-      initialLimit,
-      scope,
-      updateStatusCounts,
-    ],
+    [conversationId, currentLimit, initialLimit, scope, updateStatusCounts],
   );
 
   const clearMessageAnchor = useCallback(() => {
@@ -414,7 +411,12 @@ export function useLocalMessages(
       latestLimitRef.current,
     );
     setMessages(latestMessages);
-    setHasMore(latestMessages.length >= latestLimitRef.current);
+    // Only close pagination if Firestore explicitly said no more exist
+    if (firestoreExhaustedRef.current) {
+      setHasMore(false);
+    } else {
+      setHasMore(latestMessages.length >= latestLimitRef.current);
+    }
     setError(null);
     updateStatusCounts(latestMessages);
   }, [conversationId, messageAnchor, scope, updateStatusCounts]);
@@ -437,7 +439,7 @@ export function useLocalMessages(
   const isSyncingOlderRef = useRef(false);
 
   const loadMore = useCallback(() => {
-    if (!hasMore || !USE_LOCAL_STORAGE) return;
+    if (!hasMore || !USE_LOCAL_STORAGE || isSyncingOlderRef.current) return;
 
     if (messageAnchor) {
       const nextOlderLimit = messageAnchor.olderLimit + initialLimit;
@@ -450,6 +452,7 @@ export function useLocalMessages(
       );
 
       if (!currentWindow) {
+        firestoreExhaustedRef.current = true;
         setHasMore(false);
         return;
       }
@@ -459,25 +462,42 @@ export function useLocalMessages(
         !isSyncingOlderRef.current
       ) {
         isSyncingOlderRef.current = true;
-        const oldestTimestamp =
+        // Use server_received_at for pagination cursor (consistent with Firestore ordering)
+        const oldest =
           currentWindow.messages.length > 0
             ? currentWindow.messages[currentWindow.messages.length - 1]
-                .created_at
-            : Date.now();
+            : null;
+        const oldestTimestamp =
+          oldest?.server_received_at || oldest?.created_at || Date.now();
+
+        logger.info("[useLocalMessages] loadMore(anchor): syncing older", {
+          oldestTimestamp,
+          currentOlderCount: currentWindow.olderCount,
+          nextOlderLimit,
+        });
 
         syncOlderMessages(scope, conversationId, oldestTimestamp, initialLimit)
           .then((count) => {
-            if (count > 0) {
-              setMessageAnchor((prev) =>
-                prev
-                  ? {
-                      ...prev,
-                      olderLimit: nextOlderLimit,
-                    }
-                  : prev,
-              );
-            } else {
+            logger.info("[useLocalMessages] loadMore(anchor): sync returned", {
+              count,
+            });
+            if (count === 0) {
+              // Firestore confirmed: no more messages
+              firestoreExhaustedRef.current = true;
               setHasMore(false);
+            } else if (count < initialLimit) {
+              // Partial page: this is the last page of history
+              firestoreExhaustedRef.current = true;
+              setMessageAnchor((prev) =>
+                prev ? { ...prev, olderLimit: nextOlderLimit } : prev,
+              );
+              // Allow showing the partial page, but mark as exhausted
+              setHasMore(false);
+            } else {
+              // Full page: more likely exists
+              setMessageAnchor((prev) =>
+                prev ? { ...prev, olderLimit: nextOlderLimit } : prev,
+              );
             }
           })
           .catch((err) => {
@@ -507,22 +527,45 @@ export function useLocalMessages(
       nextLimit,
     );
 
-    if (currentMessages.length < nextLimit && !isSyncingOlderRef.current) {
+    if (currentMessages.length < nextLimit) {
       // SQLite doesn't have enough messages — fetch from Firestore
       isSyncingOlderRef.current = true;
-      const oldestTimestamp =
+      // Use server_received_at for pagination cursor (matches Firestore index)
+      const oldest =
         currentMessages.length > 0
-          ? currentMessages[currentMessages.length - 1].created_at
-          : Date.now();
+          ? currentMessages[currentMessages.length - 1]
+          : null;
+      const oldestTimestamp =
+        oldest?.server_received_at || oldest?.created_at || Date.now();
+
+      logger.info("[useLocalMessages] loadMore: syncing older from Firestore", {
+        currentLimit,
+        nextLimit,
+        sqliteCount: currentMessages.length,
+        oldestTimestamp,
+        oldestMessageId: oldest?.id,
+      });
 
       syncOlderMessages(scope, conversationId, oldestTimestamp, initialLimit)
         .then((count) => {
-          if (count > 0) {
+          logger.info("[useLocalMessages] loadMore: sync returned", {
+            count,
+            requestedLimit: initialLimit,
+          });
+          if (count === 0) {
+            // Firestore confirmed: no more older messages
+            firestoreExhaustedRef.current = true;
+            setHasMore(false);
+          } else if (count < initialLimit) {
+            // Partial page: last page of history — show results but stop pagination
+            firestoreExhaustedRef.current = true;
             latestLimitRef.current = nextLimit;
             setCurrentLimit(nextLimit);
-          } else {
-            // No more on server either
             setHasMore(false);
+          } else {
+            // Full page: more likely exists
+            latestLimitRef.current = nextLimit;
+            setCurrentLimit(nextLimit);
           }
         })
         .catch((err) => {

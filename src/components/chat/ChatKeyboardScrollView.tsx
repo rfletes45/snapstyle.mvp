@@ -235,9 +235,11 @@ function useEffectiveBottomInset(): SharedValue<number> {
 export function ChatKeyboardContainer({
   children,
   style,
+  backgroundLayer,
 }: {
   children: React.ReactNode;
   style?: StyleProp<ViewStyle>;
+  backgroundLayer?: React.ReactNode;
 }) {
   // Extract backgroundColor from the style prop to use as a solid backdrop
   // behind the keyboard. This makes the area under the keyboard match the
@@ -266,18 +268,29 @@ export function ChatKeyboardContainer({
     />
   ) : null;
 
+  const backgroundUnderlay = backgroundLayer ? (
+    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+      {backgroundLayer}
+    </View>
+  ) : null;
+
   if (kcsvAvailable) {
     // KCSV handles content inset natively — no extra padding needed
     return (
       <View style={[{ flex: 1 }, style]}>
         {backdrop}
+        {backgroundUnderlay}
         {children}
       </View>
     );
   }
 
   return (
-    <FallbackKeyboardContainer style={style} backdrop={backdrop}>
+    <FallbackKeyboardContainer
+      style={style}
+      backdrop={backdrop}
+      backgroundUnderlay={backgroundUnderlay}
+    >
       {children}
     </FallbackKeyboardContainer>
   );
@@ -292,10 +305,12 @@ function FallbackKeyboardContainer({
   children,
   style,
   backdrop,
+  backgroundUnderlay,
 }: {
   children: React.ReactNode;
   style?: StyleProp<ViewStyle>;
   backdrop?: React.ReactNode;
+  backgroundUnderlay?: React.ReactNode;
 }) {
   const effectiveInset = useEffectiveBottomInset();
 
@@ -306,6 +321,7 @@ function FallbackKeyboardContainer({
   return (
     <Animated.View style={[{ flex: 1 }, animatedStyle, style]}>
       {backdrop}
+      {backgroundUnderlay}
       {children}
     </Animated.View>
   );

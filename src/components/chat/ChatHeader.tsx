@@ -164,14 +164,17 @@ export function ChatHeader({
       >
         <MaterialCommunityIcons
           name={Platform.OS === "ios" ? "chevron-left" : "arrow-left"}
-          size={22}
+          size={chatType === "group" ? 33 : 22}
           color={colors.onSurface}
           style={Platform.OS === "ios" ? styles.backIconiOS : undefined}
         />
       </TouchableOpacity>
 
       <TouchableOpacity
-        style={styles.titleTouchable}
+        style={[
+          styles.titleTouchable,
+          chatType === "group" && styles.titleTouchableGroup,
+        ]}
         onPress={onTitlePress}
         disabled={!onTitlePress}
         activeOpacity={0.7}
@@ -183,13 +186,17 @@ export function ChatHeader({
               <PresenceIndicator online={isOnline} size={8} position="inline" />
             )}
             <Text
-              style={[styles.titleText, { color: colors.onSurface }]}
+              style={[
+                styles.titleText,
+                chatType === "group" && styles.titleTextGroup,
+                { color: colors.onSurface },
+              ]}
               numberOfLines={1}
             >
               {title}
             </Text>
           </View>
-          {subtitle != null && subtitle.length > 0 && (
+          {chatType !== "group" && subtitle != null && subtitle.length > 0 && (
             <Text
               style={[
                 styles.subtitleText,
@@ -236,6 +243,10 @@ const styles = StyleSheet.create({
     marginLeft: 2,
     gap: 8,
   },
+  titleTouchableGroup: {
+    marginLeft: 14,
+    gap: 14,
+  },
   titleTextContainer: {
     flex: 1,
     justifyContent: "center",
@@ -247,6 +258,9 @@ const styles = StyleSheet.create({
   titleText: {
     fontSize: 17,
     fontWeight: "600",
+  },
+  titleTextGroup: {
+    fontSize: 22,
   },
   subtitleText: {
     fontSize: 13,

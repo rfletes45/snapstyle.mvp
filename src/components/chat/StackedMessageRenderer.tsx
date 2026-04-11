@@ -16,7 +16,12 @@
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import React, { useCallback } from "react";
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import {
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import { useTheme } from "react-native-paper";
 
 import type { MessageViewModel } from "@/chat/displayMode";
@@ -24,12 +29,14 @@ import { FEED_LAYOUT } from "@/chat/displayMode";
 import FeedImage from "@/components/AppImage";
 import { SwipeableMessage } from "@/components/chat";
 import { AnimalBubble } from "@/components/chat/AnimalBubble";
+import type { CardWidthTracker } from "@/components/chat/CardWidthTracker";
 import { LinkPreviewCard } from "@/components/chat/LinkPreviewCard";
 import { MessageHighlightOverlay } from "@/components/chat/MessageHighlightOverlay";
 import { ReactionPills } from "@/components/chat/ReactionBar";
 import { StackedReplyReference } from "@/components/chat/StackedReplyReference";
 import { ThreadIndicator } from "@/components/chat/ThreadIndicator";
 import { VoiceMessagePlayer } from "@/components/chat/VoiceMessagePlayer";
+import { useGroupedCardLayout } from "@/components/chat/useGroupedCardLayout";
 import { ProfilePictureWithDecoration } from "@/components/profile/ProfilePicture";
 import type { ChatAppearance } from "@/cosmetics/types";
 import { useLinkPreviews } from "@/hooks/useLinkPreviews";
@@ -96,6 +103,12 @@ export interface StackedMessageRendererProps {
   senderProfilePictureUrl?: string | null;
   /** Resolved sender decoration ID */
   senderDecorationId?: string | null;
+  /** Shared tracker for adaptive card-width rounding */
+  cardWidthTracker?: CardWidthTracker;
+  /** Message ID of neighbor above in same group */
+  groupPrevMessageId?: string;
+  /** Message ID of neighbor below in same group */
+  groupNextMessageId?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -122,6 +135,9 @@ export const StackedMessageRenderer: React.FC<StackedMessageRendererProps> =
       senderDisplayName,
       senderProfilePictureUrl,
       senderDecorationId,
+      cardWidthTracker,
+      groupPrevMessageId,
+      groupNextMessageId,
     }) => {
       const theme = useTheme();
       const navigation = useNavigation<NativeStackNavigationProp<any>>();
@@ -272,6 +288,28 @@ export const StackedMessageRenderer: React.FC<StackedMessageRendererProps> =
       // Only mention-highlighted rows get a row-level treatment.
       // (DM mode has no mentions, so no tint at all.)
 
+      // ── Adaptive card-width tracking ──────────────────────────────────
+      const groupCardBg = theme.colors.background;
+      const { handleCardLayout, groupCardRadius, snapMinWidth } =
+        useGroupedCardLayout({
+          messageId: message.id,
+          cardWidthTracker,
+          groupPrevMessageId,
+          groupNextMessageId,
+          isGroupStart: vm.isGroupStart,
+          isGroupEnd: vm.isGroupEnd,
+        });
+
+      // ── Width snapping for similar-width neighbors ────────────────
+
+      // ── Adaptive rounding ─────────────────────────────────────────────
+      // Solo messages: all corners CARD_RADIUS.
+      // Within a group:
+      //   Left edges: always flat (left-aligned, edges flush).
+      //   Right edges: default ROUNDED. Only flatten when neighbor has
+      //     matching width (within SNAP_THRESHOLD) → flush continuous edge.
+      //   Boundary corners (group-start top, group-end bottom): always rounded.
+
       return (
         <SwipeableMessage
           message={message}
@@ -286,9 +324,6 @@ export const StackedMessageRenderer: React.FC<StackedMessageRendererProps> =
               message.status === "failed" && { opacity: 0.7 },
             ]}
           >
-            {/* Highlight overlay for reply navigation */}
-            <MessageHighlightOverlay isHighlighted={isHighlighted} />
-
             {/* ── Message row: [avatar/spacer] [content column] ──────── */}
             <TouchableOpacity
               activeOpacity={0.7}
@@ -322,58 +357,72 @@ export const StackedMessageRenderer: React.FC<StackedMessageRendererProps> =
 
                 {/* Content column — name + message in one vertical flow */}
                 <View style={s.contentColumn}>
-                  {/* Author name + timestamp + status (group-start only) */}
-                  {vm.isGroupStart && (
-                    <View style={s.nameRow}>
-                      <Text
-                        style={[s.authorName, { color: authorColor }]}
-                        numberOfLines={1}
-                      >
-                        {senderDisplayName}
-                      </Text>
-                      <Text
-                        style={[
-                          s.headerTimestamp,
-                          { color: theme.colors.onSurface + "99" },
-                        ]}
-                      >
-                        {formattedTime}
-                      </Text>
-                    </View>
-                  )}
-
-                  {/* Reply preview — stacked-mode inline reference */}
-                  {message.replyTo && (
-                    <StackedReplyReference
-                      replyTo={message.replyTo}
-                      isReplyToMe={message.replyTo.senderId === currentUid}
-                      onPress={() =>
-                        onScrollToMessage(message.replyTo!.messageId)
-                      }
-                    />
-                  )}
-
-                  {/* Message content — no bubble wrapper */}
                   <View
-                    style={[message.status === "failed" && s.failedContent]}
+                    style={[
+                      s.cardWrapper,
+                      { backgroundColor: groupCardBg, overflow: "hidden" },
+                      groupCardRadius,
+                      snapMinWidth !== undefined && { minWidth: snapMinWidth },
+                    ]}
                   >
-                    {renderContent()}
-                  </View>
+                    {/* Highlight overlay for reply navigation */}
+                    <MessageHighlightOverlay isHighlighted={isHighlighted} />
+                    <View onLayout={handleCardLayout} style={s.cardContent}>
 
-                  {/* Reaction pills — always left-aligned in feed mode */}
-                  {reactions.length > 0 && (
-                    <View style={s.reactionRow}>
-                      <ReactionPills
-                        reactions={reactions}
-                        isOwnMessage={false}
-                        scope="dm"
-                        conversationId={chatId || ""}
-                        messageId={message.id}
-                        currentUid={currentUid || ""}
-                        onOptimisticToggle={onOptimisticReaction}
+                    {/* Author name + timestamp + status (group-start only) */}
+                    {vm.isGroupStart && (
+                      <View style={s.nameRow}>
+                        <Text
+                          style={[s.authorName, { color: authorColor }]}
+                          numberOfLines={1}
+                        >
+                          {senderDisplayName}
+                        </Text>
+                        <Text
+                          style={[
+                            s.headerTimestamp,
+                            { color: theme.colors.onSurface + "99" },
+                          ]}
+                        >
+                          {formattedTime}
+                        </Text>
+                      </View>
+                    )}
+
+                    {/* Reply preview — stacked-mode inline reference */}
+                    {message.replyTo && (
+                      <StackedReplyReference
+                        replyTo={message.replyTo}
+                        isReplyToMe={message.replyTo.senderId === currentUid}
+                        onPress={() =>
+                          onScrollToMessage(message.replyTo!.messageId)
+                        }
                       />
+                    )}
+
+                    {/* Message content — no bubble wrapper */}
+                    <View
+                      style={[message.status === "failed" && s.failedContent]}
+                    >
+                      {renderContent()}
                     </View>
-                  )}
+
+                    {/* Reaction pills — always left-aligned in feed mode */}
+                    {reactions.length > 0 && (
+                      <View style={s.reactionRow}>
+                        <ReactionPills
+                          reactions={reactions}
+                          isOwnMessage={false}
+                          scope="dm"
+                          conversationId={chatId || ""}
+                          messageId={message.id}
+                          currentUid={currentUid || ""}
+                          onOptimisticToggle={onOptimisticReaction}
+                        />
+                      </View>
+                    )}
+                    </View>
+                  </View>
                 </View>
               </View>
             </TouchableOpacity>
@@ -412,7 +461,6 @@ const s = StyleSheet.create({
   feedRow: {
     width: "100%",
     paddingHorizontal: F.rowPaddingH,
-    paddingVertical: F.rowPaddingV,
   },
   feedRowGroupStart: {
     marginTop: F.groupGap,
@@ -454,6 +502,14 @@ const s = StyleSheet.create({
   },
   contentColumn: {
     flex: 1,
+  },
+  cardWrapper: {
+    alignSelf: "flex-start" as const,
+  },
+  cardContent: {
+    alignSelf: "flex-start" as const,
+    paddingHorizontal: F.rowPaddingH + 4,
+    paddingVertical: F.rowPaddingV + 4,
   },
 
   // ── Message text (no bubble) ────────────────────────────────────────

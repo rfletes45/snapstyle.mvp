@@ -14,8 +14,9 @@ import React from "react";
 
 import type { ConversationDisplayMode } from "@/chat/displayMode";
 import { buildMessageViewModel } from "@/chat/displayMode";
-import { DMMessageItem } from "@/components/DMMessageItem";
+import type { CardWidthTracker } from "@/components/chat/CardWidthTracker";
 import { StackedMessageRenderer } from "@/components/chat/StackedMessageRenderer";
+import { DMMessageItem } from "@/components/DMMessageItem";
 import type { ChatAppearance } from "@/cosmetics/types";
 import type { ReactionSummary } from "@/services/reactions";
 import type { MessageV2, ReplyToMetadata } from "@/types/messaging";
@@ -65,6 +66,12 @@ export interface ChatMessageRendererProps {
   currentUserProfilePictureUrl?: string | null;
   /** Current user's decoration ID (for stacked mode avatars) */
   currentUserDecorationId?: string | null;
+  /** Shared tracker for adaptive card-width rounding */
+  cardWidthTracker?: CardWidthTracker;
+  /** Message ID of neighbor above in same group */
+  groupPrevMessageId?: string;
+  /** Message ID of neighbor below in same group */
+  groupNextMessageId?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -94,6 +101,9 @@ export const ChatMessageRenderer: React.FC<ChatMessageRendererProps> =
       currentUserDisplayName,
       currentUserProfilePictureUrl,
       currentUserDecorationId,
+      cardWidthTracker,
+      groupPrevMessageId,
+      groupNextMessageId,
     }) => {
       const isSentByMe = message.senderId === currentUid;
 
@@ -209,6 +219,9 @@ export const ChatMessageRenderer: React.FC<ChatMessageRendererProps> =
           senderDisplayName={senderDisplayName}
           senderProfilePictureUrl={senderProfilePictureUrl}
           senderDecorationId={senderDecorationId}
+          cardWidthTracker={cardWidthTracker}
+          groupPrevMessageId={groupPrevMessageId}
+          groupNextMessageId={groupNextMessageId}
         />
       );
     },

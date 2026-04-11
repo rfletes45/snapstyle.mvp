@@ -831,6 +831,7 @@ export interface Group {
   memberIds: string[]; // Array of member UIDs for efficient queries
   avatarPath?: string; // Optional group avatar path in Storage
   avatarUrl?: string; // Optional group avatar download URL
+  backgroundUrl?: string | null; // Optional group chat background image URL
   memberCount: number; // Denormalized count for display
   createdAt: number;
   updatedAt: number;

@@ -10,7 +10,12 @@
  */
 
 import React from "react";
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import {
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import { useTheme } from "react-native-paper";
 
 import type { MessageViewModel } from "@/chat/displayMode";
@@ -25,8 +30,10 @@ import {
   VoiceMessagePlayer,
 } from "@/components/chat";
 import { AnimalBubble } from "@/components/chat/AnimalBubble";
+import type { CardWidthTracker } from "@/components/chat/CardWidthTracker";
 import { MessageHighlightOverlay } from "@/components/chat/MessageHighlightOverlay";
 import { StackedReplyReference } from "@/components/chat/StackedReplyReference";
+import { useGroupedCardLayout } from "@/components/chat/useGroupedCardLayout";
 import { ProfilePictureWithDecoration } from "@/components/profile/ProfilePicture";
 import { hasUrls } from "@/services/linkPreview";
 import type { MentionableMember } from "@/services/mentionParser";
@@ -85,6 +92,12 @@ export interface GroupStackedMessageRendererProps {
   onImagePress: () => void;
   onOptimisticReaction?: (messageId: string, emoji: string) => void;
   onThreadPress: () => void;
+  /** Shared tracker for adaptive card-width rounding */
+  cardWidthTracker?: CardWidthTracker;
+  /** Message ID of neighbor above in same group */
+  groupPrevMessageId?: string;
+  /** Message ID of neighbor below in same group */
+  groupNextMessageId?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -116,6 +129,9 @@ export const GroupStackedMessageRenderer: React.FC<GroupStackedMessageRendererPr
       onImagePress,
       onOptimisticReaction,
       onThreadPress,
+      cardWidthTracker,
+      groupPrevMessageId,
+      groupNextMessageId,
     }) => {
       const theme = useTheme();
       const isOwnMessage = item.senderId === uid;
@@ -142,6 +158,29 @@ export const GroupStackedMessageRenderer: React.FC<GroupStackedMessageRendererPr
             borderLeftColor: `rgba(${hexToRgb(colors.tertiary || colors.primary)}, ${theme.dark ? 0.5 : 0.4})`,
           }
         : undefined;
+
+      // ── Adaptive card-width tracking ──────────────────────────────
+      const groupCardBg = colors.background;
+      const { handleCardLayout, groupCardRadius, snapMinWidth } =
+        useGroupedCardLayout({
+          messageId: item.id,
+          cardWidthTracker,
+          groupPrevMessageId,
+          groupNextMessageId,
+          isGroupStart: vm.isGroupStart,
+          isGroupEnd: vm.isGroupEnd,
+        });
+
+      // ── Width snapping for similar-width neighbors ────────────────
+      // Computed before rounding so effectiveWidth reflects the snap.
+
+      // ── Adaptive rounding ─────────────────────────────────────────
+      // Solo messages: all corners CARD_RADIUS.
+      // Within a group:
+      //   Left edges: always flat (left-aligned, edges flush).
+      //   Right edges: default ROUNDED. Only flatten when neighbor has
+      //     matching width (within SNAP_THRESHOLD) → flush continuous edge.
+      //   Boundary corners (group-start top, group-end bottom): always rounded.
 
       // ── Message content ───────────────────────────────────────────────
       const renderContent = () => {
@@ -246,12 +285,8 @@ export const GroupStackedMessageRenderer: React.FC<GroupStackedMessageRendererPr
             style={[
               gs.feedRow,
               vm.isGroupStart ? gs.feedRowGroupStart : gs.feedRowWithinGroup,
-              mentionRowStyle,
             ]}
           >
-            {/* Highlight overlay */}
-            <MessageHighlightOverlay isHighlighted={isHighlighted} />
-
             {/* ── Message row: [avatar/spacer] [content column] ──────── */}
             <TouchableOpacity
               activeOpacity={0.7}
@@ -289,56 +324,69 @@ export const GroupStackedMessageRenderer: React.FC<GroupStackedMessageRendererPr
 
                 {/* Content column — name + message in one vertical flow */}
                 <View style={gs.contentColumn}>
-                  {/* Author name + timestamp (group-start only) */}
-                  {vm.isGroupStart && (
-                    <View style={gs.nameRow}>
-                      <Text
-                        style={[gs.authorName, { color: authorColor }]}
-                        numberOfLines={1}
-                      >
-                        {senderDisplayName}
-                      </Text>
-                      <Text
-                        style={[
-                          gs.headerTimestamp,
-                          { color: colors.textSecondary },
-                        ]}
-                      >
-                        {formatChatTimestamp(item.createdAt)}
-                      </Text>
-                    </View>
-                  )}
+                  <View
+                    style={[
+                      gs.cardWrapper,
+                      { backgroundColor: groupCardBg, overflow: "hidden" },
+                      groupCardRadius,
+                      snapMinWidth !== undefined && { minWidth: snapMinWidth },
+                      mentionRowStyle,
+                    ]}
+                  >
+                    {/* Highlight overlay */}
+                    <MessageHighlightOverlay isHighlighted={isHighlighted} />
+                    <View onLayout={handleCardLayout} style={gs.cardContent}>
 
-                  {/* Reply preview — stacked-mode inline reference */}
-                  {item.replyTo && (
-                    <StackedReplyReference
-                      replyTo={item.replyTo}
-                      isReplyToMe={item.replyTo.senderId === uid}
-                      onPress={() => onScrollToMessage(item.replyTo!.messageId)}
-                    />
-                  )}
+                    {/* Author name + timestamp (group-start only) */}
+                    {vm.isGroupStart && (
+                      <View style={gs.nameRow}>
+                        <Text
+                          style={[gs.authorName, { color: authorColor }]}
+                          numberOfLines={1}
+                        >
+                          {senderDisplayName}
+                        </Text>
+                        <Text
+                          style={[
+                            gs.headerTimestamp,
+                            { color: colors.textSecondary },
+                          ]}
+                        >
+                          {formatChatTimestamp(item.createdAt)}
+                        </Text>
+                      </View>
+                    )}
 
-                  {/* Message content — no bubble wrapper */}
-                  {renderContent()}
-
-                  {/* Reaction pills — always left-aligned in feed mode */}
-                  {reactions.length > 0 && (
-                    <View style={gs.reactionRow}>
-                      <ReactionPills
-                        reactions={reactions}
-                        isOwnMessage={false}
-                        scope="group"
-                        conversationId={groupId}
-                        messageId={item.id}
-                        currentUid={uid || ""}
-                        onOptimisticToggle={onOptimisticReaction}
+                    {/* Reply preview — stacked-mode inline reference */}
+                    {item.replyTo && (
+                      <StackedReplyReference
+                        replyTo={item.replyTo}
+                        isReplyToMe={item.replyTo.senderId === uid}
+                        onPress={() =>
+                          onScrollToMessage(item.replyTo!.messageId)
+                        }
                       />
-                    </View>
-                  )}
+                    )}
 
-                  {/* Grouped stacked mode: the group-start header row always
-                     owns the single timestamp for the entire group. No
-                     per-bubble footer timestamp is ever rendered here. */}
+                    {/* Message content — no bubble wrapper */}
+                    {renderContent()}
+
+                    {/* Reaction pills — always left-aligned in feed mode */}
+                    {reactions.length > 0 && (
+                      <View style={gs.reactionRow}>
+                        <ReactionPills
+                          reactions={reactions}
+                          isOwnMessage={false}
+                          scope="group"
+                          conversationId={groupId}
+                          messageId={item.id}
+                          currentUid={uid || ""}
+                          onOptimisticToggle={onOptimisticReaction}
+                        />
+                      </View>
+                    )}
+                    </View>
+                  </View>
                 </View>
               </View>
             </TouchableOpacity>
@@ -370,7 +418,6 @@ const gs = StyleSheet.create({
   feedRow: {
     width: "100%",
     paddingHorizontal: F.rowPaddingH,
-    paddingVertical: F.rowPaddingV,
   },
   feedRowGroupStart: {
     marginTop: F.groupGap,
@@ -423,6 +470,14 @@ const gs = StyleSheet.create({
   },
   contentColumn: {
     flex: 1,
+  },
+  cardWrapper: {
+    alignSelf: "flex-start" as const,
+  },
+  cardContent: {
+    alignSelf: "flex-start" as const,
+    paddingHorizontal: F.rowPaddingH + 4,
+    paddingVertical: F.rowPaddingV + 4,
   },
 
   // Message text (no bubble)

@@ -56,6 +56,7 @@ import React, {
 } from "react";
 import {
   Alert,
+  Image,
   Keyboard,
   StyleSheet,
   TouchableOpacity,
@@ -174,6 +175,7 @@ import {
 } from "@/chat/buildTimeline";
 import { buildMessageViewModel } from "@/chat/displayMode";
 import { AnimalBubble } from "@/components/chat/AnimalBubble";
+import { CardWidthTracker } from "@/components/chat/CardWidthTracker";
 import { DateDivider } from "@/components/chat/DateDivider";
 import { GroupStackedMessageRenderer } from "@/components/chat/GroupStackedMessageRenderer";
 import { useComposerSheet } from "@/contexts/ComposerSheetContext";
@@ -1022,6 +1024,13 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   const timelineDataRef = useRef(timelineData);
   timelineDataRef.current = timelineData;
 
+  // Card-width tracker for adaptive stacked-mode rounding
+  const trackerConversationKey = groupId ?? "__pending-group__";
+  const cardWidthTracker = useMemo(() => {
+    void trackerConversationKey;
+    return new CardWidthTracker();
+  }, [trackerConversationKey]);
+
   // Enhanced scroll-to-message with highlight animation
   const scrollToMessage = useCallback((messageId: string) => {
     const targetIndex = timelineDataRef.current.findIndex(
@@ -1397,6 +1406,19 @@ export default function GroupChatScreen({ route, navigation }: Props) {
       // Use precomputed grouping from buildTimeline
       const isGroupedWithPrev = timelineItem.isGroupedWithPrevious;
       const isGroupedWithNextMsg = timelineItem.isGroupedWithNext;
+
+      // Neighbor IDs in same group (for adaptive card-width rounding)
+      const prevTl = timelineDataRef.current[index + 1];
+      const nextTl = timelineDataRef.current[index - 1];
+      const groupPrevMessageId =
+        isGroupedWithPrev && prevTl && "data" in prevTl
+          ? prevTl.data.id
+          : undefined;
+      const groupNextMessageId =
+        isGroupedWithNextMsg && nextTl && "data" in nextTl
+          ? nextTl.data.id
+          : undefined;
+
       const showSender = !isGroupedWithPrev && item.kind !== "system";
       const showTS = !isGroupedWithNextMsg && item.kind !== "system";
       const showAvatar = !isGroupedWithNextMsg && item.kind !== "system";
@@ -1497,6 +1519,9 @@ export default function GroupChatScreen({ route, navigation }: Props) {
                   rootMessageId: item.id,
                 })
               }
+              cardWidthTracker={cardWidthTracker}
+              groupPrevMessageId={groupPrevMessageId}
+              groupNextMessageId={groupNextMessageId}
             />
           </AnimatedMessageRow>
         );
@@ -1818,6 +1843,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
       handleOpenMediaViewer,
       scrollToMessage,
       handleOptimisticReaction,
+      cardWidthTracker,
       screen.chat.messageEnterAnimation,
       displayMode,
       mentionableMembers,
@@ -1940,6 +1966,16 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     <>
       <ChatKeyboardContainer
         style={[styles.container, { backgroundColor: colors.background }]}
+        backgroundLayer={
+          group?.backgroundUrl ? (
+            <Image
+              source={{ uri: group.backgroundUrl }}
+              style={styles.chatBackground}
+              resizeMode="cover"
+              fadeDuration={300}
+            />
+          ) : undefined
+        }
       >
         <ChatHeader
           onBack={() => navigation.goBack()}
@@ -2211,6 +2247,11 @@ export default function GroupChatScreen({ route, navigation }: Props) {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  chatBackground: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 1,
+    zIndex: 0,
+  },
   headerRightRow: {
     flexDirection: "row",
     alignItems: "center",

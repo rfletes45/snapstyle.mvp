@@ -41,22 +41,27 @@ import {
   hydrateGroupMembersForDisplay,
   leaveGroup,
   migrateGroupPermissions,
+  removeGroupBackground,
   removeMember,
   sendGroupInvite,
   subscribeToGroup,
   subscribeToGroupMembers,
+  updateGroupBackground,
   updateGroupName,
   updateGroupPhoto,
 } from "@/services/groups";
-import { uploadGroupAvatarImage } from "@/services/storage";
+import {
+  uploadGroupAvatarImage,
+  uploadGroupBackgroundImage,
+} from "@/services/storage";
 import { getVoiceChannelId } from "@/services/stream/voiceChannelIds";
 import { useAuth } from "@/store/AuthContext";
 import { useSnackbar } from "@/store/SnackbarContext";
 import { useColors } from "@/store/ThemeContext";
 import { Group, GROUP_LIMITS, GroupMember, GroupRole } from "@/types/models";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import * as ImagePicker from "expo-image-picker";
 import { StackActions } from "@react-navigation/native";
+import * as ImagePicker from "expo-image-picker";
 import React, {
   useCallback,
   useEffect,
@@ -73,6 +78,7 @@ import {
   Linking,
   Pressable,
   ScrollView,
+  StatusBar,
   StyleSheet,
   TouchableOpacity,
   useWindowDimensions,
@@ -90,7 +96,10 @@ import {
   Text,
   TextInput,
 } from "react-native-paper";
-import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("screens/groups/GroupChatInfoScreen");
@@ -133,6 +142,7 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
   // ─── Action state ─────────────────────────────────────────────────────
   const [actionLoading, setActionLoading] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [uploadingBackground, setUploadingBackground] = useState(false);
   const actionLockRef = useRef(false); // Prevent double-tap
   const isDismissingRef = useRef(false); // Guard subscription during leave/delete
 
@@ -178,6 +188,44 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
 
   // ─── Animations ───────────────────────────────────────────────────────
   const fadeAnim = useRef(new Animated.Value(0)).current;
+  const insets = useSafeAreaInsets();
+
+  // Header fade-in driven by scroll position
+  const scrollY = useRef(new Animated.Value(0)).current;
+  const HEADER_HEIGHT = 52; // compactHeader height (paddingVertical=8*2 + icon 36)
+  const STATUS_BAR_HEIGHT = insets.top;
+  const TOTAL_HEADER_HEIGHT = HEADER_HEIGHT + STATUS_BAR_HEIGHT;
+  // Threshold: how far user scrolls before header fully appears.
+  // We want the header to be solid by the time the tab bar approaches.
+  const FADE_START = 80; // start fading in
+  const FADE_END = 200; // fully opaque
+
+  const headerBgOpacity = scrollY.interpolate({
+    inputRange: [0, FADE_START, FADE_END],
+    outputRange: [0, 0, 1],
+    extrapolate: "clamp",
+  });
+
+  // Header icon backgrounds also fade: transparent on hero → solid when header is visible
+  const headerIconBgOpacity = scrollY.interpolate({
+    inputRange: [0, FADE_START, FADE_END],
+    outputRange: [0.5, 0.5, 1],
+    extrapolate: "clamp",
+  });
+
+  // Glass layer (dark scrim circles over hero) fades out as solid header appears
+  const headerGlassOpacity = scrollY.interpolate({
+    inputRange: [0, FADE_START, FADE_END],
+    outputRange: [1, 1, 0],
+    extrapolate: "clamp",
+  });
+  // For groups without a background image, keep the surfaceVariant buttons
+  // fully visible at all times (they just sit on a normal header bg)
+  const headerGlassOpacityNoImage = scrollY.interpolate({
+    inputRange: [0, FADE_START, FADE_END],
+    outputRange: [1, 1, 0],
+    extrapolate: "clamp",
+  });
 
   useEffect(() => {
     if (!loading && group) {
@@ -395,6 +443,105 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
       { text: "Cancel", style: "cancel" },
     ]);
   }, [uid, can, showError, processPhoto]);
+
+  // ── Background handlers ─────────────────────────────────────────────
+  /** Pick and upload a group background from camera or library */
+  const processBackground = useCallback(
+    async (picker: () => Promise<ImagePicker.ImagePickerResult>) => {
+      if (actionLockRef.current) return;
+      try {
+        const result = await picker();
+        if (result.canceled || !result.assets?.[0]) return;
+
+        actionLockRef.current = true;
+        setUploadingBackground(true);
+        logger.debug("[GroupInfo] Uploading group background", { groupId });
+
+        const imageUri = result.assets[0].uri;
+        const downloadUrl = await uploadGroupBackgroundImage(groupId, imageUri);
+
+        logger.debug("[GroupInfo] Background upload complete, updating doc", {
+          groupId,
+        });
+        await updateGroupBackground(groupId, uid!, downloadUrl);
+
+        showSuccess("Chat background updated");
+      } catch (err: any) {
+        logger.error("[GroupInfo] Failed to update group background", {
+          groupId,
+          error: err.message,
+        });
+        showErrorWithRetry(
+          err.message || "Failed to update chat background",
+          () => processBackground(picker),
+        );
+      } finally {
+        setUploadingBackground(false);
+        actionLockRef.current = false;
+      }
+    },
+    [uid, groupId, showSuccess, showErrorWithRetry],
+  );
+
+  /** Change group background — permission-gated, popup to choose camera or library */
+  const handleChangeBackground = useCallback(() => {
+    if (!uid || !can(GroupPermission.EDIT_GROUP_PHOTO)) {
+      showError("You don't have permission to change the chat background");
+      return;
+    }
+    if (actionLockRef.current) return;
+
+    const pickerOpts: ImagePicker.ImagePickerOptions = {
+      mediaTypes: ["images"],
+      allowsEditing: true,
+      aspect: [9, 16], // Portrait aspect for chat background
+      quality: 0.8,
+    };
+
+    const options: {
+      text: string;
+      onPress?: () => void;
+      style?: "cancel" | "destructive";
+    }[] = [
+      {
+        text: "Take Photo",
+        onPress: () =>
+          processBackground(() => ImagePicker.launchCameraAsync(pickerOpts)),
+      },
+      {
+        text: "Choose from Library",
+        onPress: () =>
+          processBackground(() =>
+            ImagePicker.launchImageLibraryAsync(pickerOpts),
+          ),
+      },
+    ];
+
+    // Only show "Remove" if a background is set
+    if (group?.backgroundUrl) {
+      options.push({
+        text: "Remove Background",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            actionLockRef.current = true;
+            setUploadingBackground(true);
+            await removeGroupBackground(groupId, uid!);
+            showSuccess("Chat background removed");
+          } catch (err: any) {
+            showError(err.message || "Failed to remove background");
+          } finally {
+            setUploadingBackground(false);
+            actionLockRef.current = false;
+          }
+        },
+      });
+    }
+
+    options.push({ text: "Cancel", style: "cancel" });
+
+    Alert.alert("Chat Background", "Choose an option", options);
+  }, [uid, can, showError, processBackground, group?.backgroundUrl, groupId]);
 
   /** Update group name */
   const handleUpdateName = useCallback(async () => {
@@ -847,73 +994,12 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
   // =====================================================================
 
   return (
-    <SafeAreaView
-      style={[styles.container, { backgroundColor: colors.background }]}
-      edges={["top", "bottom"]}
-    >
-      {/* ── Compact header with circular icon buttons ──────────────── */}
-      <View
-        style={[styles.compactHeader, { backgroundColor: colors.background }]}
-      >
-        <TouchableOpacity
-          style={[
-            styles.headerCircle,
-            { backgroundColor: colors.surfaceVariant },
-          ]}
-          activeOpacity={0.7}
-          onPress={() => navigation.goBack()}
-          accessibilityLabel="Go back"
-        >
-          <MaterialCommunityIcons
-            name="arrow-left"
-            size={20}
-            color={colors.text}
-          />
-        </TouchableOpacity>
-
-        <View style={styles.headerRight}>
-          {can(GroupPermission.MANAGE_PERMISSIONS) && (
-            <TouchableOpacity
-              style={[
-                styles.headerCircle,
-                { backgroundColor: colors.surfaceVariant },
-              ]}
-              activeOpacity={0.7}
-              onPress={() =>
-                navigation.navigate("GroupPermissions", { groupId })
-              }
-              accessibilityLabel="Admin permissions"
-            >
-              <MaterialCommunityIcons
-                name="shield-key-outline"
-                size={20}
-                color={colors.textSecondary}
-              />
-            </TouchableOpacity>
-          )}
-          <TouchableOpacity
-            style={[
-              styles.headerCircle,
-              { backgroundColor: colors.surfaceVariant },
-            ]}
-            activeOpacity={0.7}
-            onPress={() =>
-              navigation.navigate("ChatSettings", {
-                groupId,
-                chatType: "group",
-                chatName: group.name,
-              })
-            }
-            accessibilityLabel="Group settings"
-          >
-            <MaterialCommunityIcons
-              name="cog-outline"
-              size={20}
-              color={colors.textSecondary}
-            />
-          </TouchableOpacity>
-        </View>
-      </View>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <StatusBar
+        barStyle={group.backgroundUrl ? "light-content" : "default"}
+        translucent
+        backgroundColor="transparent"
+      />
 
       {/* ── Action loading overlay ──────────────────────────────────── */}
       {actionLoading && (
@@ -923,250 +1009,367 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
       )}
 
       <Animated.View style={{ flex: 1, opacity: fadeAnim }}>
-        <ScrollView
+        <Animated.ScrollView
           style={styles.scrollContent}
-          contentContainerStyle={styles.scrollContainer}
+          contentContainerStyle={[
+            styles.scrollContainer,
+            { paddingBottom: insets.bottom },
+          ]}
           showsVerticalScrollIndicator={false}
+          scrollEventThrottle={16}
+          onScroll={Animated.event(
+            [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+            { useNativeDriver: true },
+          )}
         >
           {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-           *  HERO SECTION — Group identity
+           *  HERO SECTION — Group identity with optional background
            * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
-          <View style={styles.heroCard}>
-            {/* Group Avatar */}
-            <TouchableOpacity
-              onPress={handleChangePhoto}
-              disabled={
-                uploadingPhoto || !can(GroupPermission.EDIT_GROUP_PHOTO)
-              }
-              activeOpacity={0.7}
-              style={styles.heroAvatarContainer}
-            >
-              {group.avatarUrl ? (
+          <View style={styles.heroWrapper}>
+            {/* Background image preview (spans behind hero) */}
+            {group.backgroundUrl ? (
+              <View style={styles.heroBackgroundContainer}>
                 <AppImage
-                  source={{ uri: group.avatarUrl }}
-                  style={styles.heroAvatarImage}
-                  debugLabel="GroupInfoHeroAvatar"
+                  source={{ uri: group.backgroundUrl }}
+                  style={styles.heroBackgroundImage}
+                  debugLabel="GroupInfoHeroBg"
                 />
-              ) : (
-                <View
-                  style={[
-                    styles.heroAvatarFallback,
-                    { backgroundColor: colors.surfaceVariant },
-                  ]}
-                >
-                  <MaterialCommunityIcons
-                    name="account-group"
-                    size={56}
-                    color={colors.primary}
-                  />
-                </View>
-              )}
-              {uploadingPhoto && (
-                <View style={styles.heroAvatarOverlay}>
-                  <ActivityIndicator size="small" color="#FFF" />
-                </View>
-              )}
-              {can(GroupPermission.EDIT_GROUP_PHOTO) && !uploadingPhoto && (
-                <View
-                  style={[
-                    styles.editPhotoBadge,
-                    { backgroundColor: colors.primary },
-                  ]}
-                >
-                  <MaterialCommunityIcons
-                    name="camera"
-                    size={18}
-                    color="#FFF"
-                  />
-                </View>
-              )}
-            </TouchableOpacity>
+                {/* Gradient scrim for text readability */}
+                <View style={styles.heroBackgroundGradient} />
+              </View>
+            ) : null}
 
-            {/* Group Name + Edit */}
-            <View style={styles.heroNameRow}>
-              <Text style={[styles.heroName, { color: colors.text }]}>
-                {group.name}
-              </Text>
-              {can(GroupPermission.EDIT_GROUP_NAME) && (
-                <IconButton
-                  icon="pencil"
-                  size={18}
-                  iconColor={colors.textSecondary}
-                  onPress={() => {
-                    setNewGroupName(group.name);
-                    setEditNameVisible(true);
-                  }}
-                  style={styles.editNameButton}
-                />
-              )}
-            </View>
+            {/* Spacer to push content below the status bar + header */}
+            <View style={{ height: TOTAL_HEADER_HEIGHT }} />
 
-            {/* Meta info */}
-            <Text style={[styles.heroMeta, { color: colors.textSecondary }]}>
-              {memberCount} {memberCount === 1 ? "member" : "members"}
-              {createdDate && `  •  Created ${createdDate}`}
-            </Text>
-          </View>
-
-          {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-           *  VOICE ROOM MODULE
-           * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
-          {CALL_FEATURES.CALLS_ENABLED && (
-            <View>
-              <View style={styles.voiceHeader}>
-                <View style={styles.voiceHeaderLeft}>
-                  <MaterialCommunityIcons
-                    name="headphones"
-                    size={20}
-                    color={
-                      voiceRoom.isActive ? colors.success : colors.textSecondary
-                    }
+            <View
+              style={[
+                styles.heroCard,
+                group.backgroundUrl ? styles.heroCardOverBg : undefined,
+              ]}
+            >
+              {/* Group Avatar */}
+              <TouchableOpacity
+                onPress={handleChangePhoto}
+                disabled={
+                  uploadingPhoto || !can(GroupPermission.EDIT_GROUP_PHOTO)
+                }
+                activeOpacity={0.7}
+                style={styles.heroAvatarContainer}
+              >
+                {group.avatarUrl ? (
+                  <AppImage
+                    source={{ uri: group.avatarUrl }}
+                    style={styles.heroAvatarImage}
+                    debugLabel="GroupInfoHeroAvatar"
                   />
-                  <Text style={[styles.voiceTitle, { color: colors.text }]}>
-                    Voice Room
-                  </Text>
-                  {voiceRoom.isActive && (
-                    <Animated.View
-                      style={[
-                        styles.liveDot,
-                        {
-                          backgroundColor: colors.success,
-                          opacity: pulseAnim,
-                        },
-                      ]}
-                    />
-                  )}
-                </View>
-                {voiceRoom.isActive && (
-                  <Text
-                    style={[styles.voiceCount, { color: colors.textSecondary }]}
+                ) : (
+                  <View
+                    style={[
+                      styles.heroAvatarFallback,
+                      { backgroundColor: colors.surfaceVariant },
+                    ]}
                   >
-                    {voiceRoom.occupants.length}{" "}
-                    {voiceRoom.occupants.length === 1 ? "person" : "people"}
-                  </Text>
+                    <MaterialCommunityIcons
+                      name="account-group"
+                      size={56}
+                      color={colors.primary}
+                    />
+                  </View>
+                )}
+                {uploadingPhoto && (
+                  <View style={styles.heroAvatarOverlay}>
+                    <ActivityIndicator size="small" color="#FFF" />
+                  </View>
+                )}
+                {can(GroupPermission.EDIT_GROUP_PHOTO) && !uploadingPhoto && (
+                  <View
+                    style={[
+                      styles.editPhotoBadge,
+                      { backgroundColor: colors.primary },
+                    ]}
+                  >
+                    <MaterialCommunityIcons
+                      name="camera"
+                      size={18}
+                      color="#FFF"
+                    />
+                  </View>
+                )}
+              </TouchableOpacity>
+
+              {/* Group Name + Edit */}
+              <View style={styles.heroNameRow}>
+                <Text
+                  style={[
+                    styles.heroName,
+                    {
+                      color: group.backgroundUrl ? "#FFF" : colors.text,
+                      ...(group.backgroundUrl
+                        ? {
+                            textShadowColor: "rgba(0,0,0,0.6)",
+                            textShadowOffset: { width: 0, height: 1 },
+                            textShadowRadius: 3,
+                          }
+                        : {}),
+                    },
+                  ]}
+                >
+                  {group.name}
+                </Text>
+                {can(GroupPermission.EDIT_GROUP_NAME) && (
+                  <IconButton
+                    icon="pencil"
+                    size={18}
+                    iconColor={
+                      group.backgroundUrl ? "#FFF" : colors.textSecondary
+                    }
+                    onPress={() => {
+                      setNewGroupName(group.name);
+                      setEditNameVisible(true);
+                    }}
+                    style={styles.editNameButton}
+                  />
                 )}
               </View>
 
-              {voiceRoom.isActive ? (
-                <>
-                  {/* Occupant avatars */}
-                  <View style={styles.voiceOccupants}>
-                    {voiceRoom.occupants.slice(0, 6).map((occupant) => (
-                      <View
-                        key={occupant.userId}
-                        style={styles.voiceOccupantItem}
-                      >
-                        <ProfilePicture
-                          url={occupant.image ?? null}
-                          name={occupant.name}
-                          size={36}
-                          showLoading={false}
-                        />
-                        <Text
-                          style={[
-                            styles.voiceOccupantName,
-                            { color: colors.textSecondary },
-                          ]}
-                          numberOfLines={1}
-                        >
-                          {occupant.userId === uid
-                            ? "You"
-                            : occupant.name.split(" ")[0]}
-                        </Text>
-                      </View>
-                    ))}
-                    {voiceRoom.occupants.length > 6 && (
-                      <View style={styles.voiceOccupantItem}>
-                        <View
-                          style={[
-                            styles.voiceOverflowCircle,
-                            { backgroundColor: colors.surfaceVariant },
-                          ]}
-                        >
-                          <Text
-                            style={[
-                              styles.voiceOverflowText,
-                              { color: colors.textSecondary },
-                            ]}
-                          >
-                            +{voiceRoom.occupants.length - 6}
-                          </Text>
-                        </View>
-                      </View>
-                    )}
-                  </View>
+              {/* Meta info */}
+              <Text
+                style={[
+                  styles.heroMeta,
+                  {
+                    color: group.backgroundUrl
+                      ? "rgba(255,255,255,0.85)"
+                      : colors.textSecondary,
+                    ...(group.backgroundUrl
+                      ? {
+                          textShadowColor: "rgba(0,0,0,0.5)",
+                          textShadowOffset: { width: 0, height: 1 },
+                          textShadowRadius: 2,
+                        }
+                      : {}),
+                  },
+                ]}
+              >
+                {memberCount} {memberCount === 1 ? "member" : "members"}
+                {createdDate && `  •  Created ${createdDate}`}
+              </Text>
 
-                  {/* Join / Return button */}
-                  <TouchableOpacity
-                    style={[
-                      styles.voiceJoinButton,
-                      {
-                        backgroundColor: isCurrentUserInRoom
-                          ? colors.success + "18"
-                          : colors.success,
-                      },
-                    ]}
-                    activeOpacity={0.7}
-                    onPress={handleJoinVoiceChannel}
-                    disabled={isBusy && !isCurrentUserInRoom}
-                  >
-                    <MaterialCommunityIcons
-                      name="headphones"
-                      size={18}
-                      color={isCurrentUserInRoom ? colors.success : "#FFF"}
-                    />
-                    <Text
-                      style={[
-                        styles.voiceJoinText,
-                        {
-                          color: isCurrentUserInRoom ? colors.success : "#FFF",
-                        },
-                      ]}
-                    >
-                      {isCurrentUserInRoom
-                        ? "Return to Room"
-                        : isBusy
-                          ? "In Another Call"
-                          : "Join Voice Room"}
-                    </Text>
-                  </TouchableOpacity>
-                </>
-              ) : (
-                <>
-                  <Text
-                    style={[styles.voiceEmptyText, { color: colors.textMuted }]}
-                  >
-                    No one is in the voice room right now
-                  </Text>
-                  <TouchableOpacity
-                    style={[
-                      styles.voiceStartButton,
-                      { borderColor: colors.border },
-                    ]}
-                    activeOpacity={0.7}
-                    onPress={handleJoinVoiceChannel}
-                    disabled={isBusy}
-                  >
-                    <MaterialCommunityIcons
-                      name="headphones"
-                      size={18}
-                      color={isBusy ? colors.textMuted : colors.primary}
-                    />
-                    <Text
-                      style={[
-                        styles.voiceStartText,
-                        {
-                          color: isBusy ? colors.textMuted : colors.primary,
-                        },
-                      ]}
-                    >
-                      {isBusy ? "In Another Call" : "Start Voice Room"}
-                    </Text>
-                  </TouchableOpacity>
-                </>
+              {/* Background edit button */}
+              {can(GroupPermission.EDIT_GROUP_PHOTO) && (
+                <TouchableOpacity
+                  style={[
+                    styles.bgEditButton,
+                    {
+                      backgroundColor: group.backgroundUrl
+                        ? "rgba(0,0,0,0.45)"
+                        : colors.surfaceVariant,
+                    },
+                  ]}
+                  activeOpacity={0.7}
+                  onPress={handleChangeBackground}
+                  disabled={uploadingBackground}
+                  accessibilityLabel="Change chat background"
+                >
+                  {uploadingBackground ? (
+                    <ActivityIndicator size="small" color="#FFF" />
+                  ) : (
+                    <>
+                      <MaterialCommunityIcons
+                        name="image-edit-outline"
+                        size={16}
+                        color={group.backgroundUrl ? "#FFF" : colors.primary}
+                      />
+                      <Text
+                        style={[
+                          styles.bgEditText,
+                          {
+                            color: group.backgroundUrl
+                              ? "#FFF"
+                              : colors.primary,
+                          },
+                        ]}
+                      >
+                        {group.backgroundUrl
+                          ? "Change Background"
+                          : "Add Background"}
+                      </Text>
+                    </>
+                  )}
+                </TouchableOpacity>
               )}
             </View>
-          )}
+
+            {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+             *  VOICE ROOM MODULE
+             * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+            {CALL_FEATURES.CALLS_ENABLED && (
+              <View>
+                <View style={styles.voiceHeader}>
+                  <View style={styles.voiceHeaderLeft}>
+                    <MaterialCommunityIcons
+                      name="headphones"
+                      size={20}
+                      color={
+                        voiceRoom.isActive
+                          ? colors.success
+                          : colors.textSecondary
+                      }
+                    />
+                    <Text style={[styles.voiceTitle, { color: colors.text }]}>
+                      Voice Room
+                    </Text>
+                    {voiceRoom.isActive && (
+                      <Animated.View
+                        style={[
+                          styles.liveDot,
+                          {
+                            backgroundColor: colors.success,
+                            opacity: pulseAnim,
+                          },
+                        ]}
+                      />
+                    )}
+                  </View>
+                  {voiceRoom.isActive && (
+                    <Text
+                      style={[
+                        styles.voiceCount,
+                        { color: colors.textSecondary },
+                      ]}
+                    >
+                      {voiceRoom.occupants.length}{" "}
+                      {voiceRoom.occupants.length === 1 ? "person" : "people"}
+                    </Text>
+                  )}
+                </View>
+
+                {voiceRoom.isActive ? (
+                  <>
+                    {/* Occupant avatars */}
+                    <View style={styles.voiceOccupants}>
+                      {voiceRoom.occupants.slice(0, 6).map((occupant) => (
+                        <View
+                          key={occupant.userId}
+                          style={styles.voiceOccupantItem}
+                        >
+                          <ProfilePicture
+                            url={occupant.image ?? null}
+                            name={occupant.name}
+                            size={36}
+                            showLoading={false}
+                          />
+                          <Text
+                            style={[
+                              styles.voiceOccupantName,
+                              { color: colors.textSecondary },
+                            ]}
+                            numberOfLines={1}
+                          >
+                            {occupant.userId === uid
+                              ? "You"
+                              : occupant.name.split(" ")[0]}
+                          </Text>
+                        </View>
+                      ))}
+                      {voiceRoom.occupants.length > 6 && (
+                        <View style={styles.voiceOccupantItem}>
+                          <View
+                            style={[
+                              styles.voiceOverflowCircle,
+                              { backgroundColor: colors.surfaceVariant },
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.voiceOverflowText,
+                                { color: colors.textSecondary },
+                              ]}
+                            >
+                              +{voiceRoom.occupants.length - 6}
+                            </Text>
+                          </View>
+                        </View>
+                      )}
+                    </View>
+
+                    {/* Join / Return button */}
+                    <TouchableOpacity
+                      style={[
+                        styles.voiceJoinButton,
+                        {
+                          backgroundColor: isCurrentUserInRoom
+                            ? colors.success + "18"
+                            : colors.success,
+                        },
+                      ]}
+                      activeOpacity={0.7}
+                      onPress={handleJoinVoiceChannel}
+                      disabled={isBusy && !isCurrentUserInRoom}
+                    >
+                      <MaterialCommunityIcons
+                        name="headphones"
+                        size={18}
+                        color={isCurrentUserInRoom ? colors.success : "#FFF"}
+                      />
+                      <Text
+                        style={[
+                          styles.voiceJoinText,
+                          {
+                            color: isCurrentUserInRoom
+                              ? colors.success
+                              : "#FFF",
+                          },
+                        ]}
+                      >
+                        {isCurrentUserInRoom
+                          ? "Return to Room"
+                          : isBusy
+                            ? "In Another Call"
+                            : "Join Voice Room"}
+                      </Text>
+                    </TouchableOpacity>
+                  </>
+                ) : (
+                  <>
+                    <Text
+                      style={[
+                        styles.voiceEmptyText,
+                        { color: colors.textMuted },
+                      ]}
+                    >
+                      No one is in the voice room right now
+                    </Text>
+                    <TouchableOpacity
+                      style={[
+                        styles.voiceStartButton,
+                        { borderColor: colors.border },
+                      ]}
+                      activeOpacity={0.7}
+                      onPress={handleJoinVoiceChannel}
+                      disabled={isBusy}
+                    >
+                      <MaterialCommunityIcons
+                        name="headphones"
+                        size={18}
+                        color={isBusy ? colors.textMuted : colors.primary}
+                      />
+                      <Text
+                        style={[
+                          styles.voiceStartText,
+                          {
+                            color: isBusy ? colors.textMuted : colors.primary,
+                          },
+                        ]}
+                      >
+                        {isBusy ? "In Another Call" : "Start Voice Room"}
+                      </Text>
+                    </TouchableOpacity>
+                  </>
+                )}
+              </View>
+            )}
+          </View>
 
           {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
            *  UNIFIED CONTENT SECTION (Members / Media / Messages / Links)
@@ -1529,9 +1732,7 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
                             { borderBottomColor: colors.border },
                           ]}
                           activeOpacity={0.6}
-                          onPress={() =>
-                            navigateToGroupMessage(item.messageId)
-                          }
+                          onPress={() => navigateToGroupMessage(item.messageId)}
                         >
                           <View style={styles.inlineMessageContent}>
                             <View style={styles.inlineMessageHeader}>
@@ -1774,7 +1975,214 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
 
           {/* Bottom spacer */}
           <View style={{ height: Spacing.xxl }} />
-        </ScrollView>
+        </Animated.ScrollView>
+      </Animated.View>
+
+      {/* ── Floating header — fades in as user scrolls ──────────────── */}
+      <Animated.View
+        pointerEvents="box-none"
+        style={[
+          styles.floatingHeaderContainer,
+          { paddingTop: STATUS_BAR_HEIGHT },
+        ]}
+      >
+        {/* Animated background fill */}
+        <Animated.View
+          style={[
+            StyleSheet.absoluteFill,
+            {
+              backgroundColor: colors.background,
+              opacity: headerBgOpacity,
+            },
+          ]}
+        />
+
+        {/* Header content — always interactive */}
+        <View style={styles.compactHeader}>
+          {/* Back button */}
+          <View>
+            {/* Solid layer — fades in */}
+            <Animated.View
+              style={[
+                styles.headerCircle,
+                {
+                  backgroundColor: colors.surfaceVariant,
+                  opacity: headerBgOpacity,
+                },
+              ]}
+              pointerEvents="none"
+            >
+              <MaterialCommunityIcons
+                name="arrow-left"
+                size={20}
+                color={colors.text}
+              />
+            </Animated.View>
+            {/* Glass layer — fades out (sits on top for touches) */}
+            <Animated.View
+              style={[
+                styles.headerCircle,
+                styles.headerCircleAbsolute,
+                {
+                  backgroundColor: group.backgroundUrl
+                    ? "rgba(0,0,0,0.35)"
+                    : colors.surfaceVariant,
+                  opacity: group.backgroundUrl
+                    ? headerGlassOpacity
+                    : headerGlassOpacityNoImage,
+                },
+              ]}
+            >
+              <TouchableOpacity
+                style={styles.headerCircleTouchable}
+                activeOpacity={0.7}
+                onPress={() => navigation.goBack()}
+                accessibilityLabel="Go back"
+              >
+                <MaterialCommunityIcons
+                  name="arrow-left"
+                  size={20}
+                  color={group.backgroundUrl ? "#FFF" : colors.text}
+                />
+              </TouchableOpacity>
+            </Animated.View>
+          </View>
+
+          {/* Group avatar + name — fades in with header */}
+          <Animated.View
+            style={[styles.headerTitleRow, { opacity: headerBgOpacity }]}
+            pointerEvents="none"
+          >
+            {group.avatarUrl ? (
+              <AppImage
+                source={{ uri: group.avatarUrl }}
+                style={styles.headerAvatar}
+                debugLabel="HeaderGroupAvatar"
+              />
+            ) : (
+              <ProfilePicture
+                url={null}
+                name={group.name}
+                size={36}
+                showLoading={false}
+              />
+            )}
+            <Text
+              style={[styles.headerTitleText, { color: colors.text }]}
+              numberOfLines={1}
+            >
+              {group.name}
+            </Text>
+          </Animated.View>
+
+          <View style={styles.headerRight}>
+            {/* Permissions button */}
+            {can(GroupPermission.MANAGE_PERMISSIONS) && (
+              <View>
+                <Animated.View
+                  style={[
+                    styles.headerCircle,
+                    {
+                      backgroundColor: colors.surfaceVariant,
+                      opacity: headerBgOpacity,
+                    },
+                  ]}
+                  pointerEvents="none"
+                >
+                  <MaterialCommunityIcons
+                    name="shield-key-outline"
+                    size={20}
+                    color={colors.textSecondary}
+                  />
+                </Animated.View>
+                <Animated.View
+                  style={[
+                    styles.headerCircle,
+                    styles.headerCircleAbsolute,
+                    {
+                      backgroundColor: group.backgroundUrl
+                        ? "rgba(0,0,0,0.35)"
+                        : colors.surfaceVariant,
+                      opacity: group.backgroundUrl
+                        ? headerGlassOpacity
+                        : headerGlassOpacityNoImage,
+                    },
+                  ]}
+                >
+                  <TouchableOpacity
+                    style={styles.headerCircleTouchable}
+                    activeOpacity={0.7}
+                    onPress={() =>
+                      navigation.navigate("GroupPermissions", { groupId })
+                    }
+                    accessibilityLabel="Admin permissions"
+                  >
+                    <MaterialCommunityIcons
+                      name="shield-key-outline"
+                      size={20}
+                      color={
+                        group.backgroundUrl ? "#FFF" : colors.textSecondary
+                      }
+                    />
+                  </TouchableOpacity>
+                </Animated.View>
+              </View>
+            )}
+
+            {/* Settings button */}
+            <View>
+              <Animated.View
+                style={[
+                  styles.headerCircle,
+                  {
+                    backgroundColor: colors.surfaceVariant,
+                    opacity: headerBgOpacity,
+                  },
+                ]}
+                pointerEvents="none"
+              >
+                <MaterialCommunityIcons
+                  name="cog-outline"
+                  size={20}
+                  color={colors.textSecondary}
+                />
+              </Animated.View>
+              <Animated.View
+                style={[
+                  styles.headerCircle,
+                  styles.headerCircleAbsolute,
+                  {
+                    backgroundColor: group.backgroundUrl
+                      ? "rgba(0,0,0,0.35)"
+                      : colors.surfaceVariant,
+                    opacity: group.backgroundUrl
+                      ? headerGlassOpacity
+                      : headerGlassOpacityNoImage,
+                  },
+                ]}
+              >
+                <TouchableOpacity
+                  style={styles.headerCircleTouchable}
+                  activeOpacity={0.7}
+                  onPress={() =>
+                    navigation.navigate("ChatSettings", {
+                      groupId,
+                      chatType: "group",
+                      chatName: group.name,
+                    })
+                  }
+                  accessibilityLabel="Group settings"
+                >
+                  <MaterialCommunityIcons
+                    name="cog-outline"
+                    size={20}
+                    color={group.backgroundUrl ? "#FFF" : colors.textSecondary}
+                  />
+                </TouchableOpacity>
+              </Animated.View>
+            </View>
+          </View>
+        </View>
       </Animated.View>
 
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -2147,7 +2555,7 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
           </View>
         </Modal>
       </Portal>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -2185,7 +2593,14 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 
-  // ── Compact Header ──────────────────────────────────────────────────
+  // ── Floating Header ─────────────────────────────────────────────────
+  floatingHeaderContainer: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 10,
+  },
   compactHeader: {
     flexDirection: "row",
     alignItems: "center",
@@ -2200,10 +2615,39 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  headerCircleAbsolute: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+  },
+  headerCircleTouchable: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   headerRight: {
     flexDirection: "row",
     alignItems: "center",
     gap: Spacing.sm,
+  },
+  headerTitleRow: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    marginHorizontal: Spacing.lg,
+    gap: Spacing.md,
+  },
+  headerAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+  },
+  headerTitleText: {
+    fontSize: FontSizes.xxl,
+    fontWeight: FontWeights.semibold,
+    flexShrink: 1,
   },
 
   scrollContent: {
@@ -2223,12 +2667,34 @@ const styles = StyleSheet.create({
   },
 
   // ── Hero Card ───────────────────────────────────────────────────────
+  heroWrapper: {
+    position: "relative",
+    overflow: "hidden",
+    marginHorizontal: -Spacing.lg,
+  },
+  heroBackgroundContainer: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 0,
+  },
+  heroBackgroundImage: {
+    width: "100%",
+    height: "100%",
+    resizeMode: "cover",
+  },
+  heroBackgroundGradient: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.35)",
+  },
   heroCard: {
     paddingHorizontal: Spacing.xl,
     paddingTop: Spacing.md,
     paddingBottom: Spacing.lg,
     alignItems: "center",
-    marginBottom: Spacing.md,
+    zIndex: 1,
+  },
+  heroCardOverBg: {
+    paddingTop: Spacing.xl,
+    paddingBottom: Spacing.xl,
   },
   heroAvatarContainer: {
     position: "relative",
@@ -2283,6 +2749,19 @@ const styles = StyleSheet.create({
   heroMeta: {
     fontSize: FontSizes.sm,
     textAlign: "center",
+  },
+  bgEditButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.full,
+    marginTop: Spacing.md,
+    gap: Spacing.xs,
+  },
+  bgEditText: {
+    fontSize: FontSizes.sm,
+    fontWeight: FontWeights.medium,
   },
 
   // ── Section Cards ───────────────────────────────────────────────────

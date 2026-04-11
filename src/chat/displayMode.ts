@@ -172,7 +172,7 @@ export const FEED_LAYOUT: FeedLayoutTokens = {
   contentIndent: 54, // 0 + 40 + 14
   avatarSize: 40,
   groupGap: 14,
-  withinGroupGap: 2,
+  withinGroupGap: 0,
   rowPaddingV: 2,
   rowPaddingH: 8,
   mediaRadius: 8,

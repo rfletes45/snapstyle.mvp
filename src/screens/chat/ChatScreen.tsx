@@ -91,6 +91,7 @@ import { useComposerToolbarLayout } from "@/hooks/useComposerToolbarLayout";
 
 // UI components
 import BlockUserModal from "@/components/BlockUserModal";
+import { CardWidthTracker } from "@/components/chat/CardWidthTracker";
 import { ChatHeader } from "@/components/chat/ChatHeader";
 import { ChatMessageRenderer } from "@/components/chat/ChatMessageRenderer";
 import ReportUserModal from "@/components/ReportUserModal";
@@ -1028,6 +1029,13 @@ export default function ChatScreen({
   const timelineDataRef = useRef(timelineData);
   timelineDataRef.current = timelineData;
 
+  // Card-width tracker for adaptive stacked-mode rounding
+  const trackerConversationKey = chatId ?? "__pending-chat__";
+  const cardWidthTracker = useMemo(() => {
+    void trackerConversationKey;
+    return new CardWidthTracker();
+  }, [trackerConversationKey]);
+
   // Enhanced scroll-to-message with highlight animation
   const scrollToMessage = useCallback(
     (messageId: string) => {
@@ -1296,7 +1304,7 @@ export default function ChatScreen({
   const showSkeleton = isInitializing && !initialData?.chatId;
 
   const renderTimelineItem = useCallback(
-    ({ item }: { item: TimelineItem<MessageV2>; index: number }) => {
+    ({ item, index }: { item: TimelineItem<MessageV2>; index: number }) => {
       if (item.type === "date-divider") {
         return <DateDivider label={item.label} />;
       }
@@ -1304,6 +1312,19 @@ export default function ChatScreen({
       if (msg.kind === "system") {
         return <SystemMessageChip text={safeSystemText(msg.text)} />;
       }
+
+      // Neighbor IDs in same group (for adaptive card-width rounding)
+      const prevTl = timelineDataRef.current[index + 1];
+      const nextTl = timelineDataRef.current[index - 1];
+      const groupPrevMessageId =
+        item.isGroupedWithPrevious && prevTl && "data" in prevTl
+          ? prevTl.data.id
+          : undefined;
+      const groupNextMessageId =
+        item.isGroupedWithNext && nextTl && "data" in nextTl
+          ? nextTl.data.id
+          : undefined;
+
       return (
         <AnimatedMessageRow
           messageId={msg.id}
@@ -1341,6 +1362,9 @@ export default function ChatScreen({
             currentUserDecorationId={
               (profile as any)?.avatarDecoration?.decorationId ?? null
             }
+            cardWidthTracker={cardWidthTracker}
+            groupPrevMessageId={groupPrevMessageId}
+            groupNextMessageId={groupNextMessageId}
           />
         </AnimatedMessageRow>
       );
@@ -1358,6 +1382,7 @@ export default function ChatScreen({
       highlightedMessageId,
       messageReactions,
       handleOptimisticReaction,
+      cardWidthTracker,
       screen.chat.messageEnterAnimation,
       displayMode,
       profile?.displayName,

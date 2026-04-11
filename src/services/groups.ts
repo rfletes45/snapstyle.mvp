@@ -678,6 +678,7 @@ export function subscribeToUserGroups(
           memberIds: data.memberIds || [],
           avatarPath: data.avatarPath,
           avatarUrl: data.avatarUrl,
+          backgroundUrl: data.backgroundUrl ?? null,
           memberCount: data.memberCount,
           createdAt:
             data.createdAt instanceof Timestamp
@@ -730,6 +731,7 @@ export function subscribeToGroup(
         memberIds: data.memberIds || [],
         avatarPath: data.avatarPath,
         avatarUrl: data.avatarUrl,
+        backgroundUrl: data.backgroundUrl ?? null,
         memberCount: data.memberCount,
         createdAt:
           data.createdAt instanceof Timestamp
@@ -775,6 +777,7 @@ export async function getGroup(groupId: string): Promise<Group | null> {
     memberIds: data.memberIds || [],
     avatarPath: data.avatarPath,
     avatarUrl: data.avatarUrl,
+    backgroundUrl: data.backgroundUrl ?? null,
     memberCount: data.memberCount,
     createdAt:
       data.createdAt instanceof Timestamp
@@ -1412,6 +1415,69 @@ export async function updateGroupPhoto(
   });
 
   logger.debug(`[groups] Updated group ${groupId} photo`);
+}
+
+/**
+ * Update group chat background image.
+ * Reuses EDIT_GROUP_PHOTO permission (owner/admin).
+ */
+export async function updateGroupBackground(
+  groupId: string,
+  actorUid: string,
+  backgroundUrl: string,
+): Promise<void> {
+  const db = getFirestoreInstance();
+
+  // Load group for permissions config
+  const groupDoc = await getDoc(doc(db, "Groups", groupId));
+  const groupData = groupDoc.exists() ? (groupDoc.data() as Group) : null;
+  const config = groupData?.permissionsConfig ?? null;
+
+  // Verify user has permission (reuse photo permission for background)
+  const role = await getUserRole(groupId, actorUid);
+  if (!canEditGroupPhoto(role, config)) {
+    throw new Error(
+      "You do not have permission to update the group background",
+    );
+  }
+
+  await updateDoc(doc(db, "Groups", groupId), {
+    backgroundUrl: backgroundUrl,
+    updatedAt: Date.now(),
+  });
+
+  logger.debug(`[groups] Updated group ${groupId} background`);
+}
+
+/**
+ * Remove group chat background image (sets to null).
+ * Reuses EDIT_GROUP_PHOTO permission (owner/admin).
+ */
+export async function removeGroupBackground(
+  groupId: string,
+  actorUid: string,
+): Promise<void> {
+  const db = getFirestoreInstance();
+
+  // Load group for permissions config
+  const groupDoc = await getDoc(doc(db, "Groups", groupId));
+  const groupData = groupDoc.exists() ? (groupDoc.data() as Group) : null;
+  const config = groupData?.permissionsConfig ?? null;
+
+  // Verify user has permission
+  const role = await getUserRole(groupId, actorUid);
+  if (!canEditGroupPhoto(role, config)) {
+    throw new Error(
+      "You do not have permission to remove the group background",
+    );
+  }
+
+  await updateDoc(doc(db, "Groups", groupId), {
+    backgroundUrl: null,
+    updatedAt: Date.now(),
+  });
+
+  logger.debug(`[groups] Removed group ${groupId} background`);
 }
 
 /**

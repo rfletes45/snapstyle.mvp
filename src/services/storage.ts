@@ -371,6 +371,54 @@ export async function uploadGroupAvatarImage(
   }
 }
 
+/**
+ * Upload a group chat background image.
+ * Compresses to max 1440px width for quality/performance balance.
+ * Stores at: groups/{groupId}/background/picture.jpg
+ *
+ * @returns The download URL of the uploaded background image
+ */
+export async function uploadGroupBackgroundImage(
+  groupId: string,
+  imageUri: string,
+): Promise<string> {
+  logger.info(
+    `[uploadGroupBackgroundImage] Starting background upload for group ${groupId}`,
+  );
+  try {
+    // Compress and resize — wider than avatar for background use
+    const compressed = await manipulateImage(
+      imageUri,
+      (context) => {
+        context.resize({ width: 1440 });
+      },
+      { compress: 0.75 },
+    );
+
+    const storagePath = `groups/${groupId}/background/picture.jpg`;
+    const storage = getStorage();
+    const storageRef = ref(storage, storagePath);
+
+    logger.info(
+      `[uploadGroupBackgroundImage] Uploading compressed background to ${storagePath}`,
+    );
+
+    const response = await fetch(compressed.uri);
+    const blob = await response.blob();
+    await uploadBytes(storageRef, blob, { contentType: "image/jpeg" });
+
+    const downloadUrl = await getDownloadURL(storageRef);
+    logger.info(`[uploadGroupBackgroundImage] Upload complete: ${downloadUrl}`);
+    return downloadUrl;
+  } catch (error) {
+    logger.error(
+      "[uploadGroupBackgroundImage] Failed to upload group background:",
+      error,
+    );
+    throw error;
+  }
+}
+
 // =============================================================================
 // H10: Multi-Attachment Upload Support
 // =============================================================================

@@ -16,6 +16,7 @@ import {
   onSnapshot,
   orderBy,
   query,
+  Timestamp,
   Unsubscribe,
   where,
 } from "firebase/firestore";
@@ -807,15 +808,56 @@ export async function syncOlderMessages(
       ? `Chats/${conversationId}/Messages`
       : `Groups/${conversationId}/Messages`;
 
-  const q = query(
+  // Use serverReceivedAt for pagination (consistent with subscriptions).
+  // Convert to Firestore Timestamp to handle docs stored with Timestamp type.
+  // Firestore treats numbers and Timestamps as distinct types — using
+  // Timestamp.fromMillis ensures we match both representations.
+  const beforeTs = Timestamp.fromMillis(beforeTimestamp);
+
+  // Try serverReceivedAt first (primary pagination field, consistent with
+  // messageList.ts subscriptions). Fall back to createdAt if no results
+  // (handles edge case of very old docs without serverReceivedAt).
+  let q = query(
     collection(firestore, collectionPath),
-    orderBy("createdAt", "desc"),
-    where("createdAt", "<", beforeTimestamp),
+    orderBy("serverReceivedAt", "desc"),
+    where("serverReceivedAt", "<", beforeTs),
     limit(messageLimit),
   );
 
+  logger.info(
+    `[SyncEngine] syncOlderMessages: querying ${collectionPath}, ` +
+      `beforeTimestamp=${beforeTimestamp}, limit=${messageLimit}`,
+  );
+
   try {
-    const snapshot = await getDocs(q);
+    let snapshot = await getDocs(q);
+
+    // Fallback: if serverReceivedAt returns nothing, try createdAt
+    // (covers legacy documents that may only have createdAt)
+    if (snapshot.empty) {
+      logger.info(
+        `[SyncEngine] syncOlderMessages: serverReceivedAt returned 0, trying createdAt fallback`,
+      );
+      const beforeCreatedTs = Timestamp.fromMillis(beforeTimestamp);
+      q = query(
+        collection(firestore, collectionPath),
+        orderBy("createdAt", "desc"),
+        where("createdAt", "<", beforeCreatedTs),
+        limit(messageLimit),
+      );
+      snapshot = await getDocs(q);
+
+      // If still empty, also try with a raw number (in case docs store createdAt as a number)
+      if (snapshot.empty) {
+        q = query(
+          collection(firestore, collectionPath),
+          orderBy("createdAt", "desc"),
+          where("createdAt", "<", beforeTimestamp),
+          limit(messageLimit),
+        );
+        snapshot = await getDocs(q);
+      }
+    }
     let count = 0;
 
     snapshot.forEach((docSnap) => {

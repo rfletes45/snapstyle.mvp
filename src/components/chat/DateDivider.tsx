@@ -25,9 +25,11 @@ export const DateDivider: React.FC<DateDividerProps> = React.memo(
     return (
       <View style={styles.container}>
         <View style={[styles.line, { backgroundColor: colors.divider }]} />
-        <Text style={[styles.label, { color: colors.textSecondary }]}>
-          {label}
-        </Text>
+        <View style={[styles.labelBox, { backgroundColor: colors.background }]}>
+          <Text style={[styles.label, { color: colors.textSecondary }]}>
+            {label}
+          </Text>
+        </View>
         <View style={[styles.line, { backgroundColor: colors.divider }]} />
       </View>
     );
@@ -52,6 +54,11 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "600",
     letterSpacing: 0.2,
+  },
+  labelBox: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 10,
     marginHorizontal: 12,
   },
 });
