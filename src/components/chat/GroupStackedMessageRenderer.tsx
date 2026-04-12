@@ -42,6 +42,8 @@ import { formatChatTimestamp } from "@/utils/chatTimestamp";
 // ---------------------------------------------------------------------------
 
 const F = FEED_LAYOUT;
+const CARD_PAD_V = F.rowPaddingV + 4; // 6px — full padding at group boundaries & solo
+const CARD_PAD_V_INNER = 2; // tighter padding between grouped cards
 
 function getImageSize(w?: number, h?: number) {
   if (!w || !h) return { width: F.imageMaxWidth, height: F.imageMaxWidth };
@@ -166,16 +168,9 @@ export const GroupStackedMessageRenderer: React.FC<GroupStackedMessageRendererPr
           isGroupEnd: vm.isGroupEnd,
         });
 
-      // ── Width snapping for similar-width neighbors ────────────────
-      // Computed before rounding so effectiveWidth reflects the snap.
-
-      // ── Adaptive rounding ─────────────────────────────────────────
-      // Solo messages: all corners CARD_RADIUS.
-      // Within a group:
-      //   Left edges: always flat (left-aligned, edges flush).
-      //   Right edges: default ROUNDED. Only flatten when neighbor has
-      //     matching width (within SNAP_THRESHOLD) → flush continuous edge.
-      //   Boundary corners (group-start top, group-end bottom): always rounded.
+      // ── Within-group vertical tightening ────────────────────────────
+      const cardPaddingTop = vm.isGroupStart ? CARD_PAD_V : CARD_PAD_V_INNER;
+      const cardPaddingBottom = vm.isGroupEnd ? CARD_PAD_V : CARD_PAD_V_INNER;
 
       // ── Message content ───────────────────────────────────────────────
       const renderContent = () => {
@@ -334,7 +329,16 @@ export const GroupStackedMessageRenderer: React.FC<GroupStackedMessageRendererPr
                   >
                     {/* Highlight overlay */}
                     <MessageHighlightOverlay isHighlighted={isHighlighted} />
-                    <View onLayout={handleCardLayout} style={gs.cardContent}>
+                    <View
+                      onLayout={handleCardLayout}
+                      style={[
+                        gs.cardContent,
+                        {
+                          paddingTop: cardPaddingTop,
+                          paddingBottom: cardPaddingBottom,
+                        },
+                      ]}
+                    >
                       {/* Author name + timestamp (group-start only) */}
                       {vm.isGroupStart && (
                         <View style={gs.nameRow}>
@@ -475,7 +479,6 @@ const gs = StyleSheet.create({
   cardContent: {
     alignSelf: "flex-start" as const,
     paddingHorizontal: F.rowPaddingH + 4,
-    paddingVertical: F.rowPaddingV + 4,
   },
 
   // Message text (no bubble)
