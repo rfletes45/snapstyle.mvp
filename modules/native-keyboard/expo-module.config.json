@@ -1,0 +1,9 @@
+{
+  "platforms": ["ios", "android"],
+  "ios": {
+    "modules": ["NativeKeyboardModule"]
+  },
+  "android": {
+    "modules": ["expo.modules.nativekeyboard.NativeKeyboardModule"]
+  }
+}

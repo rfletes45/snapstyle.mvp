@@ -9,12 +9,15 @@
  * NO bubble chrome around text messages — flat feed rows with self-message tint.
  */
 
-import React from "react";
+import React, { useCallback, useMemo } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useTheme } from "react-native-paper";
 
-import type { MessageViewModel } from "@/chat/displayMode";
-import { FEED_LAYOUT, hexToRgb } from "@/chat/displayMode";
+import {
+  buildMessageViewModel,
+  FEED_LAYOUT,
+  hexToRgb,
+} from "@/chat/displayMode";
 import AppImage from "@/components/AppImage";
 import {
   LinkPreviewCard,
@@ -34,7 +37,11 @@ import { hasUrls } from "@/services/linkPreview";
 import type { MentionableMember } from "@/services/mentionParser";
 import { extractMentionsExact } from "@/services/mentionParser";
 import type { ReactionSummary } from "@/services/reactions";
-import type { MessageV2, ReplyToMetadata } from "@/types/messaging";
+import type {
+  AttachmentV2,
+  MessageV2,
+  ReplyToMetadata,
+} from "@/types/messaging";
 import { formatChatTimestamp } from "@/utils/chatTimestamp";
 
 // ---------------------------------------------------------------------------
@@ -69,7 +76,14 @@ export interface GroupStackedMessageRendererProps {
   item: MessageV2;
   uid: string | undefined;
   groupId: string;
-  vm: MessageViewModel;
+
+  // ── Raw grouping flags (renderer builds vm internally) ───────────
+  isGroupedWithPrevious: boolean;
+  isGroupedWithNext: boolean;
+  hasReactions: boolean;
+  hasReplyPreview: boolean;
+  hasThread: boolean;
+
   senderDisplayName: string;
   senderProfilePictureUrl: string | null;
   senderDecorationId: string | null;
@@ -86,9 +100,16 @@ export interface GroupStackedMessageRendererProps {
   onReply: (replyMetadata: ReplyToMetadata) => void;
   onMessageLongPress: (message: MessageV2) => void;
   onScrollToMessage: (messageId: string) => void;
-  onImagePress: () => void;
+  /** Stable callback — renderer passes attachments + metadata */
+  onImagePress: (
+    attachments: AttachmentV2[],
+    index: number,
+    senderName: string,
+    timestamp: number,
+  ) => void;
   onOptimisticReaction?: (messageId: string, emoji: string) => void;
-  onThreadPress: () => void;
+  /** Stable callback — renderer passes message ID */
+  onThreadPress: (messageId: string) => void;
   /** Shared tracker for adaptive card-width rounding */
   cardWidthTracker?: CardWidthTracker;
   /** Message ID of neighbor above in same group */
@@ -107,7 +128,11 @@ export const GroupStackedMessageRenderer: React.FC<GroupStackedMessageRendererPr
       item,
       uid,
       groupId,
-      vm,
+      isGroupedWithPrevious,
+      isGroupedWithNext,
+      hasReactions,
+      hasReplyPreview,
+      hasThread,
       senderDisplayName,
       senderProfilePictureUrl,
       senderDecorationId,
@@ -132,6 +157,48 @@ export const GroupStackedMessageRenderer: React.FC<GroupStackedMessageRendererPr
     }) => {
       const theme = useTheme();
       const isOwnMessage = item.senderId === uid;
+
+      // ── Build VM from raw flags (memoized on primitives) ──────────
+      const vm = useMemo(
+        () =>
+          buildMessageViewModel({
+            isMine: isOwnMessage,
+            isGroupChat: true,
+            isGroupedWithPrevious,
+            isGroupedWithNext,
+            isSystemMessage: false,
+            hasReactions,
+            hasReplyPreview,
+            hasThread,
+            displayMode: "stacked",
+          }),
+        [
+          isOwnMessage,
+          isGroupedWithPrevious,
+          isGroupedWithNext,
+          hasReactions,
+          hasReplyPreview,
+          hasThread,
+        ],
+      );
+
+      // ── Stable per-message callbacks ──────────────────────────────
+      const handleImagePress = useCallback(() => {
+        const imageAtt = item.attachments?.find((a) => a.kind === "image");
+        if (item.kind === "media" && imageAtt) {
+          onImagePress([imageAtt], 0, senderDisplayName, item.createdAt);
+        }
+      }, [
+        item.attachments,
+        item.kind,
+        item.createdAt,
+        senderDisplayName,
+        onImagePress,
+      ]);
+
+      const handleThreadPress = useCallback(() => {
+        onThreadPress(item.id);
+      }, [item.id, onThreadPress]);
 
       const authorColor = isOwnMessage ? colors.primary : colors.secondary;
 
@@ -158,7 +225,7 @@ export const GroupStackedMessageRenderer: React.FC<GroupStackedMessageRendererPr
 
       // ── Adaptive card-width tracking ──────────────────────────────
       const groupCardBg = colors.background;
-      const { handleCardLayout, groupCardRadius, snapMinWidth, cardOpacity } =
+      const { handleCardLayout, groupCardRadius, snapMinWidth } =
         useGroupedCardLayout({
           messageId: item.id,
           cardWidthTracker,
@@ -280,7 +347,7 @@ export const GroupStackedMessageRenderer: React.FC<GroupStackedMessageRendererPr
             {/* ── Message row: [avatar/spacer] [content column] ──────── */}
             <TouchableOpacity
               activeOpacity={0.7}
-              onPress={item.kind === "media" ? onImagePress : undefined}
+              onPress={item.kind === "media" ? handleImagePress : undefined}
               onLongPress={() => onMessageLongPress(item)}
               delayLongPress={300}
             >
@@ -320,7 +387,6 @@ export const GroupStackedMessageRenderer: React.FC<GroupStackedMessageRendererPr
                       {
                         backgroundColor: groupCardBg,
                         overflow: "hidden",
-                        opacity: cardOpacity,
                       },
                       groupCardRadius,
                       snapMinWidth !== undefined && { minWidth: snapMinWidth },
@@ -387,20 +453,29 @@ export const GroupStackedMessageRenderer: React.FC<GroupStackedMessageRendererPr
                           />
                         </View>
                       )}
+
+                      {/* Thread indicator — inline inside card when mid-group */}
+                      {vm.threadPlacement === "inline" && (
+                        <ThreadIndicator
+                          replyCount={item.replyCount!}
+                          isOutgoing={isOwnMessage}
+                          onPress={handleThreadPress}
+                        />
+                      )}
                     </View>
                   </View>
                 </View>
               </View>
             </TouchableOpacity>
 
-            {/* Thread indicator */}
-            {!!item.replyCount && item.replyCount > 0 && (
+            {/* Thread indicator — external below card at group-end / solo */}
+            {vm.threadPlacement === "external" && (
               <View style={gs.threadRow}>
                 <View style={gs.gutterSpacer} />
                 <ThreadIndicator
-                  replyCount={item.replyCount}
+                  replyCount={item.replyCount!}
                   isOutgoing={isOwnMessage}
-                  onPress={onThreadPress}
+                  onPress={handleThreadPress}
                 />
               </View>
             )}

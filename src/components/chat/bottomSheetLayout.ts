@@ -5,7 +5,7 @@ const DEFAULT_EXPANDED_HEADROOM = 0.05;
 export function getKeyboardReplacementSheetHeight(
   keyboardHeight: number,
 ): number {
-  return Math.max(0, keyboardHeight) + HANDLE_ZONE_HEIGHT;
+  return Math.max(0, keyboardHeight);
 }
 
 export function getKeyboardReplacementSnapFraction(

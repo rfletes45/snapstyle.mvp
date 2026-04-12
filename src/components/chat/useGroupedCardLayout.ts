@@ -13,6 +13,23 @@ import {
 
 const EMPTY_CARD_SNAPSHOT: CardWidthSnapshot = Object.freeze({});
 
+/**
+ * Shallow-compare the subset of CardWidthSnapshot fields that drive visual
+ * output (border radii + snap min-width).  Neighbor message IDs are ignored
+ * because they only affect tracker graph structure, not render output.
+ */
+function snapshotWidthsEqual(
+  a: CardWidthSnapshot,
+  b: CardWidthSnapshot,
+): boolean {
+  return (
+    a.rawWidth === b.rawWidth &&
+    a.snappedWidth === b.snappedWidth &&
+    a.prevSnappedWidth === b.prevSnappedWidth &&
+    a.nextSnappedWidth === b.nextSnappedWidth
+  );
+}
+
 export interface UseGroupedCardLayoutArgs {
   messageId: string;
   cardWidthTracker?: CardWidthTracker;
@@ -20,40 +37,6 @@ export interface UseGroupedCardLayoutArgs {
   groupNextMessageId?: string;
   isGroupStart: boolean;
   isGroupEnd: boolean;
-}
-
-/**
- * Determines whether a card's geometry is "settled" — i.e. the card has
- * its own width measured AND all grouped neighbors' widths are known so
- * that corner rounding + snap width won't change on subsequent frames.
- *
- * Solo messages (both group-start AND group-end) only need their own
- * width. Messages with neighbors need those neighbors' snapped widths
- * to be resolved too.
- */
-function isGeometrySettled(
-  snapshot: CardWidthSnapshot,
-  isGroupStart: boolean,
-  isGroupEnd: boolean,
-): boolean {
-  // Own width must be known
-  if (snapshot.rawWidth === undefined) return false;
-
-  const isSolo = isGroupStart && isGroupEnd;
-  if (isSolo) return true;
-
-  // Non-solo: neighbors whose snapped width we need for rounding
-  if (!isGroupStart && snapshot.prevSnappedWidth === undefined) {
-    // Has a previous neighbor in the group but its width isn't known yet.
-    // However, if prevMessageId is undefined it means we ARE the logical
-    // start (no neighbor above in group), so prevSnappedWidth being
-    // undefined is expected/correct.
-    if (snapshot.prevMessageId !== undefined) return false;
-  }
-  if (!isGroupEnd && snapshot.nextSnappedWidth === undefined) {
-    if (snapshot.nextMessageId !== undefined) return false;
-  }
-  return true;
 }
 
 export function useGroupedCardLayout({
@@ -69,14 +52,56 @@ export function useGroupedCardLayout({
     () => cardWidthTracker?.getSnapshot(messageId) ?? EMPTY_CARD_SNAPSHOT,
   );
 
-  React.useEffect(() => {
+  // DEV: log first-mount width source for diagnosing cold-row estimation
+  if (__DEV__) {
+    const mountRef = React.useRef(true);
+    if (mountRef.current) {
+      mountRef.current = false;
+      const src =
+        layoutSnapshot.rawWidth == null
+          ? "none"
+          : cardWidthTracker?.isEstimated(messageId)
+            ? "estimated"
+            : "cached";
+      if (src !== "cached") {
+        // Only log non-cached (interesting) cases to reduce noise
+        console.debug(
+          `[GroupedCard] mount ${messageId.slice(0, 8)} width-src=${src}`,
+        );
+      }
+    }
+  }
+
+  // Stable setter that skips state updates when visual-relevant width fields
+  // are unchanged, preventing cascading re-renders from group-wide tracker
+  // notifications where THIS message's snapshot data didn't actually change.
+  const stableSetSnapshot = React.useCallback((next: CardWidthSnapshot) => {
+    setLayoutSnapshot((prev) =>
+      snapshotWidthsEqual(prev, next) ? prev : next,
+    );
+  }, []);
+
+  // ── useLayoutEffect: runs BEFORE first paint ──────────────────────────
+  // Registering neighbors and reading the snapshot before paint ensures the
+  // very first visible frame reflects any cached neighbor widths (warm-cache
+  // conversations) instead of rendering with EMPTY_CARD_SNAPSHOT and then
+  // visibly correcting on the next frame.
+  //
+  // The stableSetSnapshot comparison prevents a re-render when the snapshot
+  // data is identical (common for cold-cache rows where all widths are
+  // undefined in both the initial state and the post-setGroupNeighbors
+  // snapshot).
+  React.useLayoutEffect(() => {
     if (!cardWidthTracker) {
-      setLayoutSnapshot((prev) => ({
-        rawWidth: prev.rawWidth,
-        snappedWidth: prev.rawWidth,
-        prevMessageId: groupPrevMessageId,
-        nextMessageId: groupNextMessageId,
-      }));
+      setLayoutSnapshot((prev) => {
+        const next: CardWidthSnapshot = {
+          rawWidth: prev.rawWidth,
+          snappedWidth: prev.rawWidth,
+          prevMessageId: groupPrevMessageId,
+          nextMessageId: groupNextMessageId,
+        };
+        return snapshotWidthsEqual(prev, next) ? prev : next;
+      });
       return;
     }
 
@@ -85,15 +110,31 @@ export function useGroupedCardLayout({
       groupPrevMessageId,
       groupNextMessageId,
     );
-    setLayoutSnapshot(cardWidthTracker.getSnapshot(messageId));
-    return cardWidthTracker.subscribe(messageId, setLayoutSnapshot);
-  }, [cardWidthTracker, messageId, groupPrevMessageId, groupNextMessageId]);
+    stableSetSnapshot(cardWidthTracker.getSnapshot(messageId));
+    return cardWidthTracker.subscribe(messageId, stableSetSnapshot);
+  }, [
+    cardWidthTracker,
+    messageId,
+    groupPrevMessageId,
+    groupNextMessageId,
+    stableSetSnapshot,
+  ]);
 
   const handleCardLayout = React.useCallback(
     (e: LayoutChangeEvent) => {
       const width = normalizeGroupedCardWidth(e.nativeEvent.layout.width);
 
       if (cardWidthTracker) {
+        if (__DEV__ && cardWidthTracker.isEstimated(messageId)) {
+          const prev = cardWidthTracker.getSnapshot(messageId);
+          const delta =
+            prev.rawWidth != null ? Math.abs(width - prev.rawWidth) : -1;
+          if (delta > 2) {
+            console.debug(
+              `[GroupedCard] refine ${messageId.slice(0, 8)} est=${prev.rawWidth} meas=${width} Δ=${delta}`,
+            );
+          }
+        }
         cardWidthTracker.report(messageId, width);
         return;
       }
@@ -140,30 +181,9 @@ export function useGroupedCardLayout({
     [layoutSnapshot.rawWidth, layoutSnapshot.snappedWidth],
   );
 
-  // ── Opacity gate ──────────────────────────────────────────────────────
-  // Cards that haven't settled their geometry yet render at opacity 0 so
-  // the user never sees intermediate corners / widths. Once all required
-  // widths are known, opacity flips to 1 on the same frame (thanks to the
-  // synchronous first-report path in CardWidthTracker.report()).
-  //
-  // Cards whose width is already in the cross-instance cache will have
-  // rawWidth pre-seeded on mount, so they start settled → opacity 1.
-  const isSettled = isGeometrySettled(layoutSnapshot, isGroupStart, isGroupEnd);
-
-  // Once settled, never go back to hidden — this prevents flicker if a
-  // neighbor remounts or snap cluster changes slightly.
-  const wasSettledRef = React.useRef(isSettled);
-  if (isSettled && !wasSettledRef.current) {
-    wasSettledRef.current = true;
-  }
-
-  const cardOpacity = wasSettledRef.current ? 1 : 0;
-
   return {
     handleCardLayout,
     groupCardRadius,
     snapMinWidth,
-    /** 0 while geometry is settling, 1 once final. Apply to cardWrapper. */
-    cardOpacity,
   };
 }

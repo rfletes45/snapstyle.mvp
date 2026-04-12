@@ -48,6 +48,13 @@ export interface MessageViewModel {
   hasReplyPreview: boolean;
   /** Does this message have a thread indicator? */
   hasThread: boolean;
+  /**
+   * Where the thread indicator should render relative to the card:
+   * - "inline"   — inside the card (message is in the middle/start of a group)
+   * - "external" — below the card in a separate row (group-end or solo)
+   * - "none"     — no thread indicator
+   */
+  threadPlacement: "inline" | "external" | "none";
 }
 
 // ---------------------------------------------------------------------------
@@ -286,5 +293,10 @@ export function buildMessageViewModel(
     hasReactions: p.hasReactions,
     hasReplyPreview: p.hasReplyPreview,
     hasThread: p.hasThread,
+    threadPlacement: !p.hasThread
+      ? "none"
+      : p.isGroupedWithNext
+        ? "inline"
+        : "external",
   };
 }

@@ -9,17 +9,16 @@
  *
  * ## Notification coalescing
  *
- * Subscriber notifications use a two-tier strategy:
+ * All subscriber notifications are coalesced via a microtask queue
+ * (`setTimeout(0)`).  Multiple report() and setGroupNeighbors() calls
+ * within the same JS turn are merged into a single batch of subscriber
+ * notifications.  This prevents O(N²) cascade storms during pagination
+ * batches where many cards report widths and register neighbors in
+ * quick succession.
  *
- * 1. **First report** (a node's width changes from `undefined` to a value):
- *    The affected group is notified **synchronously** so the renderer can
- *    transition from hidden (opacity: 0) to visible on the same frame as
- *    the `onLayout` event — no extra frame of delay.
- *
- * 2. **Subsequent updates** (width refines or neighbors change):
- *    Notifications are coalesced via a microtask queue (`setTimeout(0)`).
- *    This prevents cascading re-renders during pagination batches where
- *    many cards report / register neighbors in quick succession.
+ * The hook (`useGroupedCardLayout`) further guards against redundant
+ * re-renders via a snapshot comparison function that only applies a
+ * state update when width-relevant fields actually changed.
  *
  * ## Width cache
  *
@@ -100,39 +99,81 @@ export class CardWidthTracker {
   /**
    * Store a measured width and notify the affected sender-group.
    *
-   * First-time measurements (width going from undefined → value) trigger
-   * **synchronous** notification so the opacity gate can reveal the card
-   * on the same frame as onLayout. Subsequent width changes use the
-   * coalesced (async) path to prevent cascade storms.
+   * All notifications go through the coalesced async queue (setTimeout(0)).
+   * Multiple report() calls within the same JS turn (e.g. a pagination batch
+   * where many onLayout events fire close together) are merged into a single
+   * flush, preventing the O(N²) cascade that would occur if each report
+   * synchronously notified all group members.
    */
   report(id: string, width: number): void {
     const rounded = normalizeGroupedCardWidth(width);
     const node = this.ensureNode(id);
     if (node.width === rounded) return;
 
-    const wasFirstMeasurement = node.width === undefined;
     node.width = rounded;
 
     // Persist to cross-instance cache
     cacheWidth(id, rounded);
 
-    if (wasFirstMeasurement) {
-      // Synchronous path: collect the group and notify immediately so the
-      // renderer can flip opacity: 0 → 1 on the same frame.
-      const affectedIds = new Set<string>();
-      this.collectGroupIds(id, affectedIds);
-      if (affectedIds.size === 0) affectedIds.add(id);
+    // Clear estimated flag — this is now a real measurement
+    this.estimatedIds.delete(id);
 
-      // Also drain any pending async notifications for these IDs so they
-      // don't fire again on the next setTimeout tick.
-      for (const aid of affectedIds) {
-        this.pendingNotifyIds.delete(aid);
+    this.enqueueGroupNotify(id);
+  }
+
+  /**
+   * Pre-seed an estimated width for a message that hasn't been measured yet.
+   *
+   * Unlike report(), seed() does NOT overwrite an existing measured width
+   * (from either this instance or the cross-instance cache). It only fills
+   * in the gap for cold-cache rows that would otherwise render with
+   * undefined widths and flat right-edge corners.
+   *
+   * Estimated widths participate in snap cluster resolution and corner
+   * rounding, so cold-mounted rows start closer to their final shape.
+   * When onLayout fires later, report() overwrites the estimate with the
+   * real measurement and notifies subscribers of any correction.
+   */
+  seed(id: string, estimatedWidth: number): void {
+    // Don't overwrite real measurements
+    if (WIDTH_CACHE.has(id)) return;
+    const existing = this.nodes.get(id);
+    if (existing?.width !== undefined) return;
+
+    const rounded = normalizeGroupedCardWidth(estimatedWidth);
+    const node = this.ensureNode(id);
+    node.width = rounded;
+    this.estimatedIds.add(id);
+    // Do NOT cache in WIDTH_CACHE — estimates should not persist across instances
+  }
+
+  /**
+   * Bulk pre-seed estimated widths for a batch of messages.
+   * Calls seed() for each entry, then triggers a single coalesced
+   * notification for all affected groups.
+   */
+  seedBatch(entries: { id: string; estimatedWidth: number }[]): void {
+    let anySeeded = false;
+    for (const entry of entries) {
+      const before = this.nodes.get(entry.id)?.width;
+      this.seed(entry.id, entry.estimatedWidth);
+      if (this.nodes.get(entry.id)?.width !== before) {
+        anySeeded = true;
+        this.pendingNotifyIds.add(entry.id);
       }
-      this.flushNow(affectedIds);
-    } else {
-      this.enqueueGroupNotify(id);
+    }
+    if (anySeeded) {
+      this.scheduleFlush();
     }
   }
+
+  /** Check whether a stored width is an estimate (not yet measured). */
+  isEstimated(id: string): boolean {
+    return this.estimatedIds.has(id);
+  }
+
+  /** Track which nodes hold estimated (not measured) widths. */
+  private estimatedIds = new Set<string>();
 
   /** Keep same-group adjacency in sync so snapped widths can be resolved. */
   setGroupNeighbors(id: string, prevId?: string, nextId?: string): void {
@@ -258,7 +299,7 @@ export class CardWidthTracker {
       // Fall back to the cross-instance width cache when a node doesn't
       // exist in this tracker instance (e.g. neighbor was virtualized out).
       // This lets remounted cells resolve neighbor widths immediately
-      // instead of returning undefined and keeping the card at opacity 0.
+      // instead of needing a second onLayout pass.
       getWidth: (messageId) =>
         this.nodes.get(messageId)?.width ?? WIDTH_CACHE.get(messageId),
       getPrevMessageId: (messageId) => this.nodes.get(messageId)?.prevId,

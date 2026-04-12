@@ -59,6 +59,7 @@ import {
   Keyboard,
   StyleSheet,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from "react-native";
 import {
@@ -172,10 +173,10 @@ import {
   TimelineItem,
   timelineKeyExtractor,
 } from "@/chat/buildTimeline";
-import { buildMessageViewModel } from "@/chat/displayMode";
 import { AnimalBubble } from "@/components/chat/AnimalBubble";
 import { CardWidthTracker } from "@/components/chat/CardWidthTracker";
 import { DateDivider } from "@/components/chat/DateDivider";
+import { estimateMessageWidth } from "@/components/chat/estimateMessageWidth";
 import { GroupStackedMessageRenderer } from "@/components/chat/GroupStackedMessageRenderer";
 import { useComposerSheet } from "@/contexts/ComposerSheetContext";
 import { useAnimalEntitlement } from "@/hooks/useAnimalEntitlement";
@@ -263,6 +264,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     profile?.chatAppearance ?? null,
   );
   const { displayMode } = useConversationDisplayMode();
+  const { width: windowWidth } = useWindowDimensions();
 
   // Customizable toolbar
   const toolbar = useComposerToolbarLayout(uid);
@@ -995,6 +997,18 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     [],
   );
 
+  /** Stable callback for stacked-mode thread navigation. */
+  const handleStackedThreadPress = useCallback(
+    (messageId: string) => {
+      navigation.navigate("ThreadView", {
+        conversationId: groupId,
+        scope: "group" as const,
+        rootMessageId: messageId,
+      });
+    },
+    [navigation, groupId],
+  );
+
   // ==========================================================================
   // Message Grouping + Timeline — moved above scrollToMessage for declaration order
   // ==========================================================================
@@ -1060,6 +1074,38 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     void trackerConversationKey;
     return new CardWidthTracker();
   }, [trackerConversationKey]);
+
+  // Pre-seed estimated widths for cold-cache rows before they mount.
+  // Runs synchronously during render so that when useGroupedCardLayout's
+  // useState lazy initializer reads getSnapshot(), an estimated width is
+  // already present — giving the first paint approximately correct corner
+  // rounding and snap minWidth instead of the flat-everywhere default.
+  useMemo(() => {
+    if (displayMode !== "stacked") return;
+    const entries: { id: string; estimatedWidth: number }[] = [];
+    for (const tl of timelineData) {
+      if (tl.type !== "message") continue;
+      const msg = tl.data;
+      if (msg.kind === "system") continue;
+      entries.push({
+        id: msg.id,
+        estimatedWidth: estimateMessageWidth({
+          text: msg.text,
+          kind: msg.kind,
+          attachments: msg.attachments,
+          hasReplyPreview: !!msg.replyTo,
+          hasThread: !!msg.replyCount && msg.replyCount > 0,
+          hasReactions:
+            !!msg.reactionsSummary &&
+            Object.keys(msg.reactionsSummary).length > 0,
+          isGroupStart: !tl.isGroupedWithPrevious,
+          screenWidth: windowWidth,
+        }),
+      });
+    }
+    if (entries.length > 0) cardWidthTracker.seedBatch(entries);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timelineData, cardWidthTracker, displayMode, windowWidth]);
 
   // Enhanced scroll-to-message with highlight animation
   const scrollToMessage = useCallback((messageId: string) => {
@@ -1458,20 +1504,6 @@ export default function GroupChatScreen({ route, navigation }: Props) {
 
       // ── Stacked mode branch ─────────────────────────────────────────
       if (displayMode === "stacked" && item.kind !== "system") {
-        const vm = buildMessageViewModel({
-          isMine: isOwnMessage,
-          isGroupChat: true,
-          isGroupedWithPrevious: isGroupedWithPrev,
-          isGroupedWithNext: isGroupedWithNextMsg,
-          isSystemMessage: false,
-          hasReactions:
-            (messageReactionsRef.current.get(item.id) ?? EMPTY_REACTIONS)
-              .length > 0,
-          hasReplyPreview: !!item.replyTo,
-          hasThread: !!item.replyCount && item.replyCount > 0,
-          displayMode: "stacked",
-        });
-
         const incomingStyleStacked = !isOwnMessage
           ? resolveIncomingBubbleStyle({
               senderStyle: showMemberChatStyles
@@ -1493,10 +1525,6 @@ export default function GroupChatScreen({ route, navigation }: Props) {
           ? chatStyle.fontColorHex
           : incomingStyleStacked!.fontColorHex;
 
-        const imageAttachmentStacked = item.attachments?.find(
-          (a) => a.kind === "image",
-        );
-
         return (
           <AnimatedMessageRow
             messageId={item.id}
@@ -1508,7 +1536,14 @@ export default function GroupChatScreen({ route, navigation }: Props) {
               item={item}
               uid={uid}
               groupId={groupId}
-              vm={vm}
+              isGroupedWithPrevious={isGroupedWithPrev}
+              isGroupedWithNext={isGroupedWithNextMsg}
+              hasReactions={
+                (messageReactionsRef.current.get(item.id) ?? EMPTY_REACTIONS)
+                  .length > 0
+              }
+              hasReplyPreview={!!item.replyTo}
+              hasThread={!!item.replyCount && item.replyCount > 0}
               senderDisplayName={senderDisplayName}
               senderProfilePictureUrl={senderProfile.profilePictureUrl}
               senderDecorationId={senderProfile.decorationId}
@@ -1534,24 +1569,9 @@ export default function GroupChatScreen({ route, navigation }: Props) {
               onReply={handleReply}
               onMessageLongPress={handleMessageLongPress}
               onScrollToMessage={scrollToMessage}
-              onImagePress={() => {
-                if (item.kind === "media" && imageAttachmentStacked) {
-                  handleOpenMediaViewer(
-                    [imageAttachmentStacked],
-                    0,
-                    senderDisplayName,
-                    item.createdAt,
-                  );
-                }
-              }}
+              onImagePress={handleOpenMediaViewer}
               onOptimisticReaction={handleOptimisticReaction}
-              onThreadPress={() =>
-                navigation.navigate("ThreadView", {
-                  conversationId: groupId,
-                  scope: "group" as const,
-                  rootMessageId: item.id,
-                })
-              }
+              onThreadPress={handleStackedThreadPress}
               cardWidthTracker={cardWidthTracker}
               groupPrevMessageId={groupPrevMessageId}
               groupNextMessageId={groupNextMessageId}
@@ -1876,6 +1896,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
       handleReply,
       handleMessageLongPress,
       handleOpenMediaViewer,
+      handleStackedThreadPress,
       scrollToMessage,
       handleOptimisticReaction,
       cardWidthTracker,

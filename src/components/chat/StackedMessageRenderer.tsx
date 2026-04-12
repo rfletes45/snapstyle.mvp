@@ -287,7 +287,7 @@ export const StackedMessageRenderer: React.FC<StackedMessageRendererProps> =
 
       // ── Adaptive card-width tracking ──────────────────────────────────
       const groupCardBg = theme.colors.background;
-      const { handleCardLayout, groupCardRadius, snapMinWidth, cardOpacity } =
+      const { handleCardLayout, groupCardRadius, snapMinWidth } =
         useGroupedCardLayout({
           messageId: message.id,
           cardWidthTracker,
@@ -296,6 +296,15 @@ export const StackedMessageRenderer: React.FC<StackedMessageRendererProps> =
           isGroupStart: vm.isGroupStart,
           isGroupEnd: vm.isGroupEnd,
         });
+
+      // ── Thread press handler ──────────────────────────────────────────
+      const handleThreadPress = useCallback(() => {
+        navigation.navigate("ThreadView", {
+          conversationId: chatId,
+          scope: "dm" as const,
+          rootMessageId: message.id,
+        });
+      }, [navigation, chatId, message.id]);
 
       // ── Within-group vertical tightening ────────────────────────────
       const cardPaddingTop = vm.isGroupStart ? CARD_PAD_V : CARD_PAD_V_INNER;
@@ -354,7 +363,6 @@ export const StackedMessageRenderer: React.FC<StackedMessageRendererProps> =
                       {
                         backgroundColor: groupCardBg,
                         overflow: "hidden",
-                        opacity: cardOpacity,
                       },
                       groupCardRadius,
                       snapMinWidth !== undefined && { minWidth: snapMinWidth },
@@ -424,26 +432,29 @@ export const StackedMessageRenderer: React.FC<StackedMessageRendererProps> =
                           />
                         </View>
                       )}
+
+                      {/* Thread indicator — inline inside card when mid-group */}
+                      {vm.threadPlacement === "inline" && (
+                        <ThreadIndicator
+                          replyCount={message.replyCount!}
+                          isOutgoing={isSentByMe}
+                          onPress={handleThreadPress}
+                        />
+                      )}
                     </View>
                   </View>
                 </View>
               </View>
             </TouchableOpacity>
 
-            {/* Thread indicator */}
-            {!!message.replyCount && message.replyCount > 0 && (
+            {/* Thread indicator — external below card at group-end / solo */}
+            {vm.threadPlacement === "external" && (
               <View style={s.threadRow}>
                 <View style={s.gutterSpacer} />
                 <ThreadIndicator
-                  replyCount={message.replyCount}
+                  replyCount={message.replyCount!}
                   isOutgoing={isSentByMe}
-                  onPress={() =>
-                    navigation.navigate("ThreadView", {
-                      conversationId: chatId,
-                      scope: "dm" as const,
-                      rootMessageId: message.id,
-                    })
-                  }
+                  onPress={handleThreadPress}
                 />
               </View>
             )}

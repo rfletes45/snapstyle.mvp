@@ -34,6 +34,7 @@ import {
   Platform,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { IconButton, Menu, useTheme } from "react-native-paper";
@@ -94,6 +95,7 @@ import BlockUserModal from "@/components/BlockUserModal";
 import { CardWidthTracker } from "@/components/chat/CardWidthTracker";
 import { ChatHeader } from "@/components/chat/ChatHeader";
 import { ChatMessageRenderer } from "@/components/chat/ChatMessageRenderer";
+import { estimateMessageWidth } from "@/components/chat/estimateMessageWidth";
 import ReportUserModal from "@/components/ReportUserModal";
 import ScheduleMessageModal from "@/components/ScheduleMessageModal";
 import { useComposerSheet } from "@/contexts/ComposerSheetContext";
@@ -301,6 +303,7 @@ export default function ChatScreen({
   const uid = currentFirebaseUser?.uid;
   const chatAppearance = profile?.chatAppearance ?? null;
   const { displayMode } = useConversationDisplayMode();
+  const { width: windowWidth } = useWindowDimensions();
 
   // Animal entitlement gating
   const animalEntitlement = useAnimalEntitlement(uid, chatAppearance);
@@ -1043,6 +1046,37 @@ export default function ChatScreen({
     void trackerConversationKey;
     return new CardWidthTracker();
   }, [trackerConversationKey]);
+
+  // Pre-seed estimated widths for cold-cache rows before they mount.
+  // Same pattern as GroupChatScreen — runs synchronously during render so
+  // useGroupedCardLayout's useState lazy initializer picks up approximate
+  // widths, giving cold rows correct corner rounding on first paint.
+  useMemo(() => {
+    if (displayMode !== "stacked") return;
+    const entries: { id: string; estimatedWidth: number }[] = [];
+    for (const tl of timelineData) {
+      if (tl.type !== "message") continue;
+      const msg = tl.data;
+      if (msg.kind === "system") continue;
+      entries.push({
+        id: msg.id,
+        estimatedWidth: estimateMessageWidth({
+          text: msg.text,
+          kind: msg.kind,
+          attachments: msg.attachments,
+          hasReplyPreview: !!msg.replyTo,
+          hasThread: !!msg.replyCount && msg.replyCount > 0,
+          hasReactions:
+            !!msg.reactionsSummary &&
+            Object.keys(msg.reactionsSummary).length > 0,
+          isGroupStart: !tl.isGroupedWithPrevious,
+          screenWidth: windowWidth,
+        }),
+      });
+    }
+    if (entries.length > 0) cardWidthTracker.seedBatch(entries);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timelineData, cardWidthTracker, displayMode, windowWidth]);
 
   // Enhanced scroll-to-message with highlight animation
   const scrollToMessage = useCallback(

@@ -132,10 +132,9 @@ export function ChatFooterWrapper({ children }: { children: React.ReactNode }) {
   // Derive the offset the composer should translate up by.
   //   sheetVisibleHeight = how much of the sheet is on-screen
   //   clamp to initialSnapHeight (keyboard-equivalent) = "follow zone"
-  //   subtract keyboard contribution to avoid double-offset
-  //   +2 COMPOSER_SHEET_LIFT for a small visual lift so the composer sits
-  //   flush against the sheet when the keyboard is replaced.
-  const COMPOSER_SHEET_LIFT = 2;
+  //   subtract keyboard contribution to avoid double-offset.
+  //   No extra lift — composer sits flush against the sheet top edge.
+  const COMPOSER_SHEET_LIFT = 0;
   const composerOffset = useDerivedValue(() => {
     if (isSheetActive.value === 0) return 0;
 
@@ -147,7 +146,6 @@ export function ChatFooterWrapper({ children }: { children: React.ReactNode }) {
     // keyboardHeight from Reanimated is negative when open (keyboard-controller convention)
     const kbContribution = Math.abs(keyboardHeight.value);
     const base = Math.max(0, clamped - kbContribution);
-    // Lift the composer slightly so it matches the keyboard position
     return base > 0 ? base + COMPOSER_SHEET_LIFT : 0;
   }, [sheetTranslateY, initialSnapHeight, isSheetActive, keyboardHeight]);
 
@@ -212,10 +210,8 @@ function useEffectiveBottomInset(): SharedValue<number> {
     );
     // composerOffset = extra space the sheet occupies beyond the keyboard
     const composerOffset = Math.max(0, clamped - kbH);
-    // +2 lift to match the composer lift applied in ChatFooterWrapper
-    const lift = composerOffset > 0 ? 2 : 0;
     // Total = keyboard + sheet's extra contribution (always >= kbH)
-    return kbH + composerOffset + lift;
+    return kbH + composerOffset;
   });
 }
 

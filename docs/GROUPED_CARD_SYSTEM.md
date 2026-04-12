@@ -12,14 +12,16 @@
 3. [File Inventory](#file-inventory)
 4. [Layout System](#layout-system)
 5. [Card Container Rendering](#card-container-rendering)
-6. [Adaptive Width Tracking](#adaptive-width-tracking)
-7. [Width Snapping](#width-snapping)
-8. [Adaptive Corner Rounding](#adaptive-corner-rounding)
-9. [Date Dividers](#date-dividers)
-10. [Prop Wiring (Parent → Renderer)](#prop-wiring)
-11. [Constants Reference](#constants-reference)
-12. [Visual Examples](#visual-examples)
-13. [Known Constraints](#known-constraints)
+6. [Thread Indicator Placement](#thread-indicator-placement)
+7. [Adaptive Width Tracking](#adaptive-width-tracking)
+8. [Width Snapping](#width-snapping)
+9. [Adaptive Corner Rounding](#adaptive-corner-rounding)
+10. [First-Paint Strategy](#first-paint-strategy)
+11. [Date Dividers](#date-dividers)
+12. [Prop Wiring (Parent → Renderer)](#prop-wiring)
+13. [Constants Reference](#constants-reference)
+14. [Visual Examples](#visual-examples)
+15. [Known Constraints](#known-constraints)
 
 ---
 
@@ -42,7 +44,25 @@ flattened when the current card is the same width or narrower (flush edge).
 - Right-edge corners round/flatten based on directional width comparison with neighbors
 - Left-edge corners are always flat within groups (left-aligned, edges flush)
 - Group boundary corners (first message's top, last message's bottom) are always rounded
+- Thread indicators for mid-group messages render **inline** inside the card to preserve grouped continuity
+- Cards render immediately at full opacity with deterministic flag-based corners — no opacity gate or delayed pop-in
 - All card layout logic is shared via the `useGroupedCardLayout` hook and `groupedCardLayout` pure utility module
+
+### Grouping Rules
+
+Grouping is determined by `buildTimeline()` in `src/chat/buildTimeline.ts`.
+Two adjacent messages are grouped when they satisfy all of:
+
+1. **Same sender** (`senderId` match)
+2. **Within time threshold** (`MESSAGE_GROUP_THRESHOLD_MS = 2 minutes`)
+3. **Neither message is a reply** (`replyTo` is falsy on both)
+4. **Same calendar day** (grouping is broken at day boundaries)
+5. **Neither is a system message** (group chats only)
+
+**Important:** Grouping is NOT broken by `replyCount` (thread roots). A message
+that is the root of a thread can appear in the middle of a grouped run. This is
+why thread indicator placement must be handled carefully (see
+[Thread Indicator Placement](#thread-indicator-placement)).
 
 ---
 
@@ -73,7 +93,9 @@ flattened when the current card is the same width or narrower (flush edge).
 │  │                   ├─ Author header (group-start only)       │ │
 │  │                   ├─ Reply preview (StackedReplyReference)  │ │
 │  │                   ├─ Message content (text / image / voice) │ │
-│  │                   └─ Reaction pills                         │ │
+│  │                   ├─ Reaction pills                         │ │
+│  │                   └─ ThreadIndicator (inline, mid-group)    │ │
+│  │               └─ ThreadIndicator (external, group-end/solo) │ │
 │  │                                                              │ │
 │  └──────────────────────────────────────────────────────────────┘ │
 └──────────────────────────────────────────────────────────────────┘
@@ -82,6 +104,40 @@ flattened when the current card is the same width or narrower (flush edge).
 ### Data Flow
 
 ```
+buildTimeline(messages)
+    │
+    ▼
+TimelineItem[] with precomputed isGroupedWithPrevious / isGroupedWithNext
+    │
+    ├─ useMemo: seed estimated widths for cold-cache rows
+    │    │
+    │    ├─ estimateMessageWidth() — predict width from text/media/metadata
+    │    └─ cardWidthTracker.seedBatch() — pre-populate WITHOUT overwriting cache
+    │
+    ▼
+Renderer receives raw grouping flag props (primitives)
+    │
+    ├─ useMemo builds MessageViewModel internally (stable on same flags)
+    │
+    ▼
+MessageViewModel with isGroupStart, isGroupEnd, threadPlacement, etc.
+    │
+    ▼
+useState lazy initializer:  getSnapshot(messageId) → estimated OR cached width
+    │
+    ▼
+useLayoutEffect (BEFORE first paint)
+    │
+    ├─ cardWidthTracker.setGroupNeighbors() — establish graph links
+    ├─ stableSetSnapshot(getSnapshot()) — read cached/estimated widths
+    └─ subscribe(messageId, stableSetSnapshot) — listen for future updates
+    │
+    ▼
+First paint: corners from flags + estimated/cached widths
+    │   (cold rows: ~correct radii from estimates)
+    │   (warm rows: fully resolved from cache)
+    │
+    ▼
 onLayout (cardContent measured)
     │
     ▼
@@ -91,17 +147,20 @@ normalizeGroupedCardWidth(width)  →  Math.ceil(width / 2) * 2  (2px grid)
 CardWidthTracker.report(messageId, normalizedWidth)
     │
     ├─ Stores in node.width (deduplicates if unchanged)
-    ├─ Collects all message IDs in the same group (graph walk via prevId/nextId)
-    └─ Notifies ALL subscribers in the affected group with CardWidthSnapshot
+    ├─ Clears estimatedIds flag (now measured)
+    ├─ Caches in cross-instance WIDTH_CACHE (persists across tracker instances)
+    └─ Enqueues coalesced async notification via setTimeout(0)
          │
-         ▼
-    useGroupedCardLayout receives snapshot via setState
+         ▼   (all reports within a JS turn are merged into ONE flush)
+    stableSetSnapshot receives snapshot
          │
-         ├─ buildGroupedCardRadii(snappedWidths) → border radius object
+         ├─ snapshotWidthsEqual() comparison — skip if unchanged
+         ├─ buildGroupedCardRadii(snappedWidths) → refined border radius object
          └─ getGroupedCardMinWidth(rawWidth, snappedWidth) → minWidth
               │
               ▼
-         Re-render with updated rounding + snapping
+         Single coalesced re-render with final rounding + snapping
+         (if estimate was accurate: no visible change)
 ```
 
 ### Shared Logic Architecture
@@ -127,9 +186,12 @@ Card layout logic is NOT duplicated in the renderers. Instead, both
 | `src/components/chat/useGroupedCardLayout.ts`         | Shared React hook for card layout (radii, snap, onLayout)         |
 | `src/components/chat/groupedCardLayout.ts`            | Pure utility functions (radii math, snap clusters, normalization) |
 | `src/components/chat/CardWidthTracker.ts`             | Graph-based width measurement + snapshot pub/sub system           |
+| `src/components/chat/estimateMessageWidth.ts`         | Pre-mount width estimation for cold-cache rows                    |
+| `src/components/chat/ThreadIndicator.tsx`             | "View thread (N replies)" link — inline or external placement     |
 | `src/components/chat/DateDivider.tsx`                 | Day separator with centered label in a pill-shaped box            |
 | `src/components/chat/ChatMessageRenderer.tsx`         | DM entry point — delegates to Stacked or Bubble renderer          |
-| `src/chat/displayMode.ts`                             | Layout tokens (`FEED_LAYOUT`) including gap/padding constants     |
+| `src/chat/displayMode.ts`                             | Layout tokens, `MessageViewModel`, `buildMessageViewModel()`      |
+| `src/chat/buildTimeline.ts`                           | Precomputes grouping flags + date dividers from message array     |
 | `src/screens/groups/GroupChatScreen.tsx`              | Group chat parent — instantiates tracker, computes neighbor IDs   |
 | `src/screens/chat/ChatScreen.tsx`                     | DM chat parent — instantiates tracker, computes neighbor IDs      |
 
@@ -231,10 +293,30 @@ style={[
   mentionRowStyle,                                        // Optional mention highlight (group only)
 ]}
 
-// cardContent — applied inline:
-<View onLayout={handleCardLayout} style={s.cardContent}>
+// cardContent — applied inline with adaptive vertical padding:
+<View
+  onLayout={handleCardLayout}
+  style={[
+    s.cardContent,
+    { paddingTop: cardPaddingTop, paddingBottom: cardPaddingBottom },
+  ]}
+>
   {/* children: highlight overlay, header, reply, content, reactions */}
+  {/* + inline ThreadIndicator when vm.threadPlacement === "inline" */}
 </View>
+```
+
+### Vertical Padding Tightening
+
+Within-group cards use reduced vertical padding to create a tighter visual
+run. The padding adapts based on group position:
+
+```typescript
+const CARD_PAD_V = F.rowPaddingV + 4; // 6px — at group boundaries & solo
+const CARD_PAD_V_INNER = 2; // 2px — between grouped cards
+
+const cardPaddingTop = vm.isGroupStart ? CARD_PAD_V : CARD_PAD_V_INNER;
+const cardPaddingBottom = vm.isGroupEnd ? CARD_PAD_V : CARD_PAD_V_INNER;
 ```
 
 ### Why Two Views?
@@ -244,6 +326,21 @@ container width. This ensures that when `minWidth` expands the outer wrapper
 (snap), the measured width reflects the natural content size, preventing
 feedback loops where a snap-expanded width gets re-reported.
 
+### No Opacity Gate
+
+Cards render at full opacity (`1`) immediately on first paint. There is no
+opacity gate hiding cards while geometry settles. The initial shape from
+grouping flags alone is correct enough:
+
+- **Left edges**: Deterministic from group position (always 0 within group)
+- **Boundary corners**: Always `GROUPED_CARD_RADIUS` (group-start top, group-end bottom)
+- **Right edges**: Default to flat (`0`) for unknown widths — correct for the common
+  same-width case where snapped messages produce identical widths
+
+The cross-instance width cache in `CardWidthTracker` pre-seeds widths for
+messages the user has seen before, so re-opened conversations start with
+fully resolved corners on frame 1.
+
 ### Background Color
 
 - **GroupStackedMessageRenderer**: `colors.background` (from theme context prop)
@@ -251,6 +348,126 @@ feedback loops where a snap-expanded width gets re-reported.
 
 Both resolve to the same value — the conversation's primary background color, creating
 a subtle raised-card effect against the underlying surface.
+
+---
+
+## Thread Indicator Placement
+
+### Problem
+
+Thread root messages (`replyCount > 0`) can appear in the middle of a grouped
+run because `areMessagesGrouped` breaks on `replyTo` (reply messages) but NOT
+on `replyCount` (thread roots). If the thread indicator is always rendered
+outside the card in a separate row, it creates a visual gap between consecutive
+flush cards, breaking the grouped continuity.
+
+### Solution: `threadPlacement` View-Model Property
+
+The `MessageViewModel` includes a `threadPlacement` field. In the
+`GroupStackedMessageRenderer`, the VM is built internally via `useMemo` from
+raw primitive flag props, making it stable across re-renders when the flags
+don't change:
+
+```typescript
+threadPlacement: !p.hasThread
+  ? "none"                        // No thread indicator needed
+  : p.isGroupedWithNext
+    ? "inline"                    // Mid-group → inside the card
+    : "external",                 // Group-end or solo → below the card
+```
+
+| Value        | When                                     | Rendering Location                                   |
+| ------------ | ---------------------------------------- | ---------------------------------------------------- |
+| `"none"`     | `replyCount` is 0 or falsy               | Not rendered                                         |
+| `"inline"`   | Thread root AND grouped with next        | Inside `cardContent`, after reactions                |
+| `"external"` | Thread root AND group-end / solo message | In a separate `threadRow` below the TouchableOpacity |
+
+### Inline Rendering (mid-group)
+
+When `vm.threadPlacement === "inline"`, the `ThreadIndicator` renders inside
+the `cardContent` View, after reaction pills. It inherits the card's
+background and participates in the card's width (measured by `onLayout`):
+
+```typescript
+{/* Inside cardContent, after reactions */}
+{vm.threadPlacement === "inline" && (
+  <ThreadIndicator
+    replyCount={message.replyCount!}
+    isOutgoing={isSentByMe}
+    onPress={handleThreadPress}
+  />
+)}
+```
+
+This preserves grouped continuity — the thread link is visually part of the
+card, with no gap between this card and the next.
+
+### External Rendering (group-end / solo)
+
+When `vm.threadPlacement === "external"`, the `ThreadIndicator` renders in a
+separate row below the card, aligned to the content column:
+
+```typescript
+{/* Outside the TouchableOpacity, after the card */}
+{vm.threadPlacement === "external" && (
+  <View style={s.threadRow}>
+    <View style={s.gutterSpacer} />
+    <ThreadIndicator
+      replyCount={message.replyCount!}
+      isOutgoing={isSentByMe}
+      onPress={handleThreadPress}
+    />
+  </View>
+)}
+```
+
+At group-end there is no message below in the group, so the external position
+does not break any grouped continuity.
+
+### Visual Example — Thread Root in Mid-Group
+
+```
+Group of 3 messages (same sender), middle has a thread:
+
+  ┌──────────────────────────────────────┐   ← group-start
+  │  Hey everyone, how's it going today? │
+  ├──────────────────────────────────────┤   ← within-group (thread root)
+  │  Anyone up for a game later?         │
+  │  💬 View thread (3 replies)          │   ← INLINE inside card
+  ├──────────────────────────────────────┤   ← within-group (flush, no gap)
+  │  Let me know!                        │
+  └──────────────────────────────────────┘   ← group-end
+```
+
+### Visual Example — Thread Root at Group-End
+
+```
+Group of 2 messages (same sender), last has a thread:
+
+  ┌──────────────────────────────────────┐   ← group-start
+  │  Hey everyone, how's it going today? │
+  ├──────────────────────────────────────┤   ← group-end (thread root)
+  │  Anyone up for a game later?         │
+  └──────────────────────────────────────┘
+  💬 View thread (3 replies)                 ← EXTERNAL below card
+```
+
+### ThreadIndicator Component
+
+The `ThreadIndicator` component (`src/components/chat/ThreadIndicator.tsx`)
+renders a horizontal row with a reply icon and a "View thread (N replies)"
+text link. It uses `useAppTheme()` for the `colors.primary` accent color.
+
+```typescript
+<TouchableOpacity onPress={onPress} style={styles.container}>
+  <MaterialCommunityIcons name="message-reply-text-outline" size={14} />
+  <Text style={styles.text}>{label}</Text>
+</TouchableOpacity>
+```
+
+The component is `React.memo`'d and has its own `TouchableOpacity`, which
+works correctly when nested inside the card's `TouchableOpacity` (same
+pattern as `StackedReplyReference`).
 
 ---
 
@@ -321,13 +538,19 @@ const { handleCardLayout, groupCardRadius, snapMinWidth } =
   });
 ```
 
+The hook returns three values:
+
+- **`handleCardLayout`** — `onLayout` callback that normalizes and reports width
+- **`groupCardRadius`** — Memoized border radius object from `buildGroupedCardRadii()`
+- **`snapMinWidth`** — Memoized snap width from `getGroupedCardMinWidth()`
+
 The hook:
 
-1. **Registers group neighbors** via `cardWidthTracker.setGroupNeighbors()` on mount/update
-2. **Subscribes** to snapshot changes for the message ID
-3. **Provides `handleCardLayout`** — the `onLayout` callback that normalizes and reports width
-4. **Memoizes `groupCardRadius`** via `buildGroupedCardRadii()` from snapshot widths
-5. **Memoizes `snapMinWidth`** via `getGroupedCardMinWidth()` from raw vs snapped width
+1. **Pre-seeds from width cache** on mount via `cardWidthTracker.getSnapshot()` (in `useState` lazy initializer)
+2. **Registers group neighbors** via `cardWidthTracker.setGroupNeighbors()` in `useLayoutEffect` (before first paint)
+3. **Reads snapshot after neighbor setup** via `stableSetSnapshot(getSnapshot())` — skips re-render if width data is unchanged from the initial state (common for cold-cache rows)
+4. **Subscribes** to snapshot changes with a stable setter that uses `snapshotWidthsEqual()` to prevent re-renders from object reference inequality
+5. **Memoizes** radii and snap width from the latest snapshot
 
 ### Neighbor ID Computation (Parent)
 
@@ -562,6 +785,186 @@ Group of 3 similar-width messages (all snap to max):
 
 ---
 
+## First-Paint Strategy
+
+The grouped card system is designed to render cards in their correct grouped
+shape on the very first frame, with no visible pop-in, delayed regrouping, or
+"correct itself after render" effect.
+
+### Why Cards Appear Correct on First Frame
+
+The system uses a multi-layer strategy to achieve instant-correct rendering:
+
+#### 1. Precomputed Grouping Flags (Zero Runtime Cost)
+
+Grouping flags (`isGroupedWithPrevious`, `isGroupedWithNext`) are computed in
+`buildTimeline()` before any row renders. The parent screen passes these as
+**primitive boolean props** to the renderer. Inside `GroupStackedMessageRenderer`,
+the derived `MessageViewModel` (including `isGroupStart`, `isGroupEnd`,
+`threadPlacement`) is built via `useMemo` from those primitives — stable across
+re-renders when flags are unchanged, and zero-cost when `React.memo` short-
+circuits the render entirely. No row-level effect or state is needed for
+grouping decisions.
+
+#### 2. Deterministic Initial Corners
+
+Before any width measurement (`onLayout`) fires, cards render with
+deterministic corners based solely on group position flags:
+
+| Corner Position | Initial Value (pre-measurement) | Why                              |
+| --------------- | ------------------------------- | -------------------------------- |
+| Group-start TL  | `GROUPED_CARD_RADIUS` (8)       | Always rounded at group boundary |
+| Group-start TR  | `GROUPED_CARD_RADIUS` (8)       | Always rounded at group boundary |
+| Group-end BL    | `GROUPED_CARD_RADIUS` (8)       | Always rounded at group boundary |
+| Group-end BR    | `GROUPED_CARD_RADIUS` (8)       | Always rounded at group boundary |
+| Within-group    | `0` (flat)                      | Unknown widths default to flat   |
+
+The flat-corners default is correct for the common case where adjacent
+messages have similar widths (which snap to the same value, producing flat
+right edges). Only when messages have significantly different widths will
+the right-edge corners change from flat to rounded after measurement — a
+subtle 8px radius change on one corner.
+
+#### 3. Cross-Instance Width Cache
+
+`CardWidthTracker` maintains a static `WIDTH_CACHE` (Map, max 5000 entries)
+that persists across tracker instances. When a conversation is re-opened:
+
+- The new tracker pre-seeds node widths from the cache in `ensureNode()`
+- `useGroupedCardLayout` reads the pre-seeded snapshot on mount via the `useState` lazy initializer
+- `useLayoutEffect` reads the snapshot after neighbor setup — for warm-cache rows this includes neighbor widths → fully resolved corners before first paint
+- Cards start with their previously measured widths → fully resolved corners
+
+This means re-visiting a conversation produces pixel-perfect first-frame
+rendering with no corner or width adjustments.
+
+**Important limitation**: The width cache only contains entries for messages
+that have been previously measured in this session. Newly paginated history
+(scrolling upward to load older messages) is always cold-cache. The cache
+helps re-opened conversations and remounted cells, not first-ever renders
+of previously unseen messages.
+
+#### 4. Pre-Mount Width Estimation (Cold Rows)
+
+For cold-cache rows (newly paginated history, first-ever conversation load),
+the system pre-seeds estimated widths into `CardWidthTracker` before rows mount:
+
+**Estimator** (`estimateMessageWidth.ts`):
+
+- Pure function that predicts card-content width from message metadata
+- Text messages: per-character width accounting for script categories:
+  - Latin/Cyrillic/narrow glyphs: `8.2px` per character
+  - CJK ideographs (Chinese/Japanese/Korean): `16px` per character
+  - Emoji: `16px` per character
+  - Mixed text: weighted average across character classes
+- Text width = `charCount × effectiveCharWidth + CARD_PADDING_H(24)`,
+  clamped to the available content column
+- Media messages: Uses the same image-sizing formula as the renderer
+  (`imageMaxWidth`, `imageMaxHeight`, `imageMinWidth`)
+- Applies minimum-width boosts for author headers, reply previews, thread
+  indicators, and reaction pills
+- Normalizes to the 2px grid via `normalizeGroupedCardWidth()`
+- Accepts optional `screenWidth` parameter for reactive dimension tracking
+- Target: within `GROUPED_CARD_SNAP_THRESHOLD` (24px) of true measured width,
+  not pixel-perfect
+
+**Seeding pipeline** (`GroupChatScreen.tsx` and `ChatScreen.tsx`):
+
+- A `useMemo` keyed on `[timelineData, cardWidthTracker, displayMode, windowWidth]`
+  iterates all message timeline items and calls `cardWidthTracker.seedBatch()`
+  with estimated widths
+- Reaction presence is sourced from `msg.reactionsSummary` (on the MessageV2
+  object) rather than the async reactions ref — no lag from pending Firestore
+  subscriptions
+- `screenWidth` is provided via `useWindowDimensions()` — stays current after
+  rotation or split-screen changes
+- `seedBatch()` pre-populates tracker nodes WITHOUT overwriting existing
+  measured widths or cross-instance `WIDTH_CACHE` entries
+- Runs synchronously during render, before row components mount
+- Applied to **both** group chats and DM chats
+- When `useGroupedCardLayout`'s `useState` lazy initializer calls
+  `getSnapshot()`, the estimated width is already present → first paint
+  uses approximately correct right-edge radii and snap minWidth
+
+**Lifecycle**:
+
+1. `timelineData` changes (pagination loads new messages)
+2. Seeding `useMemo` runs → `seedBatch()` populates estimated widths
+3. New row components mount → `useState(() => getSnapshot())` reads estimates
+4. `useLayoutEffect` confirms snapshot (no change for cold rows → skip render)
+5. `onLayout` fires → `report()` overwrites estimate with real measurement
+6. `report()` clears the `estimatedIds` flag for that message
+7. If real width differs from estimate, coalesced notification triggers
+   a re-render — typically a subtle corner refinement
+
+#### 5. Pre-Paint Setup via `useLayoutEffect`
+
+The `useGroupedCardLayout` hook uses `useLayoutEffect` (not `useEffect`) for
+neighbor registration and snapshot reading. `useLayoutEffect` runs synchronously
+after React commits but BEFORE the frame is painted on screen. If a state update
+occurs in `useLayoutEffect`, React re-renders synchronously before paint.
+
+This provides two benefits:
+
+- **Warm cache**: The first visible frame already includes resolved neighbor
+  widths from cache (previously, `useEffect` ran AFTER paint, causing a
+  visible flash of incorrect corners)
+- **Cold cache**: The `stableSetSnapshot` comparison detects that all width
+  fields are still `undefined` (same as the initial state) and skips the
+  re-render entirely — zero wasted renders
+
+#### 6. Coalesced Notifications + Snapshot Comparison
+
+All `CardWidthTracker` notifications (both from `report()` and
+`setGroupNeighbors()`) are coalesced via `setTimeout(0)`. Multiple calls
+within the same JS turn are merged into a single flush. This eliminates
+the O(N²) cascade storm that previously occurred during pagination: each
+`report()` would synchronously notify all N group members, and with N
+messages reporting, that was N×N subscriber calls.
+
+Additionally, the subscriber uses a `snapshotWidthsEqual()` comparison
+that only triggers a React state update when width-relevant fields
+(`rawWidth`, `snappedWidth`, `prevSnappedWidth`, `nextSnappedWidth`)
+actually changed. This eliminates re-renders from object reference
+inequality where the underlying data is identical.
+
+### What Can Still Change After First Frame
+
+One coalesced refinement pass occurs after `onLayout` fires for all newly
+mounted cards:
+
+1. **Right-edge corners**: A within-group card may go from flat (0) to
+   rounded (8) if it is significantly wider than its neighbor. This is a
+   single-corner, 8px change — not a shape or position jump.
+
+2. **Snap width**: A card may widen by up to `GROUPED_CARD_SNAP_THRESHOLD`
+   (24px) when its snap cluster resolves. Applied via `minWidth` on the
+   outer wrapper, so content doesn't reflow — only the right edge grows.
+
+For the **common case** of same-width messages within a snap cluster, the
+initial flat right-edge corners are already correct (equal snapped widths
+produce `0`). These rows render once and never re-render for width
+refinement. Only mixed-width groups see the subtle corner change.
+
+### FlatList Virtualization Tuning
+
+The chat list uses aggressive virtualization settings to keep cells mounted
+and prevent blank-space flicker during fast scrolling:
+
+```typescript
+windowSize: 101,              // 50 screens above + 1 viewport + 50 below
+initialNumToRender: 20,       // Snappy first paint
+maxToRenderPerBatch: 50,      // Fast fill during flings
+updateCellsBatchingPeriod: 16, // One frame (60 fps)
+removeClippedSubviews: false,  // Must stay false on inverted lists
+```
+
+This keeps virtually every loaded message mounted, so the width cache is
+populated for all visible and nearby messages without needing `onLayout`
+to re-fire on scroll.
+
+---
+
 ## Date Dividers
 
 Day separators use the `DateDivider` component — a horizontal row with two
@@ -620,7 +1023,7 @@ Uses `useAppTheme()` hook (from `@/store/ThemeContext`) — not props:
 
 ## Prop Wiring
 
-### Parent → Renderer Props
+### Parent → Renderer Props (Card System)
 
 Both parent screens (`GroupChatScreen`, `ChatScreen`) pass three card-system props:
 
@@ -629,6 +1032,85 @@ Both parent screens (`GroupChatScreen`, `ChatScreen`) pass three card-system pro
 | `cardWidthTracker`   | `CardWidthTracker`    | `useMemo(() => new CardWidthTracker(), [conversationKey])` — recreated on conversation change |
 | `groupPrevMessageId` | `string \| undefined` | Computed from `timelineData[index + 1]` (inverted list)                                       |
 | `groupNextMessageId` | `string \| undefined` | Computed from `timelineData[index - 1]` (inverted list)                                       |
+
+### GroupStackedMessageRenderer — Raw Flag Props
+
+`GroupChatScreen` passes raw primitive flags instead of a pre-built
+`MessageViewModel` object. This allows `React.memo`'s default shallow
+comparison to detect unchanged props and skip re-renders entirely.
+
+| Prop                    | Type      | Source (in `renderMessage`)                              |
+| ----------------------- | --------- | -------------------------------------------------------- |
+| `isGroupedWithPrevious` | `boolean` | From `buildTimeline()` grouping computation              |
+| `isGroupedWithNext`     | `boolean` | From `buildTimeline()` grouping computation              |
+| `hasReactions`          | `boolean` | `(messageReactionsRef.current.get(id) ?? []).length > 0` |
+| `hasReplyPreview`       | `boolean` | `!!item.replyTo`                                         |
+| `hasThread`             | `boolean` | `!!item.replyCount && item.replyCount > 0`               |
+
+The renderer builds the `MessageViewModel` internally via `useMemo`:
+
+```typescript
+const vm = useMemo(
+  () =>
+    buildMessageViewModel({
+      isMine: isOwnMessage,
+      isGroupChat: true,
+      isGroupedWithPrevious,
+      isGroupedWithNext,
+      isSystemMessage: false,
+      hasReactions,
+      hasReplyPreview,
+      hasThread,
+      displayMode: "stacked",
+    }),
+  [
+    isOwnMessage,
+    isGroupedWithPrevious,
+    isGroupedWithNext,
+    hasReactions,
+    hasReplyPreview,
+    hasThread,
+  ],
+);
+```
+
+### GroupStackedMessageRenderer — Stable Callbacks
+
+Callback props use stable parent-level `useCallback` refs. The renderer wraps
+them in its own `useCallback` to bind per-message data:
+
+| Prop            | Signature (parent → renderer)                                            | Parent Source                                                     |
+| --------------- | ------------------------------------------------------------------------ | ----------------------------------------------------------------- |
+| `onImagePress`  | `(attachments: AttachmentV2[], index: number, name: string, ts: number)` | `handleOpenMediaViewer` (stable, `[]` deps)                       |
+| `onThreadPress` | `(messageId: string) => void`                                            | `handleStackedThreadPress` (stable, `[navigation, groupId]` deps) |
+
+Inside the renderer:
+
+```typescript
+// Wraps stable parent callback with per-message data
+const handleImagePress = useCallback(() => {
+  const imageAtt = item.attachments?.find((a) => a.kind === "image");
+  if (item.kind === "media" && imageAtt) {
+    onImagePress([imageAtt], 0, senderDisplayName, item.createdAt);
+  }
+}, [
+  item.attachments,
+  item.kind,
+  item.createdAt,
+  senderDisplayName,
+  onImagePress,
+]);
+
+const handleThreadPress = useCallback(() => {
+  onThreadPress(item.id);
+}, [item.id, onThreadPress]);
+```
+
+This pattern ensures:
+
+- **Parent provides a single stable function ref** (not per-row inline closures)
+- **`React.memo` works** — callback props are reference-stable across renders
+- **Renderer binds its own data** — no stale closures over parent scope variables
 
 ### Tracker Lifecycle
 
@@ -707,11 +1189,16 @@ The chat list uses an inverted FlatList (`scaleY: -1`). This means:
 - Neighbor snapped widths start as `undefined` (before tracker computes snapshots)
 - Widths are normalized to a **2px grid** (`Math.ceil(width / 2) * 2`) to eliminate
   sub-pixel rounding differences that caused 1px misalignment between similar messages
-- The rounding algorithm defaults to `0` (flat) for unknown widths — unlike the previous
-  behavior which defaulted to rounded. This means **first frame shows flat corners**
-  that settle into the correct adaptive shape on second frame
-- After layout, `CardWidthTracker.report()` triggers group-wide snapshot notifications
-  which update all affected subscribers
+- The rounding algorithm defaults to `0` (flat) for unknown widths, which is correct
+  for the common same-width case where snapped messages produce flush edges
+- Cards render at full opacity on first frame — no blank-then-pop cycle
+- `useLayoutEffect` registers neighbors and reads cached snapshots BEFORE the first
+  visible paint, so warm-cache rows start with fully resolved corners
+- After layout, `CardWidthTracker.report()` enqueues coalesced async notifications
+  via `setTimeout(0)`. Multiple reports within the same JS turn are merged into a
+  single flush, preventing O(N²) cascade storms during pagination
+- The subscriber uses `snapshotWidthsEqual()` to skip re-renders when width data
+  hasn't actually changed, further reducing unnecessary render cycles
 
 ### Two-View Card Structure
 
@@ -733,6 +1220,17 @@ The chat list uses an inverted FlatList (`scaleY: -1`). This means:
 - Cluster resolution walks the prev/next chain, not a global pass — it's scoped to the
   connected sender group
 
+### Thread Indicators and Grouping
+
+- `areMessagesGrouped` breaks on `replyTo` (reply messages) but NOT on `replyCount`
+  (thread roots). A thread root can be in the middle of a grouped run.
+- `vm.threadPlacement` determines whether the indicator renders inline (inside card)
+  or external (below card), preserving grouped continuity
+- Inline thread indicators participate in the card's width measurement, since they
+  are children of `cardContent` which has the `onLayout` handler
+- Both inline and external thread indicators use the same `ThreadIndicator` component
+  with the same `onPress` handler
+
 ### Shared Logic
 
 Both `GroupStackedMessageRenderer` and `StackedMessageRenderer` share the
@@ -744,10 +1242,38 @@ automatically.
 
 While card layout logic is shared, the renderers differ in:
 
-- **GroupStackedMessageRenderer**: Receives `colors` prop, uses `@mention` row highlighting
-  with tint + left accent border, uses `MessageWithMentions` for text rendering,
-  thread press via `onThreadPress` callback prop
+- **GroupStackedMessageRenderer**: Receives raw grouping flag primitives and
+  builds `MessageViewModel` internally via `useMemo`. Uses `colors` prop,
+  `@mention` row highlighting with tint + left accent border,
+  `MessageWithMentions` for text rendering. Thread press and image press are
+  handled via stable parent callbacks (`onThreadPress(messageId)`,
+  `onImagePress(attachments, index, senderName, timestamp)`) — the renderer
+  wraps these in its own `useCallback` to pass per-message data.
 - **StackedMessageRenderer**: Uses `useTheme()` from react-native-paper directly, no mention
   highlighting (DMs have no mentions), uses plain `Text` for text rendering, manages its
   own link preview state via `useLinkPreviews` hook, thread press navigates directly via
   `navigation.navigate("ThreadView", ...)`, has `gutterSpacer` with extra `marginRight`
+
+### MessageViewModel Fields
+
+The `MessageViewModel` (from `buildMessageViewModel()` in `displayMode.ts`)
+provides the following fields. In `GroupStackedMessageRenderer`, the VM is
+built internally from raw primitive props via `useMemo`, ensuring React.memo
+can skip re-renders when grouping flags haven't changed:
+
+| Field                   | Type                               | Description                                |
+| ----------------------- | ---------------------------------- | ------------------------------------------ |
+| `isMine`                | `boolean`                          | Current user sent this message             |
+| `isGroupChat`           | `boolean`                          | Group chat vs DM                           |
+| `isGroupedWithPrevious` | `boolean`                          | Grouped with message visually above        |
+| `isGroupedWithNext`     | `boolean`                          | Grouped with message visually below        |
+| `isGroupStart`          | `boolean`                          | First in sender group (show avatar + name) |
+| `isGroupEnd`            | `boolean`                          | Last in sender group (show timestamp)      |
+| `showAvatar`            | `boolean`                          | Avatar should be rendered                  |
+| `showDisplayName`       | `boolean`                          | Author name should be rendered             |
+| `showTimestamp`         | `boolean`                          | Timestamp row should be rendered           |
+| `isSystemMessage`       | `boolean`                          | System-generated message                   |
+| `hasReactions`          | `boolean`                          | Message has reaction pills                 |
+| `hasReplyPreview`       | `boolean`                          | Message has a reply-to reference           |
+| `hasThread`             | `boolean`                          | Message is root of a reply thread          |
+| `threadPlacement`       | `"inline" \| "external" \| "none"` | Where to render the thread indicator       |

@@ -69,6 +69,7 @@
  * @module hooks/useChatComposer
  */
 
+import { setCursorPosition as nativeSetCursorPosition } from "@/modules/nativeKeyboard";
 import {
   extractMentionsExact,
   InsertMentionResult,
@@ -519,11 +520,13 @@ export function useChatComposer(
       setCursorPositionState(result.newCursorPosition);
       cursorRef.current = result.newCursorPosition;
 
+      // Sync cursor position to native composer (iOS)
+      nativeSetCursorPosition(result.newCursorPosition);
+
       // Track mention UID
       setMentionUids((prev) =>
         prev.includes(member.uid) ? prev : [...prev, member.uid],
       );
-
     },
     [enableMentions, mentionsHook],
   );

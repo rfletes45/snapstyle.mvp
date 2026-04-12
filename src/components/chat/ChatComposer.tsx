@@ -19,6 +19,7 @@
 
 import { BorderRadius, Spacing } from "@/constants/theme";
 import { VoiceRecording } from "@/hooks/useVoiceRecorder";
+import { isNativeComposerAvailable } from "@/modules/nativeKeyboard";
 import { useAppTheme } from "@/store/ThemeContext";
 import { ReplyToMetadata } from "@/types/messaging";
 import React, { useCallback, useEffect, useMemo, useRef } from "react";
@@ -49,6 +50,10 @@ import { GameButton } from "./GameButton";
 import { GifButton } from "./GifButton";
 import { GifStickerButton } from "./GifStickerButton";
 import { ImagePickerButton } from "./ImagePickerButton";
+import {
+  NativeComposerInput,
+  type NativeComposerInputRef,
+} from "./NativeComposerInput";
 import { ReplyPreviewBar } from "./ReplyPreviewBar";
 import { SendButton } from "./SendButton";
 import { StickerButton } from "./StickerButton";
@@ -259,6 +264,8 @@ export function ChatComposer({
   // Internal ref for TextInput - use provided ref or create our own
   const internalTextInputRef = useRef<TextInput | null>(null);
   const inputRef = textInputRef || internalTextInputRef;
+  const nativeComposerRef = useRef<NativeComposerInputRef | null>(null);
+  const useNative = Platform.OS === "ios" && isNativeComposerAvailable;
   const normalizedMentionAutocomplete = useMemo(
     () => normalizeNodeForView(mentionAutocomplete),
     [mentionAutocomplete],
@@ -336,33 +343,30 @@ export function ChatComposer({
   const handleSend = useCallback(async () => {
     // Store ref to input before calling onSend (in case of re-renders)
     const input = inputRef.current;
+    const nativeInput = nativeComposerRef.current;
 
-    // Clear the native TextInput buffer immediately so that any keystrokes
-    // typed while the async send is in flight start from an empty buffer
-    // instead of concatenating with the old text ("hi" + "bye" → "hibye").
-    // The React state clear (via onSend → clearText) follows asynchronously
-    // on the next render, but by then the native buffer is already empty.
-    if (input) {
+    // Clear the native buffer immediately so that any keystrokes
+    // typed while the async send is in flight start from an empty buffer.
+    if (nativeInput) {
+      nativeInput.clear();
+    } else if (input) {
       input.clear();
     }
 
     try {
-      // Call onSend and await it in case it's async
       await Promise.resolve(onSend());
     } finally {
-      // Refocus the TextInput after send completes to keep keyboard open
-      // Use multiple attempts to handle race conditions with re-renders
       const refocusInput = () => {
-        if (input) {
+        if (nativeInput) {
+          nativeInput.focus();
+        } else if (input) {
           input.focus();
         } else if (inputRef.current) {
           inputRef.current.focus();
         }
       };
 
-      // Immediate refocus attempt
       refocusInput();
-      // Delayed refocus to handle post-render scenarios
       setTimeout(refocusInput, 50);
       setTimeout(refocusInput, 150);
     }
@@ -415,35 +419,55 @@ export function ChatComposer({
             <View
               style={[styles.textInputContainer, { backgroundColor: inputBg }]}
             >
-              <TextInput
-                ref={inputRef}
-                style={[styles.textInput, { color: inputColor }]}
-                placeholder={placeholder}
-                placeholderTextColor={placeholderColor}
-                selectionColor={colors.primary}
-                keyboardAppearance={
-                  Platform.OS === "ios"
-                    ? isDark
-                      ? "dark"
-                      : "light"
-                    : undefined
-                }
-                value={value}
-                onChangeText={onChangeText}
-                onSelectionChange={
-                  onCursorChange
-                    ? (e) => onCursorChange(e.nativeEvent.selection.end)
-                    : undefined
-                }
-                multiline
-                maxLength={1000}
-                textAlignVertical="center"
-                editable={!isRecording && !toolbarEditing}
-                returnKeyType="send"
-                submitBehavior="submit"
-                onSubmitEditing={canSend ? handleSend : undefined}
-                {...textInputProps}
-              />
+              {useNative ? (
+                <NativeComposerInput
+                  ref={nativeComposerRef}
+                  style={[styles.textInput, { color: inputColor }]}
+                  value={value}
+                  onChangeText={onChangeText}
+                  onSelectionChange={
+                    onCursorChange
+                      ? (e: any) => onCursorChange(e.nativeEvent.selection.end)
+                      : undefined
+                  }
+                  onSubmitEditing={canSend ? handleSend : undefined}
+                  placeholder={placeholder}
+                  placeholderTextColor={placeholderColor}
+                  selectionColor={colors.primary}
+                  editable={!isRecording && !toolbarEditing}
+                  maxLength={1000}
+                />
+              ) : (
+                <TextInput
+                  ref={inputRef}
+                  style={[styles.textInput, { color: inputColor }]}
+                  placeholder={placeholder}
+                  placeholderTextColor={placeholderColor}
+                  selectionColor={colors.primary}
+                  keyboardAppearance={
+                    Platform.OS === "ios"
+                      ? isDark
+                        ? "dark"
+                        : "light"
+                      : undefined
+                  }
+                  value={value}
+                  onChangeText={onChangeText}
+                  onSelectionChange={
+                    onCursorChange
+                      ? (e) => onCursorChange(e.nativeEvent.selection.end)
+                      : undefined
+                  }
+                  multiline
+                  maxLength={1000}
+                  textAlignVertical="center"
+                  editable={!isRecording && !toolbarEditing}
+                  returnKeyType="send"
+                  submitBehavior="submit"
+                  onSubmitEditing={canSend ? handleSend : undefined}
+                  {...textInputProps}
+                />
+              )}
               {/* Voice button inside text input (when no text) */}
               {showVoiceButton &&
                 (normalizedVoiceButtonComponent ||
@@ -628,6 +652,7 @@ export function ChatComposer({
       onImagesPicked,
       imagePickerDisabled,
       inputRef,
+      useNative,
     ],
   );
 
