@@ -57,7 +57,7 @@ const EMPTY_SNAPSHOT: CardWidthSnapshot = Object.freeze({});
 // re-opening a conversation (which creates a fresh tracker) can pre-seed
 // known widths instead of waiting for onLayout to fire again.
 const WIDTH_CACHE = new Map<string, number>();
-const WIDTH_CACHE_MAX_SIZE = 2000;
+const WIDTH_CACHE_MAX_SIZE = 5000;
 
 function cacheWidth(id: string, width: number): void {
   WIDTH_CACHE.set(id, width);
@@ -255,7 +255,12 @@ export class CardWidthTracker {
   private resolveSnappedWidth(id: string): number | undefined {
     return resolveGroupedCardSnappedWidth({
       messageId: id,
-      getWidth: (messageId) => this.nodes.get(messageId)?.width,
+      // Fall back to the cross-instance width cache when a node doesn't
+      // exist in this tracker instance (e.g. neighbor was virtualized out).
+      // This lets remounted cells resolve neighbor widths immediately
+      // instead of returning undefined and keeping the card at opacity 0.
+      getWidth: (messageId) =>
+        this.nodes.get(messageId)?.width ?? WIDTH_CACHE.get(messageId),
       getPrevMessageId: (messageId) => this.nodes.get(messageId)?.prevId,
       getNextMessageId: (messageId) => this.nodes.get(messageId)?.nextId,
     });

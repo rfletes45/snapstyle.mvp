@@ -1037,6 +1037,23 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   const timelineDataRef = useRef(timelineData);
   timelineDataRef.current = timelineData;
 
+  // ── Live refs for volatile data read inside renderMessage ──────────
+  // By reading these from refs, renderMessage's dependency array stays small
+  // and the callback reference stays stable across state changes.  This
+  // prevents FlatList from seeing a new renderItem function on every reaction
+  // update, highlight toggle, or link-preview fetch — which would otherwise
+  // force a re-render diff of every visible cell.
+  const messageReactionsRef = useRef(messageReactions);
+  messageReactionsRef.current = messageReactions;
+  const linkPreviewsRef = useRef(linkPreviews);
+  linkPreviewsRef.current = linkPreviews;
+  const loadingPreviewsRef = useRef(loadingPreviews);
+  loadingPreviewsRef.current = loadingPreviews;
+  const highlightedMessageIdRef = useRef(highlightedMessageId);
+  highlightedMessageIdRef.current = highlightedMessageId;
+  const mentionableMembersRef = useRef(mentionableMembers);
+  mentionableMembersRef.current = mentionableMembers;
+
   // Card-width tracker for adaptive stacked-mode rounding
   const trackerConversationKey = groupId ?? "__pending-group__";
   const cardWidthTracker = useMemo(() => {
@@ -1448,7 +1465,8 @@ export default function GroupChatScreen({ route, navigation }: Props) {
           isGroupedWithNext: isGroupedWithNextMsg,
           isSystemMessage: false,
           hasReactions:
-            (messageReactions.get(item.id) ?? EMPTY_REACTIONS).length > 0,
+            (messageReactionsRef.current.get(item.id) ?? EMPTY_REACTIONS)
+              .length > 0,
           hasReplyPreview: !!item.replyTo,
           hasThread: !!item.replyCount && item.replyCount > 0,
           displayMode: "stacked",
@@ -1497,10 +1515,12 @@ export default function GroupChatScreen({ route, navigation }: Props) {
               bubbleTextColor={txtColor}
               bubbleFontFamily={fntFamily}
               fontColorHex={fntColorHex}
-              isHighlighted={item.id === highlightedMessageId}
-              reactions={messageReactions.get(item.id) ?? EMPTY_REACTIONS}
+              isHighlighted={item.id === highlightedMessageIdRef.current}
+              reactions={
+                messageReactionsRef.current.get(item.id) ?? EMPTY_REACTIONS
+              }
               linkPreview={
-                linkPreviews.get(item.id) ||
+                linkPreviewsRef.current.get(item.id) ||
                 (hasUrls(item.text || "")
                   ? {
                       url: extractUrls(item.text || "")[0] || "",
@@ -1508,8 +1528,8 @@ export default function GroupChatScreen({ route, navigation }: Props) {
                     }
                   : undefined)
               }
-              loadingPreview={loadingPreviews.has(item.id)}
-              mentionableMembers={mentionableMembers}
+              loadingPreview={loadingPreviewsRef.current.has(item.id)}
+              mentionableMembers={mentionableMembersRef.current}
               colors={colors}
               onReply={handleReply}
               onMessageLongPress={handleMessageLongPress}
@@ -1614,7 +1634,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
             >
               {/* Highlight overlay for reply navigation */}
               <MessageHighlightOverlay
-                isHighlighted={item.id === highlightedMessageId}
+                isHighlighted={item.id === highlightedMessageIdRef.current}
               />
 
               {item.replyTo && (
@@ -1747,7 +1767,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
                                   ((item.mentionUids?.length ?? 0) > 0
                                     ? extractMentionsExact(
                                         item.text || "",
-                                        mentionableMembers,
+                                        mentionableMembersRef.current,
                                       ).mentionSpans
                                     : undefined)
                                 }
@@ -1765,14 +1785,16 @@ export default function GroupChatScreen({ route, navigation }: Props) {
                               {hasUrls(item.text || "") && (
                                 <LinkPreviewCard
                                   preview={
-                                    linkPreviews.get(item.id) || {
+                                    linkPreviewsRef.current.get(item.id) || {
                                       url:
                                         extractUrls(item.text || "")[0] || "",
                                       fetchedAt: Date.now(),
                                     }
                                   }
                                   isOwn={isOwnMessage}
-                                  loading={loadingPreviews.has(item.id)}
+                                  loading={loadingPreviewsRef.current.has(
+                                    item.id,
+                                  )}
                                 />
                               )}
                             </>
@@ -1806,11 +1828,14 @@ export default function GroupChatScreen({ route, navigation }: Props) {
               </View>
 
               {/* Reaction pills — anchored below the bubble, aligned to sender */}
-              {(messageReactions.get(item.id) ?? EMPTY_REACTIONS).length >
-                0 && (
+              {(messageReactionsRef.current.get(item.id) ?? EMPTY_REACTIONS)
+                .length > 0 && (
                 <View style={!isOwnMessage ? { paddingLeft: 40 } : undefined}>
                   <ReactionPills
-                    reactions={messageReactions.get(item.id) ?? EMPTY_REACTIONS}
+                    reactions={
+                      messageReactionsRef.current.get(item.id) ??
+                      EMPTY_REACTIONS
+                    }
                     isOwnMessage={isOwnMessage}
                     scope="group"
                     conversationId={groupId}
@@ -1848,9 +1873,6 @@ export default function GroupChatScreen({ route, navigation }: Props) {
       showMemberChatStyles,
       getSenderDisplayName,
       getSenderProfileInfo,
-      linkPreviews,
-      loadingPreviews,
-      messageReactions,
       handleReply,
       handleMessageLongPress,
       handleOpenMediaViewer,
@@ -1859,8 +1881,6 @@ export default function GroupChatScreen({ route, navigation }: Props) {
       cardWidthTracker,
       screen.chat.messageEnterAnimation,
       displayMode,
-      mentionableMembers,
-      highlightedMessageId,
       navigation,
       groupId,
     ],
@@ -2054,8 +2074,6 @@ export default function GroupChatScreen({ route, navigation }: Props) {
               flatListProps={{
                 onEndReached: screen.chat.loadOlder,
                 onEndReachedThreshold: 0.5,
-                initialNumToRender: 15,
-                maxToRenderPerBatch: 15,
               }}
             />
           )}

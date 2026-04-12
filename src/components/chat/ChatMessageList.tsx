@@ -17,7 +17,6 @@
  */
 
 import { useChatScrollState } from "@/hooks/chat/useChatScrollState";
-import { LIST_PERFORMANCE_PROPS } from "@/utils/listPerformance";
 import React, {
   forwardRef,
   useCallback,
@@ -145,14 +144,19 @@ function ChatMessageListInner<T>(
 
   // maintainVisibleContentPosition keeps scroll position stable when items are
   // added above the viewport (pagination) or below it (new messages while
-  // scrolled up).  autoscrollToTopThreshold tells the native scroll view to
-  // snap to offset 0 whenever the first visible item is within 200 px of the
-  // start — matching the AT_BOTTOM_THRESHOLD — so new messages at the bottom
-  // appear instantly on the UI thread without a JS-round-trip delay.
+  // scrolled up).
+  //
+  // autoscrollToTopThreshold is intentionally OMITTED.  The native auto-scroll
+  // fires whenever content changes and the offset is within the threshold of 0.
+  // During fast upward scroll, pagination loads can transiently place the
+  // offset near 0 *before* the position-maintenance adjustment lands, causing
+  // the native auto-scroll to snap the user back to the bottom ("teleport"
+  // bug).  Instead, new-message auto-scroll is handled in JS by
+  // useChatScrollState, which only fires when the user is genuinely at-bottom
+  // AND a new message arrives.
   const maintainVisibleContentPosition = useMemo(
     () => ({
       minIndexForVisible: 1,
-      autoscrollToTopThreshold: 200,
     }),
     [],
   );
@@ -201,6 +205,31 @@ function ChatMessageListInner<T>(
   );
 
   // Common FlatList props
+  //
+  // ── Virtualization strategy (Discord-like fast-scroll resilience) ──
+  //
+  // The goal: once messages have been loaded in the current session, the
+  // user should NEVER out-scroll the render window and land in blank space.
+  //
+  // windowSize: 101 (= 50 screens above + 1 viewport + 50 screens below).
+  //   At ~8-10 messages per viewport, this keeps ~800-1 000 messages mounted.
+  //   For typical chat histories (<500 loaded messages) this means virtually
+  //   every loaded cell is kept alive, so a fast fling in EITHER direction
+  //   never out-scrolls the render window.
+  //
+  // maxToRenderPerBatch: 50 — aggressive batching.  When the render window
+  //   shifts during a fast fling, 50 cells per batch means the newly-exposed
+  //   region fills in within 1-2 JS frames.
+  //
+  // updateCellsBatchingPeriod: 16 — one frame (≈60 fps cadence).  Eliminates
+  //   dead time between batches so rendering keeps pace with the fling.
+  //
+  // initialNumToRender: 20 — snappy first paint without blocking the thread.
+  //
+  // removeClippedSubviews: false — MUST remain false on inverted FlatLists
+  //   due to the known React Native bug where clipped cells are never
+  //   re-created, causing permanent blank screens.
+  //
   const flatListCommonProps = {
     data,
     renderItem,
@@ -216,15 +245,12 @@ function ChatMessageListInner<T>(
     // Content
     ListHeaderComponent,
     ListEmptyComponent,
-    // Performance
-    ...LIST_PERFORMANCE_PROPS,
-    // CRITICAL: removeClippedSubviews must be false on inverted FlatLists.
-    // React Native has a known bug where clipped cells on inverted lists are
-    // removed and never re-rendered during fast scroll, causing a permanent
-    // blank/white screen soft-lock.
+    // ── Performance: chat-optimised virtualization ──
+    windowSize: 101,
+    initialNumToRender: 20,
+    maxToRenderPerBatch: 50,
+    updateCellsBatchingPeriod: 16,
     removeClippedSubviews: false,
-    // Raise windowSize so fast-scroll doesn't outpace virtualization
-    windowSize: 21,
     // Maintain scroll position when content changes (new messages / pagination)
     maintainVisibleContentPosition,
     // Handle scroll failures

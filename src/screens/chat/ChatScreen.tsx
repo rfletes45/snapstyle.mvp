@@ -1029,6 +1029,14 @@ export default function ChatScreen({
   const timelineDataRef = useRef(timelineData);
   timelineDataRef.current = timelineData;
 
+  // ── Live refs for volatile data read inside renderTimelineItem ─────
+  // By reading these from refs the useCallback stays stable across state
+  // changes, preventing FlatList from re-diffing every cell.
+  const messageReactionsRef = useRef(messageReactions);
+  messageReactionsRef.current = messageReactions;
+  const highlightedMessageIdRef = useRef(highlightedMessageId);
+  highlightedMessageIdRef.current = highlightedMessageId;
+
   // Card-width tracker for adaptive stacked-mode rounding
   const trackerConversationKey = chatId ?? "__pending-chat__";
   const cardWidthTracker = useMemo(() => {
@@ -1343,8 +1351,10 @@ export default function ChatScreen({
             onScrollToMessage={scrollToMessage}
             onRetry={handleRetryMessage}
             onImagePress={handleOpenMediaViewer}
-            isHighlighted={msg.id === highlightedMessageId}
-            reactions={messageReactions.get(msg.id) ?? EMPTY_REACTIONS}
+            isHighlighted={msg.id === highlightedMessageIdRef.current}
+            reactions={
+              messageReactionsRef.current.get(msg.id) ?? EMPTY_REACTIONS
+            }
             onOptimisticReaction={handleOptimisticReaction}
             displayMode={displayMode}
             isGroupChat={false}
@@ -1379,8 +1389,6 @@ export default function ChatScreen({
       scrollToMessage,
       handleRetryMessage,
       handleOpenMediaViewer,
-      highlightedMessageId,
-      messageReactions,
       handleOptimisticReaction,
       cardWidthTracker,
       screen.chat.messageEnterAnimation,
@@ -1521,8 +1529,6 @@ export default function ChatScreen({
               flatListProps={{
                 onEndReached: screen.loadOlder,
                 onEndReachedThreshold: 0.5,
-                initialNumToRender: 15,
-                maxToRenderPerBatch: 15,
               }}
             />
           )}

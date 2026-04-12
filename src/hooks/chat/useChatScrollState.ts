@@ -10,8 +10,9 @@
  * Architecture guarantees:
  * - Hysteresis prevents pill flicker near thresholds
  * - Newest-message detection uses message ID, not count (immune to pagination)
- * - No JS auto-scroll when user is at bottom — native `autoscrollToTopThreshold`
- *   handles that on the UI thread, removing frame-gap jitter
+ * - JS auto-scroll when user is at bottom and a new message arrives (replaces
+ *   native `autoscrollToTopThreshold` which caused false teleport-to-bottom
+ *   during fast upward scroll / pagination)
  * - All real-time reads use refs; React state only updates on boundary crossings
  *
  * @module hooks/chat/useChatScrollState
@@ -195,9 +196,13 @@ export function useChatScrollState(
         setShowJumpPill(true);
         const added = messageCount - prevCountRef.current;
         setNewMessagesWhileAway((prev) => prev + added);
+      } else {
+        // User IS at bottom → scroll to offset 0 so the new message is
+        // visible immediately.  `animated: false` keeps it instant (matches
+        // the old native `autoscrollToTopThreshold` behaviour without the
+        // risk of false-triggering during pagination / fast scroll).
+        flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
       }
-      // If user IS at bottom → native autoscrollToTopThreshold handles
-      // the scroll on the UI thread.  No JS scroll needed.
     }
 
     prevNewestIdRef.current = newestMessageId;
