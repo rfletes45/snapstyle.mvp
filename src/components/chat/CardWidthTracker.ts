@@ -9,11 +9,25 @@
  *
  * ## Notification coalescing
  *
- * All subscriber notifications are coalesced via a microtask queue.
- * When multiple cards report widths or register neighbors in the same
- * JS turn (e.g. during pagination batch rendering), their notifications
- * are collected and flushed once — eliminating cascading re-renders
- * where each card's measurement triggers group-wide updates.
+ * Subscriber notifications use a two-tier strategy:
+ *
+ * 1. **First report** (a node's width changes from `undefined` to a value):
+ *    The affected group is notified **synchronously** so the renderer can
+ *    transition from hidden (opacity: 0) to visible on the same frame as
+ *    the `onLayout` event — no extra frame of delay.
+ *
+ * 2. **Subsequent updates** (width refines or neighbors change):
+ *    Notifications are coalesced via a microtask queue (`setTimeout(0)`).
+ *    This prevents cascading re-renders during pagination batches where
+ *    many cards report / register neighbors in quick succession.
+ *
+ * ## Width cache
+ *
+ * Measured widths are also stored in a static **cross-instance cache**
+ * keyed by message ID. When a new CardWidthTracker is created (e.g. on
+ * conversation re-open), it can pre-seed node widths from the cache,
+ * eliminating the onLayout → measure → re-render cycle for messages
+ * the user has already seen.
  */
 
 import {
@@ -38,6 +52,29 @@ export interface CardWidthSnapshot {
 
 const EMPTY_SNAPSHOT: CardWidthSnapshot = Object.freeze({});
 
+// ── Cross-instance width cache ─────────────────────────────────────────
+// Persists measured widths across CardWidthTracker instances so that
+// re-opening a conversation (which creates a fresh tracker) can pre-seed
+// known widths instead of waiting for onLayout to fire again.
+const WIDTH_CACHE = new Map<string, number>();
+const WIDTH_CACHE_MAX_SIZE = 2000;
+
+function cacheWidth(id: string, width: number): void {
+  WIDTH_CACHE.set(id, width);
+  // Simple size cap — evict oldest entries when cache grows too large.
+  // Map iteration order is insertion order, so deleting the first entry
+  // acts as a FIFO eviction.
+  if (WIDTH_CACHE.size > WIDTH_CACHE_MAX_SIZE) {
+    const firstKey = WIDTH_CACHE.keys().next().value;
+    if (firstKey !== undefined) WIDTH_CACHE.delete(firstKey);
+  }
+}
+
+/** Read a previously cached width for a message ID (cross-instance). */
+export function getCachedWidth(id: string): number | undefined {
+  return WIDTH_CACHE.get(id);
+}
+
 export class CardWidthTracker {
   private nodes = new Map<string, CardWidthNode>();
   private listeners = new Map<
@@ -46,29 +83,55 @@ export class CardWidthTracker {
   >();
 
   // ── Notification coalescing ──────────────────────────────────────────
-  // Collects dirty IDs and flushes subscriber notifications once per
-  // microtask turn.  This prevents cascading re-renders when many cards
-  // report / register neighbors in quick succession (pagination batches).
   private pendingNotifyIds = new Set<string>();
   private flushScheduled = false;
 
   private ensureNode(id: string): CardWidthNode {
     let node = this.nodes.get(id);
     if (!node) {
-      node = {};
+      // Pre-seed from cross-instance cache if available
+      const cached = WIDTH_CACHE.get(id);
+      node = { width: cached };
       this.nodes.set(id, node);
     }
     return node;
   }
 
-  /** Store a measured width and notify the affected sender-group. */
+  /**
+   * Store a measured width and notify the affected sender-group.
+   *
+   * First-time measurements (width going from undefined → value) trigger
+   * **synchronous** notification so the opacity gate can reveal the card
+   * on the same frame as onLayout. Subsequent width changes use the
+   * coalesced (async) path to prevent cascade storms.
+   */
   report(id: string, width: number): void {
     const rounded = normalizeGroupedCardWidth(width);
     const node = this.ensureNode(id);
     if (node.width === rounded) return;
 
+    const wasFirstMeasurement = node.width === undefined;
     node.width = rounded;
-    this.enqueueGroupNotify(id);
+
+    // Persist to cross-instance cache
+    cacheWidth(id, rounded);
+
+    if (wasFirstMeasurement) {
+      // Synchronous path: collect the group and notify immediately so the
+      // renderer can flip opacity: 0 → 1 on the same frame.
+      const affectedIds = new Set<string>();
+      this.collectGroupIds(id, affectedIds);
+      if (affectedIds.size === 0) affectedIds.add(id);
+
+      // Also drain any pending async notifications for these IDs so they
+      // don't fire again on the next setTimeout tick.
+      for (const aid of affectedIds) {
+        this.pendingNotifyIds.delete(aid);
+      }
+      this.flushNow(affectedIds);
+    } else {
+      this.enqueueGroupNotify(id);
+    }
   }
 
   /** Keep same-group adjacency in sync so snapped widths can be resolved. */
@@ -137,6 +200,18 @@ export class CardWidthTracker {
   getSnapshot(id: string): CardWidthSnapshot {
     const node = this.nodes.get(id);
     if (!node) {
+      // Try pre-seeding from cache before returning empty
+      const cached = WIDTH_CACHE.get(id);
+      if (cached !== undefined) {
+        const seeded = this.ensureNode(id);
+        return {
+          rawWidth: seeded.width,
+          snappedWidth:
+            seeded.width !== undefined
+              ? this.resolveSnappedWidth(id)
+              : undefined,
+        };
+      }
       return EMPTY_SNAPSHOT;
     }
 

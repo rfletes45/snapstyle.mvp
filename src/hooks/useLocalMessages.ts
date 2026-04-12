@@ -156,6 +156,13 @@ interface MessageAnchorState {
  * );
  * ```
  */
+// Page size for loading older messages — intentionally larger than
+// initialLimit so pagination feels responsive.
+const PAGE_SIZE = 75;
+
+// Minimum time (ms) the loading indicator stays visible to prevent flicker.
+const MIN_LOADING_INDICATOR_MS = 300;
+
 export function useLocalMessages(
   options: UseLocalMessagesOptions,
 ): UseLocalMessagesReturn {
@@ -467,12 +474,32 @@ export function useLocalMessages(
       !hasMore ||
       firestoreExhaustedRef.current ||
       !USE_LOCAL_STORAGE ||
-      isSyncingOlderRef.current
+      isSyncingOlderRef.current ||
+      isPaginatingRef.current
     )
       return;
 
+    // Show loading indicator immediately for ALL paths (local + remote).
+    // The subscription pre-populates SQLite with all history, so the local
+    // branch is the common case — without this, the indicator never appears.
+    setIsLoadingOlder(true);
+    const loadingStartedAt = Date.now();
+
+    // Enforce a minimum display time so the indicator doesn't flash away
+    // before the user notices it (covers fast SQLite reads and cached
+    // Firestore responses).
+    const clearLoadingWithMinTime = () => {
+      const elapsed = Date.now() - loadingStartedAt;
+      const remaining = Math.max(0, MIN_LOADING_INDICATOR_MS - elapsed);
+      if (remaining > 0) {
+        setTimeout(() => setIsLoadingOlder(false), remaining);
+      } else {
+        setIsLoadingOlder(false);
+      }
+    };
+
     if (messageAnchor) {
-      const nextOlderLimit = messageAnchor.olderLimit + initialLimit;
+      const nextOlderLimit = messageAnchor.olderLimit + PAGE_SIZE;
       const currentWindow = getMessageWindowAroundMessage(
         conversationId,
         scope,
@@ -484,6 +511,7 @@ export function useLocalMessages(
       if (!currentWindow) {
         firestoreExhaustedRef.current = true;
         setHasMore(false);
+        clearLoadingWithMinTime();
         return;
       }
 
@@ -493,7 +521,6 @@ export function useLocalMessages(
       ) {
         isSyncingOlderRef.current = true;
         isPaginatingRef.current = true;
-        setIsLoadingOlder(true);
         // Use server_received_at for pagination cursor (consistent with Firestore ordering)
         const oldest =
           currentWindow.messages.length > 0
@@ -508,7 +535,7 @@ export function useLocalMessages(
           nextOlderLimit,
         });
 
-        syncOlderMessages(scope, conversationId, oldestTimestamp, initialLimit)
+        syncOlderMessages(scope, conversationId, oldestTimestamp, PAGE_SIZE)
           .then((count) => {
             logger.info("[useLocalMessages] loadMore(anchor): sync returned", {
               count,
@@ -517,7 +544,7 @@ export function useLocalMessages(
               // Firestore confirmed: no more messages
               firestoreExhaustedRef.current = true;
               setHasMore(false);
-            } else if (count < initialLimit) {
+            } else if (count < PAGE_SIZE) {
               // Partial page: this is the last page of history
               firestoreExhaustedRef.current = true;
               setMessageAnchor((prev) =>
@@ -553,7 +580,7 @@ export function useLocalMessages(
           .finally(() => {
             isSyncingOlderRef.current = false;
             isPaginatingRef.current = false;
-            setIsLoadingOlder(false);
+            clearLoadingWithMinTime();
           });
       } else {
         setMessageAnchor((prev) =>
@@ -564,15 +591,18 @@ export function useLocalMessages(
               }
             : prev,
         );
-        // Display the expanded window immediately (already read above)
-        setMessages(currentWindow.messages);
-        setHasMore(currentWindow.hasOlder);
-        updateStatusCounts(currentWindow.messages);
+        // Display the expanded window — defer so loading indicator renders
+        setTimeout(() => {
+          setMessages(currentWindow.messages);
+          setHasMore(currentWindow.hasOlder);
+          updateStatusCounts(currentWindow.messages);
+          clearLoadingWithMinTime();
+        }, 0);
       }
       return;
     }
 
-    const nextLimit = currentLimit + initialLimit;
+    const nextLimit = currentLimit + PAGE_SIZE;
     // Peek at how many messages SQLite actually has right now
     const currentMessages = getMessagesForConversation(
       conversationId,
@@ -586,7 +616,6 @@ export function useLocalMessages(
       // intermediate re-reads while the batch is being synced.
       isSyncingOlderRef.current = true;
       isPaginatingRef.current = true;
-      setIsLoadingOlder(true);
       // Use server_received_at for pagination cursor (matches Firestore index)
       const oldest =
         currentMessages.length > 0
@@ -603,17 +632,17 @@ export function useLocalMessages(
         oldestMessageId: oldest?.id,
       });
 
-      syncOlderMessages(scope, conversationId, oldestTimestamp, initialLimit)
+      syncOlderMessages(scope, conversationId, oldestTimestamp, PAGE_SIZE)
         .then((count) => {
           logger.info("[useLocalMessages] loadMore: sync returned", {
             count,
-            requestedLimit: initialLimit,
+            requestedLimit: PAGE_SIZE,
           });
           if (count === 0) {
             // Firestore confirmed: no more older messages
             firestoreExhaustedRef.current = true;
             setHasMore(false);
-          } else if (count < initialLimit) {
+          } else if (count < PAGE_SIZE) {
             // Partial page: last page of history — show results but stop pagination
             firestoreExhaustedRef.current = true;
             latestLimitRef.current = nextLimit;
@@ -643,21 +672,25 @@ export function useLocalMessages(
         .finally(() => {
           isSyncingOlderRef.current = false;
           isPaginatingRef.current = false;
-          setIsLoadingOlder(false);
+          clearLoadingWithMinTime();
         });
     } else {
-      // SQLite has enough — just increase the limit
-      latestLimitRef.current = nextLimit;
-      setCurrentLimit(nextLimit);
-      // Display the expanded set immediately (already read above)
-      setMessages(currentMessages);
-      updateStatusCounts(currentMessages);
+      // SQLite has enough — defer state update to next tick so the
+      // loading indicator renders for at least one frame.
+      isPaginatingRef.current = true;
+      setTimeout(() => {
+        latestLimitRef.current = nextLimit;
+        setCurrentLimit(nextLimit);
+        setMessages(currentMessages);
+        updateStatusCounts(currentMessages);
+        isPaginatingRef.current = false;
+        clearLoadingWithMinTime();
+      }, 0);
     }
   }, [
     hasMore,
     messageAnchor,
     currentLimit,
-    initialLimit,
     conversationId,
     scope,
     updateStatusCounts,

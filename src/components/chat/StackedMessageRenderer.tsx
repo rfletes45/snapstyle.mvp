@@ -16,12 +16,7 @@
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import React, { useCallback } from "react";
-import {
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useTheme } from "react-native-paper";
 
 import type { MessageViewModel } from "@/chat/displayMode";
@@ -290,7 +285,7 @@ export const StackedMessageRenderer: React.FC<StackedMessageRendererProps> =
 
       // ── Adaptive card-width tracking ──────────────────────────────────
       const groupCardBg = theme.colors.background;
-      const { handleCardLayout, groupCardRadius, snapMinWidth } =
+      const { handleCardLayout, groupCardRadius, snapMinWidth, cardOpacity } =
         useGroupedCardLayout({
           messageId: message.id,
           cardWidthTracker,
@@ -360,7 +355,11 @@ export const StackedMessageRenderer: React.FC<StackedMessageRendererProps> =
                   <View
                     style={[
                       s.cardWrapper,
-                      { backgroundColor: groupCardBg, overflow: "hidden" },
+                      {
+                        backgroundColor: groupCardBg,
+                        overflow: "hidden",
+                        opacity: cardOpacity,
+                      },
                       groupCardRadius,
                       snapMinWidth !== undefined && { minWidth: snapMinWidth },
                     ]}
@@ -368,59 +367,58 @@ export const StackedMessageRenderer: React.FC<StackedMessageRendererProps> =
                     {/* Highlight overlay for reply navigation */}
                     <MessageHighlightOverlay isHighlighted={isHighlighted} />
                     <View onLayout={handleCardLayout} style={s.cardContent}>
+                      {/* Author name + timestamp + status (group-start only) */}
+                      {vm.isGroupStart && (
+                        <View style={s.nameRow}>
+                          <Text
+                            style={[s.authorName, { color: authorColor }]}
+                            numberOfLines={1}
+                          >
+                            {senderDisplayName}
+                          </Text>
+                          <Text
+                            style={[
+                              s.headerTimestamp,
+                              { color: theme.colors.onSurface + "99" },
+                            ]}
+                          >
+                            {formattedTime}
+                          </Text>
+                        </View>
+                      )}
 
-                    {/* Author name + timestamp + status (group-start only) */}
-                    {vm.isGroupStart && (
-                      <View style={s.nameRow}>
-                        <Text
-                          style={[s.authorName, { color: authorColor }]}
-                          numberOfLines={1}
-                        >
-                          {senderDisplayName}
-                        </Text>
-                        <Text
-                          style={[
-                            s.headerTimestamp,
-                            { color: theme.colors.onSurface + "99" },
-                          ]}
-                        >
-                          {formattedTime}
-                        </Text>
-                      </View>
-                    )}
-
-                    {/* Reply preview — stacked-mode inline reference */}
-                    {message.replyTo && (
-                      <StackedReplyReference
-                        replyTo={message.replyTo}
-                        isReplyToMe={message.replyTo.senderId === currentUid}
-                        onPress={() =>
-                          onScrollToMessage(message.replyTo!.messageId)
-                        }
-                      />
-                    )}
-
-                    {/* Message content — no bubble wrapper */}
-                    <View
-                      style={[message.status === "failed" && s.failedContent]}
-                    >
-                      {renderContent()}
-                    </View>
-
-                    {/* Reaction pills — always left-aligned in feed mode */}
-                    {reactions.length > 0 && (
-                      <View style={s.reactionRow}>
-                        <ReactionPills
-                          reactions={reactions}
-                          isOwnMessage={false}
-                          scope="dm"
-                          conversationId={chatId || ""}
-                          messageId={message.id}
-                          currentUid={currentUid || ""}
-                          onOptimisticToggle={onOptimisticReaction}
+                      {/* Reply preview — stacked-mode inline reference */}
+                      {message.replyTo && (
+                        <StackedReplyReference
+                          replyTo={message.replyTo}
+                          isReplyToMe={message.replyTo.senderId === currentUid}
+                          onPress={() =>
+                            onScrollToMessage(message.replyTo!.messageId)
+                          }
                         />
+                      )}
+
+                      {/* Message content — no bubble wrapper */}
+                      <View
+                        style={[message.status === "failed" && s.failedContent]}
+                      >
+                        {renderContent()}
                       </View>
-                    )}
+
+                      {/* Reaction pills — always left-aligned in feed mode */}
+                      {reactions.length > 0 && (
+                        <View style={s.reactionRow}>
+                          <ReactionPills
+                            reactions={reactions}
+                            isOwnMessage={false}
+                            scope="dm"
+                            conversationId={chatId || ""}
+                            messageId={message.id}
+                            currentUid={currentUid || ""}
+                            onOptimisticToggle={onOptimisticReaction}
+                          />
+                        </View>
+                      )}
                     </View>
                   </View>
                 </View>

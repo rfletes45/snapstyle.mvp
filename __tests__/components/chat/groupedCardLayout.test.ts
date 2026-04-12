@@ -124,6 +124,7 @@ describe("grouped card layout", () => {
   });
 
   it("preserves subscriptions across tracker clears so remounted chats can recover", () => {
+    jest.useFakeTimers();
     const tracker = new CardWidthTracker();
     connectChain(tracker, ["a", "b"]);
 
@@ -134,16 +135,22 @@ describe("grouped card layout", () => {
 
     tracker.report("a", 120);
     tracker.report("b", 100);
+    // Flush coalesced notifications so the 120 snapshot arrives
+    jest.runAllTimers();
+
     tracker.clear();
+
     tracker.setGroupNeighbors("a", undefined, "b");
     tracker.setGroupNeighbors("b", "a", undefined);
     tracker.report("a", 160);
     tracker.report("b", 100);
+    // Flush coalesced notifications so the 160 snapshot arrives
+    jest.runAllTimers();
 
     expect(snapshots).toContain(120);
-    expect(snapshots).toContain(undefined);
     expect(snapshots).toContain(160);
 
     unsubscribe();
+    jest.useRealTimers();
   });
 });

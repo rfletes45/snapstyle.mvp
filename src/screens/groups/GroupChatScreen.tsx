@@ -2030,15 +2030,6 @@ export default function GroupChatScreen({ route, navigation }: Props) {
                   <View style={styles.loadMoreContainer}>
                     <ActivityIndicator size="small" color={colors.primary} />
                   </View>
-                ) : !screen.chat.pagination.hasMoreOlder ? (
-                  <View style={styles.loadMoreContainer}>
-                    <Text
-                      variant="bodySmall"
-                      style={{ color: colors.textSecondary, textAlign: "center" }}
-                    >
-                      Beginning of conversation
-                    </Text>
-                  </View>
                 ) : null
               }
               ListEmptyComponent={
