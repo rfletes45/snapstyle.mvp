@@ -18,6 +18,7 @@ import { CALL_FEATURES } from "@/constants/featureFlags";
 import type { ActiveVoiceRoom } from "@/hooks/useActiveVoiceRooms";
 import { useActiveVoiceRooms } from "@/hooks/useActiveVoiceRooms";
 import { useStreamCallHistory } from "@/hooks/useStreamCallHistory";
+import { prepareGroupChatNavigation } from "@/services/chat/threadIdentityWarmup";
 import { useAppTheme } from "@/store/ThemeContext";
 import type { MainStackParamList } from "@/types/navigation/root";
 import type {
@@ -103,10 +104,14 @@ export default function CallsScreen() {
     (entry: StreamCallHistoryEntry) => {
       if (entry.entryType === "voice_room" && entry.groupId) {
         // Navigate to the group chat (user can join from there)
-        navigation.navigate("GroupChat", {
-          groupId: entry.groupId,
-          groupName: entry.groupName ?? undefined,
-        });
+        void (async () => {
+          const navParams = await prepareGroupChatNavigation({
+            groupId: entry.groupId!,
+            groupName: entry.groupName ?? undefined,
+            groupAvatarUrl: entry.groupAvatar ?? null,
+          });
+          navigation.navigate("GroupChat", navParams);
+        })();
       } else if (entry.otherUserId) {
         // Navigate to the DM / user profile
         navigation.navigate("ChatDetail", {

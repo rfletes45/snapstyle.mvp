@@ -29,7 +29,7 @@ import {
 } from "@/hooks/useMessageSearch";
 import {
   prepareDmThreadEntry,
-  prepareGroupThreadEntry,
+  prepareGroupChatNavigation,
 } from "@/services/chat/threadIdentityWarmup";
 import { useAppTheme } from "@/store/ThemeContext";
 import { log } from "@/utils/log";
@@ -61,7 +61,6 @@ import {
 } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { Chip, IconButton, Searchbar, Text } from "react-native-paper";
-import { scheduleOnRN } from "react-native-worklets";
 import Animated, {
   Extrapolation,
   interpolate,
@@ -70,6 +69,7 @@ import Animated, {
   withSpring,
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { scheduleOnRN } from "react-native-worklets";
 import { SearchResultItem } from "./SearchResultItem";
 
 // =============================================================================
@@ -335,21 +335,13 @@ export function SearchSheet({ visible, onDismiss }: SearchSheetProps) {
                 },
               });
             } else {
-              try {
-                await prepareGroupThreadEntry(c.id, {
-                  groupAvatarUrl: c.avatarUrl,
-                });
-              } catch (error) {
-                log.warn("[SearchSheet] Failed to warm group thread identity", {
-                  error,
-                });
-              }
-
-              navigation.navigate("GroupChat", {
+              const navParams = await prepareGroupChatNavigation({
                 groupId: c.id,
                 groupName: c.name,
-                initialGroupData: { name: c.name, avatarUrl: c.avatarUrl },
+                groupAvatarUrl: c.avatarUrl,
+                backgroundUrl: c.backgroundUrl,
               });
+              navigation.navigate("GroupChat", navParams);
             }
           })();
         }, 50);
@@ -378,26 +370,13 @@ export function SearchSheet({ visible, onDismiss }: SearchSheetProps) {
                 },
               });
             } else {
-              try {
-                await prepareGroupThreadEntry(result.conversationId, {
-                  groupAvatarUrl: result.conversationAvatar,
-                });
-              } catch (error) {
-                log.warn(
-                  "[SearchSheet] Failed to warm group result identity",
-                  { error },
-                );
-              }
-
-              navigation.navigate("GroupChat", {
+              const navParams = await prepareGroupChatNavigation({
                 groupId: result.conversationId,
                 groupName: result.conversationName,
+                groupAvatarUrl: result.conversationAvatar,
                 targetMessageId: result.messageId,
-                initialGroupData: {
-                  name: result.conversationName,
-                  avatarUrl: result.conversationAvatar,
-                },
               });
+              navigation.navigate("GroupChat", navParams);
             }
           })();
         }, 50);

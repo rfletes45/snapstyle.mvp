@@ -1472,8 +1472,9 @@ export default function ChatScreen({
               keyExtractor={(item) =>
                 timelineKeyExtractor(item, (msg) => msg.id)
               }
+              newestMessageId={displayMessages[0]?.id}
               renderScrollComponent={renderScrollComponent}
-              pillBottomOffset={60 + insets.bottom + 16}
+              pillBottomOffset={12}
               isKeyboardOpen={screen.keyboard.isKeyboardOpen}
               ListHeaderComponent={
                 screen.chat.pagination.isLoadingOlder ? (
@@ -1482,6 +1483,18 @@ export default function ChatScreen({
                       size="small"
                       color={theme.colors.primary}
                     />
+                  </View>
+                ) : !screen.chat.pagination.hasMoreOlder ? (
+                  <View style={styles.loadMoreContainer}>
+                    <Text
+                      style={{
+                        color: theme.colors.onSurfaceVariant,
+                        textAlign: "center",
+                        fontSize: 12,
+                      }}
+                    >
+                      Beginning of conversation
+                    </Text>
                   </View>
                 ) : null
               }
@@ -1507,9 +1520,9 @@ export default function ChatScreen({
               }
               flatListProps={{
                 onEndReached: screen.loadOlder,
-                onEndReachedThreshold: 0.3,
+                onEndReachedThreshold: 0.5,
                 initialNumToRender: 15,
-                maxToRenderPerBatch: 8,
+                maxToRenderPerBatch: 15,
               }}
             />
           )}

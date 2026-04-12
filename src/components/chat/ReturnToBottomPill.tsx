@@ -1,8 +1,10 @@
 /**
  * ReturnToBottomPill Component
  *
- * Floating button that appears when user scrolls away from latest messages.
- * Shows unread count and provides quick jump to bottom.
+ * Floating pill that appears when user scrolls away from latest messages.
+ * Shows new-message count and provides quick jump to bottom.
+ *
+ * Uses Reanimated layout animations for smooth enter/exit.
  *
  * @module components/chat/ReturnToBottomPill
  */
@@ -19,12 +21,7 @@ import {
   ViewStyle,
 } from "react-native";
 import { Text } from "react-native-paper";
-import Animated, {
-  FadeIn,
-  FadeOut,
-  useAnimatedStyle,
-  withSpring,
-} from "react-native-reanimated";
+import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 
 // =============================================================================
 // Types
@@ -47,7 +44,7 @@ export interface ReturnToBottomPillProps {
 // Constants
 // =============================================================================
 
-const DEFAULT_BOTTOM_OFFSET = 80;
+const DEFAULT_BOTTOM_OFFSET = 12;
 
 // =============================================================================
 // Component
@@ -61,12 +58,6 @@ export function ReturnToBottomPill({
   style,
 }: ReturnToBottomPillProps): React.JSX.Element | null {
   const colors = useColors();
-  // Animated style for bounce effect on press
-  const animatedStyle = useAnimatedStyle(() => {
-    return {
-      transform: [{ scale: withSpring(1) }],
-    };
-  }, []);
 
   if (!visible) {
     return null;
@@ -77,31 +68,39 @@ export function ReturnToBottomPill({
       ? unreadCount === 1
         ? "1 new message"
         : `${unreadCount > 99 ? "99+" : unreadCount} new messages`
-      : "Return to bottom";
+      : undefined;
 
   return (
     <Animated.View
-      entering={FadeIn.duration(200)}
-      exiting={FadeOut.duration(150)}
-      style={[styles.container, { bottom: bottomOffset }, animatedStyle, style]}
+      entering={FadeIn.duration(180).springify().damping(18)}
+      exiting={FadeOut.duration(120)}
+      style={[styles.container, { bottom: bottomOffset }, style]}
+      pointerEvents="box-none"
     >
       <Pressable
         onPress={onPress}
         style={({ pressed }) => [
           styles.pill,
-          { backgroundColor: colors.surface },
+          {
+            backgroundColor: colors.surface,
+            borderColor: colors.outline ?? "rgba(128,128,128,0.15)",
+          },
           pressed && styles.pillPressed,
         ]}
-        accessibilityLabel={label}
+        accessibilityLabel={label ?? "Jump to latest"}
         accessibilityRole="button"
         accessibilityHint="Scrolls to the latest messages"
       >
         <MaterialCommunityIcons
-          name="chevron-down"
-          size={20}
+          name="chevron-double-down"
+          size={18}
           color={colors.primary}
         />
-        <Text style={[styles.text, { color: colors.text }]}>{label}</Text>
+        {label != null && (
+          <Text style={[styles.text, { color: colors.text }]} numberOfLines={1}>
+            {label}
+          </Text>
+        )}
       </Pressable>
     </Animated.View>
   );
@@ -120,17 +119,17 @@ const styles = StyleSheet.create({
   pill: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#1A1A1A",
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
     borderRadius: BorderRadius.xl,
-    gap: Spacing.xs,
+    borderWidth: StyleSheet.hairlineWidth,
+    gap: 6,
     ...Platform.select({
       ios: {
         shadowColor: "#000",
         shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.25,
-        shadowRadius: 4,
+        shadowOpacity: 0.18,
+        shadowRadius: 6,
       },
       android: {
         elevation: 4,
@@ -139,10 +138,9 @@ const styles = StyleSheet.create({
   },
   pillPressed: {
     opacity: 0.8,
-    transform: [{ scale: 0.97 }],
+    transform: [{ scale: 0.96 }],
   },
   text: {
-    color: "#FFF",
     fontSize: 13,
     fontWeight: "600",
   },

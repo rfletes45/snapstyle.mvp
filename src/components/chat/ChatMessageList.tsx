@@ -16,9 +16,8 @@
  * @module components/chat/ChatMessageList
  */
 
-import { useAtBottom, useNewMessageAutoscroll } from "@/hooks/chat";
+import { useChatScrollState } from "@/hooks/chat/useChatScrollState";
 import { LIST_PERFORMANCE_PROPS } from "@/utils/listPerformance";
-import { createLogger } from "@/utils/log";
 import React, {
   forwardRef,
   useCallback,
@@ -31,8 +30,6 @@ import {
   FlatList,
   FlatListProps,
   ListRenderItemInfo,
-  NativeScrollEvent,
-  NativeSyntheticEvent,
   ScrollViewProps,
   StyleProp,
   StyleSheet,
@@ -40,8 +37,6 @@ import {
   ViewStyle,
 } from "react-native";
 import { ReturnToBottomPill } from "./ReturnToBottomPill";
-
-const log = createLogger("ChatMessageList");
 
 // =============================================================================
 // Types
@@ -54,6 +49,12 @@ export interface ChatMessageListProps<T> {
   renderItem: (info: ListRenderItemInfo<T>) => React.ReactElement | null;
   /** Key extractor */
   keyExtractor: (item: T, index: number) => string;
+  /**
+   * ID of the newest (most recent) message in `data`, used to distinguish
+   * genuinely new messages from pagination-loaded old messages.
+   * For an inverted list this is typically `keyExtractor(data[0], 0)`.
+   */
+  newestMessageId: string | undefined;
   /**
    * Scroll component factory — screens pass a memoised callback that returns
    * a KeyboardChatScrollView configured with the correct offset / lift
@@ -68,15 +69,13 @@ export interface ChatMessageListProps<T> {
   ListHeaderComponent?: React.ComponentType<any> | React.ReactElement | null;
   /** Empty component */
   ListEmptyComponent?: React.ComponentType<any> | React.ReactElement | null;
-  /** Called when scroll position changes significantly */
+  /** Called when at-bottom state changes */
   onAtBottomChange?: (isAtBottom: boolean) => void;
   /**
    * Bottom offset for the "return to bottom" pill (px above screen bottom).
    * Typically composerHeight + safeAreaBottom + small padding.
    */
   pillBottomOffset?: number;
-  /** Enable debug logging */
-  debug?: boolean;
   /** Custom container style */
   style?: StyleProp<ViewStyle>;
   /** Custom content container style */
@@ -106,13 +105,13 @@ function ChatMessageListInner<T>(
     data,
     renderItem,
     keyExtractor,
+    newestMessageId,
     renderScrollComponent,
     isKeyboardOpen = false,
     ListHeaderComponent,
     ListEmptyComponent,
     onAtBottomChange,
     pillBottomOffset = 96,
-    debug = false,
     style,
     contentContainerStyle,
     flatListProps,
@@ -120,33 +119,25 @@ function ChatMessageListInner<T>(
 
   const flatListRef = useRef<FlatList<T>>(null);
 
-  // At bottom detection
-  const atBottom = useAtBottom({
-    threshold: 200,
-    debug,
-  });
-
-  // Autoscroll behavior
-  const autoscroll = useNewMessageAutoscroll({
+  // ── Unified scroll state (replaces useAtBottom + useNewMessageAutoscroll) ──
+  const scrollState = useChatScrollState({
     messageCount: data.length,
+    newestMessageId,
     isKeyboardOpen,
-    isAtBottom: atBottom.isAtBottom,
-    distanceRef: atBottom.distanceRef,
-    debug,
   });
 
-  // Set FlatList ref for autoscroll - use stable ref setter
-  const { setFlatListRef } = autoscroll;
+  // Wire FlatList ref into the scroll state hook
+  const { setFlatListRef } = scrollState;
   useEffect(() => {
     setFlatListRef(flatListRef.current);
   }, [setFlatListRef]);
 
-  // Notify parent of at bottom changes
+  // Notify parent of at-bottom changes
   useEffect(() => {
-    onAtBottomChange?.(atBottom.isAtBottom);
-  }, [atBottom.isAtBottom, onAtBottomChange]);
+    onAtBottomChange?.(scrollState.isAtBottom);
+  }, [scrollState.isAtBottom, onAtBottomChange]);
 
-  // Content container style - static styles only
+  // Content container style
   const dynamicContentStyle = useMemo(
     () => [styles.contentContainer, contentContainerStyle],
     [contentContainerStyle],
@@ -156,15 +147,8 @@ function ChatMessageListInner<T>(
   // added above the viewport (pagination) or below it (new messages while
   // scrolled up).  autoscrollToTopThreshold tells the native scroll view to
   // snap to offset 0 whenever the first visible item is within 200 px of the
-  // start — matching the useAtBottom threshold — so new messages at the bottom
+  // start — matching the AT_BOTTOM_THRESHOLD — so new messages at the bottom
   // appear instantly on the UI thread without a JS-round-trip delay.
-  //
-  // Previously this prop was *toggled* off when the user was at the bottom
-  // (to avoid grouped-message layout bounces), but toggling the prop itself
-  // caused FlatList to reconfigure its internal scroll state, producing
-  // visible teleports/jumps.  Keeping it always-on with the native autoscroll
-  // threshold eliminates both the toggling reconfiguration *and* the JS-delay
-  // frame-gap that the old explicit scrollToOffset(0) left behind.
   const maintainVisibleContentPosition = useMemo(
     () => ({
       minIndexForVisible: 1,
@@ -203,38 +187,9 @@ function ChatMessageListInner<T>(
     [scrollToBottom, scrollToIndex],
   );
 
-  // Handle scroll for at bottom detection
-  const handleScroll = useCallback(
-    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-      atBottom.onScroll(event);
-    },
-    [atBottom.onScroll],
-  );
-
-  // Handle scroll end
-  const handleScrollEndDrag = useCallback(
-    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-      atBottom.onScrollEndDrag(event);
-    },
-    [atBottom.onScrollEndDrag],
-  );
-
-  const handleMomentumScrollEnd = useCallback(
-    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-      atBottom.onMomentumScrollEnd(event);
-    },
-    [atBottom.onMomentumScrollEnd],
-  );
-
-  // Handle scroll to index failure
+  // Handle scroll-to-index failure
   const handleScrollToIndexFailed = useCallback(
     (info: { index: number; highestMeasuredFrameIndex: number }) => {
-      log.warn("scrollToIndex failed", {
-        operation: "scrollToIndexFailed",
-        data: info,
-      });
-
-      // Retry with a delay
       setTimeout(() => {
         flatListRef.current?.scrollToIndex({
           index: Math.min(info.index, info.highestMeasuredFrameIndex),
@@ -250,22 +205,26 @@ function ChatMessageListInner<T>(
     data,
     renderItem,
     keyExtractor,
-    // Inverted list: newest messages at bottom (visually), but at index 0
     inverted: true,
-    // Keyboard handling — interactive dismiss is handled by KCSV on the
-    // native side so this prop stays for the swipe gesture integration.
     keyboardDismissMode: "interactive" as const,
     keyboardShouldPersistTaps: "handled" as const,
-    // Scroll events
-    onScroll: handleScroll,
-    onScrollEndDrag: handleScrollEndDrag,
-    onMomentumScrollEnd: handleMomentumScrollEnd,
+    // Scroll events → unified hook
+    onScroll: scrollState.onScroll,
+    onScrollEndDrag: scrollState.onScrollEndDrag,
+    onMomentumScrollEnd: scrollState.onMomentumScrollEnd,
     scrollEventThrottle: 16,
     // Content
     ListHeaderComponent,
     ListEmptyComponent,
     // Performance
     ...LIST_PERFORMANCE_PROPS,
+    // CRITICAL: removeClippedSubviews must be false on inverted FlatLists.
+    // React Native has a known bug where clipped cells on inverted lists are
+    // removed and never re-rendered during fast scroll, causing a permanent
+    // blank/white screen soft-lock.
+    removeClippedSubviews: false,
+    // Raise windowSize so fast-scroll doesn't outpace virtualization
+    windowSize: 21,
     // Maintain scroll position when content changes (new messages / pagination)
     maintainVisibleContentPosition,
     // Handle scroll failures
@@ -287,11 +246,11 @@ function ChatMessageListInner<T>(
         contentContainerStyle={dynamicContentStyle}
       />
 
-      {/* Return to bottom pill - positioned above the composer */}
+      {/* Jump-to-latest pill — positioned above the composer */}
       <ReturnToBottomPill
-        visible={autoscroll.showReturnPill}
-        unreadCount={autoscroll.unreadCount}
-        onPress={autoscroll.scrollToBottom}
+        visible={scrollState.showJumpPill}
+        unreadCount={scrollState.newMessagesWhileAway}
+        onPress={scrollState.scrollToLatest}
         bottomOffset={pillBottomOffset}
       />
     </View>

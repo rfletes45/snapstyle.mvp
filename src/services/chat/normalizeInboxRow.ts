@@ -105,6 +105,7 @@ export interface NormalizeConversationInput {
   otherUserId?: string;
   avatarIds?: string[];
   participantCount?: number;
+  backgroundUrl?: string | null;
   lastMessageText?: string | null;
   lastMessageSenderName?: string;
   lastMessageKind?: string;
@@ -164,6 +165,7 @@ export function normalizeConversationRow(
     decorationId,
     otherUserId,
     avatarIds,
+    backgroundUrl: input.backgroundUrl ?? null,
     lastMessage: lastMessageText
       ? {
           text: lastMessageText,

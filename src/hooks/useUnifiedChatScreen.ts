@@ -168,15 +168,8 @@ export interface UseUnifiedChatScreenConfig {
   /** Send read receipts (default: true for DM, false for group) */
   sendReadReceipts?: boolean;
 
-  /** Pixel threshold for "at bottom" detection (default: 200) */
-  atBottomThreshold?: number;
-
-  /** Message threshold for auto-scroll (default: 30) */
-  autoscrollMessageThreshold?: number;
-
   /** Sender's chat style snapshot to stamp on outgoing messages */
   senderStyle?: SenderStyle;
-
 }
 
 /**
@@ -209,11 +202,8 @@ export interface UseUnifiedChatScreenReturn {
   /** Keyboard animation state and values */
   keyboard: UseChatReturn["keyboard"];
 
-  /** Scroll position state and handlers */
+  /** Unified scroll + jump-pill state */
   scroll: UseChatReturn["scroll"];
-
-  /** Auto-scroll state and handlers */
-  autoscroll: UseChatReturn["autoscroll"];
 
   /** Ref to attach to FlatList */
   flatListRef: UseChatReturn["flatListRef"];
@@ -280,8 +270,6 @@ export function useUnifiedChatScreen(
     initialLimit = 50,
     autoMarkRead = true,
     sendReadReceipts,
-    atBottomThreshold = 200,
-    autoscrollMessageThreshold = 30,
   } = config;
 
   // Extract senderStyle separately (not in destructuring default since it's optional)
@@ -300,8 +288,6 @@ export function useUnifiedChatScreen(
       initialLimit,
       autoMarkRead,
       sendReadReceipts,
-      atBottomThreshold,
-      autoscrollMessageThreshold,
       senderStyle,
     }),
     [
@@ -312,8 +298,6 @@ export function useUnifiedChatScreen(
       initialLimit,
       autoMarkRead,
       sendReadReceipts,
-      atBottomThreshold,
-      autoscrollMessageThreshold,
       senderStyle,
     ],
   );
@@ -393,7 +377,6 @@ export function useUnifiedChatScreen(
       error: chat.error,
       keyboard: chat.keyboard,
       scroll: chat.scroll,
-      autoscroll: chat.autoscroll,
       flatListRef: chat.flatListRef,
       loadOlder: chat.loadOlder,
 

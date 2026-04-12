@@ -1,9 +1,9 @@
 import { prefetchCriticalProfileAssets } from "@/services/cosmeticsAssetCache";
-import { getGroupMembersForDisplay } from "@/services/groups";
+import { getGroup, getGroupMembersForDisplay } from "@/services/groups";
 import type { GroupMember } from "@/types/models";
 import { createLogger } from "@/utils/log";
-import { Image, type ImageRef } from "expo-image";
 import { normalizeRemoteImageUrl } from "@/utils/remoteImageSource";
+import { Image, type ImageRef } from "expo-image";
 
 const log = createLogger("threadIdentityWarmup");
 
@@ -134,11 +134,13 @@ export function getPreparedGroupMembers(groupId: string): GroupMember[] | null {
 
 export async function warmGroupIdentityAssets(params: {
   groupAvatarUrl?: string | null;
+  backgroundUrl?: string | null;
   members?: GroupMember[];
 }): Promise<void> {
   await Promise.all([
     warmIdentityImageUrls([
       params.groupAvatarUrl,
+      params.backgroundUrl,
       ...(params.members?.map((member) => member.profilePictureUrl) ?? []),
     ]),
     warmIdentityDecorations(
@@ -151,12 +153,14 @@ export async function prepareGroupThreadEntry(
   groupId: string,
   params?: {
     groupAvatarUrl?: string | null;
+    backgroundUrl?: string | null;
   },
 ): Promise<GroupMember[]> {
   const cached = groupMemberCache.get(groupId);
   if (isGroupMemberCacheFresh(cached)) {
     await warmGroupIdentityAssets({
       groupAvatarUrl: params?.groupAvatarUrl,
+      backgroundUrl: params?.backgroundUrl,
       members: cached.members,
     });
     return cached.members;
@@ -166,7 +170,90 @@ export async function prepareGroupThreadEntry(
   cachePreparedGroupMembers(groupId, members);
   await warmGroupIdentityAssets({
     groupAvatarUrl: params?.groupAvatarUrl,
+    backgroundUrl: params?.backgroundUrl,
     members,
   });
   return members;
+}
+
+// ---------------------------------------------------------------------------
+// Centralized group-chat navigation preparation
+// ---------------------------------------------------------------------------
+
+/**
+ * Params returned by `prepareGroupChatNavigation` to be spread into
+ * `navigation.navigate("GroupChat", ...)`.
+ */
+export interface GroupChatNavParams {
+  groupId: string;
+  groupName?: string;
+  targetMessageId?: string;
+  jumpRequestId?: string;
+  initialGroupData?: {
+    name: string;
+    avatarUrl: string | null;
+    backgroundUrl: string | null;
+  };
+}
+
+/**
+ * Centralised helper that fetches group metadata (if not already known),
+ * warms the image cache for avatar + background, and returns the complete
+ * set of navigation params for GroupChatScreen.
+ *
+ * Callers should `await` this before calling `navigation.navigate`.
+ * If the group doc fetch fails, the function still returns valid params
+ * so navigation can proceed (background will load via Firestore fallback).
+ */
+export async function prepareGroupChatNavigation(params: {
+  groupId: string;
+  groupName?: string;
+  groupAvatarUrl?: string | null;
+  backgroundUrl?: string | null;
+  targetMessageId?: string;
+  jumpRequestId?: string;
+}): Promise<GroupChatNavParams> {
+  let { groupName, groupAvatarUrl, backgroundUrl } = params;
+
+  // If background URL is unknown, do a lightweight group-doc fetch
+  if (backgroundUrl === undefined || backgroundUrl === null) {
+    try {
+      const group = await getGroup(params.groupId);
+      if (group) {
+        groupName = groupName || group.name;
+        groupAvatarUrl = groupAvatarUrl ?? group.avatarUrl ?? null;
+        backgroundUrl = group.backgroundUrl ?? null;
+      }
+    } catch (err) {
+      log.debug("prepareGroupChatNavigation: group fetch failed, proceeding", {
+        data: { groupId: params.groupId },
+      });
+    }
+  }
+
+  // Warm images (avatar + background + member avatars) in parallel
+  try {
+    await prepareGroupThreadEntry(params.groupId, {
+      groupAvatarUrl: groupAvatarUrl ?? null,
+      backgroundUrl: backgroundUrl ?? null,
+    });
+  } catch (err) {
+    log.debug("prepareGroupChatNavigation: warmup failed, proceeding", {
+      data: { groupId: params.groupId },
+    });
+  }
+
+  return {
+    groupId: params.groupId,
+    groupName,
+    ...(params.targetMessageId && {
+      targetMessageId: params.targetMessageId,
+    }),
+    ...(params.jumpRequestId && { jumpRequestId: params.jumpRequestId }),
+    initialGroupData: {
+      name: groupName || "",
+      avatarUrl: groupAvatarUrl ?? null,
+      backgroundUrl: backgroundUrl ?? null,
+    },
+  };
 }

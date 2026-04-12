@@ -40,7 +40,7 @@
  * chat.messages
  * chat.keyboard.keyboardHeight
  * chat.scroll.isAtBottom
- * chat.autoscroll.showReturnPill
+ * chat.scroll.showJumpPill
  * chat.replyTo
  * chat.sendMessage("Hello!")
  * ```
@@ -80,16 +80,15 @@ import {
 import { createLogger } from "@/utils/log";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FlatList } from "react-native";
-import { useAtBottom, type AtBottomState } from "./chat/useAtBottom";
 import {
   useChatKeyboard,
   type ChatKeyboardState,
 } from "./chat/useChatKeyboard";
-import { useMessageEnterAnimationQueue } from "./chat/useMessageEnterAnimationQueue";
 import {
-  useNewMessageAutoscroll,
-  type AutoscrollState,
-} from "./chat/useNewMessageAutoscroll";
+  useChatScrollState,
+  type ChatScrollState,
+} from "./chat/useChatScrollState";
+import { useMessageEnterAnimationQueue } from "./chat/useMessageEnterAnimationQueue";
 import { useLocalMessages } from "./useLocalMessages";
 import { useUnifiedMessages } from "./useUnifiedMessages";
 
@@ -117,10 +116,6 @@ export interface UseChatConfig {
   autoMarkRead?: boolean;
   /** Send read receipts (default: true for DM, false for group) */
   sendReadReceipts?: boolean;
-  /** Pixel threshold for "at bottom" detection (default: 200) */
-  atBottomThreshold?: number;
-  /** Message threshold for auto-scroll (default: 30) */
-  autoscrollMessageThreshold?: number;
   /** Sender's chat style snapshot to stamp on outgoing messages */
   senderStyle?: SenderStyle;
 }
@@ -191,14 +186,8 @@ export interface UseChatReturn {
   // -------------------------------------------------------------------------
   // Scroll State
   // -------------------------------------------------------------------------
-  /** Scroll position state and handlers */
-  scroll: AtBottomState;
-
-  // -------------------------------------------------------------------------
-  // Auto-scroll
-  // -------------------------------------------------------------------------
-  /** Auto-scroll state and handlers */
-  autoscroll: AutoscrollState;
+  /** Unified scroll + jump-pill state */
+  scroll: ChatScrollState;
 
   // -------------------------------------------------------------------------
   // FlatList Ref
@@ -275,8 +264,6 @@ export function useChat(config: UseChatConfig): UseChatReturn {
     initialLimit = 50,
     autoMarkRead = true,
     sendReadReceipts,
-    atBottomThreshold = 200,
-    autoscrollMessageThreshold = 30,
     senderStyle,
   } = config;
 
@@ -317,6 +304,7 @@ export function useChat(config: UseChatConfig): UseChatReturn {
   const {
     messages: localRows,
     isLoading: isLocalLoading,
+    isLoadingOlder: isLocalLoadingOlder,
     error: localError,
     hasMore: localHasMore,
     loadMore: loadMoreLocalMessages,
@@ -381,7 +369,7 @@ export function useChat(config: UseChatConfig): UseChatReturn {
         error: localError ? new Error(localError) : null,
         pagination: {
           hasMoreOlder: localHasMore,
-          isLoadingOlder: false,
+          isLoadingOlder: isLocalLoadingOlder,
         },
         loadOlder: async () => loadMoreLocalMessages(),
         refresh: refreshLocalMessages,
@@ -400,6 +388,7 @@ export function useChat(config: UseChatConfig): UseChatReturn {
   }, [
     localMessages,
     isLocalLoading,
+    isLocalLoadingOlder,
     localError,
     localHasMore,
     loadMoreLocalMessages,
@@ -465,29 +454,20 @@ export function useChat(config: UseChatConfig): UseChatReturn {
   // Keyboard animation
   const keyboard = useChatKeyboard();
 
-  // Scroll position tracking
-  const scroll = useAtBottom({
-    threshold: atBottomThreshold,
-  });
-
-  // Auto-scroll on new messages
-  const autoscroll = useNewMessageAutoscroll({
-    messageCount: messagesHook.messages.length,
+  // Unified scroll position + jump-pill state
+  const msgs = messagesHook.messages;
+  const scroll = useChatScrollState({
+    messageCount: msgs.length,
+    newestMessageId: msgs.length > 0 ? msgs[0].id : undefined,
     isKeyboardOpen: keyboard.isKeyboardOpen,
-    isAtBottom: scroll.isAtBottom,
-    distanceRef: scroll.distanceRef,
-    pixelThreshold: autoscrollMessageThreshold * 80, // ~80px per message
   });
 
   // -------------------------------------------------------------------------
   // Reply-To Handlers
   // -------------------------------------------------------------------------
-  const setReplyTo = useCallback(
-    (reply: ReplyToMetadata | null) => {
-      setReplyToState(reply);
-    },
-    [],
-  );
+  const setReplyTo = useCallback((reply: ReplyToMetadata | null) => {
+    setReplyToState(reply);
+  }, []);
 
   const clearReplyTo = useCallback(() => {
     setReplyToState(null);
@@ -496,12 +476,9 @@ export function useChat(config: UseChatConfig): UseChatReturn {
   // -------------------------------------------------------------------------
   // Selection Handlers
   // -------------------------------------------------------------------------
-  const selectMessage = useCallback(
-    (message: MessageV2 | null) => {
-      setSelectedMessageState(message);
-    },
-    [],
-  );
+  const selectMessage = useCallback((message: MessageV2 | null) => {
+    setSelectedMessageState(message);
+  }, []);
 
   const clearSelection = useCallback(() => {
     setSelectedMessageState(null);
@@ -513,9 +490,9 @@ export function useChat(config: UseChatConfig): UseChatReturn {
   const setFlatListRef = useCallback(
     (ref: FlatList<MessageV2> | null) => {
       flatListRef.current = ref;
-      autoscroll.setFlatListRef(ref);
+      scroll.setFlatListRef(ref);
     },
-    [autoscroll],
+    [scroll],
   );
 
   // -------------------------------------------------------------------------
@@ -758,11 +735,8 @@ export function useChat(config: UseChatConfig): UseChatReturn {
   // Scroll to Bottom
   // -------------------------------------------------------------------------
   const scrollToBottom = useCallback(() => {
-    if (flatListRef.current) {
-      flatListRef.current.scrollToOffset({ offset: 0, animated: true });
-    }
-    autoscroll.dismissPill();
-  }, [autoscroll]);
+    scroll.scrollToLatest();
+  }, [scroll]);
 
   // -------------------------------------------------------------------------
   // Return
@@ -788,9 +762,6 @@ export function useChat(config: UseChatConfig): UseChatReturn {
 
       // Scroll
       scroll,
-
-      // Auto-scroll
-      autoscroll,
 
       // FlatList
       flatListRef,
@@ -829,7 +800,6 @@ export function useChat(config: UseChatConfig): UseChatReturn {
       messagesHook.isMessageAnchorActive,
       keyboard,
       scroll,
-      autoscroll,
       flatListRef,
       setFlatListRef,
       replyTo,

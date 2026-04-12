@@ -6,6 +6,14 @@
  * The tracker then resolves deterministic snapped widths for the connected
  * sender group so both DM and group stacked renderers can derive the same
  * final shape rules from the same data.
+ *
+ * ## Notification coalescing
+ *
+ * All subscriber notifications are coalesced via a microtask queue.
+ * When multiple cards report widths or register neighbors in the same
+ * JS turn (e.g. during pagination batch rendering), their notifications
+ * are collected and flushed once — eliminating cascading re-renders
+ * where each card's measurement triggers group-wide updates.
  */
 
 import {
@@ -37,6 +45,13 @@ export class CardWidthTracker {
     Set<(snapshot: CardWidthSnapshot) => void>
   >();
 
+  // ── Notification coalescing ──────────────────────────────────────────
+  // Collects dirty IDs and flushes subscriber notifications once per
+  // microtask turn.  This prevents cascading re-renders when many cards
+  // report / register neighbors in quick succession (pagination batches).
+  private pendingNotifyIds = new Set<string>();
+  private flushScheduled = false;
+
   private ensureNode(id: string): CardWidthNode {
     let node = this.nodes.get(id);
     if (!node) {
@@ -53,7 +68,7 @@ export class CardWidthTracker {
     if (node.width === rounded) return;
 
     node.width = rounded;
-    this.notifyGroup(id);
+    this.enqueueGroupNotify(id);
   }
 
   /** Keep same-group adjacency in sync so snapped widths can be resolved. */
@@ -105,7 +120,12 @@ export class CardWidthTracker {
     }
 
     this.collectGroupIds(id, affectedIds);
-    this.notifyIds(affectedIds);
+
+    // Route through coalescing queue instead of immediate notification
+    for (const aid of affectedIds) {
+      this.pendingNotifyIds.add(aid);
+    }
+    this.scheduleFlush();
   }
 
   /** Read a previously measured raw width (undefined if not yet measured). */
@@ -153,7 +173,8 @@ export class CardWidthTracker {
   /** Clear all stored widths and links without orphaning mounted subscribers. */
   clear(): void {
     this.nodes.clear();
-    this.notifyIds(this.listeners.keys());
+    // Clear fires synchronously so subscribers see the reset immediately
+    this.flushNow(this.listeners.keys());
   }
 
   private resolveSnappedWidth(id: string): number | undefined {
@@ -165,7 +186,10 @@ export class CardWidthTracker {
     });
   }
 
-  private collectGroupIds(startId: string | undefined, seen: Set<string>): void {
+  private collectGroupIds(
+    startId: string | undefined,
+    seen: Set<string>,
+  ): void {
     if (!startId) {
       return;
     }
@@ -192,16 +216,43 @@ export class CardWidthTracker {
     }
   }
 
-  private notifyGroup(id: string): void {
+  /**
+   * Collect all group members for `id` and add them to the coalescing queue.
+   * The actual subscriber notification happens on the next flush.
+   */
+  private enqueueGroupNotify(id: string): void {
     const affectedIds = new Set<string>();
     this.collectGroupIds(id, affectedIds);
     if (affectedIds.size === 0) {
       affectedIds.add(id);
     }
-    this.notifyIds(affectedIds);
+    for (const aid of affectedIds) {
+      this.pendingNotifyIds.add(aid);
+    }
+    this.scheduleFlush();
   }
 
-  private notifyIds(ids: Iterable<string>): void {
+  /**
+   * Schedule a coalesced flush of all pending notifications.
+   * Uses setTimeout(0) so that all synchronous report() / setGroupNeighbors()
+   * calls within the current JS turn are collected before any subscriber
+   * callback fires.  This eliminates the N×N cascading re-render storm that
+   * occurred when pagination inserted many grouped cards at once.
+   */
+  private scheduleFlush(): void {
+    if (this.flushScheduled) return;
+    this.flushScheduled = true;
+    setTimeout(() => {
+      this.flushScheduled = false;
+      if (this.pendingNotifyIds.size === 0) return;
+      const ids = this.pendingNotifyIds;
+      this.pendingNotifyIds = new Set();
+      this.flushNow(ids);
+    }, 0);
+  }
+
+  /** Synchronously notify subscribers for the given IDs. */
+  private flushNow(ids: Iterable<string>): void {
     for (const id of ids) {
       const callbacks = this.listeners.get(id);
       if (!callbacks || callbacks.size === 0) {

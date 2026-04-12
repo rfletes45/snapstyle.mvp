@@ -56,7 +56,6 @@ import React, {
 } from "react";
 import {
   Alert,
-  Image,
   Keyboard,
   StyleSheet,
   TouchableOpacity,
@@ -314,14 +313,19 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   // Screen State (No message state - uses unified hook)
   // ==========================================================================
 
-  // Seed group state from navigation params for instant header rendering.
+  // Seed group state from navigation params for instant header + background rendering.
   // The full group data will overwrite this once Firestore responds.
   const [group, setGroup] = useState<Group | null>(() => {
-    if (initialGroupData?.avatarUrl || initialGroupName) {
+    if (
+      initialGroupData?.avatarUrl ||
+      initialGroupData?.backgroundUrl ||
+      initialGroupName
+    ) {
       return {
         id: groupId,
         name: initialGroupData?.name || initialGroupName || "",
         avatarUrl: initialGroupData?.avatarUrl || null,
+        backgroundUrl: initialGroupData?.backgroundUrl ?? null,
       } as Group;
     }
     return null;
@@ -488,11 +492,20 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   );
   usePrefetch(groupAvatarUrls);
 
+  // Prefetch the group background image for instant display
+  const groupBackgroundUrls = useMemo(
+    () => (group?.backgroundUrl ? [group.backgroundUrl] : undefined),
+    [group?.backgroundUrl],
+  );
+  usePrefetch(groupBackgroundUrls);
+
   useEffect(() => {
     if (!groupId || groupMembers.length > 0) return;
 
     prepareGroupThreadEntry(groupId, {
       groupAvatarUrl: group?.avatarUrl || initialGroupData?.avatarUrl || null,
+      backgroundUrl:
+        group?.backgroundUrl || initialGroupData?.backgroundUrl || null,
     })
       .then((members) => {
         if (members.length > 0) {
@@ -1968,11 +1981,12 @@ export default function GroupChatScreen({ route, navigation }: Props) {
         style={[styles.container, { backgroundColor: colors.background }]}
         backgroundLayer={
           group?.backgroundUrl ? (
-            <Image
+            <AppImage
               source={{ uri: group.backgroundUrl }}
               style={styles.chatBackground}
-              resizeMode="cover"
-              fadeDuration={300}
+              contentFit="cover"
+              transition={0}
+              cachePolicy="memory-disk"
             />
           ) : undefined
         }
@@ -2007,13 +2021,23 @@ export default function GroupChatScreen({ route, navigation }: Props) {
               keyExtractor={(item) =>
                 timelineKeyExtractor(item, (msg) => msg.id)
               }
+              newestMessageId={messages[0]?.id}
               renderScrollComponent={renderScrollComponent}
-              pillBottomOffset={60 + insets.bottom + 16}
+              pillBottomOffset={12}
               isKeyboardOpen={screen.keyboard.isKeyboardOpen}
               ListHeaderComponent={
                 screen.chat.pagination.isLoadingOlder ? (
                   <View style={styles.loadMoreContainer}>
                     <ActivityIndicator size="small" color={colors.primary} />
+                  </View>
+                ) : !screen.chat.pagination.hasMoreOlder ? (
+                  <View style={styles.loadMoreContainer}>
+                    <Text
+                      variant="bodySmall"
+                      style={{ color: colors.textSecondary, textAlign: "center" }}
+                    >
+                      Beginning of conversation
+                    </Text>
                   </View>
                 ) : null
               }
@@ -2038,9 +2062,9 @@ export default function GroupChatScreen({ route, navigation }: Props) {
               }
               flatListProps={{
                 onEndReached: screen.chat.loadOlder,
-                onEndReachedThreshold: 0.3,
+                onEndReachedThreshold: 0.5,
                 initialNumToRender: 15,
-                maxToRenderPerBatch: 8,
+                maxToRenderPerBatch: 15,
               }}
             />
           )}

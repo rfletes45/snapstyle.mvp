@@ -1328,6 +1328,9 @@ export interface InboxConversation {
 
   /** Number of participants (groups only) */
   participantCount?: number;
+
+  /** Background image URL (groups only) */
+  backgroundUrl?: string | null;
 }
 
 /**

@@ -21,7 +21,7 @@ import { useInboxTyping } from "@/hooks/useInboxTyping";
 import { useUnifiedInboxRequests } from "@/hooks/useUnifiedInboxRequests";
 import {
   prepareDmThreadEntry,
-  prepareGroupThreadEntry,
+  prepareGroupChatNavigation,
 } from "@/services/chat/threadIdentityWarmup";
 import { markNotificationsReadByTypes } from "@/services/userNotifications";
 import { useAuth } from "@/store/AuthContext";
@@ -282,23 +282,13 @@ export default function ChatListScreen() {
           },
         });
       } else {
-        try {
-          await prepareGroupThreadEntry(conversation.id, {
-            groupAvatarUrl: conversation.avatarUrl,
-          });
-        } catch (error) {
-          log.warn("[Inbox] Failed to warm group thread identity", { error });
-        }
-
-        navigation.navigate("GroupChat", {
+        const navParams = await prepareGroupChatNavigation({
           groupId: conversation.id,
           groupName: conversation.name,
-          // OPTIMIZATION: Pass cached group data for instant display
-          initialGroupData: {
-            name: conversation.name,
-            avatarUrl: conversation.avatarUrl,
-          },
+          groupAvatarUrl: conversation.avatarUrl,
+          backgroundUrl: conversation.backgroundUrl,
         });
+        navigation.navigate("GroupChat", navParams);
       }
     },
     [navigation, actions, markConversationReadOptimistic],
@@ -392,11 +382,12 @@ export default function ChatListScreen() {
     async (invite: GroupInvite) => {
       try {
         await acceptGroupInviteRequest(invite);
-        // Navigate to the group
-        navigation.navigate("GroupChat", {
+        // Navigate to the group with warmed background
+        const navParams = await prepareGroupChatNavigation({
           groupId: invite.groupId,
           groupName: invite.groupName,
         });
+        navigation.navigate("GroupChat", navParams);
       } catch (e) {
         log.error("Failed to accept group invite", e);
       }

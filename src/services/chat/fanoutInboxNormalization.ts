@@ -61,6 +61,7 @@ export interface FanoutGroupConversationInput {
     createdAt?: number;
     memberCount?: number;
     lastMessageSenderId?: string;
+    backgroundUrl?: string | null;
   };
   memberState: MemberStatePrivate;
   recentlyReadAt?: number;
@@ -85,6 +86,7 @@ export function normalizeFanoutGroupConversation(
     recentlyReadAt: input.recentlyReadAt,
     participantCount:
       input.groupData.memberCount || input.groupData.memberIds?.length || 0,
+    backgroundUrl: input.groupData.backgroundUrl ?? null,
     lastMessageSenderId: input.groupData.lastMessageSenderId,
     currentUserId: input.currentUserId,
   });

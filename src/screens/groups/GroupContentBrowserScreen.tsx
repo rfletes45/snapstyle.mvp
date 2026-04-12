@@ -38,6 +38,7 @@ import {
 } from "react-native";
 import { Appbar, Searchbar, Text } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { prepareGroupChatNavigation } from "@/services/chat/threadIdentityWarmup";
 
 type Props = NativeStackScreenProps<MainStackParamList, "GroupContentBrowser">;
 
@@ -69,6 +70,21 @@ export default function GroupContentBrowserScreen({
   const colors = useColors();
 
   const browser = useGroupContentBrowser(groupId);
+
+  // Shared handler: navigate to group chat with a target message and warmed background
+  const navigateToGroupMessage = useCallback(
+    (targetMessageId: string) => {
+      void (async () => {
+        const navParams = await prepareGroupChatNavigation({
+          groupId,
+          groupName,
+          targetMessageId,
+        });
+        navigation.navigate("GroupChat", navParams);
+      })();
+    },
+    [groupId, groupName, navigation],
+  );
 
   // Set initial tab from params
   React.useEffect(() => {
@@ -161,10 +177,7 @@ export default function GroupContentBrowserScreen({
           activeOpacity={0.8}
           onPress={() => {
             // Navigate to the message in chat if possible
-            navigation.navigate("GroupChat", {
-              groupId,
-              targetMessageId: item.messageId,
-            });
+            navigateToGroupMessage(item.messageId);
           }}
         >
           {imageSource ? (
@@ -222,10 +235,7 @@ export default function GroupContentBrowserScreen({
           style={[styles.messageRow, { borderBottomColor: colors.border }]}
           activeOpacity={0.6}
           onPress={() => {
-            navigation.navigate("GroupChat", {
-              groupId,
-              targetMessageId: item.messageId,
-            });
+            navigateToGroupMessage(item.messageId);
           }}
         >
           <View style={styles.messageContent}>
@@ -282,11 +292,8 @@ export default function GroupContentBrowserScreen({
             Linking.openURL(item.url).catch(() => {});
           }}
           onLongPress={() => {
-            navigation.navigate("GroupChat", {
-              groupId,
-              targetMessageId: item.messageId,
-            });
-          }}
+            navigateToGroupMessage(item.messageId);
+          }}}
         >
           <View
             style={[

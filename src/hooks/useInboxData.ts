@@ -828,6 +828,7 @@ export function useInboxData(uid: string): UseInboxDataResult {
                   createdAt: toMillis(groupData.createdAt),
                   memberCount: groupData.memberCount,
                   lastMessageSenderId: groupData.lastMessageSenderId,
+                  backgroundUrl: groupData.backgroundUrl ?? null,
                 },
                 memberState,
                 recentlyReadAt,

@@ -14,7 +14,7 @@ export {
   type ChatKeyboardState,
 } from "./useChatKeyboard";
 
-// Scroll position detection
+// Scroll position detection (legacy — prefer useChatScrollState)
 export {
   estimateMessageCountFromOffset,
   useAtBottom,
@@ -22,12 +22,19 @@ export {
   type AtBottomState,
 } from "./useAtBottom";
 
-// New message autoscroll rules
+// New message autoscroll rules (legacy — prefer useChatScrollState)
 export {
   useNewMessageAutoscroll,
   type AutoscrollConfig,
   type AutoscrollState,
 } from "./useNewMessageAutoscroll";
+
+// Unified scroll state (replaces useAtBottom + useNewMessageAutoscroll)
+export {
+  useChatScrollState,
+  type ChatScrollState,
+  type ChatScrollStateConfig,
+} from "./useChatScrollState";
 
 // New message enter-animation tracking
 export { useMessageEnterAnimationQueue } from "./useMessageEnterAnimationQueue";

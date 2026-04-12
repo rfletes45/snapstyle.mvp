@@ -67,6 +67,12 @@ export interface UseLocalMessagesReturn {
   isLoading: boolean;
 
   /**
+   * Whether an older-message batch is currently being fetched from the server.
+   * Used by the UI to show a loading indicator at the oldest loaded edge.
+   */
+  isLoadingOlder: boolean;
+
+  /**
    * Error state
    */
   error: string | null;
@@ -202,12 +208,18 @@ export function useLocalMessages(
   const [failedCount, setFailedCount] = useState(0);
   const [currentLimit, setCurrentLimit] = useState(initialLimit);
   const [hasMore, setHasMore] = useState(initialState.hasMore);
+  const [isLoadingOlder, setIsLoadingOlder] = useState(false);
   const [messageAnchor, setMessageAnchor] = useState<MessageAnchorState | null>(
     null,
   );
   const unsubscribeRef = useRef<(() => void) | null>(null);
   const hasSyncedRef = useRef(false);
   const latestLimitRef = useRef(initialLimit);
+
+  // When true, the subscription callback skips re-reading messages from SQLite.
+  // This prevents intermediate/stale re-reads while a pagination batch is being
+  // synced from Firestore — the loadMore callback handles the final batch commit.
+  const isPaginatingRef = useRef(false);
 
   // Track whether Firestore has confirmed no more older messages exist.
   // This prevents loadMessages() from prematurely closing pagination based
@@ -235,10 +247,12 @@ export function useLocalMessages(
   useEffect(() => {
     hasSyncedRef.current = false;
     firestoreExhaustedRef.current = false;
+    isPaginatingRef.current = false;
     setCurrentLimit(initialLimit);
     setMessages(initialState.messages);
     setHasMore(initialState.hasMore);
     setIsLoading(initialState.messages.length === 0);
+    setIsLoadingOlder(false);
     setError(null);
     setMessageAnchor(null);
     latestLimitRef.current = initialLimit;
@@ -337,6 +351,11 @@ export function useLocalMessages(
         scope,
         conversationId,
         () => {
+          // Skip re-reads while a pagination batch is being synced from
+          // Firestore. The loadMore callback will commit the full batch
+          // itself once the sync completes, preventing intermediate/stale
+          // re-reads from overwriting the visible timeline.
+          if (isPaginatingRef.current) return;
           // Reload messages when new ones arrive from server
           loadMessages();
         },
@@ -436,10 +455,21 @@ export function useLocalMessages(
 
   // Load more function — increases local limit, and when SQLite is exhausted,
   // fetches older messages from Firestore into the local cache.
+  //
+  // Pagination guard: while a Firestore sync is in progress, the subscription
+  // callback is suppressed (via isPaginatingRef) to prevent intermediate state
+  // updates. The full batch is committed to visible state once the sync
+  // completes, ensuring messages appear together rather than one-by-one.
   const isSyncingOlderRef = useRef(false);
 
   const loadMore = useCallback(() => {
-    if (!hasMore || !USE_LOCAL_STORAGE || isSyncingOlderRef.current) return;
+    if (
+      !hasMore ||
+      firestoreExhaustedRef.current ||
+      !USE_LOCAL_STORAGE ||
+      isSyncingOlderRef.current
+    )
+      return;
 
     if (messageAnchor) {
       const nextOlderLimit = messageAnchor.olderLimit + initialLimit;
@@ -462,6 +492,8 @@ export function useLocalMessages(
         !isSyncingOlderRef.current
       ) {
         isSyncingOlderRef.current = true;
+        isPaginatingRef.current = true;
+        setIsLoadingOlder(true);
         // Use server_received_at for pagination cursor (consistent with Firestore ordering)
         const oldest =
           currentWindow.messages.length > 0
@@ -499,12 +531,29 @@ export function useLocalMessages(
                 prev ? { ...prev, olderLimit: nextOlderLimit } : prev,
               );
             }
+            // Reload the anchor window so newly-synced older messages appear
+            if (count > 0 && messageAnchor) {
+              const updatedWindow = getMessageWindowAroundMessage(
+                conversationId,
+                scope,
+                messageAnchor.targetMessageId,
+                nextOlderLimit,
+                messageAnchor.newerLimit,
+              );
+              if (updatedWindow) {
+                setMessages(updatedWindow.messages);
+                setHasMore(updatedWindow.hasOlder);
+                updateStatusCounts(updatedWindow.messages);
+              }
+            }
           })
           .catch((err) => {
             logger.warn("[useLocalMessages] syncOlderMessages failed:", err);
           })
           .finally(() => {
             isSyncingOlderRef.current = false;
+            isPaginatingRef.current = false;
+            setIsLoadingOlder(false);
           });
       } else {
         setMessageAnchor((prev) =>
@@ -515,6 +564,10 @@ export function useLocalMessages(
               }
             : prev,
         );
+        // Display the expanded window immediately (already read above)
+        setMessages(currentWindow.messages);
+        setHasMore(currentWindow.hasOlder);
+        updateStatusCounts(currentWindow.messages);
       }
       return;
     }
@@ -528,8 +581,12 @@ export function useLocalMessages(
     );
 
     if (currentMessages.length < nextLimit) {
-      // SQLite doesn't have enough messages — fetch from Firestore
+      // SQLite doesn't have enough messages — fetch from Firestore.
+      // Set pagination guard so the subscription callback doesn't cause
+      // intermediate re-reads while the batch is being synced.
       isSyncingOlderRef.current = true;
+      isPaginatingRef.current = true;
+      setIsLoadingOlder(true);
       // Use server_received_at for pagination cursor (matches Firestore index)
       const oldest =
         currentMessages.length > 0
@@ -567,17 +624,34 @@ export function useLocalMessages(
             latestLimitRef.current = nextLimit;
             setCurrentLimit(nextLimit);
           }
+          // Batch commit: read the full expanded set from SQLite and commit
+          // to visible state in a single update. The pagination guard has
+          // prevented any intermediate re-reads during the sync.
+          if (count > 0) {
+            const freshMessages = getMessagesForConversation(
+              conversationId,
+              scope,
+              nextLimit,
+            );
+            setMessages(freshMessages);
+            updateStatusCounts(freshMessages);
+          }
         })
         .catch((err) => {
           logger.warn("[useLocalMessages] syncOlderMessages failed:", err);
         })
         .finally(() => {
           isSyncingOlderRef.current = false;
+          isPaginatingRef.current = false;
+          setIsLoadingOlder(false);
         });
     } else {
       // SQLite has enough — just increase the limit
       latestLimitRef.current = nextLimit;
       setCurrentLimit(nextLimit);
+      // Display the expanded set immediately (already read above)
+      setMessages(currentMessages);
+      updateStatusCounts(currentMessages);
     }
   }, [
     hasMore,
@@ -586,11 +660,13 @@ export function useLocalMessages(
     initialLimit,
     conversationId,
     scope,
+    updateStatusCounts,
   ]);
 
   return {
     messages,
     isLoading,
+    isLoadingOlder,
     error,
     pendingCount,
     failedCount,

@@ -8,6 +8,7 @@
  */
 
 import { EmptyState, LoadingState } from "@/components/ui";
+import { prepareGroupChatNavigation } from "@/services/chat/threadIdentityWarmup";
 import {
   acceptGroupInvite,
   declineGroupInvite,
@@ -27,7 +28,6 @@ import {
   useTheme,
 } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
-
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("screens/groups/GroupInvitesScreen");
@@ -70,10 +70,13 @@ export default function GroupInvitesScreen({ navigation }: any) {
 
       // Navigate to the group chat
       setTimeout(() => {
-        navigation.navigate("GroupChat", {
-          groupId: invite.groupId,
-          groupName: invite.groupName,
-        });
+        void (async () => {
+          const navParams = await prepareGroupChatNavigation({
+            groupId: invite.groupId,
+            groupName: invite.groupName,
+          });
+          navigation.navigate("GroupChat", navParams);
+        })();
       }, 500);
     } catch (error: any) {
       logger.error("Error accepting invite:", error);
