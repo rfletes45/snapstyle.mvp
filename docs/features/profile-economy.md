@@ -123,8 +123,7 @@ The current appearance model is split across:
 Relevant docs:
 
 - [PROFILE_SYSTEM.md](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/docs/PROFILE_SYSTEM.md)
-- [conversation-display-modes.md](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/docs/features/conversation-display-modes.md)
-- [custom-font-color.md](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/docs/features/custom-font-color.md)
+- [CHAT_SYSTEM.md](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/docs/CHAT_SYSTEM.md) (display modes, custom font colors, and all chat documentation)
 
 ## Cosmetics and Customization
 

@@ -1,6 +1,6 @@
 # System Overview
 
-Last verified: 2026-03-30
+Last verified: 2026-04-12
 
 ## Scope
 
@@ -62,6 +62,8 @@ Current route families:
   - camera/share flows
   - Stream direct call and voice-channel screens when calling is available
 
+MainStack uses `freezeOnBlur: true` — inactive screens in the back stack are frozen by `react-native-screens` (no React re-renders, effects, or state updates until they regain focus). This makes return-navigation near-instant.
+
 `AppGate` is hydration-safe:
 
 - unauthenticated users stay in the auth flow
@@ -71,21 +73,21 @@ Current route families:
 
 ## Runtime Domains
 
-| Domain | Primary owner | Source of truth | Status |
-| --- | --- | --- | --- |
-| Auth/session | `src/store/AuthContext.tsx` | Firebase Auth + custom claims | implemented |
-| User bootstrap | `src/store/UserContext.tsx` | `Users/{uid}` with AsyncStorage safety cache | implemented |
-| Theme/app appearance | `src/store/ThemeContext.tsx` | AsyncStorage + `Users/{uid}` theme fields | implemented |
-| Conversation layout mode | `src/store/ConversationDisplayModeContext.tsx` | AsyncStorage + `Users/{uid}.conversationDisplayMode` | implemented |
-| Messaging | `src/hooks/useChat.ts` | native: SQLite + sync engine, web: Firestore fallback | implemented, split runtime |
-| Inbox aggregation | backend `Users/{uid}/Inbox/*` + client hooks | backend docs exist, client still defaults to fan-out reads | partial migration |
-| Notifications | `notificationCenter.ts` + client notification contexts | `Users/{uid}/Notifications`, sessions, devices | implemented |
-| Direct calls / voice channels | Stream Video via `StreamCallProvider` | Stream SDK + Firebase call history/token functions | implemented |
-| Profile boards | widget board hooks/components | `Users/{uid}/ProfileLayout/board` | implemented |
-| Cosmetics / shop / wallet / tasks | Firestore reads + callable writes | Functions are authoritative for rewards and purchases | implemented |
-| Games V4 | `src/gamesV4/*` + Functions + Colyseus | Firebase for lifecycle/results, Colyseus for realtime play | implemented |
-| Stories / moments | code exists under `src/screens/stories/*` | not wired into current navigation | dormant / partial |
-| Legacy call stack | old Firestore/WebRTC docs and services | not the live runtime | legacy |
+| Domain                            | Primary owner                                          | Source of truth                                            | Status                     |
+| --------------------------------- | ------------------------------------------------------ | ---------------------------------------------------------- | -------------------------- |
+| Auth/session                      | `src/store/AuthContext.tsx`                            | Firebase Auth + custom claims                              | implemented                |
+| User bootstrap                    | `src/store/UserContext.tsx`                            | `Users/{uid}` with AsyncStorage safety cache               | implemented                |
+| Theme/app appearance              | `src/store/ThemeContext.tsx`                           | AsyncStorage + `Users/{uid}` theme fields                  | implemented                |
+| Conversation layout mode          | `src/store/ConversationDisplayModeContext.tsx`         | AsyncStorage + `Users/{uid}.conversationDisplayMode`       | implemented                |
+| Messaging                         | `src/hooks/useChat.ts`                                 | native: SQLite + sync engine, web: Firestore fallback      | implemented, split runtime |
+| Inbox aggregation                 | backend `Users/{uid}/Inbox/*` + client hooks           | backend docs exist, client still defaults to fan-out reads | partial migration          |
+| Notifications                     | `notificationCenter.ts` + client notification contexts | `Users/{uid}/Notifications`, sessions, devices             | implemented                |
+| Direct calls / voice channels     | Stream Video via `StreamCallProvider`                  | Stream SDK + Firebase call history/token functions         | implemented                |
+| Profile boards                    | widget board hooks/components                          | `Users/{uid}/ProfileLayout/board`                          | implemented                |
+| Cosmetics / shop / wallet / tasks | Firestore reads + callable writes                      | Functions are authoritative for rewards and purchases      | implemented                |
+| Games V4                          | `src/gamesV4/*` + Functions + Colyseus                 | Firebase for lifecycle/results, Colyseus for realtime play | implemented                |
+| Stories / moments                 | code exists under `src/screens/stories/*`              | not wired into current navigation                          | dormant / partial          |
+| Legacy call stack                 | old Firestore/WebRTC docs and services                 | not the live runtime                                       | legacy                     |
 
 ## Integration Boundaries
 

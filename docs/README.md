@@ -24,16 +24,12 @@ This folder is organized around current runtime truth first. Treat the files bel
 
 - [auth-and-social.md](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/docs/features/auth-and-social.md)
   - auth bootstrap, onboarding gate, friends, contacts discovery, profile viewing, camera/story status
-- [messaging.md](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/docs/features/messaging.md)
-  - DM/group runtime, local-first native path, inbox/unread model, requests, composer, attachments, notifications
 - [calls-and-audio.md](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/docs/features/calls-and-audio.md)
   - Stream direct calls, group voice channels, history, settings, gating, known rough edges
 - [profile-economy.md](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/docs/features/profile-economy.md)
   - widget-board profiles, cosmetics/customization, wallet, shop, tasks, achievements, appearance controls
-- [conversation-display-modes.md](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/docs/features/conversation-display-modes.md)
-  - bubble vs stacked chat rendering and persistence
-- [custom-font-color.md](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/docs/features/custom-font-color.md)
-  - chat font color cosmetics; audited and still aligned with the current chat appearance pipeline
+- [CHAT_SYSTEM.md](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/docs/CHAT_SYSTEM.md)
+  - Consolidated chat reference: architecture, rendering, display modes, composer, reactions, keyboard, GIF, font colors, data contracts, inbox/unread, performance
 
 ### Profile Deep Reference
 
@@ -70,7 +66,6 @@ The Games V4 docs were audited during this pass and remain the canonical source 
 
 These files may still be useful as audits, plans, or incident notes, but they are not the source of truth for current behavior:
 
-- `docs/chat-system-audit/*`
 - `docs/CALL_SYSTEM_AUDIT_REFERENCE.md`
 - `docs/QA_*`
 - `docs/*AUDIT*.md`

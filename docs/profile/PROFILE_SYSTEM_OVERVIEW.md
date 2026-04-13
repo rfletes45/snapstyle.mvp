@@ -79,8 +79,7 @@ Related docs outside this folder:
 
 - [../PROFILE_SYSTEM.md](../PROFILE_SYSTEM.md)
 - [../features/profile-economy.md](../features/profile-economy.md)
-- [../features/custom-font-color.md](../features/custom-font-color.md)
-- [../features/conversation-display-modes.md](../features/conversation-display-modes.md)
+- [../CHAT_SYSTEM.md](../CHAT_SYSTEM.md) (display modes, custom font colors, and all chat documentation)
 
 ## Key Files
 

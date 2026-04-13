@@ -418,6 +418,12 @@ function MainStack() {
           backgroundColor: colors.background,
         },
         animation: "simple_push",
+        // OPTIMIZATION: Freeze inactive screens in the back stack.
+        // When navigating Chat → Thread or Chat → GroupInfo, the chat
+        // screen is frozen (no React re-renders, no effects, no state
+        // updates) until it regains focus. This makes return-to-chat
+        // near-instant since the screen just unfreezes its native view.
+        freezeOnBlur: true,
       }}
     >
       <MainStack_Nav.Screen

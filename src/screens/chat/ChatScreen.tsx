@@ -30,6 +30,7 @@ import React, {
 import {
   ActivityIndicator,
   Alert,
+  InteractionManager,
   Keyboard,
   Platform,
   StyleSheet,
@@ -158,6 +159,7 @@ import * as Haptics from "expo-haptics";
 
 import { clearLastOpenChat, saveLastOpenChat } from "@/services/lastOpenChat";
 import { syncMessagesAroundTarget } from "@/services/sync/syncEngine";
+import { chatPerf } from "@/utils/chatPerf";
 import { createLogger } from "@/utils/log";
 const logger = createLogger("screens/chat/ChatScreen");
 
@@ -295,6 +297,14 @@ export default function ChatScreen({
   route,
   navigation,
 }: NativeStackScreenProps<any, "ChatDetail">) {
+  const renderStartRef = useRef(performance.now());
+  const mountCountRef = useRef(0);
+  mountCountRef.current++;
+  if (mountCountRef.current === 1) {
+    chatPerf.mark("dm-chat-mount");
+    chatPerf.trackMount("ChatScreen", route.params?.friendUid);
+  }
+
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const { currentFirebaseUser } = useAuth();
@@ -633,10 +643,12 @@ export default function ChatScreen({
   /** Derive timeline items (messages + day dividers) from displayMessages */
   const timelineData: TimelineItem<MessageV2>[] = useMemo(
     () =>
-      buildTimeline<MessageV2>(
-        displayMessages,
-        (msg) => msg.createdAt,
-        areMessagesGrouped,
+      chatPerf.time("dm-buildTimeline", () =>
+        buildTimeline<MessageV2>(
+          displayMessages,
+          (msg) => msg.createdAt,
+          areMessagesGrouped,
+        ),
       ),
     [displayMessages, areMessagesGrouped],
   );
@@ -759,10 +771,10 @@ export default function ChatScreen({
     [selectedMessage, chatId, uid, handleOptimisticReaction],
   );
 
-  useEffect(() => {
-    if (!chatId || !uid || displayMessages.length === 0) return;
-
-    // Subscribe to messages that have reactionsSummary OR were optimistically reacted to
+  // Stabilize reaction subscription target IDs to avoid re-subscribing on
+  // every message array change. Only re-subscribe when the actual set of IDs changes.
+  const reactionTargetKey = useMemo(() => {
+    if (!displayMessages.length) return "";
     const idsWithReactions = new Set<string>();
     for (const m of displayMessages) {
       if (m.reactionsSummary && Object.keys(m.reactionsSummary).length > 0) {
@@ -772,24 +784,27 @@ export default function ChatScreen({
     for (const id of optimisticIds.current) {
       idsWithReactions.add(id);
     }
+    return Array.from(idsWithReactions).sort().join(",");
+  }, [displayMessages]);
 
-    if (idsWithReactions.size === 0) {
-      setMessageReactions(new Map());
+  useEffect(() => {
+    if (!chatId || !uid || !reactionTargetKey) {
+      if (!reactionTargetKey) setMessageReactions(new Map());
       return;
     }
+
+    const messageIds = reactionTargetKey.split(",");
 
     const unsubscribe = subscribeToMultipleMessageReactions(
       "dm",
       chatId,
-      Array.from(idsWithReactions),
+      messageIds,
       uid,
       (reactionsMap) => setMessageReactions(reactionsMap),
     );
 
     return unsubscribe;
-    // Re-subscribe when the set of message-ids-with-reactions changes
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chatId, uid, displayMessages.map((m) => m.id).join(",")]);
+  }, [chatId, uid, reactionTargetKey]);
 
   // ==========================================================================
   // Message Grouping Logic (for inverted FlatList)
@@ -816,8 +831,14 @@ export default function ChatScreen({
   const chatInitializedRef = useRef(false);
 
   // Initialize chat - OPTIMIZATION: Skip Firestore calls if we have cached data
+  const focusCountRef = useRef(0);
   useFocusEffect(
     useCallback(() => {
+      focusCountRef.current++;
+      const isResume = focusCountRef.current > 1;
+      chatPerf.mark("dm-chat-focus");
+      chatPerf.trackFocus("ChatScreen", friendUid, isResume);
+
       const initializeChat = async () => {
         if (!uid) return;
 
@@ -829,13 +850,16 @@ export default function ChatScreen({
 
             // Background refresh — don't block, and never overwrite
             // a valid profile with undefined (transient Firestore error).
-            getUserProfileByUid(friendUid)
-              .then((p) => {
-                if (p) setFriendProfile(p);
-              })
-              .catch((e) =>
-                logger.warn("Background profile refresh failed:", e),
-              );
+            // Defer until after transition to avoid competing with animation.
+            InteractionManager.runAfterInteractions(() => {
+              getUserProfileByUid(friendUid)
+                .then((p) => {
+                  if (p) setFriendProfile(p);
+                })
+                .catch((e) =>
+                  logger.warn("Background profile refresh failed:", e),
+                );
+            });
             return;
           }
 
@@ -876,9 +900,13 @@ export default function ChatScreen({
 
   useEffect(() => {
     if (!uid || !chatId) return;
-    markConversationNotificationsRead(uid, chatId, "dm").catch((error) => {
-      logger.warn("Failed to mark DM notifications read:", error);
+    // Defer notification marking until after screen transition completes
+    const task = InteractionManager.runAfterInteractions(() => {
+      markConversationNotificationsRead(uid, chatId, "dm").catch((error) => {
+        logger.warn("Failed to mark DM notifications read:", error);
+      });
     });
+    return () => task.cancel();
   }, [uid, chatId]);
 
   // Derive header subtitle from presence / typing
@@ -1457,11 +1485,14 @@ export default function ChatScreen({
   // Keyboard-sync: configure KCSV and get stable renderScrollComponent
   // offset=0 because the footer (KSV) moves with the keyboard — KCSV needs
   // the full keyboard height as content inset to keep messages visible.
-  setChatScrollViewConfig({
-    offset: 0,
-    keyboardLiftBehavior: "whenAtEnd",
-    extraContentPadding: sheetExtraPadding,
-  });
+  useMemo(() => {
+    setChatScrollViewConfig({
+      offset: 0,
+      keyboardLiftBehavior: "whenAtEnd",
+      extraContentPadding: sheetExtraPadding,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sheetExtraPadding]);
   const renderScrollComponent = useRenderChatScrollComponent();
 
   return (

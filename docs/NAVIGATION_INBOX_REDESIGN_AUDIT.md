@@ -48,7 +48,7 @@ RootNavigator (NavigationContainer)                    [src/navigation/RootNavig
 │   └── ProfileSetup
 ├── ProfileSetupStack (needs_profile)
 │   └── ProfileSetup
-└── MainStack (authenticated & ready)
+└── MainStack (authenticated & ready)                  screenOptions: { freezeOnBlur: true }
     ├── MainTabs (Bottom Tab Navigator)                ← MODIFY: Remove Games + Moments tabs
     │   ├── Shop         → ShopHubScreen               ← KEEP (reorder to 3rd)
     │   ├── Inbox        → InboxStack                   ← RENAME to Messages, redesign
@@ -62,7 +62,7 @@ RootNavigator (NavigationContainer)                    [src/navigation/RootNavig
     │   │   ├── StoriesList → MomentsUnderConstructionScreen
     │   │   └── StoryViewer
     │   └── Profile      → ProfileStack                 ← KEEP (reorder to 1st)
-    └── Full-screen overlays (MainStack screens)
+    └── Full-screen overlays (MainStack screens)        [freezeOnBlur: true — inactive screens frozen]
         ├── ChatDetail, GroupChat, ThreadView, GroupChatCreate, GroupChatInfo
         ├── ChatSettings, SnapViewer, Camera, CameraShare
         ├── AudioCall, VideoCall, GroupCall, CallHistory, CallSettings

@@ -251,7 +251,7 @@ export default function ChatListScreen() {
   // =============================================================================
 
   const handleConversationPress = useCallback(
-    async (conversation: InboxConversation) => {
+    (conversation: InboxConversation) => {
       // Optimistically mark as read in local state (immediate UI update)
       markConversationReadOptimistic(conversation.id, conversation.type);
 
@@ -259,14 +259,15 @@ export default function ChatListScreen() {
       actions.markRead(conversation);
 
       if (conversation.type === "dm") {
-        try {
-          await prepareDmThreadEntry({
-            avatarUrl: conversation.profilePictureUrl || conversation.avatarUrl,
-            decorationId: conversation.decorationId,
-          });
-        } catch (error) {
+        // OPTIMIZATION: Navigate immediately, warm identity assets in background.
+        // Previously this awaited prepareDmThreadEntry before navigating,
+        // adding 100-300ms of delay before the screen transition even started.
+        prepareDmThreadEntry({
+          avatarUrl: conversation.profilePictureUrl || conversation.avatarUrl,
+          decorationId: conversation.decorationId,
+        }).catch((error) => {
           log.warn("[Inbox] Failed to warm DM thread identity", { error });
-        }
+        });
 
         navigation.navigate("ChatDetail", {
           friendUid: conversation.otherUserId,
@@ -282,13 +283,38 @@ export default function ChatListScreen() {
           },
         });
       } else {
-        const navParams = await prepareGroupChatNavigation({
+        // OPTIMIZATION: Navigate immediately with data we already have,
+        // rather than awaiting prepareGroupChatNavigation which performs
+        // Firestore reads and image prefetching before navigation starts.
+        // The group screen will load full data via its own subscriptions.
+        const navParams: {
+          groupId: string;
+          groupName?: string;
+          initialGroupData?: {
+            name: string;
+            avatarUrl: string | null;
+            backgroundUrl: string | null;
+          };
+        } = {
+          groupId: conversation.id,
+          groupName: conversation.name,
+          initialGroupData: {
+            name: conversation.name || "",
+            avatarUrl: conversation.avatarUrl ?? null,
+            backgroundUrl: conversation.backgroundUrl ?? null,
+          },
+        };
+        navigation.navigate("GroupChat", navParams);
+
+        // Warm identity assets in background (non-blocking)
+        prepareGroupChatNavigation({
           groupId: conversation.id,
           groupName: conversation.name,
           groupAvatarUrl: conversation.avatarUrl,
           backgroundUrl: conversation.backgroundUrl,
+        }).catch((err) => {
+          log.warn("[Inbox] Background group warmup failed", { err });
         });
-        navigation.navigate("GroupChat", navParams);
       }
     },
     [navigation, actions, markConversationReadOptimistic],

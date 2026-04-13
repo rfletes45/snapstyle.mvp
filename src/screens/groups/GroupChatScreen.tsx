@@ -56,6 +56,7 @@ import React, {
 } from "react";
 import {
   Alert,
+  InteractionManager,
   Keyboard,
   StyleSheet,
   TouchableOpacity,
@@ -222,6 +223,7 @@ import {
   useRenderChatScrollComponent,
 } from "@/components/chat/ChatKeyboardScrollView";
 import { SheetDismissLayer } from "@/components/chat/SheetDismissLayer";
+import { chatPerf } from "@/utils/chatPerf";
 import { createLogger } from "@/utils/log";
 const logger = createLogger("screens/groups/GroupChatScreen");
 // =============================================================================
@@ -246,6 +248,14 @@ interface Props {
 // =============================================================================
 
 export default function GroupChatScreen({ route, navigation }: Props) {
+  const renderStartRef = useRef(performance.now());
+  const mountCountRef = useRef(0);
+  mountCountRef.current++;
+  if (mountCountRef.current === 1) {
+    chatPerf.mark("group-chat-mount");
+    chatPerf.trackMount("GroupChatScreen", route.params.groupId);
+  }
+
   const {
     groupId,
     groupName: initialGroupName,
@@ -294,8 +304,13 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   );
 
   // Track current group chat for notification suppression
+  const focusCountRef = useRef(0);
   useFocusEffect(
     useCallback(() => {
+      focusCountRef.current++;
+      const isResume = focusCountRef.current > 1;
+      chatPerf.mark("group-chat-focus");
+      chatPerf.trackFocus("GroupChatScreen", groupId, isResume);
       if (groupId) {
         setCurrentChatId(groupId, "group");
       }
@@ -410,18 +425,26 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   // Show/hide other members' custom chat styles (viewer preference)
   const [showMemberChatStyles, setShowMemberChatStyles] = useState(true);
 
-  // Re-read on focus so toggling in ChatSettingsScreen takes effect immediately
+  // Re-read on focus so toggling in ChatSettingsScreen takes effect immediately.
+  // Uses InteractionManager to defer the read until after the transition
+  // completes, preventing the Firestore call from competing with animation frames.
   useFocusEffect(
     useCallback(() => {
       if (!groupId || !uid) return;
       let cancelled = false;
-      getGroupMemberPrivate(groupId, uid).then((priv) => {
-        if (!cancelled && priv) {
-          setShowMemberChatStyles(priv.showMemberChatStyles !== false);
-        }
+      const task = InteractionManager.runAfterInteractions(() => {
+        getGroupMemberPrivate(groupId, uid).then((priv) => {
+          if (!cancelled && priv) {
+            const newVal = priv.showMemberChatStyles !== false;
+            setShowMemberChatStyles((prev) =>
+              prev === newVal ? prev : newVal,
+            );
+          }
+        });
       });
       return () => {
         cancelled = true;
+        task.cancel();
       };
     }, [groupId, uid]),
   );
@@ -713,20 +736,14 @@ export default function GroupChatScreen({ route, navigation }: Props) {
 
     let cancelled = false;
 
-    // Verify membership first, then attach real-time subscription
+    // OPTIMIZATION: Start the Firestore subscription immediately instead of
+    // waiting for the isGroupMember check to complete. The subscription itself
+    // will return null/error if the user isn't a member (Firestore rules),
+    // so the membership check is a redundant gate that adds latency.
     async function initGroupSubscription() {
       try {
         setGroupLoading(true);
         setError(null);
-
-        const isMember = await isGroupMember(groupId, uid!);
-        if (!isMember) {
-          setError("You are not a member of this group");
-          setGroupLoading(false);
-          return;
-        }
-
-        if (cancelled) return;
 
         logger.debug("[GroupChatScreen] Subscribing to group doc", { groupId });
 
@@ -746,6 +763,19 @@ export default function GroupChatScreen({ route, navigation }: Props) {
 
         // Store the unsubscribe for cleanup
         unsubRef.current = unsub;
+
+        // Deferred membership check — runs after subscription is already live.
+        // If the user isn't a member, the subscription will also fail via
+        // Firestore security rules, but this provides a cleaner error message.
+        InteractionManager.runAfterInteractions(() => {
+          if (cancelled) return;
+          isGroupMember(groupId, uid!).then((isMember) => {
+            if (!cancelled && !isMember) {
+              setError("You are not a member of this group");
+              unsubRef.current?.();
+            }
+          });
+        });
       } catch (err: any) {
         if (cancelled) return;
         logger.error("Error initializing group subscription:", err);
@@ -811,9 +841,15 @@ export default function GroupChatScreen({ route, navigation }: Props) {
 
   useEffect(() => {
     if (!uid || !groupId) return;
-    markConversationNotificationsRead(uid, groupId, "group").catch((error) => {
-      logger.warn("Failed to mark group notifications read:", error);
+    // Defer notification marking until after screen transition completes
+    const task = InteractionManager.runAfterInteractions(() => {
+      markConversationNotificationsRead(uid, groupId, "group").catch(
+        (error) => {
+          logger.warn("Failed to mark group notifications read:", error);
+        },
+      );
     });
+    return () => task.cancel();
   }, [uid, groupId]);
 
   // NOTE: Tab bar visibility is now handled at the navigator level
@@ -824,13 +860,23 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   // Link Previews (H12)
   // ==========================================================================
 
+  // Use refs to avoid cascading re-renders: the effect previously depended
+  // on [messages, linkPreviews, loadingPreviews] — each fetch updated both
+  // linkPreviews and loadingPreviews, re-triggering the entire effect.
+  const linkPreviewsCacheRef = useRef(linkPreviews);
+  linkPreviewsCacheRef.current = linkPreviews;
+  const loadingPreviewsCacheRef = useRef(loadingPreviews);
+  loadingPreviewsCacheRef.current = loadingPreviews;
+
   useEffect(() => {
+    let cancelled = false;
     const fetchLinkPreviews = async () => {
       for (const message of messages) {
+        if (cancelled) break;
         if (message.kind !== "text") continue;
         if (!message.text) continue;
-        if (linkPreviews.has(message.id)) continue;
-        if (loadingPreviews.has(message.id)) continue;
+        if (linkPreviewsCacheRef.current.has(message.id)) continue;
+        if (loadingPreviewsCacheRef.current.has(message.id)) continue;
         if (!hasUrls(message.text)) continue;
 
         const urls = extractUrls(message.text);
@@ -854,7 +900,12 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     };
 
     fetchLinkPreviews();
-  }, [messages, linkPreviews, loadingPreviews]);
+    return () => {
+      cancelled = true;
+    };
+    // Only re-run when messages change, not when preview state changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages]);
 
   // ==========================================================================
   // Reactions Subscription (H8)
@@ -921,12 +972,20 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     [selectedMessage, groupId, uid, handleOptimisticReaction],
   );
 
-  useEffect(() => {
-    if (!groupId || !uid || messages.length === 0) return;
-
+  // Stabilize reaction subscription target IDs to avoid re-subscribing on
+  // every message array change. Only re-subscribe when the actual set of
+  // message IDs we care about has changed.
+  const reactionTargetKey = useMemo(() => {
+    if (!messages.length) return "";
     const baseIds = new Set(messages.slice(0, 50).map((m) => m.id));
     optimisticIds.current.forEach((id) => baseIds.add(id));
-    const messageIds = Array.from(baseIds);
+    return Array.from(baseIds).sort().join(",");
+  }, [messages]);
+
+  useEffect(() => {
+    if (!groupId || !uid || !reactionTargetKey) return;
+
+    const messageIds = reactionTargetKey.split(",");
 
     const unsubscribe = subscribeToMultipleMessageReactions(
       "group",
@@ -937,7 +996,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     );
 
     return () => unsubscribe();
-  }, [groupId, uid, messages]);
+  }, [groupId, uid, reactionTargetKey]);
 
   // ==========================================================================
   // Handlers
@@ -1031,10 +1090,12 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   /** Derive timeline items (messages + day dividers) from messages */
   const timelineData: TimelineItem<MessageV2>[] = useMemo(
     () =>
-      buildTimeline<MessageV2>(
-        messages,
-        (msg) => msg.createdAt,
-        areMessagesGrouped,
+      chatPerf.time("group-buildTimeline", () =>
+        buildTimeline<MessageV2>(
+          messages,
+          (msg) => msg.createdAt,
+          areMessagesGrouped,
+        ),
       ),
     [messages, areMessagesGrouped],
   );
@@ -1921,11 +1982,15 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   // Keyboard-sync: configure KCSV and get stable renderScrollComponent
   // offset=0 because the footer (KSV) moves with the keyboard — KCSV needs
   // the full keyboard height as content inset to keep messages visible.
-  setChatScrollViewConfig({
-    offset: 0,
-    keyboardLiftBehavior: "whenAtEnd",
-    extraContentPadding: sheetExtraPadding,
-  });
+  // Wrapped in useMemo to avoid re-setting the module singleton on every render.
+  useMemo(() => {
+    setChatScrollViewConfig({
+      offset: 0,
+      keyboardLiftBehavior: "whenAtEnd",
+      extraContentPadding: sheetExtraPadding,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sheetExtraPadding]);
   const renderScrollComponent = useRenderChatScrollComponent();
   const groupHeaderSubtitle = typing.isOtherUserTyping
     ? typingUserNames.length === 1
