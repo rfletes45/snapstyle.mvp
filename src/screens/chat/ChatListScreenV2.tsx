@@ -250,6 +250,37 @@ export default function ChatListScreen() {
   // Navigation Handlers
   // =============================================================================
 
+  /**
+   * Press-in warmup: fires identity asset preloading on finger-down,
+   * giving ~150-300ms head start before the actual tap completes.
+   *
+   * NOTE: navigation.preload() was attempted here but crashes because
+   * ChatDetail and GroupChat screens use render callbacks (children)
+   * instead of the `component` prop. NativeStackView.native cannot
+   * create a valid descriptor for preloaded routes defined that way.
+   * The identity asset warming below is sufficient.
+   *
+   * Errors are silently swallowed — this is purely opportunistic.
+   */
+  const handleConversationPressIn = useCallback(
+    (conversation: InboxConversation) => {
+      if (conversation.type === "dm") {
+        prepareDmThreadEntry({
+          avatarUrl: conversation.profilePictureUrl || conversation.avatarUrl,
+          decorationId: conversation.decorationId,
+        }).catch(() => {});
+      } else {
+        prepareGroupChatNavigation({
+          groupId: conversation.id,
+          groupName: conversation.name,
+          groupAvatarUrl: conversation.avatarUrl,
+          backgroundUrl: conversation.backgroundUrl,
+        }).catch(() => {});
+      }
+    },
+    [],
+  );
+
   const handleConversationPress = useCallback(
     (conversation: InboxConversation) => {
       // Optimistically mark as read in local state (immediate UI update)
@@ -615,6 +646,7 @@ export default function ChatListScreen() {
           conversation={item}
           isTyping={inboxTyping.get(item.id)?.isTyping || false}
           onPress={() => handleConversationPress(item)}
+          onPressIn={() => handleConversationPressIn(item)}
           onAvatarPress={() => handleAvatarPress(item)}
           onLongPress={(event?: { pageX: number; pageY: number }) =>
             handleLongPress(item, event)
@@ -627,6 +659,7 @@ export default function ChatListScreen() {
       togglePinOptimistic,
       inboxTyping,
       handleConversationPress,
+      handleConversationPressIn,
       handleAvatarPress,
       handleLongPress,
       handleMute,

@@ -18,12 +18,21 @@
 import { useComposerSheet } from "@/contexts/ComposerSheetContext";
 import type { GifItem } from "@/services/gif/types";
 import * as Haptics from "expo-haptics";
-import React, { memo, useCallback, useEffect, useRef, useState } from "react";
+import React, {
+  memo,
+  Suspense,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { StyleSheet } from "react-native";
 import { IconButton, useTheme } from "react-native-paper";
 
 import type { DraggableBottomSheetHandle } from "./DraggableBottomSheet";
-import { GifPicker } from "./GifPicker";
+import { PickerLoadingFallback } from "./PickerLoadingFallback";
+
+const LazyGifPicker = React.lazy(() => import("./GifPicker"));
 
 // =============================================================================
 // Types
@@ -97,14 +106,18 @@ function GifButtonBase({ onGifSelected, size = 24 }: GifButtonProps) {
         accessibilityLabel="Open GIF picker"
         accessibilityRole="button"
       />
-      <GifPicker
-        ref={sheetRef}
-        open={pickerOpen}
-        onClose={handleClose}
-        onGifSelected={handleGifSelected}
-        keyboardHeight={lastKeyboardHeight}
-        sharedTranslateY={sheetTranslateY}
-      />
+      {pickerOpen && (
+        <Suspense fallback={<PickerLoadingFallback />}>
+          <LazyGifPicker
+            ref={sheetRef}
+            open={pickerOpen}
+            onClose={handleClose}
+            onGifSelected={handleGifSelected}
+            keyboardHeight={lastKeyboardHeight}
+            sharedTranslateY={sheetTranslateY}
+          />
+        </Suspense>
+      )}
     </>
   );
 }

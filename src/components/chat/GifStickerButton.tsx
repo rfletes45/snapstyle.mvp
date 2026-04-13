@@ -18,12 +18,21 @@ import { useComposerSheet } from "@/contexts/ComposerSheetContext";
 import type { GifItem } from "@/services/gif/types";
 import type { StickerItem } from "@/services/sticker/types";
 import * as Haptics from "expo-haptics";
-import React, { memo, useCallback, useEffect, useRef, useState } from "react";
+import React, {
+  memo,
+  Suspense,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { StyleSheet } from "react-native";
 import { IconButton, useTheme } from "react-native-paper";
 
 import type { DraggableBottomSheetHandle } from "./DraggableBottomSheet";
-import { GifStickerPicker } from "./GifStickerPicker";
+import { PickerLoadingFallback } from "./PickerLoadingFallback";
+
+const LazyGifStickerPicker = React.lazy(() => import("./GifStickerPicker"));
 
 // =============================================================================
 // Types
@@ -106,15 +115,19 @@ function GifStickerButtonBase({
         accessibilityLabel="Open GIF and Sticker picker"
         accessibilityRole="button"
       />
-      <GifStickerPicker
-        ref={sheetRef}
-        open={pickerOpen}
-        onClose={handleClose}
-        onGifSelected={handleGifSelected}
-        onStickerSelected={handleStickerSelected}
-        keyboardHeight={lastKeyboardHeight}
-        sharedTranslateY={sheetTranslateY}
-      />
+      {pickerOpen && (
+        <Suspense fallback={<PickerLoadingFallback />}>
+          <LazyGifStickerPicker
+            ref={sheetRef}
+            open={pickerOpen}
+            onClose={handleClose}
+            onGifSelected={handleGifSelected}
+            onStickerSelected={handleStickerSelected}
+            keyboardHeight={lastKeyboardHeight}
+            sharedTranslateY={sheetTranslateY}
+          />
+        </Suspense>
+      )}
     </>
   );
 }

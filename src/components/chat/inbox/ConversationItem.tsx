@@ -93,6 +93,8 @@ export interface ConversationItemProps {
   onAvatarPress: () => void;
   /** Callback when long pressed (opens context menu) - receives position for menu placement */
   onLongPress: (event?: { pageX: number; pageY: number }) => void;
+  /** Callback on finger-down (for early warmup before tap completes) */
+  onPressIn?: () => void;
   /** Optional search text to highlight in name and preview */
   highlightText?: string;
 }
@@ -109,6 +111,7 @@ export const ConversationItem = memo(function ConversationItem({
   onPress,
   onAvatarPress,
   onLongPress,
+  onPressIn,
   highlightText,
 }: ConversationItemProps) {
   const { colors } = useAppTheme();
@@ -174,6 +177,7 @@ export const ConversationItem = memo(function ConversationItem({
         isUnread && { backgroundColor: colors.primary + "08" },
       ]}
       onPress={onPress}
+      onPressIn={onPressIn}
       onLongPress={handleLongPress}
       activeOpacity={0.7}
       accessibilityRole="button"

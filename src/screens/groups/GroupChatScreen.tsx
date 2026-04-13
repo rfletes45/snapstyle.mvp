@@ -122,9 +122,11 @@ import {
 import { AnimatedMessageRow } from "@/components/chat/AnimatedMessageRow";
 import type { ChatMessageListRef } from "@/components/chat/ChatMessageList";
 import { ChatSkeleton } from "@/components/chat/ChatSkeleton";
-import { FullEmojiPicker } from "@/components/chat/FullEmojiPicker";
+import {
+  SuspenseFullEmojiPicker,
+  SuspenseScheduleMessageModal,
+} from "@/components/chat/lazyChatComponents";
 import { ProfilePictureWithDecoration } from "@/components/profile/ProfilePicture";
-import ScheduleMessageModal from "@/components/ScheduleMessageModal";
 import { ErrorState } from "@/components/ui";
 
 // Services
@@ -223,6 +225,7 @@ import {
   useRenderChatScrollComponent,
 } from "@/components/chat/ChatKeyboardScrollView";
 import { SheetDismissLayer } from "@/components/chat/SheetDismissLayer";
+import { useTwoPhaseListConfig } from "@/hooks/chat/useTwoPhaseListConfig";
 import { chatPerf } from "@/utils/chatPerf";
 import { createLogger } from "@/utils/log";
 const logger = createLogger("screens/groups/GroupChatScreen");
@@ -254,6 +257,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   if (mountCountRef.current === 1) {
     chatPerf.mark("group-chat-mount");
     chatPerf.trackMount("GroupChatScreen", route.params.groupId);
+    chatPerf.beginEntryTrace("GroupChatScreen", route.params.groupId, true);
   }
 
   const {
@@ -263,6 +267,9 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     jumpRequestId,
     initialGroupData,
   } = route.params;
+
+  // Two-phase FlatList: lightweight for first paint, full for steady-state
+  const { listConfig } = useTwoPhaseListConfig(groupId);
   const { colors, isDark } = useAppTheme();
   const insets = useSafeAreaInsets();
   const { currentFirebaseUser } = useAuth();
@@ -870,38 +877,42 @@ export default function GroupChatScreen({ route, navigation }: Props) {
 
   useEffect(() => {
     let cancelled = false;
-    const fetchLinkPreviews = async () => {
-      for (const message of messages) {
-        if (cancelled) break;
-        if (message.kind !== "text") continue;
-        if (!message.text) continue;
-        if (linkPreviewsCacheRef.current.has(message.id)) continue;
-        if (loadingPreviewsCacheRef.current.has(message.id)) continue;
-        if (!hasUrls(message.text)) continue;
+    // Defer link preview fetching until after the transition completes
+    // to avoid competing with first-paint rendering
+    const task = InteractionManager.runAfterInteractions(() => {
+      const fetchLinkPreviews = async () => {
+        for (const message of messages) {
+          if (cancelled) break;
+          if (message.kind !== "text") continue;
+          if (!message.text) continue;
+          if (linkPreviewsCacheRef.current.has(message.id)) continue;
+          if (loadingPreviewsCacheRef.current.has(message.id)) continue;
+          if (!hasUrls(message.text)) continue;
 
-        const urls = extractUrls(message.text);
-        if (urls.length === 0) continue;
+          const urls = extractUrls(message.text);
+          if (urls.length === 0) continue;
 
-        setLoadingPreviews((prev) => new Set([...prev, message.id]));
+          setLoadingPreviews((prev) => new Set([...prev, message.id]));
 
-        try {
-          const preview = await fetchPreview(urls[0]);
-          setLinkPreviews((prev) => new Map(prev).set(message.id, preview));
-        } catch {
-          setLinkPreviews((prev) => new Map(prev).set(message.id, null));
-        } finally {
-          setLoadingPreviews((prev) => {
-            const newSet = new Set(prev);
-            newSet.delete(message.id);
-            return newSet;
-          });
+          try {
+            const preview = await fetchPreview(urls[0]);
+            setLinkPreviews((prev) => new Map(prev).set(message.id, preview));
+          } catch {
+            setLinkPreviews((prev) => new Map(prev).set(message.id, null));
+          } finally {
+            setLoadingPreviews((prev) => {
+              const newSet = new Set(prev);
+              newSet.delete(message.id);
+              return newSet;
+            });
+          }
         }
-      }
-    };
-
-    fetchLinkPreviews();
+      };
+      fetchLinkPreviews();
+    });
     return () => {
       cancelled = true;
+      task.cancel();
     };
     // Only re-run when messages change, not when preview state changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1088,17 +1099,17 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   );
 
   /** Derive timeline items (messages + day dividers) from messages */
-  const timelineData: TimelineItem<MessageV2>[] = useMemo(
-    () =>
-      chatPerf.time("group-buildTimeline", () =>
-        buildTimeline<MessageV2>(
-          messages,
-          (msg) => msg.createdAt,
-          areMessagesGrouped,
-        ),
+  const timelineData: TimelineItem<MessageV2>[] = useMemo(() => {
+    const result = chatPerf.time("group-buildTimeline", () =>
+      buildTimeline<MessageV2>(
+        messages,
+        (msg) => msg.createdAt,
+        areMessagesGrouped,
       ),
-    [messages, areMessagesGrouped],
-  );
+    );
+    chatPerf.traceCheckpoint("GroupChatScreen", groupId, "buildTimeline");
+    return result;
+  }, [messages, areMessagesGrouped, groupId]);
 
   const handleMessageLongPress = useCallback((message: MessageV2) => {
     Keyboard.dismiss();
@@ -1137,14 +1148,15 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   }, [trackerConversationKey]);
 
   // Pre-seed estimated widths for cold-cache rows before they mount.
-  // Runs synchronously during render so that when useGroupedCardLayout's
-  // useState lazy initializer reads getSnapshot(), an estimated width is
-  // already present — giving the first paint approximately correct corner
-  // rounding and snap minWidth instead of the flat-everywhere default.
+  // Only seed the initial render window to keep first-paint fast.
+  // Additional rows are seeded as they mount via useGroupedCardLayout.
   useMemo(() => {
     if (displayMode !== "stacked") return;
     const entries: { id: string; estimatedWidth: number }[] = [];
+    const limit = listConfig.initialNumToRender + 5;
+    let count = 0;
     for (const tl of timelineData) {
+      if (count >= limit) break;
       if (tl.type !== "message") continue;
       const msg = tl.data;
       if (msg.kind === "system") continue;
@@ -1163,6 +1175,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
           screenWidth: windowWidth,
         }),
       });
+      count++;
     }
     if (entries.length > 0) cardWidthTracker.seedBatch(entries);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2160,6 +2173,10 @@ export default function GroupChatScreen({ route, navigation }: Props) {
               flatListProps={{
                 onEndReached: screen.chat.loadOlder,
                 onEndReachedThreshold: 0.5,
+                windowSize: listConfig.windowSize,
+                initialNumToRender: listConfig.initialNumToRender,
+                maxToRenderPerBatch: listConfig.maxToRenderPerBatch,
+                updateCellsBatchingPeriod: listConfig.updateCellsBatchingPeriod,
               }}
             />
           )}
@@ -2321,11 +2338,13 @@ export default function GroupChatScreen({ route, navigation }: Props) {
         onExpandReactions={handleExpandReactions}
       />
 
-      <FullEmojiPicker
-        open={fullEmojiPickerOpen}
-        onClose={() => setFullEmojiPickerOpen(false)}
-        onEmojiSelected={handleFullEmojiReaction}
-      />
+      {fullEmojiPickerOpen && (
+        <SuspenseFullEmojiPicker
+          open={fullEmojiPickerOpen}
+          onClose={() => setFullEmojiPickerOpen(false)}
+          onEmojiSelected={handleFullEmojiReaction}
+        />
+      )}
 
       <Snackbar
         visible={snackbar.visible}
@@ -2336,12 +2355,14 @@ export default function GroupChatScreen({ route, navigation }: Props) {
         {snackbar.message}
       </Snackbar>
 
-      <ScheduleMessageModal
-        visible={scheduleModalVisible}
-        messagePreview={screen.composer.text}
-        onSchedule={handleScheduleMessage}
-        onClose={() => setScheduleModalVisible(false)}
-      />
+      {scheduleModalVisible && (
+        <SuspenseScheduleMessageModal
+          visible={scheduleModalVisible}
+          messagePreview={screen.composer.text}
+          onSchedule={handleScheduleMessage}
+          onClose={() => setScheduleModalVisible(false)}
+        />
+      )}
 
       {/* Games V4: Invite creation loading overlay */}
       {gameInviteCreating && (

@@ -43,20 +43,20 @@ Last verified: 2026-04-12
 
 ### Current Status
 
-| Area | Status |
-|------|--------|
-| Native messaging runtime (SQLite-first) | Implemented and primary |
-| Web messaging runtime (Firestore fallback) | Implemented as compatibility path |
-| Inbox aggregation backend | Implemented |
-| Inbox aggregation client default | Not yet switched on (`CHAT_INBOX_AGGREGATION = false`) |
-| DM + group detail screens | Unified around shared `MessageV2` foundation |
-| Threads | Implemented (specialized screen) |
-| Display modes (Bubbles + Stacked) | Implemented, viewer-side setting |
-| Grouped card system | Implemented with adaptive width snapping and corner rounding |
-| Composer toolbar customization | Implemented with drag-and-drop editing |
-| GIF picker (KLIPY) | Implemented behind feature flag |
-| Custom font colors | Implemented with 16-color catalog |
-| Reactions | Implemented with optimistic UI |
+| Area                                       | Status                                                       |
+| ------------------------------------------ | ------------------------------------------------------------ |
+| Native messaging runtime (SQLite-first)    | Implemented and primary                                      |
+| Web messaging runtime (Firestore fallback) | Implemented as compatibility path                            |
+| Inbox aggregation backend                  | Implemented                                                  |
+| Inbox aggregation client default           | Not yet switched on (`CHAT_INBOX_AGGREGATION = false`)       |
+| DM + group detail screens                  | Unified around shared `MessageV2` foundation                 |
+| Threads                                    | Implemented (specialized screen)                             |
+| Display modes (Bubbles + Stacked)          | Implemented, viewer-side setting                             |
+| Grouped card system                        | Implemented with adaptive width snapping and corner rounding |
+| Composer toolbar customization             | Implemented with drag-and-drop editing                       |
+| GIF picker (KLIPY)                         | Implemented behind feature flag                              |
+| Custom font colors                         | Implemented with 16-color catalog                            |
+| Reactions                                  | Implemented with optimistic UI                               |
 
 ### Scope
 
@@ -146,132 +146,139 @@ This means:
 
 ### Screens
 
-| File | Purpose |
-|------|---------|
-| `src/screens/chat/ChatListScreenV2.tsx` | Inbox list with conversations + requests tabs |
-| `src/screens/chat/ChatScreen.tsx` | DM chat detail screen |
-| `src/screens/groups/GroupChatScreen.tsx` | Group chat detail screen |
-| `src/screens/chat/ThreadScreen.tsx` | Thread/reply view |
-| `src/screens/chat/ScheduledMessagesScreen.tsx` | Scheduled messages management |
-| `src/screens/chat/InboxSettingsScreen.tsx` | Inbox-level settings |
-| `src/screens/chat/ChatSettingsScreen.tsx` | Per-chat settings |
+| File                                           | Purpose                                                |
+| ---------------------------------------------- | ------------------------------------------------------ |
+| `src/screens/chat/ChatListScreenV2.tsx`        | Inbox list with conversations + requests tabs          |
+| `src/screens/chat/ChatScreen.tsx`              | DM chat detail screen                                  |
+| `src/screens/groups/GroupChatScreen.tsx`       | Group chat detail screen                               |
+| `src/screens/chat/ThreadScreen.tsx`            | Thread/reply view                                      |
+| `src/screens/chat/ScheduledMessagesScreen.tsx` | Scheduled messages management                          |
+| `src/screens/chat/InboxSettingsScreen.tsx`     | Inbox-level settings                                   |
+| `src/screens/chat/ChatSettingsScreen.tsx`      | Per-chat settings                                      |
+| `src/screens/groups/GroupChatInfoScreen.tsx`   | Group info/settings with fixed-hero cover-sheet layout |
 
 ### Components
 
-| File | Purpose |
-|------|---------|
-| `src/components/chat/ChatHeader.tsx` | Shared header scaffold |
-| `src/components/chat/ChatMessageList.tsx` | Inverted FlatList wrapper |
-| `src/components/chat/ChatComposer.tsx` | Composer UI (text input, toolbar, attachments) |
-| `src/components/chat/ChatMessageRenderer.tsx` | DM entry point — delegates to Stacked or Bubble renderer |
-| `src/components/chat/MessageActionsSheet.tsx` | Long-press action sheet with quick reactions |
-| `src/components/chat/SystemMessageChip.tsx` | System message presentation |
-| `src/components/DMMessageItem.tsx` | DM bubble-mode message renderer |
-| `src/components/chat/StackedMessageRenderer.tsx` | DM stacked-mode message renderer with card containers |
+| File                                                  | Purpose                                                  |
+| ----------------------------------------------------- | -------------------------------------------------------- |
+| `src/components/chat/ChatHeader.tsx`                  | Shared header scaffold                                   |
+| `src/components/chat/ChatMessageList.tsx`             | Inverted FlatList wrapper                                |
+| `src/components/chat/ChatComposer.tsx`                | Composer UI (text input, toolbar, attachments)           |
+| `src/components/chat/ChatMessageRenderer.tsx`         | DM entry point — delegates to Stacked or Bubble renderer |
+| `src/components/chat/MessageActionsSheet.tsx`         | Long-press action sheet with quick reactions             |
+| `src/components/chat/SystemMessageChip.tsx`           | System message presentation                              |
+| `src/components/DMMessageItem.tsx`                    | DM bubble-mode message renderer                          |
+| `src/components/chat/StackedMessageRenderer.tsx`      | DM stacked-mode message renderer with card containers    |
 | `src/components/chat/GroupStackedMessageRenderer.tsx` | Group stacked-mode message renderer with card containers |
-| `src/components/chat/ReactionBar.tsx` | ReactionPills + QuickReactionBar |
-| `src/components/chat/ReactionDetailSheet.tsx` | Modal showing who reacted per emoji |
-| `src/components/chat/ThreadIndicator.tsx` | "View thread (N replies)" link |
-| `src/components/chat/DateDivider.tsx` | Day separator |
-| `src/components/chat/ChatKeyboardScrollView.tsx` | KCSV adapter + ChatFooterWrapper + isKCSVAvailable |
+| `src/components/chat/ReactionBar.tsx`                 | ReactionPills + QuickReactionBar                         |
+| `src/components/chat/ReactionDetailSheet.tsx`         | Modal showing who reacted per emoji                      |
+| `src/components/chat/ThreadIndicator.tsx`             | "View thread (N replies)" link                           |
+| `src/components/chat/DateDivider.tsx`                 | Day separator                                            |
+| `src/components/chat/ChatKeyboardScrollView.tsx`      | KCSV adapter + ChatFooterWrapper + isKCSVAvailable       |
+| `src/components/chat/PickerLoadingFallback.tsx`       | Suspense fallback for lazy-loaded picker buttons         |
+| `src/components/chat/lazyChatComponents.tsx`          | React.lazy wrappers for picker sheets (GIF, emoji, etc)  |
 
 ### Hooks & Services
 
-| File | Purpose |
-|------|---------|
-| `src/hooks/useChat.ts` | Runtime selector — delegates to local or unified messages |
-| `src/hooks/useLocalMessages.ts` | SQLite-first message runtime (native) |
-| `src/hooks/useUnifiedMessages.ts` | Firestore-first message runtime (web fallback) |
-| `src/hooks/useUnifiedChatScreen.ts` | Shared screen scaffold hook |
-| `src/hooks/useInboxData.ts` | Inbox runtime selector (fan-out or aggregated) |
-| `src/hooks/useInboxAggregation.ts` | Aggregated inbox mode |
-| `src/hooks/useUnifiedInboxRequests.ts` | Unified requests stream |
-| `src/hooks/useConversationActions.ts` | Conversation action handlers |
-| `src/hooks/useFontColor.ts` | Custom font color hook |
-| `src/hooks/useChatKeyboard.ts` | Keyboard SharedValues + JS state |
-| `src/services/chat/normalizeMessage.ts` | Canonical message normalization |
-| `src/services/chat/normalizeInboxRow.ts` | Canonical inbox row normalization |
-| `src/services/chat/fanoutInboxNormalization.ts` | Fan-out inbox normalizers |
-| `src/services/chat/unifiedInboxRequests.ts` | Request merge + dedupe |
-| `src/services/chat/messageRequestsContract.ts` | Message request normalization |
-| `src/services/chat/threadIdentityWarmup.ts` | Pre-navigation identity/asset warmup |
-| `src/services/chat/unifiedMessagesLifecycle.ts` | Realtime + pagination merge |
-| `src/services/chat/inboxAggregation.ts` | Aggregated inbox mark-read |
-| `src/services/messaging/send.ts` | Send orchestration (web path) |
-| `src/services/messaging/subscribe.ts` | Firestore realtime subscriptions |
-| `src/services/messaging/messageMerge.ts` | Merge helper |
-| `src/services/reactions.ts` | Reaction service (toggle, subscribe, optimistic) |
-| `src/services/notifications/normalizeNotification.ts` | Notification payload adapter |
-| `src/services/profileService.ts` | Profile + equip/unequip font color |
-| `src/services/groupMembers.ts` | Group member state normalization |
-| `src/services/scheduledMessages.ts` | Scheduled messages service |
-| `src/services/outbox.ts` | Optimistic outbox (web) |
-| `src/services/messageList.ts` | Message list service (web) |
-| `src/services/sync/syncEngine.ts` | SQLite sync engine (native) |
+| File                                                  | Purpose                                                   |
+| ----------------------------------------------------- | --------------------------------------------------------- |
+| `src/hooks/useChat.ts`                                | Runtime selector — delegates to local or unified messages |
+| `src/hooks/useLocalMessages.ts`                       | SQLite-first message runtime (native)                     |
+| `src/hooks/useUnifiedMessages.ts`                     | Firestore-first message runtime (web fallback)            |
+| `src/hooks/useUnifiedChatScreen.ts`                   | Shared screen scaffold hook                               |
+| `src/hooks/useInboxData.ts`                           | Inbox runtime selector (fan-out or aggregated)            |
+| `src/hooks/useInboxAggregation.ts`                    | Aggregated inbox mode                                     |
+| `src/hooks/useUnifiedInboxRequests.ts`                | Unified requests stream                                   |
+| `src/hooks/useConversationActions.ts`                 | Conversation action handlers                              |
+| `src/hooks/useFontColor.ts`                           | Custom font color hook                                    |
+| `src/hooks/useChatKeyboard.ts`                        | Keyboard SharedValues + JS state                          |
+| `src/services/chat/normalizeMessage.ts`               | Canonical message normalization                           |
+| `src/services/chat/normalizeInboxRow.ts`              | Canonical inbox row normalization                         |
+| `src/services/chat/fanoutInboxNormalization.ts`       | Fan-out inbox normalizers                                 |
+| `src/services/chat/unifiedInboxRequests.ts`           | Request merge + dedupe                                    |
+| `src/services/chat/messageRequestsContract.ts`        | Message request normalization                             |
+| `src/services/chat/threadIdentityWarmup.ts`           | Pre-navigation identity/asset warmup                      |
+| `src/services/chat/unifiedMessagesLifecycle.ts`       | Realtime + pagination merge                               |
+| `src/services/chat/inboxAggregation.ts`               | Aggregated inbox mark-read                                |
+| `src/services/messaging/send.ts`                      | Send orchestration (web path)                             |
+| `src/services/messaging/subscribe.ts`                 | Firestore realtime subscriptions                          |
+| `src/services/messaging/messageMerge.ts`              | Merge helper                                              |
+| `src/services/reactions.ts`                           | Reaction service (toggle, subscribe, optimistic)          |
+| `src/services/notifications/normalizeNotification.ts` | Notification payload adapter                              |
+| `src/services/profileService.ts`                      | Profile + equip/unequip font color                        |
+| `src/services/groupMembers.ts`                        | Group member state normalization                          |
+| `src/services/scheduledMessages.ts`                   | Scheduled messages service                                |
+| `src/hooks/chat/useTwoPhaseListConfig.ts`             | Two-phase FlatList config (conservative → full)           |
+| `src/services/outbox.ts`                              | Optimistic outbox (web)                                   |
+| `src/services/messageList.ts`                         | Message list service (web)                                |
+| `src/services/sync/syncEngine.ts`                     | SQLite sync engine (native)                               |
 
 ### Chat Logic
 
-| File | Purpose |
-|------|---------|
-| `src/chat/buildTimeline.ts` | Precomputes grouping flags + date dividers |
-| `src/chat/displayMode.ts` | Layout tokens, MessageViewModel, buildMessageViewModel() |
-| `src/chat/sendDraft.ts` | Shared send orchestration (DM + group) |
+| File                        | Purpose                                                  |
+| --------------------------- | -------------------------------------------------------- |
+| `src/chat/buildTimeline.ts` | Precomputes grouping flags + date dividers               |
+| `src/chat/displayMode.ts`   | Layout tokens, MessageViewModel, buildMessageViewModel() |
+| `src/chat/sendDraft.ts`     | Shared send orchestration (DM + group)                   |
 
 ### Grouped Card System
 
-| File | Purpose |
-|------|---------|
-| `src/components/chat/useGroupedCardLayout.ts` | Shared React hook for card layout |
-| `src/components/chat/groupedCardLayout.ts` | Pure utility functions (radii, snap, normalization) |
-| `src/components/chat/CardWidthTracker.ts` | Graph-based width measurement + pub/sub |
-| `src/components/chat/estimateMessageWidth.ts` | Pre-mount width estimation for cold-cache rows |
+| File                                          | Purpose                                             |
+| --------------------------------------------- | --------------------------------------------------- |
+| `src/components/chat/useGroupedCardLayout.ts` | Shared React hook for card layout                   |
+| `src/components/chat/groupedCardLayout.ts`    | Pure utility functions (radii, snap, normalization) |
+| `src/components/chat/CardWidthTracker.ts`     | Graph-based width measurement + pub/sub             |
+| `src/components/chat/estimateMessageWidth.ts` | Pre-mount width estimation for cold-cache rows      |
 
 ### Composer & Toolbar
 
-| File | Purpose |
-|------|---------|
-| `src/components/chat/ChatComposer.tsx` | Main composer component |
-| `src/components/chat/ComposerToolbar.tsx` | Customizable toolbar rendering |
+| File                                            | Purpose                           |
+| ----------------------------------------------- | --------------------------------- |
+| `src/components/chat/ChatComposer.tsx`          | Main composer component           |
+| `src/components/chat/ComposerToolbar.tsx`       | Customizable toolbar rendering    |
 | `src/components/chat/ComposerToolbarEditor.tsx` | Edit/drag-and-drop toolbar editor |
-| `src/hooks/useComposerToolbar.ts` | Toolbar state management hook |
+| `src/hooks/useComposerToolbar.ts`               | Toolbar state management hook     |
 
 ### GIF Integration
 
-| File | Purpose |
-|------|---------|
-| `src/components/chat/GifPicker.tsx` | GIF search/browse UI |
+| File                                     | Purpose                             |
+| ---------------------------------------- | ----------------------------------- |
+| `src/components/chat/GifPicker.tsx`      | GIF search/browse UI                |
 | `src/components/chat/GifPickerSheet.tsx` | Bottom sheet wrapper for GIF picker |
-| `src/components/chat/GifGrid.tsx` | Masonry grid for GIF results |
-| `src/components/chat/GifPreview.tsx` | Individual GIF cell |
-| `src/services/gifService.ts` | KLIPY API client |
-| `src/hooks/useGifPicker.ts` | GIF picker state management |
-| `src/services/gifCacheService.ts` | GIF result caching |
+| `src/components/chat/GifGrid.tsx`        | Masonry grid for GIF results        |
+| `src/components/chat/GifPreview.tsx`     | Individual GIF cell                 |
+| `src/services/gifService.ts`             | KLIPY API client                    |
+| `src/hooks/useGifPicker.ts`              | GIF picker state management         |
+| `src/services/gifCacheService.ts`        | GIF result caching                  |
 
 ### Cosmetics
 
-| File | Purpose |
-|------|---------|
-| `src/cosmetics/types.ts` | ChatAppearance, SenderStyle types |
-| `src/cosmetics/chatCatalog.ts` | CHAT_FONT_COLOR_CATALOG |
-| `src/cosmetics/chatDefaults.ts` | CHAT_FONT_COLORS map, getChatFontColor() |
-| `src/cosmetics/chatAppearanceResolver.ts` | fontColorHex resolver + sanitizer |
+| File                                      | Purpose                                  |
+| ----------------------------------------- | ---------------------------------------- |
+| `src/cosmetics/types.ts`                  | ChatAppearance, SenderStyle types        |
+| `src/cosmetics/chatCatalog.ts`            | CHAT_FONT_COLOR_CATALOG                  |
+| `src/cosmetics/chatDefaults.ts`           | CHAT_FONT_COLORS map, getChatFontColor() |
+| `src/cosmetics/chatAppearanceResolver.ts` | fontColorHex resolver + sanitizer        |
 
 ### Performance
 
-| File | Purpose |
-|------|---------|
-| `src/utils/chatPerf.ts` | Lightweight perf instrumentation (mount/focus/buildTimeline timing) |
+| File                                            | Purpose                                                             |
+| ----------------------------------------------- | ------------------------------------------------------------------- |
+| `src/utils/chatPerf.ts`                         | Lightweight perf instrumentation (mount/focus/buildTimeline timing) |
+| `src/hooks/chat/useTwoPhaseListConfig.ts`       | Two-phase FlatList promotion with chatPerf instrumentation          |
+| `src/components/chat/PickerLoadingFallback.tsx` | Suspense fallback for lazy-loaded picker buttons (260px spinner)    |
+| `src/components/chat/lazyChatComponents.tsx`    | React.lazy wrappers — code-split picker sheets from chat bundle     |
 
 ### Backend
 
-| File | Purpose |
-|------|---------|
-| `firebase-backend/functions/src/messaging.ts` | sendMessageV2, toggleReactionV2 |
-| `firebase-backend/functions/src/messageRequests.ts` | Message request endpoints |
-| `firebase-backend/functions/src/inboxTriggers.ts` | Per-user aggregated inbox triggers |
-| `firebase-backend/functions/src/chatMedia.ts` | Chat media upload/finalization |
+| File                                                   | Purpose                                 |
+| ------------------------------------------------------ | --------------------------------------- |
+| `firebase-backend/functions/src/messaging.ts`          | sendMessageV2, toggleReactionV2         |
+| `firebase-backend/functions/src/messageRequests.ts`    | Message request endpoints               |
+| `firebase-backend/functions/src/inboxTriggers.ts`      | Per-user aggregated inbox triggers      |
+| `firebase-backend/functions/src/chatMedia.ts`          | Chat media upload/finalization          |
 | `firebase-backend/functions/src/notificationCenter.ts` | Notification routing (in-app/push/none) |
-| `firebase-backend/functions/src/notifications.ts` | Legacy DM/group push triggers |
+| `firebase-backend/functions/src/notifications.ts`      | Legacy DM/group push triggers           |
 
 ---
 
@@ -491,6 +498,72 @@ Migration detail: group reads still tolerate legacy `typingExpiresAt`; group wri
 
 Both chat screens stabilize their reaction `useEffect` dependency using a `reactionTargetKey` — a memoized sorted comma-joined string of visible message IDs. This prevents the subscription from tearing down and re-subscribing on every `messages` array reference change.
 
+### GroupChatInfoScreen — Fixed-Hero Cover-Sheet Architecture
+
+`src/screens/groups/GroupChatInfoScreen.tsx` uses a **counter-translate cover-sheet** pattern so the hero section (group avatar, name, action buttons) stays visually fixed while the content sheet scrolls up to cover it.
+
+#### Layer Model
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│  Layer 1 — fixedHeroBg (absolute, zIndex: 0, pointerEvents: none)│
+│  Background image + LinearGradient only. No interactive elements.│
+└──────────────────────────────────────────────────────────────────┘
+         ▼ (painted first)
+┌──────────────────────────────────────────────────────────────────┐
+│  Layer 2 — Animated.ScrollView                                   │
+│  ┌────────────────────────────────────────────────────────────┐  │
+│  │  Spacer (height: heroSpacerHeight)                         │  │
+│  │    └─ Animated.View (heroFixedContent)                     │  │
+│  │         translateY: +scrollY  → stays visually fixed       │  │
+│  │         Contains: avatar, name, edit buttons, voice room   │  │
+│  └────────────────────────────────────────────────────────────┘  │
+│  ┌────────────────────────────────────────────────────────────┐  │
+│  │  Content sheet (opaque bg, minHeight: windowHeight)        │  │
+│  │    Members, settings, permissions, leave/delete buttons    │  │
+│  │    Painted AFTER spacer → covers hero via painter's order  │  │
+│  └────────────────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────────────────┘
+         ▲ (painted last)
+┌──────────────────────────────────────────────────────────────────┐
+│  Floating header (absolute, zIndex: 10)                          │
+│  Back button + animated title opacity                            │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+#### How the Counter-Translate Works
+
+The hero content lives **inside** the ScrollView spacer. As the user scrolls, the spacer moves up with scroll content. The hero applies `translateY: +scrollY`, perfectly counteracting the scroll displacement so it appears motionless:
+
+```ts
+const clampedSpacerHeight = Math.max(heroSpacerHeight, 1);
+const heroFixedTranslateY = scrollY.interpolate({
+  inputRange: [0, clampedSpacerHeight],
+  outputRange: [0, clampedSpacerHeight],
+  extrapolate: "clamp",
+});
+```
+
+The content sheet is the next sibling after the spacer inside the ScrollView. Because it is painted **after** the hero, it naturally covers it as the user scrolls — no z-index manipulation needed.
+
+#### Key Design Decisions
+
+| Decision                                             | Rationale                                                                        |
+| ---------------------------------------------------- | -------------------------------------------------------------------------------- |
+| Hero inside ScrollView (not absolute overlay)        | Touch events work naturally — no `pointerEvents` toggling needed                 |
+| Counter-translate instead of absolute fixed          | Avoids touch priority vs visual stacking conflicts                               |
+| `Math.max(heroSpacerHeight, 1)` guard                | Prevents `Animated.interpolate` crash from `[0, 0]` inputRange                   |
+| `overflow: "visible"` on spacer                      | Hero content extends beyond spacer bounds before measurement                     |
+| `pointerEvents: "box-none"` on spacer + hero wrapper | Allows touches to pass through to hero buttons                                   |
+| Background in separate absolute layer                | Avoids background scrolling; `pointerEvents: "none"` prevents touch interference |
+
+#### Measurement Flow
+
+1. `handleHeroLayout` fires `onLayout` → sets `heroContentHeight`
+2. `heroBgHeight` = `heroContentHeight + HERO_BG_EXTENSION` (or fallback)
+3. `heroSpacerHeight` = `heroContentHeight` (or `HERO_FALLBACK_HEIGHT`)
+4. `HERO_FALLBACK_HEIGHT` = `TOTAL_HEADER_HEIGHT + 280` — used before first layout measurement
+
 ---
 
 ## 7. Send Pipeline & Message Flow
@@ -558,10 +631,10 @@ Important: canonical contract is timestamp and identity based; `status` is advis
 
 The app supports two chat display modes, switchable per-user (viewer-side preference):
 
-| Mode | Style | Visual Description |
-|------|-------|--------------------|
-| **Bubbles** (default) | Classic iMessage/WhatsApp | Rounded bubbles, sent right-aligned, received left-aligned |
-| **Stacked** | Discord-style | Left-aligned feed with avatar, name, and grouped card containers |
+| Mode                  | Style                     | Visual Description                                               |
+| --------------------- | ------------------------- | ---------------------------------------------------------------- |
+| **Bubbles** (default) | Classic iMessage/WhatsApp | Rounded bubbles, sent right-aligned, received left-aligned       |
+| **Stacked**           | Discord-style             | Left-aligned feed with avatar, name, and grouped card containers |
 
 Display mode is a **viewer-side** setting — each user sees the mode they chose, regardless of what the other participant(s) use.
 
@@ -590,26 +663,26 @@ These tokens define the spatial contract for stacked mode:
 ```typescript
 export const FEED_LAYOUT: FeedLayoutTokens = {
   screenEdgeInset: 0,
-  gutterWidth: 40,           // Left column reserved for avatars
-  gutterGap: 14,             // Gap between gutter and content
-  contentIndent: 54,         // Total indent: 0 + 40 + 14
-  avatarSize: 40,            // Avatar diameter at group-start
-  groupGap: 14,              // Vertical space between sender groups
-  withinGroupGap: 0,         // NO gap between grouped messages (cards flush)
-  rowPaddingV: 2,            // Vertical padding per feed row
-  rowPaddingH: 8,            // Horizontal padding per feed row
-  mediaRadius: 8,            // Corner radius for media cards
-  imageMaxWidth: 260,        // Max image width in pixels
-  imageMaxHeight: 300,       // Max image height in pixels
-  imageMinWidth: 140,        // Min image width in pixels
+  gutterWidth: 40, // Left column reserved for avatars
+  gutterGap: 14, // Gap between gutter and content
+  contentIndent: 54, // Total indent: 0 + 40 + 14
+  avatarSize: 40, // Avatar diameter at group-start
+  groupGap: 14, // Vertical space between sender groups
+  withinGroupGap: 0, // NO gap between grouped messages (cards flush)
+  rowPaddingV: 2, // Vertical padding per feed row
+  rowPaddingH: 8, // Horizontal padding per feed row
+  mediaRadius: 8, // Corner radius for media cards
+  imageMaxWidth: 260, // Max image width in pixels
+  imageMaxHeight: 300, // Max image height in pixels
+  imageMinWidth: 140, // Min image width in pixels
   authorNameFontSize: 16,
   timestampFontSize: 12.5,
   messageFontSize: 16,
   messageLineHeight: 22.5,
   reactionRowGap: 2,
   replyPreviewGap: 4,
-  selfTintOpacity: 0,        // Self-message tint (disabled)
-  selfAccentWidth: 0,        // Self-message accent (disabled)
+  selfTintOpacity: 0, // Self-message tint (disabled)
+  selfAccentWidth: 0, // Self-message accent (disabled)
 };
 ```
 
@@ -799,7 +872,7 @@ cardContent: {
 **Vertical padding tightening**: Within-group cards use reduced vertical padding:
 
 ```typescript
-const CARD_PAD_V = 6;       // At group boundaries & solo
+const CARD_PAD_V = 6; // At group boundaries & solo
 const CARD_PAD_V_INNER = 2; // Between grouped cards
 
 const cardPaddingTop = vm.isGroupStart ? CARD_PAD_V : CARD_PAD_V_INNER;
@@ -816,16 +889,16 @@ A graph-based pub/sub system that tracks message widths and their group adjacenc
 
 ```typescript
 interface CardWidthNode {
-  width?: number;      // Measured width (normalized to 2px grid)
-  prevId?: string;     // Message ID of neighbor above in same group
-  nextId?: string;     // Message ID of neighbor below in same group
+  width?: number; // Measured width (normalized to 2px grid)
+  prevId?: string; // Message ID of neighbor above in same group
+  nextId?: string; // Message ID of neighbor below in same group
 }
 
 interface CardWidthSnapshot {
-  rawWidth?: number;          // This message's measured width
-  snappedWidth?: number;      // This message's cluster-resolved snapped width
-  prevSnappedWidth?: number;  // Neighbor above's snapped width
-  nextSnappedWidth?: number;  // Neighbor below's snapped width
+  rawWidth?: number; // This message's measured width
+  snappedWidth?: number; // This message's cluster-resolved snapped width
+  prevSnappedWidth?: number; // Neighbor above's snapped width
+  nextSnappedWidth?: number; // Neighbor below's snapped width
   prevMessageId?: string;
   nextMessageId?: string;
 }
@@ -868,11 +941,11 @@ GROUPED MESSAGES:
 
 **Decision matrix:**
 
-| Corner | Group Start | Group End | Within Group |
-|--------|-------------|-----------|--------------|
-| **Top-Left** | `8` | `0` | `0` |
-| **Bottom-Left** | `0` | `8` | `0` |
-| **Top-Right** | `8` (always) | Width rule ↓ | Width rule ↓ |
+| Corner           | Group Start  | Group End    | Within Group |
+| ---------------- | ------------ | ------------ | ------------ |
+| **Top-Left**     | `8`          | `0`          | `0`          |
+| **Bottom-Left**  | `0`          | `8`          | `0`          |
+| **Top-Right**    | `8` (always) | Width rule ↓ | Width rule ↓ |
 | **Bottom-Right** | Width rule ↓ | `8` (always) | Width rule ↓ |
 
 **Width rule**: `currentWidth > adjacentWidth` → `8` (rounded); else → `0` (flat)
@@ -884,8 +957,12 @@ Both renderers delegate all card layout logic to this shared hook:
 ```typescript
 const { handleCardLayout, groupCardRadius, snapMinWidth } =
   useGroupedCardLayout({
-    messageId, cardWidthTracker, groupPrevMessageId, groupNextMessageId,
-    isGroupStart: vm.isGroupStart, isGroupEnd: vm.isGroupEnd,
+    messageId,
+    cardWidthTracker,
+    groupPrevMessageId,
+    groupNextMessageId,
+    isGroupStart: vm.isGroupStart,
+    isGroupEnd: vm.isGroupEnd,
   });
 ```
 
@@ -916,11 +993,11 @@ The system achieves instant-correct rendering through a multi-layer approach:
 
 The `threadPlacement` view-model property determines where thread indicators render:
 
-| Value | When | Location |
-|-------|------|----------|
-| `"none"` | No thread | Not rendered |
-| `"inline"` | Thread root AND grouped with next | Inside `cardContent`, after reactions |
-| `"external"` | Thread root AND group-end/solo | Separate row below the card |
+| Value        | When                              | Location                              |
+| ------------ | --------------------------------- | ------------------------------------- |
+| `"none"`     | No thread                         | Not rendered                          |
+| `"inline"`   | Thread root AND grouped with next | Inside `cardContent`, after reactions |
+| `"external"` | Thread root AND group-end/solo    | Separate row below the card           |
 
 Inline placement preserves grouped continuity — the thread link is visually part of the card, with no gap between this card and the next.
 
@@ -942,26 +1019,26 @@ removeClippedSubviews: false,  // Must stay false on inverted lists
 
 Built internally from raw primitive props via `useMemo` in `GroupStackedMessageRenderer`:
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `isGroupStart` | `boolean` | First in sender group (show avatar + name) |
-| `isGroupEnd` | `boolean` | Last in sender group (show timestamp) |
-| `showAvatar` | `boolean` | Avatar should be rendered |
-| `showDisplayName` | `boolean` | Author name should be rendered |
-| `showTimestamp` | `boolean` | Timestamp row should be rendered |
-| `threadPlacement` | `"inline" \| "external" \| "none"` | Thread indicator position |
+| Field             | Type                               | Description                                |
+| ----------------- | ---------------------------------- | ------------------------------------------ |
+| `isGroupStart`    | `boolean`                          | First in sender group (show avatar + name) |
+| `isGroupEnd`      | `boolean`                          | Last in sender group (show timestamp)      |
+| `showAvatar`      | `boolean`                          | Avatar should be rendered                  |
+| `showDisplayName` | `boolean`                          | Author name should be rendered             |
+| `showTimestamp`   | `boolean`                          | Timestamp row should be rendered           |
+| `threadPlacement` | `"inline" \| "external" \| "none"` | Thread indicator position                  |
 
 ### Constants Reference
 
-| Constant | Value | Description |
-|----------|-------|-------------|
-| `GROUPED_CARD_RADIUS` | `8` | Corner radius for rounded edges |
-| `GROUPED_CARD_SNAP_THRESHOLD` | `24` | Max width diff for snap cluster membership |
-| `withinGroupGap` | `0` | Zero gap between grouped messages |
-| `groupGap` | `14` | Vertical space between sender groups |
-| `cardContent.paddingH` | `12` | Inner card horizontal padding |
-| `cardContent.paddingV` | `6` | Inner card vertical padding |
-| `CARD_PAD_V_INNER` | `2` | Tightened vertical padding within group |
+| Constant                      | Value | Description                                |
+| ----------------------------- | ----- | ------------------------------------------ |
+| `GROUPED_CARD_RADIUS`         | `8`   | Corner radius for rounded edges            |
+| `GROUPED_CARD_SNAP_THRESHOLD` | `24`  | Max width diff for snap cluster membership |
+| `withinGroupGap`              | `0`   | Zero gap between grouped messages          |
+| `groupGap`                    | `14`  | Vertical space between sender groups       |
+| `cardContent.paddingH`        | `12`  | Inner card horizontal padding              |
+| `cardContent.paddingV`        | `6`   | Inner card vertical padding                |
+| `CARD_PAD_V_INNER`            | `2`   | Tightened vertical padding within group    |
 
 ### Renderer Differences
 
@@ -992,8 +1069,8 @@ Users can rearrange and customize toolbar items through a drag-and-drop editor.
 
 ```typescript
 interface ComposerToolbarLayout {
-  toolbar: string[];     // Ordered list of visible item IDs
-  overflow: string[];    // Items hidden in overflow menu
+  toolbar: string[]; // Ordered list of visible item IDs
+  overflow: string[]; // Items hidden in overflow menu
 }
 ```
 
@@ -1001,27 +1078,27 @@ Stored at `Users/{uid}.composerToolbar` in Firestore.
 
 #### Available Item IDs
 
-| ID | Label | Removable |
-|----|-------|-----------|
-| `camera` | Camera | Yes |
-| `gallery` | Photo Library | Yes |
-| `gif` | GIFs | Yes |
-| `sticker` | Stickers | Yes |
-| `voice` | Voice Note | Yes |
-| `file` | File | Yes |
-| `schedule` | Schedule Send | Yes |
-| `animal` | Send Animal | Yes |
-| `gameInvite` | Game Invite | Yes |
-| `mention` | Mention (@) | Yes |
-| `messageBar` | Message Bar | **No** (fixed position, always last) |
+| ID           | Label         | Removable                            |
+| ------------ | ------------- | ------------------------------------ |
+| `camera`     | Camera        | Yes                                  |
+| `gallery`    | Photo Library | Yes                                  |
+| `gif`        | GIFs          | Yes                                  |
+| `sticker`    | Stickers      | Yes                                  |
+| `voice`      | Voice Note    | Yes                                  |
+| `file`       | File          | Yes                                  |
+| `schedule`   | Schedule Send | Yes                                  |
+| `animal`     | Send Animal   | Yes                                  |
+| `gameInvite` | Game Invite   | Yes                                  |
+| `mention`    | Mention (@)   | Yes                                  |
+| `messageBar` | Message Bar   | **No** (fixed position, always last) |
 
 **Constraints**: Maximum 6 items in the toolbar. The `messageBar` item is non-removable and always appears last.
 
 #### Default Layout
 
 ```typescript
-toolbar: ["camera", "gallery", "gif", "sticker", "voice", "messageBar"]
-overflow: ["file", "schedule", "animal", "gameInvite", "mention"]
+toolbar: ["camera", "gallery", "gif", "sticker", "voice", "messageBar"];
+overflow: ["file", "schedule", "animal", "gameInvite", "mention"];
 ```
 
 #### Persistence (Dual-Write)
@@ -1097,16 +1174,16 @@ The current implementation uses KAV with `behavior: "height"`, which has known j
 
 ### Chat Screen Flex Stack
 
-| Element | Height | Notes |
-|---------|--------|-------|
-| ChatHeader | ~56px | Fixed |
-| PinnedInviteBar | ~48px or 0 | Conditional |
-| ChatMessageList | Remaining | Inverted FlatList, flex: 1 |
-| NetworkBanner | ~28px or 0 | Animated |
-| TypingBar/Bubble | ~24px or 0 | Conditional |
-| ChatComposer | ~56px | minHeight: 40saw |
-| Safe-area spacer | ~34px | Always rendered |
-| ScrollReturnButton | — | position: absolute |
+| Element            | Height     | Notes                      |
+| ------------------ | ---------- | -------------------------- |
+| ChatHeader         | ~56px      | Fixed                      |
+| PinnedInviteBar    | ~48px or 0 | Conditional                |
+| ChatMessageList    | Remaining  | Inverted FlatList, flex: 1 |
+| NetworkBanner      | ~28px or 0 | Animated                   |
+| TypingBar/Bubble   | ~24px or 0 | Conditional                |
+| ChatComposer       | ~56px      | minHeight: 40saw           |
+| Safe-area spacer   | ~34px      | Always rendered            |
+| ScrollReturnButton | —          | position: absolute         |
 
 ### Requirements
 
@@ -1132,14 +1209,14 @@ When a native build (`expo-dev-client`) is available, the **KCSV + KSV** archite
 
 ### Key Files
 
-| File | Role |
-|------|------|
+| File                                             | Role                                               |
+| ------------------------------------------------ | -------------------------------------------------- |
 | `src/components/chat/ChatKeyboardScrollView.tsx` | KCSV adapter + ChatFooterWrapper + isKCSVAvailable |
-| `src/components/chat/ChatMessageList.tsx` | Inverted FlatList |
-| `src/components/chat/ChatComposer.tsx` | Composer UI |
-| `src/hooks/chat/useChatKeyboard.ts` | Keyboard SharedValues + JS state |
-| `src/screens/chat/ChatScreen.tsx` | DM — KeyboardAvoidingView + ChatFooterWrapper |
-| `src/screens/groups/GroupChatScreen.tsx` | Group — same pattern |
+| `src/components/chat/ChatMessageList.tsx`        | Inverted FlatList                                  |
+| `src/components/chat/ChatComposer.tsx`           | Composer UI                                        |
+| `src/hooks/chat/useChatKeyboard.ts`              | Keyboard SharedValues + JS state                   |
+| `src/screens/chat/ChatScreen.tsx`                | DM — KeyboardAvoidingView + ChatFooterWrapper      |
+| `src/screens/groups/GroupChatScreen.tsx`         | Group — same pattern                               |
 
 ---
 
@@ -1180,14 +1257,14 @@ Groups/{groupId}/Messages/{messageId}
 
 ### Service Layer
 
-| Function | Description |
-|----------|-------------|
-| `toggleReaction()` | Calls `toggleReactionV2` Cloud Function |
-| `applyOptimisticReaction()` | Pure function: computes next reactions array locally |
-| `subscribeToReactions()` | Real-time Firestore listener for one message |
-| `subscribeToMultipleMessageReactions()` | Batch subscription for visible messages |
-| `getReactions()` | One-shot fetch |
-| `parseReactionsFromMessage()` | Parse denormalized summary into `ReactionSummary[]` |
+| Function                                | Description                                          |
+| --------------------------------------- | ---------------------------------------------------- |
+| `toggleReaction()`                      | Calls `toggleReactionV2` Cloud Function              |
+| `applyOptimisticReaction()`             | Pure function: computes next reactions array locally |
+| `subscribeToReactions()`                | Real-time Firestore listener for one message         |
+| `subscribeToMultipleMessageReactions()` | Batch subscription for visible messages              |
+| `getReactions()`                        | One-shot fetch                                       |
+| `parseReactionsFromMessage()`           | Parse denormalized summary into `ReactionSummary[]`  |
 
 All in `src/services/reactions.ts`.
 
@@ -1252,14 +1329,14 @@ GIF picker visibility is controlled by a feature flag. When disabled, the GIF to
 
 ### KLIPY API Endpoints
 
-| Endpoint | Purpose |
-|----------|---------|
-| `GET /v1/gifs/trending` | Trending GIFs |
-| `GET /v1/gifs/search?q={query}` | Search GIFs |
-| `GET /v1/gifs/{id}` | GIF details |
-| `GET /v1/gifs/categories` | Category listing |
-| `GET /v1/stickers/trending` | Trending stickers |
-| `GET /v1/stickers/search?q={query}` | Search stickers |
+| Endpoint                            | Purpose           |
+| ----------------------------------- | ----------------- |
+| `GET /v1/gifs/trending`             | Trending GIFs     |
+| `GET /v1/gifs/search?q={query}`     | Search GIFs       |
+| `GET /v1/gifs/{id}`                 | GIF details       |
+| `GET /v1/gifs/categories`           | Category listing  |
+| `GET /v1/stickers/trending`         | Trending stickers |
+| `GET /v1/stickers/search?q={query}` | Search stickers   |
 
 ### Authentication
 
@@ -1316,7 +1393,7 @@ Users can select a custom font color for chat messages through the Customization
 interface ChatAppearance {
   bubbleColorId: string | null;
   fontId: string | null;
-  fontColorId: string | null;    // null = theme-adaptive default
+  fontColorId: string | null; // null = theme-adaptive default
   animalThemeId: string | null;
 }
 ```
@@ -1326,7 +1403,7 @@ interface ChatAppearance {
 ```typescript
 interface SenderStyle {
   fontColorId?: string | null;
-  fontColorHex?: string | null;  // Pre-resolved hex for forward-compat
+  fontColorHex?: string | null; // Pre-resolved hex for forward-compat
   v: 1;
 }
 ```
@@ -1341,10 +1418,10 @@ Stamped on every outgoing message via `buildSenderStyle()` so recipients render 
 
 ### Rendering Behavior
 
-| Mode | Default | Custom |
-|------|---------|--------|
-| Stacked | `theme.colors.onSurface` (adapts) | Fixed hex from `fontColorHex` |
-| Bubble | Contrast-computed `bubbleTextColor` | `fontColorHex` overrides |
+| Mode    | Default                             | Custom                        |
+| ------- | ----------------------------------- | ----------------------------- |
+| Stacked | `theme.colors.onSurface` (adapts)   | Fixed hex from `fontColorHex` |
+| Bubble  | Contrast-computed `bubbleTextColor` | `fontColorHex` overrides      |
 
 Custom font color applies to chat message body text only. Does NOT apply to error text, button labels, badges, status indicators, navigation labels, placeholder text, or timestamps/metadata.
 
@@ -1352,12 +1429,12 @@ Custom font color applies to chat message body text only. Does NOT apply to erro
 
 16 curated colors across rarity tiers:
 
-| Tier | Colors | Acquisition |
-|------|--------|-------------|
-| Free/Starter | Snow (#FFFFFF), Charcoal (#2D2D2D), Silver (#B0B0B0) | Default |
-| Common | Sky Blue, Lavender, Mint, Rose, Peach | 150 tokens |
-| Uncommon | Coral, Gold, Aqua, Lime | 250 tokens |
-| Rare | Neon Pink, Electric Blue, Emerald | 400 tokens |
+| Tier         | Colors                                               | Acquisition |
+| ------------ | ---------------------------------------------------- | ----------- |
+| Free/Starter | Snow (#FFFFFF), Charcoal (#2D2D2D), Silver (#B0B0B0) | Default     |
+| Common       | Sky Blue, Lavender, Mint, Rose, Peach                | 150 tokens  |
+| Uncommon     | Coral, Gold, Aqua, Lime                              | 250 tokens  |
+| Rare         | Neon Pink, Electric Blue, Emerald                    | 400 tokens  |
 
 ### Hooks
 
@@ -1538,7 +1615,7 @@ Path: `Users/{uid}/Inbox/{threadId}`
 
 ```typescript
 interface InboxEntry {
-  threadId: string;               // dm:{chatId} or group:{groupId}
+  threadId: string; // dm:{chatId} or group:{groupId}
   scope: "dm" | "group";
   conversationId: string;
   lastActivityAt: number;
@@ -1607,9 +1684,24 @@ interface MessageRequest {
 
 ```typescript
 type UnifiedInboxRequestItem =
-  | { id: string; kind: "friend_request"; createdAt: number; friendRequest: FriendRequestWithUser }
-  | { id: string; kind: "group_invite"; createdAt: number; groupInvite: GroupInvite }
-  | { id: string; kind: "message_request"; createdAt: number; messageRequest: MessageRequest }
+  | {
+      id: string;
+      kind: "friend_request";
+      createdAt: number;
+      friendRequest: FriendRequestWithUser;
+    }
+  | {
+      id: string;
+      kind: "group_invite";
+      createdAt: number;
+      groupInvite: GroupInvite;
+    }
+  | {
+      id: string;
+      kind: "message_request";
+      createdAt: number;
+      messageRequest: MessageRequest;
+    };
 ```
 
 Merge semantics: dedupe key `${kind}:${id}`, sort by `createdAt desc` then `id asc`.
@@ -1773,12 +1865,12 @@ Lightweight perf instrumentation with console logs tagged `⏱ chatPerf`.
 
 Key measurement points:
 
-| Method | Purpose |
-|--------|---------|
-| `chatPerf.mark(label)` | Mark a timing point (mount, focus) |
-| `chatPerf.trackMount(screen, conversationId)` | New instance vs resume |
-| `chatPerf.trackFocus(screen, conversationId, wasAlreadyMounted)` | Focus events |
-| `chatPerf.time(label, fn)` | Measure function execution time (e.g., buildTimeline) |
+| Method                                                           | Purpose                                               |
+| ---------------------------------------------------------------- | ----------------------------------------------------- |
+| `chatPerf.mark(label)`                                           | Mark a timing point (mount, focus)                    |
+| `chatPerf.trackMount(screen, conversationId)`                    | New instance vs resume                                |
+| `chatPerf.trackFocus(screen, conversationId, wasAlreadyMounted)` | Focus events                                          |
+| `chatPerf.time(label, fn)`                                       | Measure function execution time (e.g., buildTimeline) |
 
 ### Navigate-First Pattern
 
@@ -1799,6 +1891,29 @@ Cross-instance `WIDTH_CACHE` (max 5000 entries) in `CardWidthTracker` persists a
 ### Coalesced Notifications
 
 `CardWidthTracker` uses `setTimeout(0)` to merge multiple width reports into one flush, preventing O(N²) cascades during pagination.
+
+### Two-Phase FlatList Config
+
+Hook: `src/hooks/chat/useTwoPhaseListConfig.ts`
+
+Both `ChatScreen` and `GroupChatScreen` use a two-phase FlatList configuration to speed up initial render:
+
+- **Phase 1 (conservative)**: `initialNumToRender: 12`, `maxToRenderPerBatch: 6`, `windowSize: 5` — fast first paint
+- **Phase 2 (full)**: Promoted after `InteractionManager.runAfterInteractions` + 300 ms delay — `maxToRenderPerBatch: 12`, `windowSize: 11`
+
+Phase 2 promotion is instrumented via `chatPerf.mark("phase2-promote")` and `chatPerf.measure("phase2-delay")`.
+
+### Lazy-Loaded Picker Buttons
+
+File: `src/components/chat/lazyChatComponents.tsx`
+
+Five toolbar picker sheets (GIF, Emoji, Sticker, Game, GifSticker) are code-split with `React.lazy()`. Each button component wraps its sheet in `<Suspense fallback={<PickerLoadingFallback />}>`.
+
+`PickerLoadingFallback` (`src/components/chat/PickerLoadingFallback.tsx`) renders a centered `ActivityIndicator` at 260px height.
+
+### Inbox Press-In Preloading
+
+`ChatListScreenV2` fires `prepareDmThreadEntry` / `prepareGroupChatNavigation` on `onPressIn` (touch-down) rather than waiting for `onPress` (touch-up). This overlaps ~100–200 ms of identity/asset warmup with the user's finger-down duration.
 
 ---
 
@@ -1850,14 +1965,15 @@ Cross-instance `WIDTH_CACHE` (max 5000 entries) in `CardWidthTracker` persists a
 
 All major Phase 3+ risks have been resolved:
 
-| Risk | Status | Resolution |
-|------|--------|------------|
+| Risk                                              | Status    | Resolution                                            |
+| ------------------------------------------------- | --------- | ----------------------------------------------------- |
 | Dual-runtime contract drift (SQLite vs Firestore) | **Fixed** | Canonical normalization layer, shared ordering/dedupe |
-| Inbox path drift (fan-out vs aggregated) | **Fixed** | Shared row normalization, unread computation |
-| Requests-tab source fragmentation | **Fixed** | Unified typed request stream |
-| Notification payload mismatch and dedupe | **Fixed** | Canonical notification adapter |
-| Group chat runtime crash (timestamp) | **Fixed** | Hardened Firestore timestamp parsing |
-| Text-node rendering warning | **Fixed** | Guarded slot/children rendering |
+| Inbox path drift (fan-out vs aggregated)          | **Fixed** | Shared row normalization, unread computation          |
+| Requests-tab source fragmentation                 | **Fixed** | Unified typed request stream                          |
+| Notification payload mismatch and dedupe          | **Fixed** | Canonical notification adapter                        |
+| Group chat runtime crash (timestamp)              | **Fixed** | Hardened Firestore timestamp parsing                  |
+| Text-node rendering warning                       | **Fixed** | Guarded slot/children rendering                       |
+| GroupChatInfoScreen hero buttons not pressable    | **Fixed** | Counter-translate cover-sheet architecture (see §6)   |
 
 ### Current Non-Blocking Risks
 
@@ -1920,17 +2036,19 @@ Add route churn tests for rapid thread switching. Verify no callback execution a
 
 These checkpoints record the Phase 2→3+ cleanup effort:
 
-| Checkpoint | Date | Theme | Status |
-|-----------|------|-------|--------|
-| C1 | 2026-03-04 | Thread listener and notification correctness | Complete |
-| C2 | 2026-03-04 | Requests tab integration and dead code cleanup | Complete |
-| C3 | 2026-03-04 | Local message lifecycle reset hardening | Complete |
-| C4 | 2026-03-04 | Merge and dedupe helper extraction | Complete |
-| C5 | 2026-03-05 | Canonical message normalization parity | Complete |
-| C6 | 2026-03-05 | Inbox normalization and unread source-of-truth | Complete |
-| C7 | 2026-03-05 | Unified inbox requests typed hook | Complete |
-| C8 | 2026-03-05 | Notification payload adapter and legacy gating | Complete |
-| C9 | 2026-03-05 | Group chat runtime crash and text-node warning | Complete |
+| Checkpoint | Date       | Theme                                                                       | Status   |
+| ---------- | ---------- | --------------------------------------------------------------------------- | -------- |
+| C1         | 2026-03-04 | Thread listener and notification correctness                                | Complete |
+| C2         | 2026-03-04 | Requests tab integration and dead code cleanup                              | Complete |
+| C3         | 2026-03-04 | Local message lifecycle reset hardening                                     | Complete |
+| C4         | 2026-03-04 | Merge and dedupe helper extraction                                          | Complete |
+| C5         | 2026-03-05 | Canonical message normalization parity                                      | Complete |
+| C6         | 2026-03-05 | Inbox normalization and unread source-of-truth                              | Complete |
+| C7         | 2026-03-05 | Unified inbox requests typed hook                                           | Complete |
+| C8         | 2026-03-05 | Notification payload adapter and legacy gating                              | Complete |
+| C9         | 2026-03-05 | Group chat runtime crash and text-node warning                              | Complete |
+| C10        | 2026-04    | Chat-entry performance (two-phase FlatList, lazy pickers, press-in preload) | Complete |
+| C11        | 2026-04    | GroupChatInfoScreen fixed-hero cover-sheet architecture                     | Complete |
 
 ---
 

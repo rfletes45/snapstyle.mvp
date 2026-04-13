@@ -15,14 +15,27 @@
  */
 
 import { useComposerSheet } from "@/contexts/ComposerSheetContext";
-import { GamePickerModal } from "@/gamesV4/components/GamePickerModal";
 import type { GameId } from "@/gamesV4/types";
 import * as Haptics from "expo-haptics";
-import React, { memo, useCallback, useEffect, useRef, useState } from "react";
+import React, {
+  memo,
+  Suspense,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { StyleSheet } from "react-native";
 import { IconButton, useTheme } from "react-native-paper";
 
 import type { DraggableBottomSheetHandle } from "./DraggableBottomSheet";
+import { PickerLoadingFallback } from "./PickerLoadingFallback";
+
+const LazyGamePickerModal = React.lazy(() =>
+  import("@/gamesV4/components/GamePickerModal").then((m) => ({
+    default: m.GamePickerModal,
+  })),
+);
 
 // =============================================================================
 // Types
@@ -99,15 +112,19 @@ function GameButtonBase({
         accessibilityLabel="Open game picker"
         accessibilityRole="button"
       />
-      <GamePickerModal
-        ref={sheetRef}
-        open={pickerOpen}
-        onSelect={handleGameSelected}
-        onClose={handleClose}
-        multiplayerOnly={multiplayerOnly}
-        keyboardHeight={lastKeyboardHeight}
-        sharedTranslateY={sheetTranslateY}
-      />
+      {pickerOpen && (
+        <Suspense fallback={<PickerLoadingFallback />}>
+          <LazyGamePickerModal
+            ref={sheetRef}
+            open={pickerOpen}
+            onSelect={handleGameSelected}
+            onClose={handleClose}
+            multiplayerOnly={multiplayerOnly}
+            keyboardHeight={lastKeyboardHeight}
+            sharedTranslateY={sheetTranslateY}
+          />
+        </Suspense>
+      )}
     </>
   );
 }

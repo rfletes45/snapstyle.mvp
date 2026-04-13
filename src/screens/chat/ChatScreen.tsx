@@ -85,20 +85,23 @@ import { CameraLongPressButton } from "@/components/chat/CameraLongPressButton";
 import type { ChatMessageListRef } from "@/components/chat/ChatMessageList";
 import { ChatSkeleton } from "@/components/chat/ChatSkeleton";
 import { DateDivider } from "@/components/chat/DateDivider";
-import { FullEmojiPicker } from "@/components/chat/FullEmojiPicker";
+import {
+  SuspenseBlockUserModal,
+  SuspenseFullEmojiPicker,
+  SuspenseReportUserModal,
+  SuspenseScheduleMessageModal,
+} from "@/components/chat/lazyChatComponents";
 import { NetworkBanner } from "@/components/chat/NetworkBanner";
 import { ScrollReturnButton } from "@/components/chat/ScrollReturnButton";
 import { VoiceRecordButton } from "@/components/chat/VoiceRecordButton";
+import { useTwoPhaseListConfig } from "@/hooks/chat/useTwoPhaseListConfig";
 import { useComposerToolbarLayout } from "@/hooks/useComposerToolbarLayout";
 
 // UI components
-import BlockUserModal from "@/components/BlockUserModal";
 import { CardWidthTracker } from "@/components/chat/CardWidthTracker";
 import { ChatHeader } from "@/components/chat/ChatHeader";
 import { ChatMessageRenderer } from "@/components/chat/ChatMessageRenderer";
 import { estimateMessageWidth } from "@/components/chat/estimateMessageWidth";
-import ReportUserModal from "@/components/ReportUserModal";
-import ScheduleMessageModal from "@/components/ScheduleMessageModal";
 import { useComposerSheet } from "@/contexts/ComposerSheetContext";
 import { PinnedInviteBar } from "@/gamesV4/components/PinnedInviteBar";
 import { createGameInvite } from "@/gamesV4/services/gameServiceV4";
@@ -303,6 +306,7 @@ export default function ChatScreen({
   if (mountCountRef.current === 1) {
     chatPerf.mark("dm-chat-mount");
     chatPerf.trackMount("ChatScreen", route.params?.friendUid);
+    chatPerf.beginEntryTrace("ChatScreen", route.params?.friendUid, true);
   }
 
   const theme = useTheme();
@@ -327,6 +331,9 @@ export default function ChatScreen({
   // OPTIMIZATION: Extract initial data passed from inbox for instant display
   const { friendUid, initialData, targetMessageId, jumpRequestId } =
     route.params as ChatScreenParams;
+
+  // Two-phase FlatList: lightweight for first paint, full for steady-state
+  const { listConfig } = useTwoPhaseListConfig(friendUid);
 
   // ==========================================================================
   // Screen State
@@ -641,17 +648,17 @@ export default function ChatScreen({
   // ==========================================================================
 
   /** Derive timeline items (messages + day dividers) from displayMessages */
-  const timelineData: TimelineItem<MessageV2>[] = useMemo(
-    () =>
-      chatPerf.time("dm-buildTimeline", () =>
-        buildTimeline<MessageV2>(
-          displayMessages,
-          (msg) => msg.createdAt,
-          areMessagesGrouped,
-        ),
+  const timelineData: TimelineItem<MessageV2>[] = useMemo(() => {
+    const result = chatPerf.time("dm-buildTimeline", () =>
+      buildTimeline<MessageV2>(
+        displayMessages,
+        (msg) => msg.createdAt,
+        areMessagesGrouped,
       ),
-    [displayMessages, areMessagesGrouped],
-  );
+    );
+    chatPerf.traceCheckpoint("ChatScreen", friendUid, "buildTimeline");
+    return result;
+  }, [displayMessages, areMessagesGrouped, friendUid]);
 
   // ==========================================================================
   // Reactions Subscription (H8) — with optimistic updates
@@ -1076,13 +1083,15 @@ export default function ChatScreen({
   }, [trackerConversationKey]);
 
   // Pre-seed estimated widths for cold-cache rows before they mount.
-  // Same pattern as GroupChatScreen — runs synchronously during render so
-  // useGroupedCardLayout's useState lazy initializer picks up approximate
-  // widths, giving cold rows correct corner rounding on first paint.
+  // Only seed the initial render window to keep first-paint fast.
+  // Additional rows are seeded as they mount via useGroupedCardLayout.
   useMemo(() => {
     if (displayMode !== "stacked") return;
     const entries: { id: string; estimatedWidth: number }[] = [];
+    const limit = listConfig.initialNumToRender + 5; // seed slightly beyond initial render
+    let count = 0;
     for (const tl of timelineData) {
+      if (count >= limit) break;
       if (tl.type !== "message") continue;
       const msg = tl.data;
       if (msg.kind === "system") continue;
@@ -1101,6 +1110,7 @@ export default function ChatScreen({
           screenWidth: windowWidth,
         }),
       });
+      count++;
     }
     if (entries.length > 0) cardWidthTracker.seedBatch(entries);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1594,6 +1604,10 @@ export default function ChatScreen({
               flatListProps={{
                 onEndReached: screen.loadOlder,
                 onEndReachedThreshold: 0.5,
+                windowSize: listConfig.windowSize,
+                initialNumToRender: listConfig.initialNumToRender,
+                maxToRenderPerBatch: listConfig.maxToRenderPerBatch,
+                updateCellsBatchingPeriod: listConfig.updateCellsBatchingPeriod,
               }}
             />
           )}
@@ -1710,26 +1724,32 @@ export default function ChatScreen({
         />
       </ChatKeyboardContainer>
 
-      <BlockUserModal
-        visible={blockModalVisible}
-        username={friendProfile?.username || "User"}
-        onCancel={() => setBlockModalVisible(false)}
-        onConfirm={handleBlockConfirm}
-      />
+      {blockModalVisible && (
+        <SuspenseBlockUserModal
+          visible={blockModalVisible}
+          username={friendProfile?.username || "User"}
+          onCancel={() => setBlockModalVisible(false)}
+          onConfirm={handleBlockConfirm}
+        />
+      )}
 
-      <ReportUserModal
-        visible={reportModalVisible}
-        username={friendProfile?.username || "User"}
-        onSubmit={handleReportSubmit}
-        onCancel={() => setReportModalVisible(false)}
-      />
+      {reportModalVisible && (
+        <SuspenseReportUserModal
+          visible={reportModalVisible}
+          username={friendProfile?.username || "User"}
+          onSubmit={handleReportSubmit}
+          onCancel={() => setReportModalVisible(false)}
+        />
+      )}
 
-      <ScheduleMessageModal
-        visible={scheduleModalVisible}
-        messagePreview={screen.composer.text}
-        onSchedule={handleScheduleMessage}
-        onClose={() => setScheduleModalVisible(false)}
-      />
+      {scheduleModalVisible && (
+        <SuspenseScheduleMessageModal
+          visible={scheduleModalVisible}
+          messagePreview={screen.composer.text}
+          onSchedule={handleScheduleMessage}
+          onClose={() => setScheduleModalVisible(false)}
+        />
+      )}
 
       <MessageActionsSheet
         visible={actionsSheetVisible}
@@ -1743,11 +1763,13 @@ export default function ChatScreen({
         onExpandReactions={handleExpandReactions}
       />
 
-      <FullEmojiPicker
-        open={fullEmojiPickerOpen}
-        onClose={() => setFullEmojiPickerOpen(false)}
-        onEmojiSelected={handleFullEmojiReaction}
-      />
+      {fullEmojiPickerOpen && (
+        <SuspenseFullEmojiPicker
+          open={fullEmojiPickerOpen}
+          onClose={() => setFullEmojiPickerOpen(false)}
+          onEmojiSelected={handleFullEmojiReaction}
+        />
+      )}
 
       <MediaViewerModal
         visible={mediaViewerVisible}

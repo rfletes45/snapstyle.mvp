@@ -18,12 +18,21 @@
 import { useComposerSheet } from "@/contexts/ComposerSheetContext";
 import type { StickerItem } from "@/services/sticker/types";
 import * as Haptics from "expo-haptics";
-import React, { memo, useCallback, useEffect, useRef, useState } from "react";
+import React, {
+  memo,
+  Suspense,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { StyleSheet } from "react-native";
 import { IconButton, useTheme } from "react-native-paper";
 
 import type { DraggableBottomSheetHandle } from "./DraggableBottomSheet";
-import { StickerPicker } from "./StickerPicker";
+import { PickerLoadingFallback } from "./PickerLoadingFallback";
+
+const LazyStickerPicker = React.lazy(() => import("./StickerPicker"));
 
 // =============================================================================
 // Types
@@ -96,14 +105,18 @@ function StickerButtonBase({
         accessibilityLabel="Open sticker picker"
         accessibilityRole="button"
       />
-      <StickerPicker
-        ref={sheetRef}
-        open={pickerOpen}
-        onClose={handleClose}
-        onStickerSelected={handleStickerSelected}
-        keyboardHeight={lastKeyboardHeight}
-        sharedTranslateY={sheetTranslateY}
-      />
+      {pickerOpen && (
+        <Suspense fallback={<PickerLoadingFallback />}>
+          <LazyStickerPicker
+            ref={sheetRef}
+            open={pickerOpen}
+            onClose={handleClose}
+            onStickerSelected={handleStickerSelected}
+            keyboardHeight={lastKeyboardHeight}
+            sharedTranslateY={sheetTranslateY}
+          />
+        </Suspense>
+      )}
     </>
   );
 }

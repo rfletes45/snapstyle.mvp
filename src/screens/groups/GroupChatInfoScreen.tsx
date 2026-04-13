@@ -247,9 +247,23 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
       ? heroContentHeight + HERO_BG_EXTENSION
       : HERO_FALLBACK_HEIGHT + HERO_BG_EXTENSION;
 
-  // Spacer height for ScrollView — matches the content area of the fixed hero
+  // Spacer height for ScrollView — matches the hero content so content sheet
+  // starts just below the hero and scrolls upward to cover it.
   const heroSpacerHeight =
     heroContentHeight > 0 ? heroContentHeight : HERO_FALLBACK_HEIGHT;
+
+  // ─── Scroll-driven hero counter-translate ─────────────────────────────
+  // The hero content lives inside the ScrollView's spacer region but is
+  // counter-translated by scrollY so it stays visually fixed at the top.
+  // The opaque content sheet (next sibling after the spacer in the
+  // ScrollView) is painted AFTER the hero → it naturally covers the hero
+  // from below as the user scrolls. Native driver, 60 fps.
+  const clampedSpacerHeight = Math.max(heroSpacerHeight, 1);
+  const heroFixedTranslateY = scrollY.interpolate({
+    inputRange: [0, clampedSpacerHeight],
+    outputRange: [0, clampedSpacerHeight],
+    extrapolate: "clamp",
+  });
 
   useEffect(() => {
     if (!loading && group) {
@@ -1040,7 +1054,7 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
       )}
 
       <Animated.View style={{ flex: 1, opacity: fadeAnim }}>
-        {/* ── Fixed hero layer — background + content, pinned in place ── */}
+        {/* ── Fixed hero background — pinned visual layer only ── */}
         <View
           style={[
             styles.fixedHeroBg,
@@ -1049,7 +1063,7 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
               backgroundColor: colors.background,
             },
           ]}
-          pointerEvents="box-none"
+          pointerEvents="none"
         >
           {group.backgroundUrl ? (
             <View style={StyleSheet.absoluteFill}>
@@ -1061,174 +1075,9 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
               <View style={styles.heroBackgroundGradient} />
             </View>
           ) : null}
-
-          {/* Hero content — fixed with background, measured for spacer */}
-          <View
-            style={{ paddingTop: TOTAL_HEADER_HEIGHT }}
-            pointerEvents="box-none"
-            onLayout={handleHeroLayout}
-          >
-            <View
-              style={[
-                styles.heroCard,
-                group.backgroundUrl ? styles.heroCardOverBg : undefined,
-              ]}
-              pointerEvents="box-none"
-            >
-              {/* Group Avatar */}
-              <TouchableOpacity
-                onPress={handleChangePhoto}
-                disabled={
-                  uploadingPhoto || !can(GroupPermission.EDIT_GROUP_PHOTO)
-                }
-                activeOpacity={0.7}
-                style={styles.heroAvatarContainer}
-              >
-                {group.avatarUrl ? (
-                  <AppImage
-                    source={{ uri: group.avatarUrl }}
-                    style={styles.heroAvatarImage}
-                    debugLabel="GroupInfoHeroAvatar"
-                  />
-                ) : (
-                  <View
-                    style={[
-                      styles.heroAvatarFallback,
-                      { backgroundColor: colors.surfaceVariant },
-                    ]}
-                  >
-                    <MaterialCommunityIcons
-                      name="account-group"
-                      size={56}
-                      color={colors.primary}
-                    />
-                  </View>
-                )}
-                {uploadingPhoto && (
-                  <View style={styles.heroAvatarOverlay}>
-                    <ActivityIndicator size="small" color="#FFF" />
-                  </View>
-                )}
-                {can(GroupPermission.EDIT_GROUP_PHOTO) && !uploadingPhoto && (
-                  <View
-                    style={[
-                      styles.editPhotoBadge,
-                      { backgroundColor: colors.primary },
-                    ]}
-                  >
-                    <MaterialCommunityIcons
-                      name="camera"
-                      size={18}
-                      color="#FFF"
-                    />
-                  </View>
-                )}
-              </TouchableOpacity>
-
-              {/* Group Name + Edit */}
-              <View style={styles.heroNameRow}>
-                <Text
-                  style={[
-                    styles.heroName,
-                    {
-                      color: group.backgroundUrl ? "#FFF" : colors.text,
-                      ...(group.backgroundUrl
-                        ? {
-                            textShadowColor: "rgba(0,0,0,0.6)",
-                            textShadowOffset: { width: 0, height: 1 },
-                            textShadowRadius: 3,
-                          }
-                        : {}),
-                    },
-                  ]}
-                >
-                  {group.name}
-                </Text>
-                {can(GroupPermission.EDIT_GROUP_NAME) && (
-                  <IconButton
-                    icon="pencil"
-                    size={18}
-                    iconColor={
-                      group.backgroundUrl ? "#FFF" : colors.textSecondary
-                    }
-                    onPress={() => {
-                      setNewGroupName(group.name);
-                      setEditNameVisible(true);
-                    }}
-                    style={styles.editNameButton}
-                  />
-                )}
-              </View>
-
-              {/* Meta info */}
-              <Text
-                style={[
-                  styles.heroMeta,
-                  {
-                    color: group.backgroundUrl
-                      ? "rgba(255,255,255,0.85)"
-                      : colors.textSecondary,
-                    ...(group.backgroundUrl
-                      ? {
-                          textShadowColor: "rgba(0,0,0,0.5)",
-                          textShadowOffset: { width: 0, height: 1 },
-                          textShadowRadius: 2,
-                        }
-                      : {}),
-                  },
-                ]}
-              >
-                {memberCount} {memberCount === 1 ? "member" : "members"}
-                {createdDate && `  •  Created ${createdDate}`}
-              </Text>
-
-              {/* Background edit button */}
-              {can(GroupPermission.EDIT_GROUP_PHOTO) && (
-                <TouchableOpacity
-                  style={[
-                    styles.bgEditButton,
-                    {
-                      backgroundColor: group.backgroundUrl
-                        ? "rgba(0,0,0,0.45)"
-                        : colors.surfaceVariant,
-                    },
-                  ]}
-                  activeOpacity={0.7}
-                  onPress={handleChangeBackground}
-                  disabled={uploadingBackground}
-                  accessibilityLabel="Change chat background"
-                >
-                  {uploadingBackground ? (
-                    <ActivityIndicator size="small" color="#FFF" />
-                  ) : (
-                    <>
-                      <MaterialCommunityIcons
-                        name="image-edit-outline"
-                        size={16}
-                        color={group.backgroundUrl ? "#FFF" : colors.primary}
-                      />
-                      <Text
-                        style={[
-                          styles.bgEditText,
-                          {
-                            color: group.backgroundUrl
-                              ? "#FFF"
-                              : colors.primary,
-                          },
-                        ]}
-                      >
-                        {group.backgroundUrl
-                          ? "Change Background"
-                          : "Add Background"}
-                      </Text>
-                    </>
-                  )}
-                </TouchableOpacity>
-              )}
-            </View>
-          </View>
         </View>
 
+        {/* ── ScrollView — top visual layer ── */}
         <Animated.ScrollView
           style={styles.scrollContent}
           contentContainerStyle={[
@@ -1242,8 +1091,194 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
             { useNativeDriver: true },
           )}
         >
-          {/* Transparent spacer matching the fixed hero height */}
-          <View style={{ height: heroSpacerHeight }} />
+          {/* ── Hero spacer with counter-translated hero content ──
+           *  The spacer reserves space for the hero. The hero inside is
+           *  counter-translated by scrollY so it stays visually fixed.
+           *  pointerEvents="box-none" lets the spacer pass taps through
+           *  to the hero buttons while still allowing scroll gestures.
+           *  The content sheet (next sibling) is painted AFTER this, so
+           *  it naturally covers the hero as it scrolls upward.
+           */}
+          <View
+            style={{ height: heroSpacerHeight, overflow: "visible" }}
+            pointerEvents="box-none"
+          >
+            <Animated.View
+              style={[
+                styles.heroFixedContent,
+                { transform: [{ translateY: heroFixedTranslateY }] },
+              ]}
+              pointerEvents="box-none"
+            >
+              <View
+                style={{ paddingTop: TOTAL_HEADER_HEIGHT }}
+                pointerEvents="box-none"
+                onLayout={handleHeroLayout}
+              >
+                <View
+                  style={[
+                    styles.heroCard,
+                    group.backgroundUrl ? styles.heroCardOverBg : undefined,
+                  ]}
+                  pointerEvents="box-none"
+                >
+                  {/* Group Avatar */}
+                  <TouchableOpacity
+                    onPress={handleChangePhoto}
+                    disabled={
+                      uploadingPhoto || !can(GroupPermission.EDIT_GROUP_PHOTO)
+                    }
+                    activeOpacity={0.7}
+                    style={styles.heroAvatarContainer}
+                  >
+                    {group.avatarUrl ? (
+                      <AppImage
+                        source={{ uri: group.avatarUrl }}
+                        style={styles.heroAvatarImage}
+                        debugLabel="GroupInfoHeroAvatar"
+                      />
+                    ) : (
+                      <View
+                        style={[
+                          styles.heroAvatarFallback,
+                          { backgroundColor: colors.surfaceVariant },
+                        ]}
+                      >
+                        <MaterialCommunityIcons
+                          name="account-group"
+                          size={56}
+                          color={colors.primary}
+                        />
+                      </View>
+                    )}
+                    {uploadingPhoto && (
+                      <View style={styles.heroAvatarOverlay}>
+                        <ActivityIndicator size="small" color="#FFF" />
+                      </View>
+                    )}
+                    {can(GroupPermission.EDIT_GROUP_PHOTO) &&
+                      !uploadingPhoto && (
+                        <View
+                          style={[
+                            styles.editPhotoBadge,
+                            { backgroundColor: colors.primary },
+                          ]}
+                        >
+                          <MaterialCommunityIcons
+                            name="camera"
+                            size={18}
+                            color="#FFF"
+                          />
+                        </View>
+                      )}
+                  </TouchableOpacity>
+
+                  {/* Group Name + Edit */}
+                  <View style={styles.heroNameRow}>
+                    <Text
+                      style={[
+                        styles.heroName,
+                        {
+                          color: group.backgroundUrl ? "#FFF" : colors.text,
+                          ...(group.backgroundUrl
+                            ? {
+                                textShadowColor: "rgba(0,0,0,0.6)",
+                                textShadowOffset: { width: 0, height: 1 },
+                                textShadowRadius: 3,
+                              }
+                            : {}),
+                        },
+                      ]}
+                    >
+                      {group.name}
+                    </Text>
+                    {can(GroupPermission.EDIT_GROUP_NAME) && (
+                      <IconButton
+                        icon="pencil"
+                        size={18}
+                        iconColor={
+                          group.backgroundUrl ? "#FFF" : colors.textSecondary
+                        }
+                        onPress={() => {
+                          setNewGroupName(group.name);
+                          setEditNameVisible(true);
+                        }}
+                        style={styles.editNameButton}
+                      />
+                    )}
+                  </View>
+
+                  {/* Meta info */}
+                  <Text
+                    style={[
+                      styles.heroMeta,
+                      {
+                        color: group.backgroundUrl
+                          ? "rgba(255,255,255,0.85)"
+                          : colors.textSecondary,
+                        ...(group.backgroundUrl
+                          ? {
+                              textShadowColor: "rgba(0,0,0,0.5)",
+                              textShadowOffset: { width: 0, height: 1 },
+                              textShadowRadius: 2,
+                            }
+                          : {}),
+                      },
+                    ]}
+                  >
+                    {memberCount} {memberCount === 1 ? "member" : "members"}
+                    {createdDate && `  •  Created ${createdDate}`}
+                  </Text>
+
+                  {/* Background edit button */}
+                  {can(GroupPermission.EDIT_GROUP_PHOTO) && (
+                    <TouchableOpacity
+                      style={[
+                        styles.bgEditButton,
+                        {
+                          backgroundColor: group.backgroundUrl
+                            ? "rgba(0,0,0,0.45)"
+                            : colors.surfaceVariant,
+                        },
+                      ]}
+                      activeOpacity={0.7}
+                      onPress={handleChangeBackground}
+                      disabled={uploadingBackground}
+                      accessibilityLabel="Change chat background"
+                    >
+                      {uploadingBackground ? (
+                        <ActivityIndicator size="small" color="#FFF" />
+                      ) : (
+                        <>
+                          <MaterialCommunityIcons
+                            name="image-edit-outline"
+                            size={16}
+                            color={
+                              group.backgroundUrl ? "#FFF" : colors.primary
+                            }
+                          />
+                          <Text
+                            style={[
+                              styles.bgEditText,
+                              {
+                                color: group.backgroundUrl
+                                  ? "#FFF"
+                                  : colors.primary,
+                              },
+                            ]}
+                          >
+                            {group.backgroundUrl
+                              ? "Change Background"
+                              : "Add Background"}
+                          </Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+            </Animated.View>
+          </View>
 
           {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
            *  CONTENT SHEET — scrollable foreground that covers the hero
@@ -2736,6 +2771,14 @@ const styles = StyleSheet.create({
     right: 0,
     zIndex: 0,
     overflow: "hidden",
+  },
+
+  // ── Fixed Hero Content (counter-translated inside ScrollView spacer) ──
+  heroFixedContent: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
   },
 
   // ── Content Sheet ───────────────────────────────────────────────────

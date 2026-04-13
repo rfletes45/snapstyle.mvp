@@ -13,12 +13,21 @@
 
 import { useComposerSheet } from "@/contexts/ComposerSheetContext";
 import * as Haptics from "expo-haptics";
-import React, { memo, useCallback, useEffect, useRef, useState } from "react";
+import React, {
+  memo,
+  Suspense,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { StyleSheet } from "react-native";
 import { IconButton, useTheme } from "react-native-paper";
 
 import type { DraggableBottomSheetHandle } from "./DraggableBottomSheet";
-import { FullEmojiPicker } from "./FullEmojiPicker";
+import { PickerLoadingFallback } from "./PickerLoadingFallback";
+
+const LazyFullEmojiPicker = React.lazy(() => import("./FullEmojiPicker"));
 
 // =============================================================================
 // Types
@@ -88,14 +97,18 @@ function EmojiButtonBase({ onEmojiSelected, size = 24 }: EmojiButtonProps) {
         accessibilityLabel="Open emoji picker"
         accessibilityRole="button"
       />
-      <FullEmojiPicker
-        ref={sheetRef}
-        open={pickerOpen}
-        onClose={handleClose}
-        onEmojiSelected={handleEmojiSelected}
-        keyboardHeight={lastKeyboardHeight}
-        sharedTranslateY={sheetTranslateY}
-      />
+      {pickerOpen && (
+        <Suspense fallback={<PickerLoadingFallback />}>
+          <LazyFullEmojiPicker
+            ref={sheetRef}
+            open={pickerOpen}
+            onClose={handleClose}
+            onEmojiSelected={handleEmojiSelected}
+            keyboardHeight={lastKeyboardHeight}
+            sharedTranslateY={sheetTranslateY}
+          />
+        </Suspense>
+      )}
     </>
   );
 }

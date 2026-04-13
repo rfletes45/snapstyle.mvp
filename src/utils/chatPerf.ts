@@ -12,12 +12,23 @@
  * @module utils/chatPerf
  */
 
+import { InteractionManager } from "react-native";
 import { createLogger } from "./log";
 
 const log = createLogger("⏱ chatPerf");
 
 const timers = new Map<string, number>();
 const AUTO_EXPIRE_MS = 10_000;
+
+/** Accumulated entry report — logged once when the entry sequence completes */
+interface EntryReport {
+  screen: string;
+  conversationId: string;
+  cold: boolean;
+  checkpoints: { label: string; elapsed: number }[];
+}
+
+const pendingReports = new Map<string, EntryReport>();
 
 export const chatPerf = {
   /** Start / restart a named timer */
@@ -69,5 +80,57 @@ export const chatPerf = {
     log.info(
       `[${screenName}] FOCUSED conversation=${conversationId} resumed=${wasAlreadyMounted}`,
     );
+  },
+
+  /**
+   * Begin an entry trace — marks the start of a chat open sequence.
+   * Call this at mount or focus. Subsequent `traceCheckpoint` calls
+   * accumulate into a single structured report logged when the entry
+   * sequence completes (after interactions finish).
+   */
+  beginEntryTrace(screen: string, conversationId: string, cold: boolean): void {
+    const key = `${screen}:${conversationId}`;
+    timers.set(key, performance.now());
+    setTimeout(() => timers.delete(key), AUTO_EXPIRE_MS);
+    pendingReports.set(key, {
+      screen,
+      conversationId,
+      cold,
+      checkpoints: [],
+    });
+
+    // Auto-flush after interactions complete
+    InteractionManager.runAfterInteractions(() => {
+      this.traceCheckpoint(screen, conversationId, "interactive");
+      this.flushEntryTrace(screen, conversationId);
+    });
+  },
+
+  /** Record a checkpoint in the current entry trace */
+  traceCheckpoint(screen: string, conversationId: string, label: string): void {
+    const key = `${screen}:${conversationId}`;
+    const start = timers.get(key);
+    if (start === undefined) return;
+    const elapsed = Math.round(performance.now() - start);
+    const report = pendingReports.get(key);
+    if (report) {
+      report.checkpoints.push({ label, elapsed });
+    }
+    log.info(`[${screen}] → ${label}: ${elapsed}ms`);
+  },
+
+  /** Flush and log the accumulated entry report */
+  flushEntryTrace(screen: string, conversationId: string): void {
+    const key = `${screen}:${conversationId}`;
+    const report = pendingReports.get(key);
+    if (!report || report.checkpoints.length === 0) return;
+
+    const summary = report.checkpoints
+      .map((c) => `${c.label}=${c.elapsed}ms`)
+      .join(" | ");
+    log.info(`[${screen}] ENTRY ${report.cold ? "COLD" : "WARM"} — ${summary}`);
+
+    pendingReports.delete(key);
+    timers.delete(key);
   },
 };
