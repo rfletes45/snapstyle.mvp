@@ -293,7 +293,7 @@ export default function GroupContentBrowserScreen({
           }}
           onLongPress={() => {
             navigateToGroupMessage(item.messageId);
-          }}}
+          }}
         >
           <View
             style={[
