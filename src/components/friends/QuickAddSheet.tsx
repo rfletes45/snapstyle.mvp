@@ -9,10 +9,12 @@ import type { MatchedUser } from "@/services/contacts";
 import { lookupUserByEmail, lookupUserByPhone } from "@/services/contacts";
 import { createLogger } from "@/utils/log";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Keyboard,
   KeyboardAvoidingView,
+  KeyboardEvent,
   Modal,
   Platform,
   StyleSheet,
@@ -54,7 +56,29 @@ export default function QuickAddSheet({
   const [searching, setSearching] = useState(false);
   const [result, setResult] = useState<MatchedUser | null>(null);
   const [notFound, setNotFound] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Track keyboard height for the absolutely-positioned backdrop behind
+  // the keyboard. Uses the same pattern as the chat system's
+  // KeyboardBackdropLayer — an absolute View at the bottom sized to the
+  // keyboard, outside the KAV layout flow so it doesn't break avoidance.
+  useEffect(() => {
+    const showEvent =
+      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvent =
+      Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+
+    const showSub = Keyboard.addListener(showEvent, (e: KeyboardEvent) =>
+      setKeyboardHeight(e.endCoordinates.height),
+    );
+    const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardHeight(0));
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   const resetState = useCallback(() => {
     setInputValue("");
@@ -117,12 +141,11 @@ export default function QuickAddSheet({
         ? "Enter email address"
         : "Enter username";
 
-  const keyboardType =
-    mode === "phone"
-      ? ("phone-pad" as const)
-      : mode === "email"
-        ? ("email-address" as const)
-        : ("default" as const);
+  // Always use the default keyboard so the layout and return key behavior
+  // are consistent across all tabs. phone-pad lacks a return key on iOS
+  // and was causing an InputAccessoryView toolbar to appear.
+  const keyboardType = "default" as const;
+  const returnKeyType = "search" as const;
 
   return (
     <Modal
@@ -131,190 +154,213 @@ export default function QuickAddSheet({
       animationType="fade"
       onRequestClose={handleClose}
     >
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        style={styles.overlay}
-      >
-        <View style={[styles.sheet, { backgroundColor: colors.surface }]}>
-          {/* Drag handle */}
-          <View style={styles.dragHandle}>
-            <View
-              style={[
-                styles.dragBar,
-                { backgroundColor: colors.outlineVariant },
+      <View style={styles.modalRoot}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          style={styles.overlay}
+        >
+          <View style={[styles.sheet, { backgroundColor: colors.surface }]}>
+            {/* Drag handle */}
+            <View style={styles.dragHandle}>
+              <View
+                style={[
+                  styles.dragBar,
+                  { backgroundColor: colors.outlineVariant },
+                ]}
+              />
+            </View>
+
+            {/* Header */}
+            <View style={styles.header}>
+              <Text
+                variant="headlineSmall"
+                style={{ fontWeight: "600", color: colors.onSurface }}
+              >
+                Quick Add
+              </Text>
+              <IconButton icon="close" size={22} onPress={handleClose} />
+            </View>
+
+            {/* Mode selector */}
+            <SegmentedButtons
+              value={mode}
+              onValueChange={handleModeChange}
+              buttons={[
+                { value: "phone", label: "Phone", icon: "phone-outline" },
+                { value: "email", label: "Email", icon: "email-outline" },
+                { value: "username", label: "Username", icon: "at" },
               ]}
+              style={styles.segmented}
             />
-          </View>
 
-          {/* Header */}
-          <View style={styles.header}>
-            <Text
-              variant="headlineSmall"
-              style={{ fontWeight: "600", color: colors.onSurface }}
-            >
-              Quick Add
-            </Text>
-            <IconButton icon="close" size={22} onPress={handleClose} />
-          </View>
+            {/* Input */}
+            <View style={styles.inputRow}>
+              <ThemedTextInput
+                value={inputValue}
+                onChangeText={setInputValue}
+                placeholder={placeholder}
+                keyboardType={keyboardType}
+                autoCapitalize="none"
+                autoCorrect={false}
+                returnKeyType={returnKeyType}
+                onSubmitEditing={handleSearch}
+                style={styles.input}
+              />
+              <Button
+                mode="contained"
+                compact
+                onPress={handleSearch}
+                disabled={!inputValue.trim() || searching}
+                loading={searching}
+                style={styles.searchBtn}
+              >
+                Search
+              </Button>
+            </View>
 
-          {/* Mode selector */}
-          <SegmentedButtons
-            value={mode}
-            onValueChange={handleModeChange}
-            buttons={[
-              { value: "phone", label: "Phone", icon: "phone-outline" },
-              { value: "email", label: "Email", icon: "email-outline" },
-              { value: "username", label: "Username", icon: "at" },
-            ]}
-            style={styles.segmented}
-          />
-
-          {/* Input */}
-          <View style={styles.inputRow}>
-            <ThemedTextInput
-              value={inputValue}
-              onChangeText={setInputValue}
-              placeholder={placeholder}
-              keyboardType={keyboardType}
-              autoCapitalize="none"
-              autoCorrect={false}
-              returnKeyType="search"
-              onSubmitEditing={handleSearch}
-              style={styles.input}
-            />
-            <Button
-              mode="contained"
-              compact
-              onPress={handleSearch}
-              disabled={!inputValue.trim() || searching}
-              loading={searching}
-              style={styles.searchBtn}
-            >
-              Search
-            </Button>
-          </View>
-
-          {/* Results area */}
-          <View style={styles.resultsArea}>
-            {searching && (
-              <View style={styles.centered}>
-                <ActivityIndicator size="small" color={colors.primary} />
-                <Text
-                  variant="bodySmall"
-                  style={{ color: colors.onSurfaceVariant, marginLeft: 8 }}
-                >
-                  Searching…
-                </Text>
-              </View>
-            )}
-
-            {result && !searching && (
-              <View style={styles.resultCard}>
-                <ProfilePictureWithDecoration
-                  pictureUrl={result.profilePictureUrl}
-                  name={result.displayName || result.username}
-                  decorationId={result.decorationId}
-                  size={48}
-                />
-                <View style={styles.resultInfo}>
-                  <Text
-                    variant="bodyMedium"
-                    style={{ color: colors.onSurface, fontWeight: "600" }}
-                    numberOfLines={1}
-                  >
-                    {result.displayName || result.username}
-                  </Text>
+            {/* Results area */}
+            <View style={styles.resultsArea}>
+              {searching && (
+                <View style={styles.centered}>
+                  <ActivityIndicator size="small" color={colors.primary} />
                   <Text
                     variant="bodySmall"
-                    style={{ color: colors.onSurfaceVariant }}
-                    numberOfLines={1}
+                    style={{ color: colors.onSurfaceVariant, marginLeft: 8 }}
                   >
-                    @{result.username}
+                    Searching…
                   </Text>
                 </View>
-                <Button
-                  mode="contained"
-                  compact
-                  onPress={() => onAddUser(result.uid, result.username)}
-                  labelStyle={{ fontSize: 12 }}
-                >
-                  Add
-                </Button>
-              </View>
-            )}
+              )}
 
-            {notFound && !searching && (
-              <View style={styles.centered}>
-                <MaterialCommunityIcons
-                  name="account-search-outline"
-                  size={36}
-                  color={colors.onSurfaceVariant}
-                />
-                <Text
-                  variant="bodyMedium"
-                  style={{
-                    color: colors.onSurfaceVariant,
-                    textAlign: "center",
-                    marginTop: 8,
-                  }}
-                >
-                  No user found
-                </Text>
-                {mode !== "username" && (
+              {result && !searching && (
+                <View style={styles.resultCard}>
+                  <ProfilePictureWithDecoration
+                    pictureUrl={result.profilePictureUrl}
+                    name={result.displayName || result.username}
+                    decorationId={result.decorationId}
+                    size={48}
+                  />
+                  <View style={styles.resultInfo}>
+                    <Text
+                      variant="bodyMedium"
+                      style={{ color: colors.onSurface, fontWeight: "600" }}
+                      numberOfLines={1}
+                    >
+                      {result.displayName || result.username}
+                    </Text>
+                    <Text
+                      variant="bodySmall"
+                      style={{ color: colors.onSurfaceVariant }}
+                      numberOfLines={1}
+                    >
+                      @{result.username}
+                    </Text>
+                  </View>
                   <Button
-                    mode="outlined"
+                    mode="contained"
                     compact
-                    onPress={() =>
-                      onInviteContact(
-                        mode === "phone" ? inputValue : inputValue,
-                      )
-                    }
-                    style={{ marginTop: 12 }}
-                    icon="share-variant-outline"
+                    onPress={() => onAddUser(result.uid, result.username)}
+                    labelStyle={{ fontSize: 12 }}
                   >
-                    Invite to SnapStyle
+                    Add
                   </Button>
-                )}
-              </View>
-            )}
+                </View>
+              )}
 
-            {!searching && !result && !notFound && (
-              <View style={styles.centered}>
-                <MaterialCommunityIcons
-                  name={
-                    mode === "phone"
-                      ? "phone-outline"
+              {notFound && !searching && (
+                <View style={styles.centered}>
+                  <MaterialCommunityIcons
+                    name="account-search-outline"
+                    size={36}
+                    color={colors.onSurfaceVariant}
+                  />
+                  <Text
+                    variant="bodyMedium"
+                    style={{
+                      color: colors.onSurfaceVariant,
+                      textAlign: "center",
+                      marginTop: 8,
+                    }}
+                  >
+                    No user found
+                  </Text>
+                  {mode !== "username" && (
+                    <Button
+                      mode="outlined"
+                      compact
+                      onPress={() =>
+                        onInviteContact(
+                          mode === "phone" ? inputValue : inputValue,
+                        )
+                      }
+                      style={{ marginTop: 12 }}
+                      icon="share-variant-outline"
+                    >
+                      Invite to SnapStyle
+                    </Button>
+                  )}
+                </View>
+              )}
+
+              {!searching && !result && !notFound && (
+                <View style={styles.centered}>
+                  <MaterialCommunityIcons
+                    name={
+                      mode === "phone"
+                        ? "phone-outline"
+                        : mode === "email"
+                          ? "email-outline"
+                          : "at"
+                    }
+                    size={36}
+                    color={colors.onSurfaceVariant}
+                  />
+                  <Text
+                    variant="bodySmall"
+                    style={{
+                      color: colors.onSurfaceVariant,
+                      textAlign: "center",
+                      marginTop: 8,
+                    }}
+                  >
+                    {mode === "phone"
+                      ? "Enter a phone number to find someone"
                       : mode === "email"
-                        ? "email-outline"
-                        : "at"
-                  }
-                  size={36}
-                  color={colors.onSurfaceVariant}
-                />
-                <Text
-                  variant="bodySmall"
-                  style={{
-                    color: colors.onSurfaceVariant,
-                    textAlign: "center",
-                    marginTop: 8,
-                  }}
-                >
-                  {mode === "phone"
-                    ? "Enter a phone number to find someone"
-                    : mode === "email"
-                      ? "Enter an email to find someone"
-                      : "Enter a username to search"}
-                </Text>
-              </View>
-            )}
+                        ? "Enter an email to find someone"
+                        : "Enter a username to search"}
+                  </Text>
+                </View>
+              )}
+            </View>
           </View>
-        </View>
-      </KeyboardAvoidingView>
+        </KeyboardAvoidingView>
+
+        {/* Keyboard backdrop — absolutely positioned at the bottom of
+            the modal, outside the KAV layout flow. Fills the keyboard
+            region with the modal surface color so the translucent overlay
+            doesn't show through. Same pattern as ChatKeyboardScrollView's
+            KeyboardBackdropLayer. */}
+        {keyboardHeight > 0 && (
+          <View
+            pointerEvents="none"
+            style={[
+              styles.keyboardBackdrop,
+              {
+                height: keyboardHeight,
+                backgroundColor: colors.surface,
+              },
+            ]}
+          />
+        )}
+      </View>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
+  modalRoot: {
+    flex: 1,
+  },
   overlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",
@@ -326,6 +372,12 @@ const styles = StyleSheet.create({
     maxHeight: "75%",
     minHeight: 340,
     paddingBottom: 32,
+  },
+  keyboardBackdrop: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
   },
   dragHandle: {
     alignItems: "center",

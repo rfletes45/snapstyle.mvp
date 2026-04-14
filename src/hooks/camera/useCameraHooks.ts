@@ -409,42 +409,6 @@ export function useSnapUpload() {
 
 /**
  * ============================================================================
- * FACE DETECTION HOOK
- * ============================================================================
- */
-
-/**
- * Manage face detection
- */
-export function useFaceDetection() {
-  const [faces, setFaces] = useState<any[]>([]);
-  const [detectionError, setDetectionError] = useState<string | null>(null);
-  const detectionInterval = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const startFaceDetection = useCallback(
-    (_callback: (detectedFaces: any[]) => void) => {
-      // Will use expo-face-detector via nativeFaceDetection service
-      logger.info("[FaceDetection] Starting face detection");
-    },
-    [],
-  );
-
-  const stopFaceDetection = useCallback(() => {
-    if (detectionInterval.current) {
-      clearInterval(detectionInterval.current);
-    }
-  }, []);
-
-  return {
-    faces,
-    detectionError,
-    startFaceDetection,
-    stopFaceDetection,
-  };
-}
-
-/**
- * ============================================================================
  * DRAFT MANAGEMENT HOOK
  * ============================================================================
  */

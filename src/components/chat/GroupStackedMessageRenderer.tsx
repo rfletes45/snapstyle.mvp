@@ -239,7 +239,12 @@ export const GroupStackedMessageRenderer: React.FC<GroupStackedMessageRendererPr
 
       // ── Within-group vertical tightening ────────────────────────────
       const cardPaddingTop = vm.isGroupStart ? CARD_PAD_V : CARD_PAD_V_INNER;
-      const cardPaddingBottom = vm.isGroupEnd ? CARD_PAD_V : CARD_PAD_V_INNER;
+      const showReactionPills = reactions.length > 0;
+      const cardPaddingBottom = vm.isGroupEnd
+        ? CARD_PAD_V
+        : showReactionPills
+          ? CARD_PAD_V_INNER + 2
+          : CARD_PAD_V_INNER;
 
       // ── Message content ───────────────────────────────────────────────
       const renderContent = () => {
@@ -440,8 +445,17 @@ export const GroupStackedMessageRenderer: React.FC<GroupStackedMessageRendererPr
                       {/* Message content — no bubble wrapper */}
                       {renderContent()}
 
-                      {/* Reaction pills — always left-aligned in feed mode */}
-                      {reactions.length > 0 && (
+                      {/* Thread indicator — inline inside card when mid-group */}
+                      {vm.threadPlacement === "inline" && (
+                        <ThreadIndicator
+                          replyCount={item.replyCount!}
+                          isOutgoing={isOwnMessage}
+                          onPress={handleThreadPress}
+                        />
+                      )}
+
+                      {/* Reaction pills — inside the card, aligned with content */}
+                      {showReactionPills && (
                         <View style={gs.reactionRow}>
                           <ReactionPills
                             reactions={reactions}
@@ -453,15 +467,6 @@ export const GroupStackedMessageRenderer: React.FC<GroupStackedMessageRendererPr
                             onOptimisticToggle={onOptimisticReaction}
                           />
                         </View>
-                      )}
-
-                      {/* Thread indicator — inline inside card when mid-group */}
-                      {vm.threadPlacement === "inline" && (
-                        <ThreadIndicator
-                          replyCount={item.replyCount!}
-                          isOutgoing={isOwnMessage}
-                          onPress={handleThreadPress}
-                        />
                       )}
                     </View>
                   </View>
@@ -581,9 +586,10 @@ const gs = StyleSheet.create({
     maxWidth: 320,
   },
 
-  // Reactions (always left-aligned)
+  // Reactions (inside card, aligned with message content)
   reactionRow: {
-    marginTop: F.reactionRowGap,
+    marginTop: 0,
+    marginLeft: -4,
   },
 
   // Metadata

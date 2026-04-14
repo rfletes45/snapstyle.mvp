@@ -171,6 +171,7 @@ export default function SignupPasswordScreen({ navigation }: any) {
     <KeyboardAvoidingView
       style={[styles.container, { backgroundColor: theme.colors.background }]}
       behavior={Platform.OS === "ios" ? "padding" : "height"}
+      keyboardVerticalOffset={Platform.OS === "ios" ? -40 : 0}
     >
       {/* Top bar */}
       <View style={[styles.topBar, { paddingTop: insets.top + 8 }]}>
@@ -220,6 +221,8 @@ export default function SignupPasswordScreen({ navigation }: any) {
             secureTextEntry={!showPassword}
             disabled={loading}
             autoFocus
+            textContentType="none"
+            autoComplete="off"
             left={<TextInput.Icon icon="lock-outline" />}
             right={
               <TextInput.Icon
@@ -304,6 +307,8 @@ export default function SignupPasswordScreen({ navigation }: any) {
             mode="outlined"
             secureTextEntry={!showConfirm}
             disabled={loading}
+            textContentType="none"
+            autoComplete="off"
             left={<TextInput.Icon icon="lock-check-outline" />}
             right={
               <TextInput.Icon

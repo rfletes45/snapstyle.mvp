@@ -26,6 +26,8 @@ import {
 } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { CommonActions } from "@react-navigation/native";
+
 import BlockUserModal from "@/components/BlockUserModal";
 import ReportUserModal from "@/components/ReportUserModal";
 import { MuteOptionsModal } from "@/components/profile";
@@ -485,7 +487,27 @@ function UserProfileScreenContent({
   const handleMessage = useCallback(() => {
     if (!userId) return;
     haptics.buttonPress();
-    navigation.navigate("ChatDetail", { friendUid: userId });
+    // Reset the navigation state so that ChatDetail sits on top of MainTabs
+    // with the Messages tab focused. This way pressing back from the DM
+    // returns to the Messages screen instead of the profile screen.
+    navigation.dispatch(
+      CommonActions.reset({
+        index: 1,
+        routes: [
+          {
+            name: "MainTabs",
+            state: {
+              routes: [{ name: "Messages" }],
+              index: 0,
+            },
+          },
+          {
+            name: "ChatDetail",
+            params: { friendUid: userId },
+          },
+        ],
+      }),
+    );
   }, [userId, navigation]);
 
   const handleCall = useCallback(async () => {

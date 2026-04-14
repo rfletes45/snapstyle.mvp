@@ -237,6 +237,7 @@ export default function OnboardingDisplayStyleScreen({ navigation }: any) {
               color={theme.colors.primary}
             />
           )}
+          {!isSelected && <View style={{ width: 20, height: 20 }} />}
         </View>
       </Pressable>
     );

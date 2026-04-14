@@ -18,6 +18,7 @@ import { BorderRadius, Spacing } from "@/constants/theme";
 import type { InboxFilter } from "@/hooks/useInboxData";
 import { useAppTheme } from "@/store/ThemeContext";
 import * as haptics from "@/utils/haptics";
+import { LinearGradient } from "expo-linear-gradient";
 import React, { memo, useCallback } from "react";
 import { ScrollView, StyleSheet, TouchableOpacity, View } from "react-native";
 import { Badge, Text } from "react-native-paper";
@@ -80,6 +81,7 @@ export const InboxTabs = memo(function InboxTabs({
       label: "Requests",
       badge: requestsCount > 0 ? requestsCount : undefined,
     },
+    { key: "archived", label: "Archived" },
   ];
 
   return (
@@ -143,6 +145,22 @@ export const InboxTabs = memo(function InboxTabs({
           );
         })}
       </ScrollView>
+
+      {/* Fading edge overlays */}
+      <LinearGradient
+        colors={[colors.background, colors.background + "00"]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
+        style={styles.fadeLeft}
+        pointerEvents="none"
+      />
+      <LinearGradient
+        colors={[colors.background + "00", colors.background]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
+        style={styles.fadeRight}
+        pointerEvents="none"
+      />
     </View>
   );
 });
@@ -176,5 +194,19 @@ const styles = StyleSheet.create({
   },
   badge: {
     marginLeft: 2,
+  },
+  fadeLeft: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 16,
+  },
+  fadeRight: {
+    position: "absolute",
+    right: 0,
+    top: 0,
+    bottom: 0,
+    width: 24,
   },
 });

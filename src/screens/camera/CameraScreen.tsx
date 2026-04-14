@@ -24,8 +24,6 @@ import CameraFilterOverlay, {
 import DrawingCanvas, {
   type DrawnPath,
 } from "@/components/camera/DrawingCanvas";
-import FaceEffectOverlay from "@/components/camera/FaceEffectOverlay";
-import FaceEffectPicker from "@/components/camera/FaceEffectPicker";
 import PollCreator from "@/components/camera/PollCreator";
 import SkiaFilteredImage, {
   SkiaFilterThumbnail,
@@ -38,7 +36,6 @@ import {
   usePhotoCapture,
   useRecording,
 } from "@/hooks/camera/useCameraHooks";
-import { useFaceDetection } from "@/hooks/camera/useFaceDetection";
 import * as CameraService from "@/services/camera/cameraService";
 import { FILTER_LIBRARY } from "@/services/camera/filterService";
 import {
@@ -48,7 +45,6 @@ import {
 } from "@/store/CameraContext";
 import type {
   CapturedMedia,
-  FaceEffect as FaceEffectType,
   FilterConfig,
   OverlayElement,
   PollElement,
@@ -115,16 +111,12 @@ import { createLogger } from "@/utils/log";
 
 let LiveFilterCamera: any = null;
 let CameraView: any = null;
-let VisionCamera: any = null;
-let useCameraDevice: any = null;
 let visionCameraAvailable = false;
 
 // Attempt VisionCamera + LiveFilterCamera (preferred path)
 if (USE_VISION_CAMERA) {
   try {
-    const vc = require("react-native-vision-camera");
-    VisionCamera = vc.Camera;
-    useCameraDevice = vc.useCameraDevice;
+    require("react-native-vision-camera");
     visionCameraAvailable = true;
   } catch {
     // VisionCamera native module unavailable (e.g. Expo Go)
@@ -148,10 +140,6 @@ if (!LiveFilterCamera) {
     // expo-camera also unavailable
   }
 }
-
-const useFallbackCameraDevice = () => null;
-/** Resolved once at module load — hook identity never changes inside components. */
-const useCameraDeviceResolved = useCameraDevice ?? useFallbackCameraDevice;
 
 const logger = createLogger("screens/camera/CameraScreen");
 // =============================================================================
@@ -182,17 +170,21 @@ const NONE_FILTER: FilterConfig = {
 
 const ALL_FILTERS: FilterConfig[] = [NONE_FILTER, ...FILTER_LIBRARY];
 
-// Pre-compute overlay colors for the filter carousel at module load time.
-// filterToOverlayColor() does expensive color matrix math (7 matrix
-// multiplications per filter).  Computing all 26 during render was blocking
-// the main thread for 300-500 ms right when VisionCamera's GPU pipeline
-// needed to deliver its first frames, causing the camera to freeze.
+// Lazily compute overlay colors for the filter carousel.  filterToOverlayColor()
+// does expensive color matrix math (7 matrix multiplications per filter).
+// Computing all filters eagerly at module load blocked the main thread for
+// 300-500 ms right when VisionCamera's GPU pipeline needed to deliver its
+// first frames — a leading cause of the ~2 s camera freeze in TestFlight.
+// Now each color is computed on first access and cached thereafter.
 const FILTER_OVERLAY_COLORS = new Map<string, string | null>();
-for (const f of ALL_FILTERS) {
-  FILTER_OVERLAY_COLORS.set(
-    f.id,
-    f.id === "none" ? null : filterToOverlayColor(f, 1.0),
-  );
+function getFilterOverlayColor(f: FilterConfig): string | null {
+  if (f.id === "none") return null;
+  let cached = FILTER_OVERLAY_COLORS.get(f.id);
+  if (cached === undefined) {
+    cached = filterToOverlayColor(f, 1.0);
+    FILTER_OVERLAY_COLORS.set(f.id, cached);
+  }
+  return cached;
 }
 
 const TIMER_OPTIONS = [0, 3, 10] as const;
@@ -426,9 +418,6 @@ const CameraScreen: React.FC = () => {
     setZoom,
     selectFilter,
     setExposure,
-    selectFaceEffect,
-    selectedFaceEffect,
-    arModeActive,
   } = useCameraState();
   const {
     overlayElements,
@@ -459,21 +448,6 @@ const CameraScreen: React.FC = () => {
   const { isCapturing, capturePhoto } = usePhotoCapture(cameraRef);
   const { recordingState, startRecording, stopRecording } =
     useRecording(cameraRef);
-
-  // -- AR Face Detection (VisionCamera + MLKit) -------------------------------
-  const visionDevice = useCameraDeviceResolved(
-    settings.facing === "front" ? "front" : "back",
-  );
-  const visionCameraRef = useRef<any>(null);
-  const {
-    detectedFaces,
-    handleFacesDetected,
-    faceDetectionOptions,
-    clearFaces,
-  } = useFaceDetection({ enabled: arModeActive });
-
-  // Show face effects toggle (camera mode only, not while recording)
-  const [showFaceEffects, setShowFaceEffects] = useState(false);
 
   // ==========================================================================
   // LOCAL STATE - Camera mode
@@ -803,29 +777,6 @@ const CameraScreen: React.FC = () => {
     triggerHaptic();
   }, [settings.flashMode, setFlashMode, triggerHaptic]);
 
-  // -- AR Face Effect handlers ------------------------------------------------
-  const handleSelectFaceEffect = useCallback(
-    (effectId: FaceEffectType | null) => {
-      selectFaceEffect(effectId ?? undefined);
-      if (effectId) {
-        setShowFaceEffects(true);
-      }
-      triggerHaptic();
-    },
-    [selectFaceEffect, triggerHaptic],
-  );
-
-  const handleToggleFaceEffects = useCallback(() => {
-    const next = !showFaceEffects;
-    setShowFaceEffects(next);
-    if (!next) {
-      // Leaving face effects mode — clear the selection and faces
-      selectFaceEffect(undefined);
-      clearFaces();
-    }
-    triggerHaptic();
-  }, [showFaceEffects, selectFaceEffect, clearFaces, triggerHaptic]);
-
   const onPinchGestureEvent = useCallback(
     (event: PinchGestureHandlerGestureEvent) => {
       const scale = event.nativeEvent.scale;
@@ -886,7 +837,7 @@ const CameraScreen: React.FC = () => {
   const renderFilterItem = useCallback(
     ({ item, index }: { item: FilterConfig; index: number }) => {
       const isSelected = selectedFilterIndex === index;
-      const tintColor = FILTER_OVERLAY_COLORS.get(item.id) ?? null;
+      const tintColor = getFilterOverlayColor(item);
       return (
         <TouchableOpacity
           style={[styles.filterChip, isSelected && styles.filterChipActive]}
@@ -1589,124 +1540,6 @@ const CameraScreen: React.FC = () => {
               {/* Overlay elements (text, stickers, polls) */}
               {overlayElements.map(renderOverlayElement)}
             </ViewShot>
-          ) : arModeActive && VisionCamera && visionDevice ? (
-            /* -- AR MODE: VisionCamera with face detection ---------------- */
-            <TouchableOpacity
-              activeOpacity={1}
-              onPress={handleDoubleTapFlip}
-              style={{ flex: 1 }}
-            >
-              <VisionCamera
-                ref={visionCameraRef}
-                style={styles.camera}
-                device={visionDevice}
-                isActive={isActive}
-                photo={true}
-                video={true}
-                faceDetectionCallback={handleFacesDetected}
-                faceDetectionOptions={faceDetectionOptions}
-              />
-
-              {/* Face Effect Overlay (Skia-rendered) */}
-              <FaceEffectOverlay
-                faces={detectedFaces}
-                selectedEffect={selectedFaceEffect ?? null}
-                previewWidth={SCREEN_W}
-                previewHeight={SCREEN_H}
-                mirrored={settings.facing === "front"}
-              />
-
-              {/* Live Filter Overlay (tint approximation) — used in AR mode
-                  because the face-detection callback occupies the native frame
-                  processor slot, preventing the Skia filter frame processor
-                  from running simultaneously.  This is a known limitation;
-                  the overlay is fine for AR mode where face effects dominate. */}
-              <CameraFilterOverlay filter={activeFilter} />
-
-              {/* Grid Overlay */}
-              {showGrid && (
-                <View style={styles.gridOverlay} pointerEvents="none">
-                  <View
-                    style={[
-                      styles.gridLine,
-                      styles.gridLineV,
-                      { left: "33.33%" },
-                    ]}
-                  />
-                  <View
-                    style={[
-                      styles.gridLine,
-                      styles.gridLineV,
-                      { left: "66.66%" },
-                    ]}
-                  />
-                  <View
-                    style={[
-                      styles.gridLine,
-                      styles.gridLineH,
-                      { top: "33.33%" },
-                    ]}
-                  />
-                  <View
-                    style={[
-                      styles.gridLine,
-                      styles.gridLineH,
-                      { top: "66.66%" },
-                    ]}
-                  />
-                </View>
-              )}
-
-              {/* Close Button */}
-              <TouchableOpacity
-                style={[
-                  styles.closeButton,
-                  { top: Math.max(50, insets.top + 8) },
-                ]}
-                onPress={() => navigation.goBack()}
-              >
-                <Ionicons name="close" size={30} color="#fff" />
-              </TouchableOpacity>
-
-              {/* Top-left toolbar */}
-              <View
-                style={[
-                  styles.topToolbar,
-                  { top: Math.max(50, insets.top + 8) },
-                ]}
-              >
-                <TouchableOpacity
-                  style={styles.toolbarButton}
-                  onPress={handleTimerToggle}
-                >
-                  <Ionicons name="timer-outline" size={24} color="#fff" />
-                  {timerSeconds > 0 && (
-                    <View style={styles.toolbarBadgeContainer}>
-                      <Text style={styles.toolbarBadgeText}>
-                        {timerSeconds}s
-                      </Text>
-                    </View>
-                  )}
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.toolbarButton}
-                  onPress={handleGridToggle}
-                >
-                  <Ionicons
-                    name={showGrid ? "grid" : "grid-outline"}
-                    size={24}
-                    color={showGrid ? "#FFD700" : "#fff"}
-                  />
-                </TouchableOpacity>
-              </View>
-
-              {/* Countdown Overlay */}
-              {countdown !== null && (
-                <View style={styles.countdownOverlay}>
-                  <Text style={styles.countdownText}>{countdown}</Text>
-                </View>
-              )}
-            </TouchableOpacity>
           ) : (
             /* -- CAMERA: live camera feed (VisionCamera or expo-camera) -- */
             <TouchableOpacity
@@ -1748,22 +1581,6 @@ const CameraScreen: React.FC = () => {
               )}
 
               {/* --- Shared camera-mode overlays (render on top of camera) --- */}
-
-              {/* Brightness Overlay */}
-              {exposureValue !== 0 && (
-                <View
-                  style={[
-                    styles.brightnessOverlay,
-                    {
-                      backgroundColor:
-                        exposureValue > 0
-                          ? `rgba(255,255,255,${Math.min(0.5, exposureValue * 0.25)})`
-                          : `rgba(0,0,0,${Math.min(0.6, Math.abs(exposureValue) * 0.3)})`,
-                    },
-                  ]}
-                  pointerEvents="none"
-                />
-              )}
 
               {/* Grid Overlay */}
               {showGrid && (
@@ -1848,16 +1665,6 @@ const CameraScreen: React.FC = () => {
                     name="sunny-outline"
                     size={24}
                     color={showExposure ? "#FFD700" : "#fff"}
-                  />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.toolbarButton}
-                  onPress={handleToggleFaceEffects}
-                >
-                  <Ionicons
-                    name="happy-outline"
-                    size={24}
-                    color={showFaceEffects ? "#FFD700" : "#fff"}
                   />
                 </TouchableOpacity>
               </View>
@@ -2146,7 +1953,7 @@ const CameraScreen: React.FC = () => {
       )}
 
       {/* --- CAMERA: Filter Carousel (only in camera mode, hidden while recording) */}
-      {!isEditorMode && !recordingState.isRecording && !showFaceEffects && (
+      {!isEditorMode && !recordingState.isRecording && (
         <View style={styles.filterCarouselContainer}>
           <FlatList
             data={ALL_FILTERS}
@@ -2161,17 +1968,6 @@ const CameraScreen: React.FC = () => {
             initialNumToRender={6}
             maxToRenderPerBatch={4}
             windowSize={5}
-          />
-        </View>
-      )}
-
-      {/* --- CAMERA: Face Effect Picker (replaces filter carousel) -------- */}
-      {!isEditorMode && !recordingState.isRecording && showFaceEffects && (
-        <View style={styles.faceEffectPickerContainer}>
-          <FaceEffectPicker
-            selectedEffect={selectedFaceEffect ?? null}
-            onSelectEffect={handleSelectFaceEffect}
-            expanded={true}
           />
         </View>
       )}
@@ -2543,9 +2339,6 @@ const styles = StyleSheet.create({
   },
   toolbarBadgeText: { color: "#fff", fontSize: 9, fontWeight: "700" },
 
-  // -- Brightness Overlay -----------------------------------------------------
-  brightnessOverlay: { ...StyleSheet.absoluteFillObject, zIndex: 1 },
-
   // -- Grid Overlay -----------------------------------------------------------
   gridOverlay: { ...StyleSheet.absoluteFillObject, zIndex: 2 },
   gridLine: { position: "absolute", backgroundColor: "rgba(255,255,255,0.3)" },
@@ -2625,13 +2418,6 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     height: 84,
-    zIndex: 15,
-  },
-  faceEffectPickerContainer: {
-    position: "absolute",
-    bottom: 118,
-    left: 0,
-    right: 0,
     zIndex: 15,
   },
   filterCarouselContent: { paddingHorizontal: 10, alignItems: "center" },

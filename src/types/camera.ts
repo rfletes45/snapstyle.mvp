@@ -131,78 +131,6 @@ export interface AppliedFilter {
 
 /**
  * ============================================================================
- * FACE DETECTION & AR EFFECTS
- * ============================================================================
- */
-
-export interface FaceDetectionResult {
-  faces: DetectedFace[];
-  timestamp: number;
-}
-
-export interface DetectedFace {
-  faceId: number;
-  bounds: {
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-  };
-  landmarks: FaceLandmarks;
-  eulerAngleX: number; // Roll
-  eulerAngleY: number; // Pitch
-  eulerAngleZ: number; // Yaw
-  smilingProbability: number; // 0 to 1
-  leftEyeOpenProbability: number;
-  rightEyeOpenProbability: number;
-  trackingId: number;
-}
-
-export interface FaceLandmarks {
-  leftEye: Point;
-  rightEye: Point;
-  leftEar: Point;
-  rightEar: Point;
-  leftCheek: Point;
-  rightCheek: Point;
-  leftMouth: Point;
-  rightMouth: Point;
-  mouthBottom: Point;
-  noseBase: Point;
-}
-
-export type FaceEffect =
-  | "flower_crown"
-  | "dog_filter"
-  | "cat_filter"
-  | "glasses"
-  | "sunglasses"
-  | "crown"
-  | "bunny_ears"
-  | "skull_mask"
-  | "heart_eyes"
-  | "devil_horns"
-  | "butterfly"
-  | "rainbow_mouth"
-  | "tears"
-  | "nose_blush"
-  | "golden_mask"
-  | "ice_crown";
-
-export interface FaceEffectConfig {
-  id: FaceEffect;
-  name: string;
-  category: "accessories" | "masks" | "expressions" | "overlays";
-  assetPath: string;
-  requiresFaceDetection: boolean;
-  landmarkOffsets?: {
-    [key in keyof FaceLandmarks]?: { x: number; y: number };
-  };
-  scale?: number;
-}
-
-/**
- * ============================================================================
  * TEXT & STICKERS (OVERLAY ELEMENTS)
  * ============================================================================
  */
@@ -530,20 +458,6 @@ export interface CameraPermissions {
   camera: PermissionStatus;
   microphone: PermissionStatus;
   photoLibrary: PermissionStatus;
-}
-
-/**
- * ============================================================================
- * FACE DETECTION TRACKING
- * ============================================================================
- */
-
-export interface FaceTrack {
-  trackingId: number;
-  frames: Array<{
-    timestamp: number;
-    face: DetectedFace;
-  }>;
 }
 
 /**

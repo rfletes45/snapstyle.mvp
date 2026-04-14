@@ -20,7 +20,13 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { RefreshControl, ScrollView, StyleSheet, View } from "react-native";
+import {
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ProfileBioEditor } from "@/components/profile/ProfileBio/index";
@@ -30,8 +36,10 @@ import {
   useBoardState,
 } from "@/components/profile/WidgetBoard";
 import { CustomizeModeToolbar } from "@/components/profile/WidgetBoard/CustomizeModeToolbar";
+import { ScreenHeader } from "@/components/shared/ScreenHeader";
 import { LoadingState } from "@/components/ui";
 import { prefetchCriticalProfileAssets } from "@/services/cosmeticsAssetCache";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 
 import { useGameStatsV4 } from "@/gamesV4/hooks/useGameStatsV4";
 import { useFullProfileData } from "@/hooks/useFullProfileData";
@@ -329,7 +337,6 @@ export default function OwnProfileScreen({
         onLevelPress: () => navigation.navigate("LevelRewards"),
         onCustomizePress: () => navigation.navigate("Customization"),
         onShopPress: () => navigation.navigate("Shop"),
-        onSettingsPress: () => navigation.navigate("Settings"),
         unclaimedRewards: pendingRewards.unclaimedLevelRewardCount,
       },
       "social-proof": {
@@ -461,13 +468,30 @@ export default function OwnProfileScreen({
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
+      {/* Profile header — matches Calls screen header pattern */}
+      <ScreenHeader
+        title="Profile"
+        showBack={false}
+        renderRight={() => (
+          <TouchableOpacity
+            onPress={() => navigation.navigate("Settings")}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <MaterialCommunityIcons
+              name="cog-outline"
+              size={22}
+              color={colors.textSecondary}
+            />
+          </TouchableOpacity>
+        )}
+      />
+
       <ScrollView
         ref={scrollViewRef}
         style={styles.scrollView}
         contentContainerStyle={[
           styles.content,
           {
-            paddingTop: insets.top,
             paddingBottom: insets.bottom + 32,
           },
         ]}

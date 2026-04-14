@@ -1744,7 +1744,9 @@ export default function ChatScreen({
               onGameSelected={GAMES_V4_ENABLED ? handleGameSelected : undefined}
               onAnimalPress={handleAnimalPress}
               animalThemeId={animalEntitlement.equippedAnimalId}
-              animalLocked={!animalEntitlement.canSend}
+              animalLocked={
+                !animalEntitlement.canSend && !animalEntitlement.loading
+              }
               animalPickerVisible={animalPickerVisible}
               onAnimalLongPress={() => setAnimalPickerVisible(true)}
               onAnimalPickerClose={() => setAnimalPickerVisible(false)}

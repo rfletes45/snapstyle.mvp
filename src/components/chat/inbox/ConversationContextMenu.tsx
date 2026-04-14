@@ -56,6 +56,8 @@ export interface ConversationContextMenuProps {
   onMarkUnread: () => void;
   /** Called when delete is pressed */
   onDelete: () => void;
+  /** Called when archive/unarchive is pressed */
+  onArchive?: () => void;
   /** Called when view profile is pressed (DM only) */
   onViewProfile?: () => void;
 }
@@ -81,6 +83,7 @@ export const ConversationContextMenu = memo(function ConversationContextMenu({
   onMute,
   onMarkUnread,
   onDelete,
+  onArchive,
   onViewProfile,
 }: ConversationContextMenuProps) {
   const { colors } = useAppTheme();
@@ -116,6 +119,17 @@ export const ConversationContextMenu = memo(function ConversationContextMenu({
       });
     }
 
+    // Add archive/unarchive action
+    if (onArchive) {
+      items.push({
+        icon: conversation.memberState.archived
+          ? "archive-arrow-up-outline"
+          : "archive-outline",
+        label: conversation.memberState.archived ? "Unarchive" : "Archive",
+        onPress: onArchive,
+      });
+    }
+
     // Add destructive delete action last
     items.push({
       icon: "delete",
@@ -125,7 +139,15 @@ export const ConversationContextMenu = memo(function ConversationContextMenu({
     });
 
     return items;
-  }, [conversation, onPin, onMute, onMarkUnread, onViewProfile, onDelete]);
+  }, [
+    conversation,
+    onPin,
+    onMute,
+    onMarkUnread,
+    onViewProfile,
+    onArchive,
+    onDelete,
+  ]);
 
   // Calculate menu position to keep it on screen
   const menuPosition = useMemo(() => {

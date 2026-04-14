@@ -617,12 +617,16 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   // uses (Image.loadAsync with normalizeRemoteImageUrl). Without this, the
   // prefetch and warmup can populate different cache entries and the render
   // misses the warm cache — the key reason backgrounds loaded slower than avatars.
+  // Use the seed only before Firestore has responded (group still from seed).
+  // Once group state comes from Firestore, trust its backgroundUrl — even if
+  // null (explicitly removed). Using ?? here would fall through null to the
+  // stale seed, keeping a removed background visible.
   const resolvedGroupBackgroundUrl = useMemo(
     () =>
       normalizeRemoteImageUrl(
-        group?.backgroundUrl ?? seededGroupIdentity?.backgroundUrl,
+        group ? group.backgroundUrl : seededGroupIdentity?.backgroundUrl,
       ) ?? null,
-    [group?.backgroundUrl, seededGroupIdentity?.backgroundUrl],
+    [group, group?.backgroundUrl, seededGroupIdentity?.backgroundUrl],
   );
   const groupBackgroundUrls = useMemo(() => {
     return resolvedGroupBackgroundUrl
@@ -2505,7 +2509,9 @@ export default function GroupChatScreen({ route, navigation }: Props) {
             onGameSelected={GAMES_V4_ENABLED ? handleGameSelected : undefined}
             onAnimalPress={handleAnimalPress}
             animalThemeId={animalEntitlement.equippedAnimalId}
-            animalLocked={!animalEntitlement.canSend}
+            animalLocked={
+              !animalEntitlement.canSend && !animalEntitlement.loading
+            }
             animalPickerVisible={animalPickerVisible}
             onAnimalLongPress={() => setAnimalPickerVisible(true)}
             onAnimalPickerClose={() => setAnimalPickerVisible(false)}

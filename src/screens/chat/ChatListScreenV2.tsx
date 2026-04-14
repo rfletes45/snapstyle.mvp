@@ -29,6 +29,8 @@ import {
   prepareDmThreadEntry,
   prepareGroupChatNavigation,
 } from "@/services/chat/threadIdentityWarmup";
+import { setArchived } from "@/services/chatMembers";
+import { setGroupArchived } from "@/services/groupMembers";
 import { markNotificationsReadByTypes } from "@/services/userNotifications";
 import { useAuth } from "@/store/AuthContext";
 import { useInAppNotifications } from "@/store/InAppNotificationsContext";
@@ -285,7 +287,9 @@ export default function ChatListScreen() {
           "chat-list-press-in",
         );
         const resolvedBackgroundUrl = normalizeRemoteImageUrl(
-          conversation.backgroundUrl ?? prepared?.backgroundUrl,
+          conversation.backgroundUrl !== undefined
+            ? conversation.backgroundUrl
+            : prepared?.backgroundUrl,
         );
         const resolvedAvatarUrl = normalizeRemoteImageUrl(
           conversation.avatarUrl ?? prepared?.avatarUrl,
@@ -305,8 +309,9 @@ export default function ChatListScreen() {
           traceGroupWallpaper(conversation.id, "chat-list-press-in", {
             hasConversationBackground: !!conversation.backgroundUrl,
             preparedBackground: !!prepared?.backgroundUrl,
-            resolvedBackgroundKey:
-              describeRemoteUrlForLog(resolvedBackgroundUrl).key,
+            resolvedBackgroundKey: describeRemoteUrlForLog(
+              resolvedBackgroundUrl,
+            ).key,
           });
         }
 
@@ -317,9 +322,13 @@ export default function ChatListScreen() {
         if (resolvedBackgroundUrl) {
           void prefetchImages([resolvedBackgroundUrl]).then((success) => {
             if (__DEV__) {
-              traceGroupWallpaper(conversation.id, "chat-list-press-in-prefetch-finish", {
-                success,
-              });
+              traceGroupWallpaper(
+                conversation.id,
+                "chat-list-press-in-prefetch-finish",
+                {
+                  success,
+                },
+              );
             }
           });
         }
@@ -397,7 +406,9 @@ export default function ChatListScreen() {
             ) ?? null,
           backgroundUrl:
             normalizeRemoteImageUrl(
-              conversation.backgroundUrl ?? prepared?.backgroundUrl,
+              conversation.backgroundUrl !== undefined
+                ? conversation.backgroundUrl
+                : prepared?.backgroundUrl,
             ) ?? null,
         };
 
@@ -705,6 +716,24 @@ export default function ChatListScreen() {
     }
   }, [contextMenu.conversation, handleDeleteRequest, handleCloseContextMenu]);
 
+  const handleContextMenuArchive = useCallback(async () => {
+    const conversation = contextMenu.conversation;
+    handleCloseContextMenu();
+    if (!conversation || !uid) return;
+
+    const isArchived = !!conversation.memberState.archived;
+    try {
+      if (conversation.type === "dm") {
+        await setArchived(conversation.id, uid, !isArchived);
+      } else {
+        await setGroupArchived(conversation.id, uid, !isArchived);
+      }
+    } catch (e) {
+      log.error("Failed to toggle archive", e);
+    }
+    refresh();
+  }, [contextMenu.conversation, handleCloseContextMenu, uid, refresh]);
+
   // =============================================================================
   // Empty State Logic
   // =============================================================================
@@ -719,6 +748,8 @@ export default function ChatListScreen() {
         return "noDMs";
       case "requests":
         return "noRequests";
+      case "archived":
+        return "noArchived";
       default:
         return "noConversations";
     }
@@ -966,6 +997,7 @@ export default function ChatListScreen() {
           onMute={handleContextMenuMute}
           onMarkUnread={handleContextMenuMarkUnread}
           onViewProfile={handleContextMenuViewProfile}
+          onArchive={handleContextMenuArchive}
           onDelete={handleContextMenuDelete}
         />
       )}

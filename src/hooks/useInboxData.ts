@@ -105,7 +105,13 @@ async function saveInboxCache(
 // =============================================================================
 
 /** Filter options for inbox */
-export type InboxFilter = "all" | "unread" | "groups" | "dms" | "requests";
+export type InboxFilter =
+  | "all"
+  | "unread"
+  | "groups"
+  | "dms"
+  | "requests"
+  | "archived";
 
 /** Sort options for inbox */
 export type InboxSort = "recent" | "unread" | "alphabetical";
@@ -933,6 +939,13 @@ export function useInboxData(uid: string): UseInboxDataResult {
     return sortInboxConversations(all.filter((c) => !c.memberState.archived));
   }, [dmConversations, groupConversations]);
 
+  // Archived conversations — separate sorted list, only computed when needed.
+  const sortedArchived = useMemo(() => {
+    if (filter !== "archived") return [];
+    const all = [...dmConversations, ...groupConversations];
+    return sortInboxConversations(all.filter((c) => c.memberState.archived));
+  }, [dmConversations, groupConversations, filter]);
+
   // STEP 2: Apply the tab filter (subset of the sorted list — order preserved).
   const conversations = useMemo(() => {
     switch (filter) {
@@ -944,10 +957,12 @@ export function useInboxData(uid: string): UseInboxDataResult {
         return sortedAll.filter((c) => c.type === "group");
       case "dms":
         return sortedAll.filter((c) => c.type === "dm");
+      case "archived":
+        return sortedArchived;
       default:
         return sortedAll;
     }
-  }, [sortedAll, filter]);
+  }, [sortedAll, sortedArchived, filter]);
 
   // Separate pinned and regular
   const pinnedConversations = useMemo(

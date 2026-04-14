@@ -27,7 +27,8 @@ export type EmptyStateType =
   | "noSearchResults"
   | "noGroups"
   | "noDMs"
-  | "noRequests";
+  | "noRequests"
+  | "noArchived";
 
 export interface EmptyStateProps {
   /** Type of empty state to display */
@@ -86,6 +87,11 @@ const EMPTY_STATE_CONTENT: Record<EmptyStateType, EmptyStateContent> = {
     icon: "account-plus-outline",
     title: "No pending requests",
     description: "Friend requests and invites will appear here.",
+  },
+  noArchived: {
+    icon: "archive-outline",
+    title: "No archived chats",
+    description: "Chats you archive will appear here.",
   },
 };
 

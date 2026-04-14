@@ -208,6 +208,19 @@ service firebase.storage {
                      validFileSize(5 * 1024 * 1024);
     }
 
+    // Path: /groups/{groupId}/background/{filename}
+    // Used for group chat background images
+    match /groups/{groupId}/background/{allPaths=**} {
+      // Read: Any authenticated user
+      allow read: if isAuth();
+
+      // Write: Any authenticated user (membership verified at Firestore level)
+      allow write: if isAuth() && 
+                     isValidImageType() &&
+                     // Max 10MB for background images
+                     validFileSize(10 * 1024 * 1024);
+    }
+
     // ============================================================
     // CHAT-STAGING: Temporary uploads before server commit (Segment 3)
     // ============================================================

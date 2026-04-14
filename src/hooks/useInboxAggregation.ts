@@ -91,7 +91,13 @@ async function saveAggCache(
 // Types
 // =============================================================================
 
-type InboxFilter = "all" | "dms" | "groups" | "unread" | "requests";
+type InboxFilter =
+  | "all"
+  | "dms"
+  | "groups"
+  | "unread"
+  | "requests"
+  | "archived";
 
 export interface UseInboxAggregationResult {
   /** Filtered & sorted conversations */
@@ -455,14 +461,16 @@ export function useInboxAggregation(uid: string): UseInboxAggregationResult {
   }, [entries, enabled]);
 
   const conversations = useMemo(() => {
-    let list = showArchived
-      ? allConversations.filter((c) => c.memberState.archived)
-      : allConversations.filter((c) => !c.memberState.archived);
+    const isArchivedFilter = filter === "archived";
+    let list =
+      isArchivedFilter || showArchived
+        ? allConversations.filter((c) => c.memberState.archived)
+        : allConversations.filter((c) => !c.memberState.archived);
 
     if (filter === "dms") list = list.filter((c) => c.type === "dm");
     else if (filter === "groups") list = list.filter((c) => c.type === "group");
     else if (filter === "unread") list = list.filter((c) => c.unreadCount > 0);
-    // "requests" is handled by ChatListScreen tabs and not part of inbox rows.
+    // "requests" and "archived" are handled by the archive/show toggle above.
 
     return sortInboxConversations(list);
   }, [allConversations, filter, showArchived]);

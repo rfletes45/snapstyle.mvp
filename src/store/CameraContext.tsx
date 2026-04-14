@@ -12,7 +12,6 @@ import type {
   CapturedMedia,
   EditMode,
   EditorAction,
-  FaceEffect,
   FlashMode,
   OverlayElement,
   RecordingState,
@@ -35,7 +34,6 @@ export interface CameraState {
   settings: CameraSettings;
   recordingState: RecordingState;
   selectedFilterId?: string;
-  selectedFaceEffect?: FaceEffect;
   isPermissionGranted: boolean;
   cameraReady: boolean;
   error?: string;
@@ -79,7 +77,7 @@ interface CombinedState {
 const initialCameraState: CameraState = {
   settings: {
     facing: "back",
-    flashMode: "auto",
+    flashMode: "off",
     zoom: 0,
     videoQuality: "1080p",
     imageFormat: "jpeg",
@@ -151,9 +149,8 @@ type CameraAction =
   | { type: "RESUME_RECORDING" }
   | { type: "SET_RECORDING_DURATION"; payload: number }
   | { type: "SET_AUDIO_ENABLED"; payload: boolean }
-  // Filters & effects
+  // Filters
   | { type: "SELECT_FILTER"; payload: string | undefined }
-  | { type: "SELECT_FACE_EFFECT"; payload: FaceEffect | undefined }
   // Permissions & status
   | { type: "SET_PERMISSION_GRANTED"; payload: boolean }
   | { type: "SET_CAMERA_READY"; payload: boolean }
@@ -339,16 +336,11 @@ function cameraReducer(
         },
       };
 
-    // ── Filters & effects ────────────────────────────────────────────────
+    // ── Filters ──────────────────────────────────────────────────────────
     case "SELECT_FILTER":
       return {
         ...state,
         camera: { ...state.camera, selectedFilterId: action.payload },
-      };
-    case "SELECT_FACE_EFFECT":
-      return {
-        ...state,
-        camera: { ...state.camera, selectedFaceEffect: action.payload },
       };
 
     // ── Permissions & status ─────────────────────────────────────────────
@@ -858,11 +850,6 @@ export function useCameraState() {
       dispatch({ type: "SELECT_FILTER", payload: id }),
     [dispatch],
   );
-  const selectFaceEffect = useCallback(
-    (e: FaceEffect | undefined) =>
-      dispatch({ type: "SELECT_FACE_EFFECT", payload: e }),
-    [dispatch],
-  );
   const setPermissionGranted = useCallback(
     (v: boolean) => dispatch({ type: "SET_PERMISSION_GRANTED", payload: v }),
     [dispatch],
@@ -897,9 +884,6 @@ export function useCameraState() {
     setRecordingDuration,
     setAudioEnabled,
     selectFilter,
-    selectFaceEffect,
-    /** Whether AR face-effect mode is active (a face effect is selected) */
-    arModeActive: camera.selectedFaceEffect != null,
     setPermissionGranted,
     setCameraReady,
     setCameraError,

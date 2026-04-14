@@ -137,6 +137,9 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
 
   // ─── Hero background measurement ──────────────────────────────────────
   const [heroContentHeight, setHeroContentHeight] = useState(0);
+  const [contentSectionOffsetY, setContentSectionOffsetY] = useState<
+    number | null
+  >(null);
 
   // ─── Core state ───────────────────────────────────────────────────────
   const [group, setGroup] = useState<Group | null>(null);
@@ -238,6 +241,11 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
     setHeroContentHeight((prev) => (prev === h ? prev : h));
   }, []);
 
+  const handleContentSectionLayout = useCallback((e: any) => {
+    const y = Math.ceil(e.nativeEvent.layout.y);
+    setContentSectionOffsetY((prev) => (prev === y ? prev : y));
+  }, []);
+
   // Computed hero height: measured content height (includes TOTAL_HEADER_HEIGHT
   // padding) + extension buffer, or a deterministic fallback so the first frame
   // is close to the final size and any settling is invisible under the fade-in.
@@ -251,6 +259,21 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
   // starts just below the hero and scrolls upward to cover it.
   const heroSpacerHeight =
     heroContentHeight > 0 ? heroContentHeight : HERO_FALLBACK_HEIGHT;
+
+  // ─── Sticky search section ──────────────────────────────────────────
+  // When the tab bar + search bar reach the floating header, they pin beneath
+  // it via a counter-translate (same pattern as heroFixedTranslateY).
+  const stickyMeasured = contentSectionOffsetY !== null && heroSpacerHeight > 0;
+  const stickyThreshold = stickyMeasured
+    ? heroSpacerHeight + contentSectionOffsetY - TOTAL_HEADER_HEIGHT
+    : 99999;
+
+  const searchStickyTranslateY = scrollY.interpolate({
+    inputRange: [stickyThreshold, stickyThreshold + 1],
+    outputRange: [0, 1],
+    extrapolateLeft: "clamp",
+    extrapolateRight: "extend",
+  });
 
   // ─── Scroll-driven hero counter-translate ─────────────────────────────
   // The hero content lives inside the ScrollView's spacer region but is
@@ -1289,6 +1312,7 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
               {
                 backgroundColor: colors.background,
                 minHeight: windowHeight,
+                overflow: "visible",
               },
             ]}
           >
@@ -1471,118 +1495,137 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
              *  UNIFIED CONTENT SECTION (Members / Media / Messages / Links)
              * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
             <View
-              style={[styles.contentSectionFullWidth, { marginHorizontal: 0 }]}
+              style={[
+                styles.contentSectionFullWidth,
+                { marginHorizontal: 0, overflow: "visible" },
+              ]}
+              onLayout={handleContentSectionLayout}
             >
-              {/* Tab bar */}
-              <View
+              {/* Tab bar + Search bar — sticky section */}
+              <Animated.View
                 style={[
-                  styles.infoTabBar,
-                  { borderBottomColor: colors.border },
+                  styles.stickySearchSection,
+                  {
+                    backgroundColor: colors.background,
+                    transform: [{ translateY: searchStickyTranslateY }],
+                  },
                 ]}
               >
-                {INFO_TABS.map((tab) => {
-                  const isActive = activeInfoTab === tab.key;
-                  const count =
-                    tab.key === "members"
-                      ? memberCount
-                      : (browser.counts[
-                          tab.key as keyof typeof browser.counts
-                        ] ?? 0);
-                  return (
-                    <TouchableOpacity
-                      key={tab.key}
-                      style={[
-                        styles.infoTab,
-                        isActive && {
-                          borderBottomColor: colors.primary,
-                          borderBottomWidth: 2,
-                        },
-                      ]}
-                      onPress={() => {
-                        setActiveInfoTab(tab.key);
-                        if (tab.key !== "members") {
-                          browser.setActiveTab(
-                            tab.key as "media" | "messages" | "links",
-                          );
-                        }
-                      }}
-                      activeOpacity={0.7}
-                    >
-                      <MaterialCommunityIcons
-                        name={tab.icon as any}
-                        size={16}
-                        color={isActive ? colors.primary : colors.textSecondary}
-                      />
-                      <Text
+                <View
+                  style={[
+                    styles.infoTabBar,
+                    { borderBottomColor: colors.border },
+                  ]}
+                >
+                  {INFO_TABS.map((tab) => {
+                    const isActive = activeInfoTab === tab.key;
+                    const count =
+                      tab.key === "members"
+                        ? memberCount
+                        : (browser.counts[
+                            tab.key as keyof typeof browser.counts
+                          ] ?? 0);
+                    return (
+                      <TouchableOpacity
+                        key={tab.key}
                         style={[
-                          styles.infoTabLabel,
-                          {
-                            color: isActive
-                              ? colors.primary
-                              : colors.textSecondary,
-                            fontWeight: isActive
-                              ? FontWeights.semibold
-                              : FontWeights.regular,
+                          styles.infoTab,
+                          isActive && {
+                            borderBottomColor: colors.primary,
+                            borderBottomWidth: 2,
                           },
                         ]}
+                        onPress={() => {
+                          setActiveInfoTab(tab.key);
+                          if (tab.key !== "members") {
+                            browser.setActiveTab(
+                              tab.key as "media" | "messages" | "links",
+                            );
+                          }
+                        }}
+                        activeOpacity={0.7}
                       >
-                        {tab.label}
-                      </Text>
-                      {count > 0 && (
+                        <MaterialCommunityIcons
+                          name={tab.icon as any}
+                          size={16}
+                          color={
+                            isActive ? colors.primary : colors.textSecondary
+                          }
+                        />
                         <Text
                           style={[
-                            styles.infoTabCount,
+                            styles.infoTabLabel,
                             {
                               color: isActive
                                 ? colors.primary
-                                : colors.textMuted,
+                                : colors.textSecondary,
+                              fontWeight: isActive
+                                ? FontWeights.semibold
+                                : FontWeights.regular,
                             },
                           ]}
                         >
-                          {count > 999 ? "999+" : count}
+                          {tab.label}
                         </Text>
-                      )}
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
+                        {count > 0 && (
+                          <Text
+                            style={[
+                              styles.infoTabCount,
+                              {
+                                color: isActive
+                                  ? colors.primary
+                                  : colors.textMuted,
+                              },
+                            ]}
+                          >
+                            {count > 999 ? "999+" : count}
+                          </Text>
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
 
-              {/* Search bar */}
-              <View style={styles.infoSearchContainer}>
-                <Searchbar
-                  placeholder={
-                    activeInfoTab === "members"
-                      ? "Search members..."
-                      : `Search ${activeInfoTab}...`
-                  }
-                  onChangeText={
-                    activeInfoTab === "members"
-                      ? setMemberSearchQuery
-                      : browser.setSearchQuery
-                  }
-                  value={
-                    activeInfoTab === "members"
-                      ? memberSearchQuery
-                      : browser.searchQuery
-                  }
+                {/* Search bar */}
+                <View style={styles.infoSearchContainer}>
+                  <Searchbar
+                    placeholder={
+                      activeInfoTab === "members"
+                        ? "Search members..."
+                        : `Search ${activeInfoTab}...`
+                    }
+                    onChangeText={
+                      activeInfoTab === "members"
+                        ? setMemberSearchQuery
+                        : browser.setSearchQuery
+                    }
+                    value={
+                      activeInfoTab === "members"
+                        ? memberSearchQuery
+                        : browser.searchQuery
+                    }
+                    style={[
+                      styles.infoSearchBar,
+                      { backgroundColor: colors.background },
+                    ]}
+                    inputStyle={[
+                      styles.infoSearchInput,
+                      { color: colors.text },
+                    ]}
+                    iconColor={colors.textSecondary}
+                    placeholderTextColor={colors.textMuted}
+                    elevation={0}
+                  />
+                </View>
+
+                {/* Divider after search bar */}
+                <View
                   style={[
-                    styles.infoSearchBar,
-                    { backgroundColor: colors.background },
+                    styles.infoSearchDivider,
+                    { backgroundColor: colors.border },
                   ]}
-                  inputStyle={[styles.infoSearchInput, { color: colors.text }]}
-                  iconColor={colors.textSecondary}
-                  placeholderTextColor={colors.textMuted}
-                  elevation={0}
                 />
-              </View>
-
-              {/* Divider after search bar */}
-              <View
-                style={[
-                  styles.infoSearchDivider,
-                  { backgroundColor: colors.border },
-                ]}
-              />
+              </Animated.View>
 
               {/* ─── Members tab content ───────────────────────────────── */}
               {activeInfoTab === "members" && (
@@ -3050,6 +3093,15 @@ const styles = StyleSheet.create({
   },
   infoSearchDivider: {
     height: StyleSheet.hairlineWidth,
+  },
+  // ── Sticky Search Section ──────────────────────────────────────────
+  stickySearchSection: {
+    zIndex: 3,
+    elevation: 3,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
   },
 
   // ── Inline Media Grid ──────────────────────────────────────────────

@@ -28,6 +28,7 @@ import { useAppTheme } from "@/store/ThemeContext";
 import { useUser } from "@/store/UserContext";
 import type { InboxSettings } from "@/types/messaging";
 import { isValidDisplayName } from "@/utils/validators";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import Constants from "expo-constants";
 import * as Haptics from "expo-haptics";
 import React, { useCallback, useEffect, useRef, useState } from "react";
@@ -35,6 +36,9 @@ import {
   ActivityIndicator,
   Alert,
   Linking,
+  Modal,
+  Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   View,
@@ -849,58 +853,113 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
           </Dialog>
         </Portal>
 
-        {/* Delete Account Confirmation Dialog */}
-        <Portal>
-          <Dialog
-            visible={showDeleteDialog}
-            onDismiss={
-              deleteStep === "deleting" ? undefined : resetDeleteDialog
-            }
-            dismissable={deleteStep !== "deleting"}
+        {/* Delete Account Confirmation Modal — Overhauled */}
+        <Modal
+          visible={showDeleteDialog}
+          transparent
+          animationType="fade"
+          onRequestClose={
+            deleteStep === "deleting" ? undefined : resetDeleteDialog
+          }
+        >
+          <Pressable
+            style={dStyles.overlay}
+            onPress={deleteStep === "deleting" ? undefined : resetDeleteDialog}
           >
-            {/* ── Step: Confirm ── */}
-            {deleteStep === "confirm" && (
-              <>
-                <Dialog.Title style={{ color: theme.colors.error }}>
-                  Delete Account
-                </Dialog.Title>
-                <Dialog.Content>
-                  <Text
+            <Pressable
+              style={[dStyles.card, { backgroundColor: theme.colors.surface }]}
+              onPress={() => {}}
+            >
+              {/* ── Step: Confirm ── */}
+              {deleteStep === "confirm" && (
+                <>
+                  {/* Danger icon */}
+                  <View
                     style={[
-                      styles.deleteWarning,
-                      { color: theme.colors.error },
+                      dStyles.iconCircle,
+                      { backgroundColor: theme.colors.errorContainer },
                     ]}
                   >
-                    ⚠️ This is permanent and cannot be undone.
-                  </Text>
-                  <Text style={styles.deleteDetail}>
-                    Deleting your account will permanently remove:
-                  </Text>
-                  <Text style={styles.deleteBullet}>
-                    • Your profile, avatar, and all settings
-                  </Text>
-                  <Text style={styles.deleteBullet}>
-                    • All messages, photos, and stories you sent
-                  </Text>
-                  <Text style={styles.deleteBullet}>
-                    • Friends list, game history, and achievements
-                  </Text>
-                  <Text style={styles.deleteBullet}>
-                    • Your wallet balance and all purchased items
-                  </Text>
-                  <Text style={styles.deleteBullet}>
-                    • Your badges, streaks, and leaderboard entries
+                    <MaterialCommunityIcons
+                      name="alert-octagon"
+                      size={36}
+                      color={theme.colors.error}
+                    />
+                  </View>
+
+                  <Text
+                    variant="headlineSmall"
+                    style={[
+                      dStyles.title,
+                      { color: theme.colors.error, fontWeight: "700" },
+                    ]}
+                  >
+                    Delete Your Account?
                   </Text>
 
-                  <Text style={styles.deleteNote}>
-                    Your username will become available for others to claim.
-                  </Text>
-                  <Text style={styles.deleteNote}>
-                    You can use the same email to create a new account later.
+                  <Text
+                    variant="bodyMedium"
+                    style={[
+                      dStyles.subtitle,
+                      { color: theme.colors.onSurfaceVariant },
+                    ]}
+                  >
+                    This is permanent and cannot be undone. All of the following
+                    will be permanently removed:
                   </Text>
 
-                  <Text style={[styles.deleteInstruction, { marginTop: 16 }]}>
-                    Type DELETE to confirm:
+                  <View
+                    style={[
+                      dStyles.infoBox,
+                      {
+                        backgroundColor: theme.colors.errorContainer,
+                        borderColor: theme.colors.error,
+                      },
+                    ]}
+                  >
+                    {[
+                      "Your profile, avatar & settings",
+                      "All messages, photos & stories",
+                      "Friends, game history & achievements",
+                      "Wallet balance & purchased items",
+                      "Badges, streaks & leaderboard entries",
+                    ].map((line) => (
+                      <View key={line} style={dStyles.bulletRow}>
+                        <MaterialCommunityIcons
+                          name="close-circle"
+                          size={16}
+                          color={theme.colors.error}
+                          style={dStyles.bulletIcon}
+                        />
+                        <Text
+                          variant="bodySmall"
+                          style={{ color: theme.colors.onErrorContainer }}
+                        >
+                          {line}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+
+                  <Text
+                    variant="bodySmall"
+                    style={[
+                      dStyles.note,
+                      { color: theme.colors.onSurfaceVariant },
+                    ]}
+                  >
+                    Your username will become available for others.{"\n"}
+                    You may use the same email to create a new account later.
+                  </Text>
+
+                  <Text
+                    variant="labelLarge"
+                    style={[
+                      dStyles.confirmLabel,
+                      { color: theme.colors.onSurface },
+                    ]}
+                  >
+                    Type DELETE to confirm
                   </Text>
                   <TextInput
                     value={deleteConfirmText}
@@ -908,32 +967,76 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
                     mode="outlined"
                     placeholder="DELETE"
                     autoCapitalize="characters"
-                    style={styles.deleteInput}
+                    style={dStyles.input}
+                    outlineColor={
+                      deleteConfirmText === "DELETE"
+                        ? theme.colors.error
+                        : undefined
+                    }
+                    activeOutlineColor={theme.colors.error}
                   />
-                </Dialog.Content>
-                <Dialog.Actions>
-                  <Button onPress={resetDeleteDialog}>Cancel</Button>
-                  <Button
-                    onPress={handleDeleteAccount}
-                    textColor={theme.colors.error}
-                    disabled={deleteConfirmText !== "DELETE"}
-                    icon="delete-forever"
-                  >
-                    Delete My Account
-                  </Button>
-                </Dialog.Actions>
-              </>
-            )}
 
-            {/* ── Step: Re-authentication ── */}
-            {deleteStep === "reauth" && (
-              <>
-                <Dialog.Title>Verify Your Identity</Dialog.Title>
-                <Dialog.Content>
-                  <Text style={styles.deleteDetail}>
+                  <View style={dStyles.actions}>
+                    <Button
+                      mode="outlined"
+                      onPress={resetDeleteDialog}
+                      style={dStyles.cancelBtn}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      mode="contained"
+                      onPress={handleDeleteAccount}
+                      disabled={deleteConfirmText !== "DELETE"}
+                      buttonColor={theme.colors.error}
+                      textColor={theme.colors.onError}
+                      icon="delete-forever"
+                      style={dStyles.deleteBtn}
+                      contentStyle={dStyles.deleteBtnContent}
+                    >
+                      Delete My Account
+                    </Button>
+                  </View>
+                </>
+              )}
+
+              {/* ── Step: Re-authentication ── */}
+              {deleteStep === "reauth" && (
+                <>
+                  <View
+                    style={[
+                      dStyles.iconCircle,
+                      { backgroundColor: theme.colors.primaryContainer },
+                    ]}
+                  >
+                    <MaterialCommunityIcons
+                      name="shield-lock"
+                      size={36}
+                      color={theme.colors.primary}
+                    />
+                  </View>
+
+                  <Text
+                    variant="headlineSmall"
+                    style={[
+                      dStyles.title,
+                      { color: theme.colors.onSurface, fontWeight: "700" },
+                    ]}
+                  >
+                    Verify Your Identity
+                  </Text>
+
+                  <Text
+                    variant="bodyMedium"
+                    style={[
+                      dStyles.subtitle,
+                      { color: theme.colors.onSurfaceVariant },
+                    ]}
+                  >
                     For security, please enter your password to continue with
                     account deletion.
                   </Text>
+
                   <TextInput
                     label="Password"
                     value={reauthPassword}
@@ -941,79 +1044,157 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
                     mode="outlined"
                     secureTextEntry
                     autoFocus
-                    style={styles.deleteInput}
+                    style={dStyles.input}
+                    activeOutlineColor={theme.colors.error}
                   />
-                </Dialog.Content>
-                <Dialog.Actions>
-                  <Button onPress={resetDeleteDialog}>Cancel</Button>
-                  <Button
-                    onPress={handleReauthAndDelete}
-                    textColor={theme.colors.error}
-                    disabled={!reauthPassword || reauthLoading}
-                    loading={reauthLoading}
-                  >
-                    Verify & Delete
-                  </Button>
-                </Dialog.Actions>
-              </>
-            )}
 
-            {/* ── Step: Deleting (in progress) ── */}
-            {deleteStep === "deleting" && (
-              <>
-                <Dialog.Title>Deleting Account...</Dialog.Title>
-                <Dialog.Content>
-                  <View style={styles.deletingContainer}>
+                  <View style={dStyles.actions}>
+                    <Button
+                      mode="outlined"
+                      onPress={resetDeleteDialog}
+                      style={dStyles.cancelBtn}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      mode="contained"
+                      onPress={handleReauthAndDelete}
+                      disabled={!reauthPassword || reauthLoading}
+                      loading={reauthLoading}
+                      buttonColor={theme.colors.error}
+                      textColor={theme.colors.onError}
+                      style={dStyles.deleteBtn}
+                    >
+                      Verify & Delete
+                    </Button>
+                  </View>
+                </>
+              )}
+
+              {/* ── Step: Deleting (in progress) ── */}
+              {deleteStep === "deleting" && (
+                <>
+                  <View style={dStyles.progressSection}>
                     <ActivityIndicator
                       size="large"
                       color={theme.colors.error}
-                      style={{ marginBottom: 16 }}
+                      style={{ marginBottom: 20 }}
                     />
-                    <Text style={styles.deletingText}>
-                      Please wait while we permanently remove your account and
-                      all associated data. This may take a moment.
+                    <Text
+                      variant="titleMedium"
+                      style={[
+                        dStyles.title,
+                        { color: theme.colors.onSurface, fontWeight: "600" },
+                      ]}
+                    >
+                      Deleting Your Account
                     </Text>
-                    <Text style={styles.deletingSubtext}>
-                      Do not close the app.
+                    <Text
+                      variant="bodyMedium"
+                      style={[
+                        dStyles.subtitle,
+                        { color: theme.colors.onSurfaceVariant },
+                      ]}
+                    >
+                      Permanently removing your account and all associated data.
+                      This may take a moment.
+                    </Text>
+                    <Text
+                      variant="labelSmall"
+                      style={{
+                        color: theme.colors.error,
+                        fontWeight: "700",
+                        marginTop: 12,
+                      }}
+                    >
+                      Do not close the app
                     </Text>
                   </View>
-                </Dialog.Content>
-              </>
-            )}
+                </>
+              )}
 
-            {/* ── Step: Error ── */}
-            {deleteStep === "error" && (
-              <>
-                <Dialog.Title style={{ color: theme.colors.error }}>
-                  Deletion Error
-                </Dialog.Title>
-                <Dialog.Content>
-                  <Text style={styles.deleteDetail}>
+              {/* ── Step: Error ── */}
+              {deleteStep === "error" && (
+                <>
+                  <View
+                    style={[
+                      dStyles.iconCircle,
+                      { backgroundColor: theme.colors.errorContainer },
+                    ]}
+                  >
+                    <MaterialCommunityIcons
+                      name="alert-circle"
+                      size={36}
+                      color={theme.colors.error}
+                    />
+                  </View>
+
+                  <Text
+                    variant="headlineSmall"
+                    style={[
+                      dStyles.title,
+                      { color: theme.colors.error, fontWeight: "700" },
+                    ]}
+                  >
+                    Deletion Failed
+                  </Text>
+
+                  <Text
+                    variant="bodyMedium"
+                    style={[
+                      dStyles.subtitle,
+                      { color: theme.colors.onSurfaceVariant },
+                    ]}
+                  >
                     {deleteError ||
                       "Something went wrong during account deletion."}
                   </Text>
-                  <Text style={[styles.deleteNote, { marginTop: 12 }]}>
-                    Your deletion request has been recorded. You can retry now
-                    or contact support for assistance.
-                  </Text>
-                </Dialog.Content>
-                <Dialog.Actions>
-                  <Button onPress={resetDeleteDialog}>Close</Button>
-                  <Button
-                    onPress={() => {
-                      setDeleteStep("confirm");
-                      setDeleteConfirmText("");
-                      setDeleteError(null);
-                    }}
-                    textColor={theme.colors.error}
+
+                  <View
+                    style={[
+                      dStyles.infoBox,
+                      {
+                        backgroundColor: theme.colors.surfaceVariant,
+                        borderColor: theme.colors.outlineVariant,
+                      },
+                    ]}
                   >
-                    Retry
-                  </Button>
-                </Dialog.Actions>
-              </>
-            )}
-          </Dialog>
-        </Portal>
+                    <Text
+                      variant="bodySmall"
+                      style={{ color: theme.colors.onSurfaceVariant }}
+                    >
+                      Your deletion request has been recorded. You can retry now
+                      or contact support for assistance.
+                    </Text>
+                  </View>
+
+                  <View style={dStyles.actions}>
+                    <Button
+                      mode="outlined"
+                      onPress={resetDeleteDialog}
+                      style={dStyles.cancelBtn}
+                    >
+                      Close
+                    </Button>
+                    <Button
+                      mode="contained"
+                      onPress={() => {
+                        setDeleteStep("confirm");
+                        setDeleteConfirmText("");
+                        setDeleteError(null);
+                      }}
+                      buttonColor={theme.colors.error}
+                      textColor={theme.colors.onError}
+                      style={dStyles.deleteBtn}
+                    >
+                      Retry
+                    </Button>
+                  </View>
+                </>
+              )}
+            </Pressable>
+          </Pressable>
+        </Modal>
       </ScrollView>
     </View>
   );
@@ -1083,51 +1264,98 @@ const styles = StyleSheet.create({
     paddingVertical: 20,
     // color applied inline via theme.colors.onSurfaceVariant
   },
-  deleteWarning: {
-    marginBottom: 12,
-    fontWeight: "bold" as const,
-    fontSize: 15,
+});
+
+// ─── Delete Account Modal styles ────────────────────────────────────────────
+
+const dStyles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
   },
-  deleteDetail: {
+  card: {
+    width: "100%",
+    maxWidth: 400,
+    borderRadius: 20,
+    padding: 28,
+    alignItems: "center",
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.25,
+        shadowRadius: 24,
+      },
+      android: { elevation: 12 },
+    }),
+  },
+  iconCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 16,
+  },
+  title: {
+    textAlign: "center",
     marginBottom: 8,
-    fontSize: 14,
-    lineHeight: 20,
   },
-  deleteBullet: {
-    fontSize: 13,
+  subtitle: {
+    textAlign: "center",
     lineHeight: 20,
-    paddingLeft: 8,
-    marginBottom: 2,
-    opacity: 0.85,
+    marginBottom: 16,
   },
-  deleteNote: {
-    fontSize: 13,
+  infoBox: {
+    width: "100%",
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 14,
+    marginBottom: 16,
+    gap: 6,
+  },
+  bulletRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  bulletIcon: {
+    marginRight: 8,
+  },
+  note: {
+    textAlign: "center",
     lineHeight: 18,
-    marginTop: 8,
-    fontStyle: "italic" as const,
+    marginBottom: 16,
+    fontStyle: "italic",
     opacity: 0.7,
   },
-  deleteInstruction: {
+  confirmLabel: {
     marginBottom: 8,
-    fontWeight: "600" as const,
+    fontWeight: "600",
+    alignSelf: "flex-start",
   },
-  deleteInput: {
-    marginTop: 8,
+  input: {
+    width: "100%",
+    marginBottom: 20,
   },
-  deletingContainer: {
-    alignItems: "center" as const,
-    paddingVertical: 24,
+  actions: {
+    flexDirection: "row",
+    width: "100%",
+    gap: 12,
   },
-  deletingText: {
-    textAlign: "center" as const,
-    fontSize: 14,
-    lineHeight: 20,
-    marginBottom: 8,
+  cancelBtn: {
+    flex: 1,
   },
-  deletingSubtext: {
-    textAlign: "center" as const,
-    fontSize: 12,
-    fontWeight: "bold" as const,
-    opacity: 0.7,
+  deleteBtn: {
+    flex: 1,
+  },
+  deleteBtnContent: {
+    paddingVertical: 2,
+  },
+  progressSection: {
+    alignItems: "center",
+    paddingVertical: 16,
   },
 });
