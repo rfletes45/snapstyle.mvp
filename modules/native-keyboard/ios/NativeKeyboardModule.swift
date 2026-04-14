@@ -85,8 +85,8 @@ public class NativeKeyboardModule: Module {
                 view.maxLength = maxLength ?? 0
             }
 
-            Prop("keyboardTheme") { (view: NativeComposerView, theme: [String: Any]?) in
-                view.updateKeyboardTheme(theme ?? [:])
+            Prop("keyboardAppearance") { (view: NativeComposerView, appearance: String?) in
+                view.setKeyboardAppearance(appearance ?? "default")
             }
         }
     }

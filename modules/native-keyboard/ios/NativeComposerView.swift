@@ -1,9 +1,9 @@
 import ExpoModulesCore
 import UIKit
 
-/// Native UITextView-backed composer view with a custom inputView keyboard.
+/// Native UITextView-backed composer view that uses Apple's system keyboard.
 /// Replaces the React Native TextInput for the chat composer on iOS.
-class NativeComposerView: ExpoView, UITextViewDelegate, CustomKeyboardActionDelegate {
+class NativeComposerView: ExpoView, UITextViewDelegate {
 
     // MARK: - Event Dispatchers
 
@@ -17,7 +17,6 @@ class NativeComposerView: ExpoView, UITextViewDelegate, CustomKeyboardActionDele
 
     let textView = UITextView()
     private let placeholderLabel = UILabel()
-    private let customKeyboard = CustomInputKeyboardView()
 
     // MARK: - State
 
@@ -25,7 +24,6 @@ class NativeComposerView: ExpoView, UITextViewDelegate, CustomKeyboardActionDele
     private var lastReportedText: String = ""
     private var lastContentHeight: CGFloat = 0
     private var isUpdatingFromProp = false
-    private var isUsingCustomKeyboard = true
 
     // MARK: - Init
 
@@ -34,7 +32,6 @@ class NativeComposerView: ExpoView, UITextViewDelegate, CustomKeyboardActionDele
         NativeKeyboardModule.activeComposer = self
         setupTextView()
         setupPlaceholder()
-        setupKeyboard()
     }
 
     deinit {
@@ -59,6 +56,8 @@ class NativeComposerView: ExpoView, UITextViewDelegate, CustomKeyboardActionDele
         textView.smartQuotesType = .default
         textView.smartInsertDeleteType = .default
         textView.returnKeyType = .send
+        // No custom inputView — use Apple's default system keyboard
+        textView.inputAccessoryView = nil
         // Remove default padding and let the view size itself
         textView.translatesAutoresizingMaskIntoConstraints = true
         addSubview(textView)
@@ -77,13 +76,6 @@ class NativeComposerView: ExpoView, UITextViewDelegate, CustomKeyboardActionDele
             placeholderLabel.topAnchor.constraint(equalTo: textView.topAnchor, constant: 8),
             placeholderLabel.trailingAnchor.constraint(lessThanOrEqualTo: textView.trailingAnchor, constant: -4),
         ])
-    }
-
-    private func setupKeyboard() {
-        customKeyboard.actionDelegate = self
-        textView.inputView = customKeyboard
-        // Prevent the keyboard from showing the standard toolbar
-        textView.inputAccessoryView = nil
     }
 
     // MARK: - Layout
@@ -136,30 +128,15 @@ class NativeComposerView: ExpoView, UITextViewDelegate, CustomKeyboardActionDele
         placeholderLabel.font = textView.font
     }
 
-    func updateKeyboardTheme(_ theme: [String: Any]) {
-        var config = KeyboardThemeConfig()
-        if let bg = theme["backgroundColor"] as? String {
-            config.backgroundColor = UIColor.fromHex(bg) ?? config.backgroundColor
+    func setKeyboardAppearance(_ appearance: String) {
+        switch appearance {
+        case "dark":
+            textView.keyboardAppearance = .dark
+        case "light":
+            textView.keyboardAppearance = .light
+        default:
+            textView.keyboardAppearance = .default
         }
-        if let key = theme["keyColor"] as? String {
-            config.keyColor = UIColor.fromHex(key) ?? config.keyColor
-        }
-        if let keyText = theme["keyTextColor"] as? String {
-            config.keyTextColor = UIColor.fromHex(keyText) ?? config.keyTextColor
-        }
-        if let special = theme["specialKeyColor"] as? String {
-            config.specialKeyColor = UIColor.fromHex(special) ?? config.specialKeyColor
-        }
-        if let specialText = theme["specialKeyTextColor"] as? String {
-            config.specialKeyTextColor = UIColor.fromHex(specialText) ?? config.specialKeyTextColor
-        }
-        if let ret = theme["returnKeyColor"] as? String {
-            config.returnKeyColor = UIColor.fromHex(ret) ?? config.returnKeyColor
-        }
-        if let retText = theme["returnKeyTextColor"] as? String {
-            config.returnKeyTextColor = UIColor.fromHex(retText) ?? config.returnKeyTextColor
-        }
-        customKeyboard.applyTheme(config)
     }
 
     // MARK: - Imperative Actions
@@ -197,10 +174,10 @@ class NativeComposerView: ExpoView, UITextViewDelegate, CustomKeyboardActionDele
     }
 
     func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange, replacementText text: String) -> Bool {
-        // When using the system keyboard (globe-toggled), the return key
-        // type is .send so iOS shows "Send" — intercept "\n" to trigger send.
-        if text == "\n" && !isUsingCustomKeyboard {
-            keyboardDidPressSend()
+        // Return key type is .send — intercept "\n" to trigger send
+        // instead of inserting a newline.
+        if text == "\n" {
+            handleSendPress()
             return false
         }
         // Enforce maxLength if set
@@ -214,28 +191,11 @@ class NativeComposerView: ExpoView, UITextViewDelegate, CustomKeyboardActionDele
         return true
     }
 
-    // MARK: - CustomKeyboardActionDelegate
+    // MARK: - Send
 
-    func keyboardDidInsertText(_ text: String) {
-        textView.insertText(text)
-    }
-
-    func keyboardDidDeleteBackward() {
-        textView.deleteBackward()
-    }
-
-    func keyboardDidPressSend() {
+    private func handleSendPress() {
         let text = textView.text ?? ""
         onSendPress(["text": text])
-    }
-
-    func keyboardDidPressGlobe() {
-        isUsingCustomKeyboard.toggle()
-        textView.inputView = isUsingCustomKeyboard ? customKeyboard : nil
-        // reloadInputViews() swaps the keyboard in-place without
-        // resign/become cycle — avoids a hide→show keyboard notification
-        // pair that would cause the chat layout to jump.
-        textView.reloadInputViews()
     }
 
     // MARK: - Helpers

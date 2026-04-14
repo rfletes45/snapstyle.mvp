@@ -2,14 +2,13 @@
  * NativeComposerInput
  *
  * Drop-in replacement for the TextInput used in ChatComposer on iOS.
- * Wraps the NativeComposerView (UITextView + custom inputView keyboard)
+ * Wraps the NativeComposerView (native UITextView with Apple's system keyboard)
  * and exposes the same interface that ChatComposer expects.
  *
  * On Android or when the native view is unavailable, this renders the
  * standard React Native TextInput as a fallback.
  */
 
-import type { KeyboardTheme } from "@/modules/nativeKeyboard";
 import {
   isNativeComposerAvailable,
   blur as nativeBlur,
@@ -22,7 +21,6 @@ import React, {
   forwardRef,
   useCallback,
   useImperativeHandle,
-  useMemo,
   useRef,
   useState,
 } from "react";
@@ -50,6 +48,8 @@ interface Props {
     e: NativeSyntheticEvent<TextInputSelectionChangeEventData>,
   ) => void;
   onSubmitEditing?: () => void;
+  /** Called when the main composer input gains focus. */
+  onFocus?: () => void;
   placeholder?: string;
   placeholderTextColor?: string;
   selectionColor?: string;
@@ -64,7 +64,7 @@ interface Props {
 }
 
 /**
- * Renders a native UITextView with custom keyboard on iOS,
+ * Renders a native UITextView with Apple's system keyboard on iOS,
  * or a standard TextInput on Android. Provides a unified ref
  * interface for focus/blur/clear.
  */
@@ -75,6 +75,7 @@ export const NativeComposerInput = forwardRef<NativeComposerInputRef, Props>(
       onChangeText,
       onSelectionChange,
       onSubmitEditing,
+      onFocus,
       placeholder,
       placeholderTextColor,
       selectionColor,
@@ -91,23 +92,6 @@ export const NativeComposerInput = forwardRef<NativeComposerInputRef, Props>(
 
     const useNative =
       Platform.OS === "ios" && isNativeComposerAvailable && useNativeKeyboard;
-
-    // Build keyboard theme from current app theme
-    const keyboardTheme = useMemo<KeyboardTheme>(() => {
-      const kbSurface =
-        colors.keyboardSurface ?? (isDark ? colors.background : colors.surface);
-      return {
-        backgroundColor: kbSurface,
-        keyColor: isDark ? lighten(kbSurface, 0.15) : "#FFFFFF",
-        keyTextColor: colors.text,
-        specialKeyColor: isDark
-          ? lighten(kbSurface, 0.08)
-          : darken(kbSurface, 0.08),
-        specialKeyTextColor: colors.text,
-        returnKeyColor: colors.primary,
-        returnKeyTextColor: colors.onPrimary ?? "#FFFFFF",
-      };
-    }, [colors, isDark]);
 
     // Expose imperative handle
     useImperativeHandle(
@@ -168,9 +152,14 @@ export const NativeComposerInput = forwardRef<NativeComposerInputRef, Props>(
       [onSubmitEditing],
     );
 
-    const handleNativeFocusChange = useCallback((event: any) => {
-      setIsFocused(event.nativeEvent?.isFocused ?? false);
-    }, []);
+    const handleNativeFocusChange = useCallback(
+      (event: any) => {
+        const focused = event.nativeEvent?.isFocused ?? false;
+        setIsFocused(focused);
+        if (focused) onFocus?.();
+      },
+      [onFocus],
+    );
 
     const handleNativeContentSizeChange = useCallback((event: any) => {
       // Content size changes are handled natively via intrinsicContentSize.
@@ -189,7 +178,7 @@ export const NativeComposerInput = forwardRef<NativeComposerInputRef, Props>(
           fontSize={16}
           editable={editable}
           maxLength={maxLength ?? 0}
-          keyboardTheme={keyboardTheme}
+          keyboardAppearance={isDark ? "dark" : "light"}
           onTextChange={handleNativeTextChange}
           onSelectionChange={handleNativeSelectionChange}
           onSendPress={handleNativeSendPress}
@@ -218,37 +207,11 @@ export const NativeComposerInput = forwardRef<NativeComposerInputRef, Props>(
         returnKeyType="send"
         submitBehavior="submit"
         onSubmitEditing={onSubmitEditing ? () => onSubmitEditing() : undefined}
+        onFocus={onFocus}
         {...textInputProps}
       />
     );
   },
 );
-
-// ──── Color Helpers ──────────────────────────────────────────────────────────
-
-function lighten(hex: string, amount: number): string {
-  return adjustColor(hex, amount);
-}
-
-function darken(hex: string, amount: number): string {
-  return adjustColor(hex, -amount);
-}
-
-function adjustColor(hex: string, amount: number): string {
-  let c = hex.replace("#", "");
-  if (c.length === 3) c = c[0] + c[0] + c[1] + c[1] + c[2] + c[2];
-  const num = parseInt(c, 16);
-  if (isNaN(num)) return hex;
-  const r = Math.min(
-    255,
-    Math.max(0, ((num >> 16) & 0xff) + Math.round(255 * amount)),
-  );
-  const g = Math.min(
-    255,
-    Math.max(0, ((num >> 8) & 0xff) + Math.round(255 * amount)),
-  );
-  const b = Math.min(255, Math.max(0, (num & 0xff) + Math.round(255 * amount)));
-  return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, "0")}`;
-}
 
 export default NativeComposerInput;

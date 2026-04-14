@@ -141,13 +141,13 @@ import {
   sendMediaAttachmentMessage,
   sendVoiceRecordingMessage,
 } from "@/chat/sendDraft";
-import { safeSystemText } from "@/services/chat/normalizeMessage";
 import {
   describeRemoteUrlForLog,
   getPreparedGroupChatData,
   rememberPreparedGroupChatData,
   traceGroupWallpaper,
 } from "@/services/chat/groupWallpaperDebug";
+import { safeSystemText } from "@/services/chat/normalizeMessage";
 import {
   cachePreparedGroupMembers,
   getCachedBackgroundRef,
@@ -284,7 +284,10 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   );
   const seededGroupIdentity = useMemo(() => {
     const name =
-      initialGroupData?.name || preparedGroupData?.name || initialGroupName || "";
+      initialGroupData?.name ||
+      preparedGroupData?.name ||
+      initialGroupName ||
+      "";
     const avatarUrl =
       normalizeRemoteImageUrl(
         initialGroupData?.avatarUrl ?? preparedGroupData?.avatarUrl,
@@ -574,7 +577,8 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   const messages = screen.messages;
 
   // Keep ComposerSheetContext aware of the latest keyboard height
-  const { setLastKeyboardHeight, sheetExtraPadding } = useComposerSheet();
+  const { setLastKeyboardHeight, sheetExtraPadding, dismissActiveSheet } =
+    useComposerSheet();
   useEffect(() => {
     if (screen.keyboard.finalKeyboardHeight > 0) {
       setLastKeyboardHeight(screen.keyboard.finalKeyboardHeight);
@@ -621,7 +625,9 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     [group?.backgroundUrl, seededGroupIdentity?.backgroundUrl],
   );
   const groupBackgroundUrls = useMemo(() => {
-    return resolvedGroupBackgroundUrl ? [resolvedGroupBackgroundUrl] : undefined;
+    return resolvedGroupBackgroundUrl
+      ? [resolvedGroupBackgroundUrl]
+      : undefined;
   }, [resolvedGroupBackgroundUrl]);
   usePrefetch(groupBackgroundUrls);
   const cachedBackgroundRef = useMemo(
@@ -641,11 +647,18 @@ export default function GroupChatScreen({ route, navigation }: Props) {
       : "none";
   const wallpaperLoadStartRef = useRef<number | null>(null);
   const resolvedGroupName =
-    group?.name || seededGroupIdentity?.name || initialGroupName || "Group Chat";
+    group?.name ||
+    seededGroupIdentity?.name ||
+    initialGroupName ||
+    "Group Chat";
 
   const handleWallpaperLoadStart = useCallback(() => {
     wallpaperLoadStartRef.current = performance.now();
-    chatPerf.traceCheckpoint("GroupChatScreen", groupId, "wallpaper-load-start");
+    chatPerf.traceCheckpoint(
+      "GroupChatScreen",
+      groupId,
+      "wallpaper-load-start",
+    );
     if (__DEV__) {
       traceGroupWallpaper(groupId, "group-chat-screen-wallpaper-load-start", {
         sourceKind: wallpaperSourceKind,
@@ -688,7 +701,8 @@ export default function GroupChatScreen({ route, navigation }: Props) {
       if (__DEV__) {
         traceGroupWallpaper(groupId, "group-chat-screen-wallpaper-error", {
           sourceKind: wallpaperSourceKind,
-          backgroundKey: describeRemoteUrlForLog(resolvedGroupBackgroundUrl).key,
+          backgroundKey: describeRemoteUrlForLog(resolvedGroupBackgroundUrl)
+            .key,
           error: event.error,
         });
       }
@@ -962,14 +976,18 @@ export default function GroupChatScreen({ route, navigation }: Props) {
 
           setGroup((current) => {
             if (__DEV__) {
-              traceGroupWallpaper(groupId, "group-chat-screen-subscription-update", {
-                previousBackgroundKey: describeRemoteUrlForLog(
-                  current?.backgroundUrl,
-                ).key,
-                nextBackgroundKey: describeRemoteUrlForLog(
-                  groupData.backgroundUrl,
-                ).key,
-              });
+              traceGroupWallpaper(
+                groupId,
+                "group-chat-screen-subscription-update",
+                {
+                  previousBackgroundKey: describeRemoteUrlForLog(
+                    current?.backgroundUrl,
+                  ).key,
+                  nextBackgroundKey: describeRemoteUrlForLog(
+                    groupData.backgroundUrl,
+                  ).key,
+                },
+              );
             }
             return groupData;
           });
@@ -1647,12 +1665,14 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   ]);
 
   const handleAddAttachment = useCallback(async () => {
+    dismissActiveSheet();
     await attachmentPicker.pickFromGallery();
-  }, [attachmentPicker]);
+  }, [attachmentPicker, dismissActiveSheet]);
 
   const handleCaptureFromCamera = useCallback(async () => {
+    dismissActiveSheet();
     await attachmentPicker.captureFromCamera();
-  }, [attachmentPicker]);
+  }, [attachmentPicker, dismissActiveSheet]);
 
   const handleVoiceRecordingComplete = useCallback(
     async (recording: VoiceRecording) => {
@@ -2512,7 +2532,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
             onImagesPicked={handleDirectGallerySend}
             imagePickerDisabled={screen.sending}
           />
-          <KeyboardSafeAreaSpacer backgroundColor={colors.background} />
+          <KeyboardSafeAreaSpacer />
         </ChatFooterWrapper>
 
         {/* Jump-back button for reply navigation */}

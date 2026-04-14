@@ -1,18 +1,8 @@
 /**
  * NativeKeyboard Types
  *
- * Type definitions for the native iOS composer + custom keyboard module.
+ * Type definitions for the native iOS composer module.
  */
-
-export interface KeyboardTheme {
-  backgroundColor: string;
-  keyColor: string;
-  keyTextColor: string;
-  specialKeyColor: string;
-  specialKeyTextColor: string;
-  returnKeyColor: string;
-  returnKeyTextColor: string;
-}
 
 export interface TextChangeEvent {
   text: string;
@@ -46,7 +36,7 @@ export interface NativeComposerViewProps {
   fontSize?: number;
   editable?: boolean;
   maxLength?: number;
-  keyboardTheme?: KeyboardTheme;
+  keyboardAppearance?: "default" | "dark" | "light";
   onTextChange?: (event: { nativeEvent: TextChangeEvent }) => void;
   onSelectionChange?: (event: { nativeEvent: SelectionChangeEvent }) => void;
   onSendPress?: (event: { nativeEvent: SendPressEvent }) => void;

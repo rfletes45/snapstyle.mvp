@@ -6,10 +6,12 @@
  */
 
 import {
+  isKeyboardControllerAvailable,
   useKeyboardHandlerCompat,
   useReanimatedKeyboardAnimationCompat,
 } from "@/utils/optionalKeyboardController";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Keyboard, Platform } from "react-native";
 import { scheduleOnRN } from "react-native-worklets";
 import { type SharedValue } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -52,6 +54,27 @@ export function useChatKeyboard(): ChatKeyboardState {
       scheduleOnRN(updateKeyboardState, event.height, open);
     },
   });
+
+  useEffect(() => {
+    if (isKeyboardControllerAvailable) return;
+
+    const showEvent =
+      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvent =
+      Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+
+    const showSub = Keyboard.addListener(showEvent, (event) => {
+      updateKeyboardState(event.endCoordinates?.height ?? 0, true);
+    });
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      updateKeyboardState(0, false);
+    });
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, [updateKeyboardState]);
 
   return useMemo(
     () => ({

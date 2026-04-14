@@ -51,6 +51,12 @@ export interface ComposerSheetContextValue {
    *  the chat message list shifts up to match the sheet. */
   sheetExtraPadding: SharedValue<number>;
 
+  /** Live RKBC keyboard height (SharedValue, negative when open).
+   *  Piped by ChatFooterWrapper's useAnimatedReaction so activateSheet
+   *  can read the real keyboard height at call-time instead of lagging
+   *  2-3 frames behind via React state. */
+  liveKeyboardHeight: SharedValue<number>;
+
   /** Last measured keyboard height (React state, not animated).
    *  Persists across sheet open/close cycles. */
   lastKeyboardHeight: number;
@@ -94,6 +100,7 @@ export function ComposerSheetProvider({
   const initialSnapHeight = useSharedValue(0);
   const isSheetActive = useSharedValue(0);
   const sheetExtraPadding = useSharedValue(0);
+  const liveKeyboardHeight = useSharedValue(0);
 
   const [lastKeyboardHeight, setLastKbH] = useState(DEFAULT_KEYBOARD_HEIGHT);
 
@@ -132,10 +139,19 @@ export function ComposerSheetProvider({
       // Store the new sheet's close callback
       activeCloseRef.current = closeCallback ?? null;
 
+      // Prefer the live RKBC keyboard height (SharedValue) over stale React
+      // state. Reading .value on the JS thread is synchronous and always
+      // returns the latest UI-thread value. This eliminates the 2-3 frame
+      // lag that lastKeyboardHeight (React state) has relative to the actual
+      // keyboard position, preventing the upward teleport on the first frame
+      // when sheetHeight ≠ actual keyboard height.
+      const liveKbH = Math.abs(liveKeyboardHeight.value);
       const kbH =
         currentKbHeight && currentKbHeight > 0
           ? currentKbHeight
-          : lastKeyboardHeight;
+          : liveKbH > 0
+            ? liveKbH
+            : lastKeyboardHeight;
 
       // Persist for future use
       if (kbH > 0) setLastKbH(kbH);
@@ -156,7 +172,13 @@ export function ComposerSheetProvider({
       // sheet handoff stays visually continuous while the keyboard animates out.
       Keyboard.dismiss();
     },
-    [lastKeyboardHeight, initialSnapHeight, isSheetActive, sheetTranslateY],
+    [
+      lastKeyboardHeight,
+      liveKeyboardHeight,
+      initialSnapHeight,
+      isSheetActive,
+      sheetTranslateY,
+    ],
   );
 
   const deactivateSheet = useCallback(() => {
@@ -186,6 +208,7 @@ export function ComposerSheetProvider({
       initialSnapHeight,
       isSheetActive,
       sheetExtraPadding,
+      liveKeyboardHeight,
       lastKeyboardHeight,
       activateSheet,
       deactivateSheet,
@@ -197,6 +220,7 @@ export function ComposerSheetProvider({
       initialSnapHeight,
       isSheetActive,
       sheetExtraPadding,
+      liveKeyboardHeight,
       lastKeyboardHeight,
       activateSheet,
       deactivateSheet,
@@ -229,6 +253,7 @@ export function useComposerSheet(): ComposerSheetContextValue {
     initialSnapHeight: STUB_SHARED_VALUE,
     isSheetActive: STUB_SHARED_VALUE,
     sheetExtraPadding: STUB_SHARED_VALUE,
+    liveKeyboardHeight: STUB_SHARED_VALUE,
     lastKeyboardHeight: DEFAULT_KEYBOARD_HEIGHT,
     activateSheet: NOOP,
     deactivateSheet: NOOP,

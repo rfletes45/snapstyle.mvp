@@ -493,7 +493,8 @@ export default function ChatScreen({
   });
 
   // Keep ComposerSheetContext aware of the latest keyboard height
-  const { setLastKeyboardHeight, sheetExtraPadding } = useComposerSheet();
+  const { setLastKeyboardHeight, sheetExtraPadding, dismissActiveSheet } =
+    useComposerSheet();
   useEffect(() => {
     if (screen.keyboard.finalKeyboardHeight > 0) {
       setLastKeyboardHeight(screen.keyboard.finalKeyboardHeight);
@@ -1091,12 +1092,14 @@ export default function ChatScreen({
   ]);
 
   const handleAddAttachment = useCallback(async () => {
+    dismissActiveSheet();
     await attachmentPicker.pickFromGallery();
-  }, [attachmentPicker]);
+  }, [attachmentPicker, dismissActiveSheet]);
 
   const handleCaptureFromCamera = useCallback(async () => {
+    dismissActiveSheet();
     await attachmentPicker.captureFromCamera();
-  }, [attachmentPicker]);
+  }, [attachmentPicker, dismissActiveSheet]);
 
   const handleVoiceRecordingComplete = useCallback(
     async (recording: VoiceRecording) => {
@@ -1781,7 +1784,7 @@ export default function ChatScreen({
               imagePickerDisabled={screen.sending}
             />
           )}
-          <KeyboardSafeAreaSpacer backgroundColor={theme.colors.background} />
+          <KeyboardSafeAreaSpacer />
         </ChatFooterWrapper>
 
         {/* Jump-back button for reply navigation */}

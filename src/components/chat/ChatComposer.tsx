@@ -18,6 +18,7 @@
  */
 
 import { BorderRadius, Spacing } from "@/constants/theme";
+import { useComposerSheet } from "@/contexts/ComposerSheetContext";
 import { VoiceRecording } from "@/hooks/useVoiceRecorder";
 import { isNativeComposerAvailable } from "@/modules/nativeKeyboard";
 import { useAppTheme } from "@/store/ThemeContext";
@@ -262,6 +263,15 @@ export function ChatComposer({
   const insets = useSafeAreaInsets();
   const safeAreaBottom = insets.bottom;
 
+  // Dismiss active composer-attached sheet when main input gains focus.
+  // Picker search fields do NOT trigger this because they are separate
+  // TextInput instances inside the picker — only the main NativeComposerInput /
+  // TextInput fires this callback.
+  const { dismissActiveSheet } = useComposerSheet();
+  const handleMainInputFocus = useCallback(() => {
+    dismissActiveSheet();
+  }, [dismissActiveSheet]);
+
   // Internal ref for TextInput - use provided ref or create our own
   const internalTextInputRef = useRef<TextInput | null>(null);
   const inputRef = textInputRef || internalTextInputRef;
@@ -338,11 +348,14 @@ export function ChatComposer({
     onAnimalLongPress();
   }, [animalLocked, onAnimalLongPress, measureAnimalButton]);
 
-  // Wrapper for onSend that refocuses the TextInput after sending
-  // This keeps the keyboard open after sending a message
-  // We handle both sync and async onSend handlers
+  // Wrapper for onSend that refocuses the TextInput after sending.
+  // Keeps the keyboard open after sending a message.
+  // On the native path, clear() does NOT resign first responder, so
+  // a single post-send refocus is sufficient (the keyboard stays open).
+  // The previous triple-setTimeout pattern caused unnecessary JS wakeups
+  // that interleaved with KCSV layout passes, triggering a visible
+  // content-offset flicker ("send teleport").
   const handleSend = useCallback(async () => {
-    // Store ref to input before calling onSend (in case of re-renders)
     const input = inputRef.current;
     const nativeInput = nativeComposerRef.current;
 
@@ -357,19 +370,15 @@ export function ChatComposer({
     try {
       await Promise.resolve(onSend());
     } finally {
-      const refocusInput = () => {
-        if (nativeInput) {
-          nativeInput.focus();
-        } else if (input) {
-          input.focus();
-        } else if (inputRef.current) {
-          inputRef.current.focus();
-        }
-      };
-
-      refocusInput();
-      setTimeout(refocusInput, 50);
-      setTimeout(refocusInput, 150);
+      // Single refocus — only if the input lost focus during the send.
+      // On the native path clear() never resigns focus, so this is
+      // typically a no-op.  On the fallback path it re-opens the keyboard.
+      if (nativeInput) {
+        if (!nativeInput.isFocused()) nativeInput.focus();
+      } else {
+        const fallback = input ?? inputRef.current;
+        if (fallback && !fallback.isFocused()) fallback.focus();
+      }
     }
   }, [onSend, inputRef]);
 
@@ -437,6 +446,7 @@ export function ChatComposer({
                       : undefined
                   }
                   onSubmitEditing={canSend ? handleSend : undefined}
+                  onFocus={handleMainInputFocus}
                   placeholder={placeholder}
                   placeholderTextColor={placeholderColor}
                   selectionColor={colors.primary}
@@ -471,6 +481,7 @@ export function ChatComposer({
                   returnKeyType="send"
                   submitBehavior="submit"
                   onSubmitEditing={canSend ? handleSend : undefined}
+                  onFocus={handleMainInputFocus}
                   {...textInputProps}
                 />
               )}

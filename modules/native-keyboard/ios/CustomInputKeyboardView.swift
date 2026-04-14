@@ -117,6 +117,7 @@ class CustomInputKeyboardView: UIView {
     private var mode: KeyboardMode = .letters
     private var keyButtons: [[KeyboardKeyButton]] = []
     private var bottomSafeArea: CGFloat = 0
+    private let backgroundBackingView = UIView()
     private let safeAreaFillView = UIView()
     private let haptic = UIImpactFeedbackGenerator(style: .light)
 
@@ -134,10 +135,18 @@ class CustomInputKeyboardView: UIView {
 
     override init(frame: CGRect) {
         super.init(frame: frame)
+        isOpaque = true
         backgroundColor = theme.backgroundColor
         autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        backgroundBackingView.isOpaque = true
+        backgroundBackingView.isUserInteractionEnabled = false
+        backgroundBackingView.backgroundColor = theme.backgroundColor
+        backgroundBackingView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        insertSubview(backgroundBackingView, at: 0)
+        safeAreaFillView.isOpaque = true
+        safeAreaFillView.isUserInteractionEnabled = false
         safeAreaFillView.backgroundColor = theme.backgroundColor
-        addSubview(safeAreaFillView)
+        insertSubview(safeAreaFillView, aboveSubview: backgroundBackingView)
         haptic.prepare()
         rebuildKeys()
     }
@@ -180,6 +189,7 @@ class CustomInputKeyboardView: UIView {
     func applyTheme(_ config: KeyboardThemeConfig) {
         theme = config
         backgroundColor = theme.backgroundColor
+        backgroundBackingView.backgroundColor = theme.backgroundColor
         safeAreaFillView.backgroundColor = theme.backgroundColor
         applyThemeToButtons()
     }
@@ -251,6 +261,8 @@ class CustomInputKeyboardView: UIView {
 
         let w = bounds.width
         let contentHeight = keysAreaHeight
+
+        backgroundBackingView.frame = bounds
 
         // Safe area fill
         safeAreaFillView.frame = CGRect(x: 0, y: contentHeight, width: w, height: bottomSafeArea)

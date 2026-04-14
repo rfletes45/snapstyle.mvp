@@ -16,13 +16,14 @@
  */
 
 import { useComposerSheet } from "@/contexts/ComposerSheetContext";
+import { useAppTheme } from "@/store/ThemeContext";
 import {
   isKeyboardControllerAvailable,
   KeyboardStickyView,
   KeyboardChatScrollView as OptionalKeyboardChatScrollView,
   useReanimatedKeyboardAnimationCompat,
 } from "@/utils/optionalKeyboardController";
-import React, { forwardRef, useCallback } from "react";
+import React, { forwardRef, useCallback, useEffect } from "react";
 import type { ScrollViewProps, StyleProp, ViewStyle } from "react-native";
 import {
   Dimensions,
@@ -34,6 +35,7 @@ import {
 import type { SharedValue } from "react-native-reanimated";
 import Animated, {
   interpolate,
+  runOnJS,
   useAnimatedReaction,
   useAnimatedStyle,
   useDerivedValue,
@@ -41,6 +43,9 @@ import Animated, {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const FOOTER_SCREEN_HEIGHT = Dimensions.get("window").height;
+const KEYBOARD_BACKDROP_Z_INDEX = 10;
+const CHAT_FOOTER_Z_INDEX = 20;
+const ENABLE_KEYBOARD_BACKDROP_DEBUG = false;
 
 let kcsvAvailable = false;
 let KeyboardChatScrollView: any = null;
@@ -88,6 +93,19 @@ export function setChatScrollViewConfig(config: ChatScrollViewConfig): void {
   activeConfig = config;
 }
 
+function getSheetVisibleHeight(sheetTranslateY: number): number {
+  "worklet";
+  return Math.max(0, FOOTER_SCREEN_HEIGHT - sheetTranslateY);
+}
+
+function clampSheetToInitialSnap(
+  sheetVisibleHeight: number,
+  initialSnapHeight: number,
+): number {
+  "worklet";
+  return Math.min(sheetVisibleHeight, Math.max(0, initialSnapHeight));
+}
+
 export const ChatKeyboardScrollViewComponent = forwardRef<any, ScrollViewProps>(
   (props, ref) => {
     if (!kcsvAvailable || !KeyboardChatScrollView) {
@@ -120,14 +138,134 @@ export function useRenderChatScrollComponent() {
   );
 }
 
+export function useKeyboardBackdropHeight(): SharedValue<number> {
+  const { sheetTranslateY, isSheetActive } = useComposerSheet();
+  const { height: keyboardHeight } = useReanimatedKeyboardAnimationCompat();
+
+  return useDerivedValue(() => {
+    const kbH = Math.abs(keyboardHeight.value);
+
+    if (isSheetActive.value === 0) return kbH;
+
+    const sheetVisible = getSheetVisibleHeight(sheetTranslateY.value);
+    return Math.max(kbH, sheetVisible);
+  }, [sheetTranslateY, isSheetActive, keyboardHeight]);
+}
+
+interface KeyboardBackdropDebugState {
+  path: "kcsv" | "fallback";
+  keyboardHeight: number;
+  keyboardProgress: number;
+  sheetVisibleHeight: number;
+  initialSnapHeight: number;
+  isSheetActive: boolean;
+  backdropHeight: number;
+}
+
+function logKeyboardBackdropState(state: KeyboardBackdropDebugState) {
+  console.log("[KeyboardBackdrop]", state);
+}
+
+function useKeyboardBackdropDebug(backdropHeight: SharedValue<number>) {
+  const { sheetTranslateY, initialSnapHeight, isSheetActive } =
+    useComposerSheet();
+  const { height: keyboardHeight, progress: keyboardProgress } =
+    useReanimatedKeyboardAnimationCompat();
+
+  useEffect(() => {
+    if (!ENABLE_KEYBOARD_BACKDROP_DEBUG) return;
+
+    console.log("[KeyboardBackdrop] mounted", {
+      path: kcsvAvailable ? "kcsv" : "fallback",
+    });
+  }, []);
+
+  useAnimatedReaction(
+    () => {
+      if (!ENABLE_KEYBOARD_BACKDROP_DEBUG) return null;
+
+      return {
+        path: kcsvAvailable ? ("kcsv" as const) : ("fallback" as const),
+        keyboardHeight: Math.abs(keyboardHeight.value),
+        keyboardProgress: keyboardProgress.value,
+        sheetVisibleHeight: getSheetVisibleHeight(sheetTranslateY.value),
+        initialSnapHeight: initialSnapHeight.value,
+        isSheetActive: isSheetActive.value === 1,
+        backdropHeight: backdropHeight.value,
+      };
+    },
+    (current, previous) => {
+      if (!current) return;
+
+      if (
+        !previous ||
+        current.path !== previous.path ||
+        current.isSheetActive !== previous.isSheetActive ||
+        Math.abs(current.keyboardHeight - previous.keyboardHeight) > 0.5 ||
+        Math.abs(current.keyboardProgress - previous.keyboardProgress) > 0.02 ||
+        Math.abs(current.sheetVisibleHeight - previous.sheetVisibleHeight) >
+          0.5 ||
+        Math.abs(current.initialSnapHeight - previous.initialSnapHeight) >
+          0.5 ||
+        Math.abs(current.backdropHeight - previous.backdropHeight) > 0.5
+      ) {
+        runOnJS(logKeyboardBackdropState)(current);
+      }
+    },
+    [
+      backdropHeight,
+      keyboardHeight,
+      keyboardProgress,
+      sheetTranslateY,
+      initialSnapHeight,
+      isSheetActive,
+    ],
+  );
+}
+
+export function KeyboardBackdropLayer({
+  backgroundColor,
+}: {
+  backgroundColor: string;
+}) {
+  const backdropHeight = useKeyboardBackdropHeight();
+
+  useKeyboardBackdropDebug(backdropHeight);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    height: Math.max(0, backdropHeight.value),
+    opacity: backdropHeight.value > 0 ? 1 : 0,
+  }));
+
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={[styles.keyboardBackdrop, { backgroundColor }, animatedStyle]}
+    />
+  );
+}
+
 export function ChatFooterWrapper({ children }: { children: React.ReactNode }) {
   const {
     sheetTranslateY,
     initialSnapHeight,
     isSheetActive,
     sheetExtraPadding,
+    liveKeyboardHeight,
   } = useComposerSheet();
   const { height: keyboardHeight } = useReanimatedKeyboardAnimationCompat();
+
+  // Pipe RKBC keyboard height → liveKeyboardHeight on every UI-thread frame.
+  // activateSheet reads this synchronously so the sheet height exactly matches
+  // the current keyboard height, eliminating the 2-3 frame React-state lag
+  // that previously caused an upward teleport on the first frame.
+  useAnimatedReaction(
+    () => keyboardHeight.value,
+    (current) => {
+      liveKeyboardHeight.value = current;
+    },
+    [liveKeyboardHeight],
+  );
 
   // Derive the offset the composer should translate up by.
   //   sheetVisibleHeight = how much of the sheet is on-screen
@@ -138,9 +276,9 @@ export function ChatFooterWrapper({ children }: { children: React.ReactNode }) {
   const composerOffset = useDerivedValue(() => {
     if (isSheetActive.value === 0) return 0;
 
-    const sheetVisible = FOOTER_SCREEN_HEIGHT - sheetTranslateY.value;
-    const clamped = Math.min(
-      Math.max(sheetVisible, 0),
+    const sheetVisible = getSheetVisibleHeight(sheetTranslateY.value);
+    const clamped = clampSheetToInitialSnap(
+      sheetVisible,
       initialSnapHeight.value,
     );
     // keyboardHeight from Reanimated is negative when open (keyboard-controller convention)
@@ -166,7 +304,11 @@ export function ChatFooterWrapper({ children }: { children: React.ReactNode }) {
     // KCSV path: KSV positions footer at keyboard top, translateY adds
     // the sheet offset so the footer sits above the composer-attached sheet.
     return (
-      <KeyboardStickyView offset={{ closed: 0, opened: 0 }}>
+      <KeyboardStickyView
+        style={styles.footerLayer}
+        pointerEvents="box-none"
+        offset={{ closed: 0, opened: 0 }}
+      >
         <Animated.View style={offsetStyle}>{children}</Animated.View>
       </KeyboardStickyView>
     );
@@ -177,7 +319,11 @@ export function ChatFooterWrapper({ children }: { children: React.ReactNode }) {
   // needed — the container padding is the single source of truth for the
   // effective bottom inset, preventing the chat-drops-when-sheet-replaces-
   // keyboard bug that occurred when KAV only tracked the keyboard.
-  return <>{children}</>;
+  return (
+    <View pointerEvents="box-none" style={styles.footerLayer}>
+      {children}
+    </View>
+  );
 }
 
 // ─── Effective Bottom Inset ──────────────────────────────────────────────────
@@ -203,15 +349,14 @@ function useEffectiveBottomInset(): SharedValue<number> {
 
     if (isSheetActive.value === 0) return kbH;
 
-    const sheetVisible = FOOTER_SCREEN_HEIGHT - sheetTranslateY.value;
-    const clamped = Math.min(
-      Math.max(sheetVisible, 0),
+    const sheetVisible = getSheetVisibleHeight(sheetTranslateY.value);
+    const clamped = clampSheetToInitialSnap(
+      sheetVisible,
       initialSnapHeight.value,
     );
-    // composerOffset = extra space the sheet occupies beyond the keyboard
-    const composerOffset = Math.max(0, clamped - kbH);
-    // Total = keyboard + sheet's extra contribution (always >= kbH)
-    return kbH + composerOffset;
+    // Layout lift stays clamped to the keyboard-equivalent snap so expanded
+    // sheets don't keep pushing the footer/list farther upward.
+    return Math.max(kbH, clamped);
   });
 }
 
@@ -237,45 +382,25 @@ export function ChatKeyboardContainer({
   style?: StyleProp<ViewStyle>;
   backgroundLayer?: React.ReactNode;
 }) {
-  // Extract backgroundColor from the style prop to use as a solid backdrop
-  // behind the keyboard. This makes the area under the keyboard match the
-  // theme instead of showing the default system background.
-  const flatStyle = StyleSheet.flatten(style);
-  const backdropColor =
-    typeof flatStyle?.backgroundColor === "string"
-      ? flatStyle.backgroundColor
-      : undefined;
-
-  // Solid backdrop that sits behind the keyboard at the bottom of the screen.
-  // Absolutely positioned with zIndex -1 so it never affects layout or
-  // intercept touches — it's purely visual.
-  const backdrop = backdropColor ? (
-    <View
-      style={{
-        position: "absolute",
-        bottom: 0,
-        left: 0,
-        right: 0,
-        height: FOOTER_SCREEN_HEIGHT / 2,
-        backgroundColor: backdropColor,
-        zIndex: -1,
-      }}
-      pointerEvents="none"
-    />
-  ) : null;
+  // Use composerBackground as the single source of truth for the keyboard
+  // backdrop color. This matches the ChatComposer container background,
+  // ensuring the composer, safe-area spacer, and keyboard backdrop form
+  // one continuous visual surface with no visible seam.
+  const { colors } = useAppTheme();
+  const keyboardBackdropColor = colors.composerBackground ?? colors.background;
 
   const backgroundUnderlay = backgroundLayer ? (
-    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+    <View pointerEvents="none" style={styles.backgroundUnderlay}>
       {backgroundLayer}
     </View>
   ) : null;
 
   if (kcsvAvailable) {
-    // KCSV handles content inset natively — no extra padding needed
+    // KCSV handles layout inset natively — the backdrop is visual-only.
     return (
-      <View style={[{ flex: 1 }, style]}>
-        {backdrop}
+      <View style={[styles.container, style]}>
         {backgroundUnderlay}
+        <KeyboardBackdropLayer backgroundColor={keyboardBackdropColor} />
         {children}
       </View>
     );
@@ -284,8 +409,8 @@ export function ChatKeyboardContainer({
   return (
     <FallbackKeyboardContainer
       style={style}
-      backdrop={backdrop}
       backgroundUnderlay={backgroundUnderlay}
+      keyboardBackdropColor={keyboardBackdropColor}
     >
       {children}
     </FallbackKeyboardContainer>
@@ -300,13 +425,13 @@ export function ChatKeyboardContainer({
 function FallbackKeyboardContainer({
   children,
   style,
-  backdrop,
   backgroundUnderlay,
+  keyboardBackdropColor,
 }: {
   children: React.ReactNode;
   style?: StyleProp<ViewStyle>;
-  backdrop?: React.ReactNode;
   backgroundUnderlay?: React.ReactNode;
+  keyboardBackdropColor: string;
 }) {
   const effectiveInset = useEffectiveBottomInset();
 
@@ -315,27 +440,33 @@ function FallbackKeyboardContainer({
   }));
 
   return (
-    <Animated.View style={[{ flex: 1 }, animatedStyle, style]}>
-      {backdrop}
+    <Animated.View style={[styles.container, animatedStyle, style]}>
       {backgroundUnderlay}
+      <KeyboardBackdropLayer backgroundColor={keyboardBackdropColor} />
       {children}
     </Animated.View>
   );
 }
 
 export function KeyboardSafeAreaSpacer({
-  backgroundColor,
+  backgroundColor: backgroundColorOverride,
 }: {
-  backgroundColor: string;
+  /** @deprecated Prefer omitting — defaults to composerBackground for visual continuity. */
+  backgroundColor?: string;
 }) {
   const insets = useSafeAreaInsets();
+  const { colors } = useAppTheme();
 
   if (insets.bottom === 0) return null;
+
+  // Default to composerBackground so the spacer matches the composer surface.
+  const resolvedColor =
+    backgroundColorOverride ?? colors.composerBackground ?? colors.background;
 
   return (
     <AnimatedSafeAreaSpacer
       height={insets.bottom}
-      backgroundColor={backgroundColor}
+      backgroundColor={resolvedColor}
     />
   );
 }
@@ -357,7 +488,7 @@ function AnimatedSafeAreaSpacer({
   const animatedStyle = useAnimatedStyle(() => {
     let sheetProgress = 0;
     if (isSheetActive.value === 1 && initialSnapHeight.value > 0) {
-      const sheetVisible = FOOTER_SCREEN_HEIGHT - sheetTranslateY.value;
+      const sheetVisible = getSheetVisibleHeight(sheetTranslateY.value);
       sheetProgress = Math.min(
         1,
         Math.max(0, sheetVisible / initialSnapHeight.value),
@@ -372,3 +503,23 @@ function AnimatedSafeAreaSpacer({
 
   return <Animated.View style={animatedStyle} />;
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  backgroundUnderlay: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  keyboardBackdrop: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: KEYBOARD_BACKDROP_Z_INDEX,
+  },
+  footerLayer: {
+    position: "relative",
+    zIndex: CHAT_FOOTER_Z_INDEX,
+  },
+});

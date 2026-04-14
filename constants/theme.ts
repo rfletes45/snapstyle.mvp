@@ -3027,8 +3027,11 @@ function resolveSemanticTokens(
     inputPlaceholder: colors.inputPlaceholder ?? colors.textMuted,
     composerBackground: colors.composerBackground ?? colors.background,
     composerBorder: colors.composerBorder ?? colors.divider,
+    // keyboardSurface intentionally resolves to the same value as
+    // composerBackground so the keyboard backdrop, composer, and safe-area
+    // spacer form one continuous visual surface with no seam.
     keyboardSurface:
-      colors.keyboardSurface ?? (isDark ? colors.background : colors.surface),
+      colors.keyboardSurface ?? colors.composerBackground ?? colors.background,
     // Mention system
     suggestionPanelBackground:
       colors.suggestionPanelBackground ?? colors.surfaceElevated,

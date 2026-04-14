@@ -1,8 +1,8 @@
 /**
- * NativeKeyboard — Expo native module for iOS custom keyboard
+ * NativeKeyboard — Expo native module for iOS composer
  *
  * Provides:
- * - NativeComposerView: UITextView-backed composer with custom inputView keyboard
+ * - NativeComposerView: UITextView-backed composer with Apple's system keyboard
  * - Imperative functions: focus, blur, clear, insertTextAtCursor
  * - Availability checks for runtime feature detection
  */

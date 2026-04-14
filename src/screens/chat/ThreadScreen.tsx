@@ -644,7 +644,7 @@ export default function ThreadScreen({ navigation, route }: Props) {
               />
             </TouchableOpacity>
           </View>
-          <KeyboardSafeAreaSpacer backgroundColor={colors.background} />
+          <KeyboardSafeAreaSpacer />
         </ChatFooterWrapper>
       </ChatKeyboardContainer>
 

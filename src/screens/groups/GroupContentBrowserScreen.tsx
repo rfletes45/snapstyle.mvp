@@ -22,6 +22,7 @@ import {
   type MediaItem,
   type MessageItem,
 } from "@/hooks/useGroupContentBrowser";
+import { prepareGroupChatNavigation } from "@/services/chat/threadIdentityWarmup";
 import { useColors } from "@/store/ThemeContext";
 import type { MainStackParamList } from "@/types/navigation/root";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -38,7 +39,6 @@ import {
 } from "react-native";
 import { Appbar, Searchbar, Text } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { prepareGroupChatNavigation } from "@/services/chat/threadIdentityWarmup";
 
 type Props = NativeStackScreenProps<MainStackParamList, "GroupContentBrowser">;
 
