@@ -49,7 +49,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.markInboxRead = exports.onGroupMessageInbox = exports.onDMMessageInbox = void 0;
+exports.onGroupMemberStateChanged = exports.onDMMemberStateChanged = exports.markInboxRead = exports.onGroupMessageInbox = exports.onDMMessageInbox = void 0;
 const admin = __importStar(require("firebase-admin"));
 const functions = __importStar(require("firebase-functions"));
 function getDb() {
@@ -67,13 +67,19 @@ function buildPreview(kind, text) {
     }
     if (kind === "media")
         return "📷 Photo";
+    if (kind === "gif")
+        return "GIF";
+    if (kind === "sticker")
+        return "Sticker";
     if (kind === "voice")
         return "🎤 Voice message";
     if (kind === "file")
         return "📎 File";
+    if (kind === "game")
+        return "🎮 Game";
     if (kind === "system")
         return text || "System message";
-    return text || "";
+    return text || "New message";
 }
 /**
  * Get all member UIDs of a group by listing the Members subcollection.
@@ -216,11 +222,14 @@ exports.onGroupMessageInbox = functions.firestore
     const text = message.text || message.content;
     const preview = buildPreview(kind, text);
     const threadId = `group:${groupId}`;
+    const senderName = message.senderName || "";
     try {
         // Fetch group metadata
         const groupDoc = await db.collection("Groups").doc(groupId).get();
         const groupName = groupDoc.data()?.name || "Group Chat";
         const avatarPath = groupDoc.data()?.avatarPath || "";
+        const avatarUrl = groupDoc.data()?.avatarUrl || "";
+        const backgroundUrl = groupDoc.data()?.backgroundUrl || null;
         // Fetch all member UIDs
         const memberUids = await getGroupMemberUids(groupId);
         if (memberUids.length === 0)
@@ -243,10 +252,13 @@ exports.onGroupMessageInbox = functions.firestore
                     conversationId: groupId,
                     lastActivityAt: admin.firestore.FieldValue.serverTimestamp(),
                     lastSenderId: senderId,
+                    lastSenderName: senderName,
                     lastMessageKind: kind,
                     lastMessagePreview: preview,
                     groupName,
                     avatarPath,
+                    avatarUrl,
+                    backgroundUrl,
                     memberCount: memberUids.length,
                 };
                 if (isSender) {
@@ -294,6 +306,8 @@ exports.markInboxRead = functions.https.onCall(async (data, context) => {
         await inboxRef.set({
             unreadCount: 0,
             unreadSince: null,
+            lastSeenAtPrivate: admin.firestore.FieldValue.serverTimestamp(),
+            lastMarkedUnreadAt: null,
         }, { merge: true });
         return { success: true };
     }
@@ -304,6 +318,106 @@ exports.markInboxRead = functions.https.onCall(async (data, context) => {
             error: error instanceof Error ? error.message : String(error),
         });
         throw new functions.https.HttpsError("internal", "Failed to update inbox");
+    }
+});
+// =============================================================================
+// D) Member State Sync Triggers
+//
+// When a user updates their private member state (pin, archive, mute) the
+// change needs to propagate to their Inbox doc so the aggregated path can
+// display correct state without extra per-conversation reads.
+// =============================================================================
+/**
+ * Sync DM member state changes to the user's Inbox entry.
+ */
+exports.onDMMemberStateChanged = functions.firestore
+    .document("Chats/{chatId}/MembersPrivate/{uid}")
+    .onUpdate(async (change, context) => {
+    const { chatId, uid } = context.params;
+    const before = change.before.data();
+    const after = change.after.data();
+    // Sync all fields that affect inbox display + unread computation
+    const changed = before.pinnedAt !== after.pinnedAt ||
+        before.archived !== after.archived ||
+        before.mutedUntil !== after.mutedUntil ||
+        before.notifyLevel !== after.notifyLevel ||
+        before.deletedAt !== after.deletedAt ||
+        before.hiddenUntilNewMessage !== after.hiddenUntilNewMessage ||
+        before.lastSeenAtPrivate !== after.lastSeenAtPrivate ||
+        before.lastMarkedUnreadAt !== after.lastMarkedUnreadAt;
+    if (!changed)
+        return;
+    const db = getDb();
+    const threadId = `dm:${chatId}`;
+    const inboxRef = db
+        .collection("Users")
+        .doc(uid)
+        .collection("Inbox")
+        .doc(threadId);
+    try {
+        await inboxRef.set({
+            pinnedAt: after.pinnedAt ?? null,
+            archived: after.archived ?? false,
+            mutedUntil: after.mutedUntil ?? null,
+            notifyLevel: after.notifyLevel ?? "all",
+            deletedAt: after.deletedAt ?? null,
+            hiddenUntilNewMessage: after.hiddenUntilNewMessage ?? false,
+            lastSeenAtPrivate: after.lastSeenAtPrivate ?? null,
+            lastMarkedUnreadAt: after.lastMarkedUnreadAt ?? null,
+        }, { merge: true });
+    }
+    catch (error) {
+        functions.logger.error("[onDMMemberStateChanged] Error", {
+            chatId,
+            uid,
+            error: error instanceof Error ? error.message : String(error),
+        });
+    }
+});
+/**
+ * Sync group member state changes to the user's Inbox entry.
+ */
+exports.onGroupMemberStateChanged = functions.firestore
+    .document("Groups/{groupId}/MembersPrivate/{uid}")
+    .onUpdate(async (change, context) => {
+    const { groupId, uid } = context.params;
+    const before = change.before.data();
+    const after = change.after.data();
+    const changed = before.pinnedAt !== after.pinnedAt ||
+        before.archived !== after.archived ||
+        before.mutedUntil !== after.mutedUntil ||
+        before.notifyLevel !== after.notifyLevel ||
+        before.deletedAt !== after.deletedAt ||
+        before.hiddenUntilNewMessage !== after.hiddenUntilNewMessage ||
+        before.lastSeenAtPrivate !== after.lastSeenAtPrivate ||
+        before.lastMarkedUnreadAt !== after.lastMarkedUnreadAt;
+    if (!changed)
+        return;
+    const db = getDb();
+    const threadId = `group:${groupId}`;
+    const inboxRef = db
+        .collection("Users")
+        .doc(uid)
+        .collection("Inbox")
+        .doc(threadId);
+    try {
+        await inboxRef.set({
+            pinnedAt: after.pinnedAt ?? null,
+            archived: after.archived ?? false,
+            mutedUntil: after.mutedUntil ?? null,
+            notifyLevel: after.notifyLevel ?? "all",
+            deletedAt: after.deletedAt ?? null,
+            hiddenUntilNewMessage: after.hiddenUntilNewMessage ?? false,
+            lastSeenAtPrivate: after.lastSeenAtPrivate ?? null,
+            lastMarkedUnreadAt: after.lastMarkedUnreadAt ?? null,
+        }, { merge: true });
+    }
+    catch (error) {
+        functions.logger.error("[onGroupMemberStateChanged] Error", {
+            groupId,
+            uid,
+            error: error instanceof Error ? error.message : String(error),
+        });
     }
 });
 //# sourceMappingURL=inboxTriggers.js.map

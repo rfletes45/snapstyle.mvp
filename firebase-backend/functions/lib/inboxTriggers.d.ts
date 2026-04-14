@@ -39,3 +39,11 @@ export declare const onGroupMessageInbox: functions.CloudFunction<functions.fire
  * Called when the user opens / views a chat.
  */
 export declare const markInboxRead: functions.HttpsFunction & functions.Runnable<any>;
+/**
+ * Sync DM member state changes to the user's Inbox entry.
+ */
+export declare const onDMMemberStateChanged: functions.CloudFunction<functions.Change<functions.firestore.QueryDocumentSnapshot>>;
+/**
+ * Sync group member state changes to the user's Inbox entry.
+ */
+export declare const onGroupMemberStateChanged: functions.CloudFunction<functions.Change<functions.firestore.QueryDocumentSnapshot>>;

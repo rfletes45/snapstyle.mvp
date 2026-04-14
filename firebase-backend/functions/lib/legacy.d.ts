@@ -29,24 +29,6 @@ export { expireGifts, getGiftHistory, openGift, sendGift };
 export { cleanupOldDeals, generateDailyDeals, generateWeeklyDeals, triggerDailyDeals, };
 export { cleanupCallSignaling, getTurnCredentials, handleCallTimeouts, onCallCreated, onCallUpdated, };
 /**
- * onNewMessage: Triggered when a new message is created
- * Sends push notification to recipient and updates streak tracking
- * Respects user mute preferences
- */
-export declare const onNewMessage: functions.CloudFunction<functions.firestore.QueryDocumentSnapshot>;
-/**
- * onNewGroupMessageV2: Triggered when a new message is created in a group
- * Sends push notifications respecting notifyLevel preferences:
- * - "all": notify for all messages
- * - "mentions": notify only if mentioned
- * - "none": never notify
- */
-export declare const onNewGroupMessageV2: functions.CloudFunction<functions.firestore.QueryDocumentSnapshot>;
-/**
- * onNewFriendRequest: Notify user when they receive a friend request
- */
-export declare const onNewFriendRequest: functions.CloudFunction<functions.firestore.QueryDocumentSnapshot>;
-/**
  * onStoryViewed: Notify story author when their story is viewed
  */
 export declare const onStoryViewed: functions.CloudFunction<functions.firestore.QueryDocumentSnapshot>;
