@@ -27,8 +27,10 @@ import {
   StyleSheet,
   View,
 } from "react-native";
-import { Appbar, Searchbar, Text } from "react-native-paper";
+import { Searchbar, Text } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+
+import { ScreenHeader } from "@/components/shared/ScreenHeader";
 
 import { AnimalIcon } from "@/components/chat/AnimalIcon";
 import { CosmeticImage } from "@/components/CosmeticImage";
@@ -1020,46 +1022,63 @@ export default function CustomizationHubScreen({
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* App bar */}
-      <View style={{ paddingTop: insets.top }}>
-        <Appbar.Header
-          style={[styles.appbar, { backgroundColor: colors.background }]}
-          statusBarHeight={0}
-        >
-          <Appbar.BackAction
-            onPress={() => navigation.goBack()}
-            iconColor={colors.text}
-          />
-          <Appbar.Content
-            title="Customize"
-            titleStyle={{ color: colors.text }}
-          />
-          <Appbar.Action
-            icon="store"
-            iconColor={colors.text}
-            onPress={() => navigation.navigate("CosmeticsShop" as any)}
-          />
-          {hub.hasPreview && (
-            <Appbar.Action
-              icon="check"
-              iconColor={colors.text}
-              onPress={async () => {
-                try {
-                  await hub.applyPreview();
-                } catch (error: any) {
-                  Alert.alert("Error", error?.message || "Failed to apply");
-                }
-              }}
-            />
-          )}
-          {hub.hasPreview && (
-            <Appbar.Action
-              icon="close"
-              iconColor={colors.text}
-              onPress={hub.clearPreview}
-            />
-          )}
-        </Appbar.Header>
-      </View>
+      <ScreenHeader
+        title="Customize"
+        onBack={() => navigation.goBack()}
+        renderRight={() => (
+          <View style={styles.headerActions}>
+            <Pressable
+              onPress={() => navigation.navigate("CosmeticsShop" as any)}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              accessibilityLabel="Open shop"
+              accessibilityRole="button"
+              style={styles.headerActionButton}
+            >
+              <MaterialCommunityIcons
+                name="store"
+                size={22}
+                color={colors.text}
+              />
+            </Pressable>
+            {hub.hasPreview && (
+              <Pressable
+                onPress={async () => {
+                  try {
+                    await hub.applyPreview();
+                  } catch (error: any) {
+                    Alert.alert("Error", error?.message || "Failed to apply");
+                  }
+                }}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                accessibilityLabel="Apply preview"
+                accessibilityRole="button"
+                style={styles.headerActionButton}
+              >
+                <MaterialCommunityIcons
+                  name="check"
+                  size={22}
+                  color={colors.text}
+                />
+              </Pressable>
+            )}
+            {hub.hasPreview && (
+              <Pressable
+                onPress={hub.clearPreview}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                accessibilityLabel="Clear preview"
+                accessibilityRole="button"
+                style={styles.headerActionButton}
+              >
+                <MaterialCommunityIcons
+                  name="close"
+                  size={22}
+                  color={colors.text}
+                />
+              </Pressable>
+            )}
+          </View>
+        )}
+      />
 
       {/* ── Live Preview (fixed height — same for Profile & Chat) ── */}
       <View style={styles.previewContainer}>
@@ -1761,8 +1780,13 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  appbar: {
-    elevation: 0,
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  headerActionButton: {
+    padding: 4,
   },
   tabsContainer: {
     flexDirection: "row",

@@ -1,4 +1,9 @@
 import { prefetchCriticalProfileAssets } from "@/services/cosmeticsAssetCache";
+import {
+  describeRemoteUrlForLog,
+  rememberPreparedGroupChatData,
+  traceGroupWallpaper,
+} from "@/services/chat/groupWallpaperDebug";
 import { getGroup, getGroupMembersForDisplay } from "@/services/groups";
 import type { GroupMember } from "@/types/models";
 import { createLogger } from "@/utils/log";
@@ -9,7 +14,6 @@ const log = createLogger("threadIdentityWarmup");
 
 const GROUP_MEMBER_CACHE_TTL_MS = 5 * 60 * 1000;
 
-const imageRefCache = new Map<string, ImageRef>();
 const imageWarmPromises = new Map<string, Promise<ImageRef | null>>();
 const groupMemberCache = new Map<
   string,
@@ -35,23 +39,89 @@ function isGroupMemberCacheFresh(
   return !!entry && Date.now() - entry.preparedAt <= GROUP_MEMBER_CACHE_TTL_MS;
 }
 
+// ---------------------------------------------------------------------------
+// Background ImageRef retention
+// ---------------------------------------------------------------------------
+// Image.loadAsync() returns an ImageRef — a strong native reference to the
+// decoded bitmap (UIImage / Drawable). As long as a JS reference to the
+// ImageRef exists, the native bitmap stays pinned in memory and will NOT be
+// evicted by the platform's LRU cache. Passing an ImageRef as <Image source>
+// renders the bitmap instantly with zero cache-lookup or decode cost.
+//
+// Previously, warmRemoteImage discarded the ImageRef (.then(() => {})).
+// On the first session open the native memory cache was mostly empty so the
+// bitmap survived long enough for <AppImage> to grab it. On later opens the
+// cache was full of avatars / chat images and the bitmap was evicted before
+// the component mounted, forcing a ~50-200 ms disk re-decode (visible as
+// delayed wallpaper pop-in). Retaining the ImageRef eliminates this.
+// ---------------------------------------------------------------------------
+
+const bgRefCache = new Map<string, ImageRef>();
+const MAX_BG_REFS = 3;
+
+function retainBackgroundRef(normalizedUrl: string, ref: ImageRef): void {
+  // Delete-then-set keeps Map insertion order = LRU order.
+  bgRefCache.delete(normalizedUrl);
+  if (bgRefCache.size >= MAX_BG_REFS) {
+    const oldest = bgRefCache.keys().next().value;
+    if (oldest !== undefined) bgRefCache.delete(oldest);
+  }
+  bgRefCache.set(normalizedUrl, ref);
+  if (__DEV__) {
+    log.info("Retained warmed background ImageRef", {
+      data: {
+        backgroundKey: describeRemoteUrlForLog(normalizedUrl).key,
+        cacheSize: bgRefCache.size,
+      },
+    });
+  }
+}
+
+/**
+ * Returns a retained ImageRef for the given background URL, if one was
+ * previously warmed via warmGroupIdentityAssets / prepareGroupThreadEntry.
+ * When non-null, passing this as `<Image source>` renders the bitmap
+ * instantly with no cache lookup or disk decode.
+ */
+export function getCachedBackgroundRef(
+  url: string | null | undefined,
+): ImageRef | null {
+  const normalized = normalizeRemoteImageUrl(url);
+  if (!normalized) return null;
+  return bgRefCache.get(normalized) ?? null;
+}
+
 async function warmRemoteImage(url: string): Promise<ImageRef | null> {
-  const cached = imageRefCache.get(url);
-  if (cached) return cached;
-
   const existingPromise = imageWarmPromises.get(url);
-  if (existingPromise) return existingPromise;
+  if (existingPromise) {
+    if (__DEV__) {
+      log.info("Reusing in-flight remote image warm", {
+        data: { backgroundKey: describeRemoteUrlForLog(url).key },
+      });
+    }
+    return existingPromise;
+  }
 
-  const nextPromise = Image.loadAsync(url)
+  if (__DEV__) {
+    log.info("Starting remote image warm", {
+      data: { backgroundKey: describeRemoteUrlForLog(url).key },
+    });
+  }
+
+  const nextPromise: Promise<ImageRef | null> = Image.loadAsync(url)
     .then((ref) => {
-      imageRefCache.set(url, ref);
+      if (__DEV__) {
+        log.info("Resolved remote image warm", {
+          data: { backgroundKey: describeRemoteUrlForLog(url).key },
+        });
+      }
       return ref;
     })
-    .catch((error) => {
+    .catch((error): null => {
       if (__DEV__) {
         log.debug("Failed to warm remote identity image", {
           data: {
-            url: url.slice(0, 120),
+            backgroundKey: describeRemoteUrlForLog(url).key,
             error: error instanceof Error ? error.message : String(error),
           },
         });
@@ -133,16 +203,43 @@ export function getPreparedGroupMembers(groupId: string): GroupMember[] | null {
 }
 
 export async function warmGroupIdentityAssets(params: {
+  groupId?: string;
   groupAvatarUrl?: string | null;
   backgroundUrl?: string | null;
   members?: GroupMember[];
 }): Promise<void> {
+  // Start the background warm separately so we can capture the ImageRef for
+  // retention as soon as IT resolves, independent of the slower member-avatar
+  // and decoration warmup. warmRemoteImage deduplicates via imageWarmPromises,
+  // so the call inside warmIdentityImageUrls for the same URL returns this
+  // exact promise — no double Image.loadAsync.
+  const bgNormalized = normalizeRemoteImageUrl(params.backgroundUrl);
+  if (__DEV__ && params.groupId) {
+    traceGroupWallpaper(params.groupId, "warm-group-assets-start", {
+      avatarKey: describeRemoteUrlForLog(params.groupAvatarUrl).key,
+      backgroundKey: describeRemoteUrlForLog(bgNormalized).key,
+      memberCount: params.members?.length ?? 0,
+    });
+  }
+  const bgRefPromise = bgNormalized
+    ? warmRemoteImage(bgNormalized).then((ref) => {
+        if (ref) retainBackgroundRef(bgNormalized, ref);
+        if (__DEV__ && params.groupId) {
+          traceGroupWallpaper(params.groupId, "warm-group-assets-background-ready", {
+            backgroundKey: describeRemoteUrlForLog(bgNormalized).key,
+            retained: !!ref,
+          });
+        }
+      })
+    : null;
+
   await Promise.all([
     warmIdentityImageUrls([
       params.groupAvatarUrl,
       params.backgroundUrl,
       ...(params.members?.map((member) => member.profilePictureUrl) ?? []),
     ]),
+    bgRefPromise,
     warmIdentityDecorations(
       params.members?.map((member) => member.decorationId) ?? [],
     ),
@@ -156,23 +253,89 @@ export async function prepareGroupThreadEntry(
     backgroundUrl?: string | null;
   },
 ): Promise<GroupMember[]> {
+  rememberPreparedGroupChatData(
+    groupId,
+    {
+      avatarUrl:
+        params?.groupAvatarUrl === undefined ? undefined : params.groupAvatarUrl,
+      backgroundUrl:
+        params?.backgroundUrl === undefined ? undefined : params.backgroundUrl,
+    },
+    "prepare-group-thread-entry",
+  );
+
+  if (__DEV__) {
+    traceGroupWallpaper(groupId, "prepare-group-thread-entry-start", {
+      cachedMembers: !!getPreparedGroupMembers(groupId)?.length,
+      avatarKey: describeRemoteUrlForLog(params?.groupAvatarUrl).key,
+      backgroundKey: describeRemoteUrlForLog(params?.backgroundUrl).key,
+    });
+  }
+
   const cached = groupMemberCache.get(groupId);
   if (isGroupMemberCacheFresh(cached)) {
     await warmGroupIdentityAssets({
+      groupId,
       groupAvatarUrl: params?.groupAvatarUrl,
       backgroundUrl: params?.backgroundUrl,
       members: cached.members,
     });
+    if (__DEV__) {
+      traceGroupWallpaper(groupId, "prepare-group-thread-entry-finish", {
+        memberSource: "cache",
+        memberCount: cached.members.length,
+      });
+    }
     return cached.members;
   }
 
+  // Start warming critical assets (background + group avatar) immediately,
+  // in parallel with the member fetch, so the background image reaches
+  // expo-image's memory cache as early as possible.
+  // Retain the background ImageRef as soon as it resolves — this is the
+  // earliest possible moment to pin the decoded bitmap in native memory.
+  const bgNormalized = normalizeRemoteImageUrl(params?.backgroundUrl);
+  const bgRetainPromise = bgNormalized
+    ? warmRemoteImage(bgNormalized).then((ref) => {
+        if (ref) retainBackgroundRef(bgNormalized, ref);
+        if (__DEV__) {
+          traceGroupWallpaper(groupId, "prepare-group-thread-entry-background-ready", {
+            backgroundKey: describeRemoteUrlForLog(bgNormalized).key,
+            retained: !!ref,
+          });
+        }
+      })
+    : null;
+  const criticalWarm = Promise.all([
+    bgRetainPromise,
+    warmIdentityImageUrls([params?.groupAvatarUrl]),
+  ]);
+
   const members = await getGroupMembersForDisplay(groupId);
   cachePreparedGroupMembers(groupId, members);
-  await warmGroupIdentityAssets({
-    groupAvatarUrl: params?.groupAvatarUrl,
-    backgroundUrl: params?.backgroundUrl,
-    members,
-  });
+  if (__DEV__) {
+    traceGroupWallpaper(groupId, "prepare-group-thread-entry-members-fetched", {
+      memberCount: members.length,
+    });
+  }
+
+  // Warm remaining member identity assets + await the critical warmup.
+  // warmRemoteImage deduplicates, so double-warming background/avatar is free.
+  await Promise.all([
+    criticalWarm,
+    warmGroupIdentityAssets({
+      groupId,
+      groupAvatarUrl: params?.groupAvatarUrl,
+      backgroundUrl: params?.backgroundUrl,
+      members,
+    }),
+  ]);
+  if (__DEV__) {
+    traceGroupWallpaper(groupId, "prepare-group-thread-entry-finish", {
+      memberSource: "network",
+      memberCount: members.length,
+    });
+  }
   return members;
 }
 
@@ -215,6 +378,28 @@ export async function prepareGroupChatNavigation(params: {
 }): Promise<GroupChatNavParams> {
   let { groupName, groupAvatarUrl, backgroundUrl } = params;
 
+  rememberPreparedGroupChatData(
+    params.groupId,
+    {
+      name: groupName,
+      avatarUrl:
+        groupAvatarUrl === undefined ? undefined : (groupAvatarUrl ?? null),
+      backgroundUrl:
+        backgroundUrl === undefined ? undefined : (backgroundUrl ?? null),
+    },
+    "prepare-group-chat-navigation-input",
+  );
+
+  if (__DEV__) {
+    traceGroupWallpaper(params.groupId, "prepare-group-chat-navigation-start", {
+      avatarKey: describeRemoteUrlForLog(groupAvatarUrl).key,
+      backgroundKey: describeRemoteUrlForLog(backgroundUrl).key,
+      hasBackgroundUrl: backgroundUrl !== undefined && backgroundUrl !== null,
+      targetMessageId: !!params.targetMessageId,
+      jumpRequestId: !!params.jumpRequestId,
+    });
+  }
+
   // If background URL is unknown, do a lightweight group-doc fetch
   if (backgroundUrl === undefined || backgroundUrl === null) {
     try {
@@ -223,8 +408,23 @@ export async function prepareGroupChatNavigation(params: {
         groupName = groupName || group.name;
         groupAvatarUrl = groupAvatarUrl ?? group.avatarUrl ?? null;
         backgroundUrl = group.backgroundUrl ?? null;
+        rememberPreparedGroupChatData(
+          params.groupId,
+          {
+            name: groupName,
+            avatarUrl: groupAvatarUrl ?? null,
+            backgroundUrl: backgroundUrl ?? null,
+          },
+          "prepare-group-chat-navigation-fetch",
+        );
+        if (__DEV__) {
+          traceGroupWallpaper(params.groupId, "prepare-group-chat-navigation-fetched-group", {
+            avatarKey: describeRemoteUrlForLog(groupAvatarUrl).key,
+            backgroundKey: describeRemoteUrlForLog(backgroundUrl).key,
+          });
+        }
       }
-    } catch (err) {
+    } catch {
       log.debug("prepareGroupChatNavigation: group fetch failed, proceeding", {
         data: { groupId: params.groupId },
       });
@@ -237,9 +437,26 @@ export async function prepareGroupChatNavigation(params: {
       groupAvatarUrl: groupAvatarUrl ?? null,
       backgroundUrl: backgroundUrl ?? null,
     });
-  } catch (err) {
+  } catch {
     log.debug("prepareGroupChatNavigation: warmup failed, proceeding", {
       data: { groupId: params.groupId },
+    });
+  }
+
+  rememberPreparedGroupChatData(
+    params.groupId,
+    {
+      name: groupName,
+      avatarUrl: groupAvatarUrl ?? null,
+      backgroundUrl: backgroundUrl ?? null,
+    },
+    "prepare-group-chat-navigation-final",
+  );
+
+  if (__DEV__) {
+    traceGroupWallpaper(params.groupId, "prepare-group-chat-navigation-finish", {
+      avatarKey: describeRemoteUrlForLog(groupAvatarUrl).key,
+      backgroundKey: describeRemoteUrlForLog(backgroundUrl).key,
     });
   }
 

@@ -102,17 +102,31 @@ export function ComposerSheetProvider({
    *  to dismiss the old one first (prevents stacking). */
   const activeCloseRef = useRef<(() => void) | null>(null);
 
+  /** True while activateSheet is switching from one picker to another.
+   *  Prevents deactivateSheet from resetting shared animated values (translateY,
+   *  isSheetActive, etc.) so there is no visible gap between sheets. */
+  const switchingRef = useRef(false);
+
   const setLastKeyboardHeight = useCallback((h: number) => {
     if (h > 0) setLastKbH(h);
   }, []);
 
   const activateSheet = useCallback(
     (currentKbHeight?: number, closeCallback?: () => void) => {
-      // If another sheet is already open, dismiss it first
+      // If another sheet is already open, dismiss it — but delay the
+      // teardown to the next frame so both Portals overlap briefly.
+      // React Native Paper's Portal uses componentDidMount/componentWillUnmount
+      // → PortalManager.setState, which re-renders one frame later. Without
+      // the overlap, there is a 1-frame gap where neither Portal is visible
+      // (the old one unregistered, the new one not yet registered).
       if (activeCloseRef.current) {
         const prev = activeCloseRef.current;
-        activeCloseRef.current = null; // clear before calling to prevent loops
-        prev();
+        activeCloseRef.current = null;
+        requestAnimationFrame(() => {
+          switchingRef.current = true;
+          prev();
+          switchingRef.current = false;
+        });
       }
 
       // Store the new sheet's close callback
@@ -146,6 +160,11 @@ export function ComposerSheetProvider({
   );
 
   const deactivateSheet = useCallback(() => {
+    // When switching between sheets, skip ALL teardown — the new sheet's
+    // close callback is already stored in activeCloseRef by activateSheet(),
+    // and clearing it here would break future switches. The animated values
+    // are also preserved so there is no 1-frame gap where the sheet disappears.
+    if (switchingRef.current) return;
     activeCloseRef.current = null;
     isSheetActive.value = 0;
     sheetTranslateY.value = SCREEN_HEIGHT;

@@ -20,6 +20,12 @@ import { useInboxData } from "@/hooks/useInboxData";
 import { useInboxTyping } from "@/hooks/useInboxTyping";
 import { useUnifiedInboxRequests } from "@/hooks/useUnifiedInboxRequests";
 import {
+  describeRemoteUrlForLog,
+  getPreparedGroupChatData,
+  rememberPreparedGroupChatData,
+  traceGroupWallpaper,
+} from "@/services/chat/groupWallpaperDebug";
+import {
   prepareDmThreadEntry,
   prepareGroupChatNavigation,
 } from "@/services/chat/threadIdentityWarmup";
@@ -29,8 +35,12 @@ import { useInAppNotifications } from "@/store/InAppNotificationsContext";
 import { useAppTheme } from "@/store/ThemeContext";
 import type { InboxConversation } from "@/types/messaging";
 import type { GroupInvite } from "@/types/models";
-import { usePrefetchProfileImages } from "@/utils/imagePrefetch";
+import {
+  prefetchImages,
+  usePrefetchProfileImages,
+} from "@/utils/imagePrefetch";
 import { log } from "@/utils/log";
+import { normalizeRemoteImageUrl } from "@/utils/remoteImageSource";
 import {
   useFocusEffect,
   useIsFocused,
@@ -270,12 +280,73 @@ export default function ChatListScreen() {
           decorationId: conversation.decorationId,
         }).catch(() => {});
       } else {
-        prepareGroupChatNavigation({
+        const prepared = getPreparedGroupChatData(
+          conversation.id,
+          "chat-list-press-in",
+        );
+        const resolvedBackgroundUrl = normalizeRemoteImageUrl(
+          conversation.backgroundUrl ?? prepared?.backgroundUrl,
+        );
+        const resolvedAvatarUrl = normalizeRemoteImageUrl(
+          conversation.avatarUrl ?? prepared?.avatarUrl,
+        );
+
+        rememberPreparedGroupChatData(
+          conversation.id,
+          {
+            name: conversation.name,
+            avatarUrl: resolvedAvatarUrl ?? undefined,
+            backgroundUrl: resolvedBackgroundUrl ?? undefined,
+          },
+          "chat-list-press-in",
+        );
+
+        if (__DEV__) {
+          traceGroupWallpaper(conversation.id, "chat-list-press-in", {
+            hasConversationBackground: !!conversation.backgroundUrl,
+            preparedBackground: !!prepared?.backgroundUrl,
+            resolvedBackgroundKey:
+              describeRemoteUrlForLog(resolvedBackgroundUrl).key,
+          });
+        }
+
+        // Start background image prefetch immediately — this is the earliest
+        // possible moment to get the image into expo-image's memory cache
+        // so it paints on GroupChatScreen's very first frame.
+        // Normalize the URL so the cache key matches what warmRemoteImage uses.
+        if (resolvedBackgroundUrl) {
+          void prefetchImages([resolvedBackgroundUrl]).then((success) => {
+            if (__DEV__) {
+              traceGroupWallpaper(conversation.id, "chat-list-press-in-prefetch-finish", {
+                success,
+              });
+            }
+          });
+        }
+
+        void prepareGroupChatNavigation({
           groupId: conversation.id,
-          groupName: conversation.name,
-          groupAvatarUrl: conversation.avatarUrl,
-          backgroundUrl: conversation.backgroundUrl,
-        }).catch(() => {});
+          groupName: conversation.name || prepared?.name || undefined,
+          groupAvatarUrl: resolvedAvatarUrl ?? null,
+          backgroundUrl: resolvedBackgroundUrl ?? null,
+        })
+          .then((navParams) => {
+            rememberPreparedGroupChatData(
+              conversation.id,
+              navParams.initialGroupData ?? {},
+              "chat-list-press-in-nav-ready",
+            );
+            if (__DEV__) {
+              traceGroupWallpaper(
+                conversation.id,
+                "chat-list-press-in-navigation-ready",
+                {
+                  backgroundReady: !!navParams.initialGroupData?.backgroundUrl,
+                },
+              );
+            }
+          })
+          .catch(() => {});
       }
     },
     [],
@@ -314,6 +385,36 @@ export default function ChatListScreen() {
           },
         });
       } else {
+        const prepared = getPreparedGroupChatData(
+          conversation.id,
+          "chat-list-press",
+        );
+        const initialGroupData = {
+          name: conversation.name || prepared?.name || "",
+          avatarUrl:
+            normalizeRemoteImageUrl(
+              conversation.avatarUrl ?? prepared?.avatarUrl,
+            ) ?? null,
+          backgroundUrl:
+            normalizeRemoteImageUrl(
+              conversation.backgroundUrl ?? prepared?.backgroundUrl,
+            ) ?? null,
+        };
+
+        rememberPreparedGroupChatData(
+          conversation.id,
+          initialGroupData,
+          "chat-list-press",
+        );
+
+        if (__DEV__) {
+          traceGroupWallpaper(conversation.id, "chat-list-press", {
+            hasConversationBackground: !!conversation.backgroundUrl,
+            preparedBackground: !!prepared?.backgroundUrl,
+            navigatedBackground: !!initialGroupData.backgroundUrl,
+          });
+        }
+
         // OPTIMIZATION: Navigate immediately with data we already have,
         // rather than awaiting prepareGroupChatNavigation which performs
         // Firestore reads and image prefetching before navigation starts.
@@ -328,21 +429,17 @@ export default function ChatListScreen() {
           };
         } = {
           groupId: conversation.id,
-          groupName: conversation.name,
-          initialGroupData: {
-            name: conversation.name || "",
-            avatarUrl: conversation.avatarUrl ?? null,
-            backgroundUrl: conversation.backgroundUrl ?? null,
-          },
+          groupName: initialGroupData.name || conversation.name,
+          initialGroupData,
         };
         navigation.navigate("GroupChat", navParams);
 
         // Warm identity assets in background (non-blocking)
-        prepareGroupChatNavigation({
+        void prepareGroupChatNavigation({
           groupId: conversation.id,
-          groupName: conversation.name,
-          groupAvatarUrl: conversation.avatarUrl,
-          backgroundUrl: conversation.backgroundUrl,
+          groupName: initialGroupData.name || undefined,
+          groupAvatarUrl: initialGroupData.avatarUrl,
+          backgroundUrl: initialGroupData.backgroundUrl,
         }).catch((err) => {
           log.warn("[Inbox] Background group warmup failed", { err });
         });

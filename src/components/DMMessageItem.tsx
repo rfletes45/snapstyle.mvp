@@ -11,9 +11,15 @@
 
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import React, { useCallback } from "react";
+import React, { useCallback, useEffect } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useTheme } from "react-native-paper";
+import Animated, {
+  Easing,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from "react-native-reanimated";
 
 import MessageImage from "@/components/AppImage";
 import { ReplyBubble, SwipeableMessage } from "@/components/chat";
@@ -33,7 +39,10 @@ import { useLinkPreviews } from "@/hooks/useLinkPreviews";
 import { extractUrls, hasUrls } from "@/services/linkPreview";
 import type { ReactionSummary } from "@/services/reactions";
 import type { MessageV2, ReplyToMetadata } from "@/types/messaging";
-import { formatChatTimestamp } from "@/utils/chatTimestamp";
+import {
+  formatBubbleTimestamp,
+  formatChatTimestamp,
+} from "@/utils/chatTimestamp";
 
 const IMAGE_MAX_WIDTH = 240;
 const IMAGE_MAX_HEIGHT = 320;
@@ -92,6 +101,10 @@ interface DMMessageItemProps {
   isGroupedWithNext?: boolean;
   /** Whether to show the timestamp for this message */
   showTimestamp?: boolean;
+  /** When true, show time-only (bubble mode) instead of full date */
+  useTimeOnly?: boolean;
+  /** Whether to show the read/delivered status stamp for this message */
+  showStatus?: boolean;
   /** Live reactions for this message (from subscription) */
   reactions?: ReactionSummary[];
   /** Called immediately for optimistic reaction toggle */
@@ -114,6 +127,8 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
     isGrouped = false,
     isGroupedWithNext = false,
     showTimestamp = true,
+    useTimeOnly = false,
+    showStatus = true,
     reactions = [],
     onOptimisticReaction,
   }) => {
@@ -121,6 +136,19 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
     const navigation = useNavigation<NativeStackNavigationProp<any>>();
     const isSentByMe = message.senderId === currentUid;
     const messageText = message.text || "";
+
+    // ── Status fade animation ─────────────────────────────────────────
+    const statusOpacity = useSharedValue(showStatus ? 1 : 0);
+    useEffect(() => {
+      statusOpacity.value = withTiming(showStatus ? 1 : 0, {
+        duration: 200,
+        easing: Easing.out(Easing.cubic),
+      });
+    }, [showStatus, statusOpacity]);
+    const statusAnimatedStyle = useAnimatedStyle(() => ({
+      opacity: statusOpacity.value,
+    }));
+
     const imageAttachment = message.attachments?.find(
       (attachment) => attachment.kind === "image",
     );
@@ -209,6 +237,8 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
     ]);
 
     // Render message status indicator
+    // "sending" and "failed" always show (operational feedback).
+    // "delivered" and "read" respect showStatus + fade animation.
     const renderStatus = () => {
       if (!isSentByMe) return null;
 
@@ -244,8 +274,8 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
           );
         case "delivered":
           return (
-            <View
-              style={styles.statusContainer}
+            <Animated.View
+              style={[styles.statusContainer, statusAnimatedStyle]}
               accessibilityLabel="Message delivered"
             >
               <Text
@@ -256,12 +286,12 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
               >
                 Delivered
               </Text>
-            </View>
+            </Animated.View>
           );
         case "read":
           return (
-            <View
-              style={styles.statusContainer}
+            <Animated.View
+              style={[styles.statusContainer, statusAnimatedStyle]}
               accessibilityLabel="Message read"
             >
               <Text
@@ -269,7 +299,7 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
               >
                 Read
               </Text>
-            </View>
+            </Animated.View>
           );
         default:
           return null;
@@ -463,7 +493,9 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
                         { color: theme.colors.onSurface + "99" },
                       ]}
                     >
-                      {formatChatTimestamp(message.createdAt)}
+                      {useTimeOnly
+                        ? formatBubbleTimestamp(message.createdAt)
+                        : formatChatTimestamp(message.createdAt)}
                     </Text>
                   </View>
                 )}

@@ -24,14 +24,17 @@ import { FEED_LAYOUT } from "@/chat/displayMode";
 import FeedImage from "@/components/AppImage";
 import { SwipeableMessage } from "@/components/chat";
 import { AnimalBubble } from "@/components/chat/AnimalBubble";
-import type { CardWidthTracker } from "@/components/chat/CardWidthTracker";
+import { DM_STACKED_CARD_PADDING_H } from "@/components/chat/groupedCardMetrics";
 import { LinkPreviewCard } from "@/components/chat/LinkPreviewCard";
 import { MessageHighlightOverlay } from "@/components/chat/MessageHighlightOverlay";
 import { ReactionPills } from "@/components/chat/ReactionBar";
 import { StackedReplyReference } from "@/components/chat/StackedReplyReference";
 import { ThreadIndicator } from "@/components/chat/ThreadIndicator";
+import {
+  useGroupedCardLayout,
+  type CardCornerWidthStore,
+} from "@/components/chat/useGroupedCardLayout";
 import { VoiceMessagePlayer } from "@/components/chat/VoiceMessagePlayer";
-import { useGroupedCardLayout } from "@/components/chat/useGroupedCardLayout";
 import { ProfilePictureWithDecoration } from "@/components/profile/ProfilePicture";
 import type { ChatAppearance } from "@/cosmetics/types";
 import { useLinkPreviews } from "@/hooks/useLinkPreviews";
@@ -100,11 +103,11 @@ export interface StackedMessageRendererProps {
   senderProfilePictureUrl?: string | null;
   /** Resolved sender decoration ID */
   senderDecorationId?: string | null;
-  /** Shared tracker for adaptive card-width rounding */
-  cardWidthTracker?: CardWidthTracker;
-  /** Message ID of neighbor above in same group */
+  /** Shared width store for corner-only neighbor comparison. */
+  cornerWidthStore?: CardCornerWidthStore;
+  /** Previous neighbor in same group (for right-side corner shape). */
   groupPrevMessageId?: string;
-  /** Message ID of neighbor below in same group */
+  /** Next neighbor in same group (for right-side corner shape). */
   groupNextMessageId?: string;
 }
 
@@ -132,7 +135,7 @@ export const StackedMessageRenderer: React.FC<StackedMessageRendererProps> =
       senderDisplayName,
       senderProfilePictureUrl,
       senderDecorationId,
-      cardWidthTracker,
+      cornerWidthStore,
       groupPrevMessageId,
       groupNextMessageId,
     }) => {
@@ -285,17 +288,16 @@ export const StackedMessageRenderer: React.FC<StackedMessageRendererProps> =
       // Only mention-highlighted rows get a row-level treatment.
       // (DM mode has no mentions, so no tint at all.)
 
-      // ── Adaptive card-width tracking ──────────────────────────────────
+      // ── Deterministic card corners ──────────────────────────────────
       const groupCardBg = theme.colors.background;
-      const { handleCardLayout, groupCardRadius, snapMinWidth } =
-        useGroupedCardLayout({
-          messageId: message.id,
-          cardWidthTracker,
-          groupPrevMessageId,
-          groupNextMessageId,
-          isGroupStart: vm.isGroupStart,
-          isGroupEnd: vm.isGroupEnd,
-        });
+      const { groupCardRadius, handleCardLayout } = useGroupedCardLayout({
+        messageId: message.id,
+        isGroupStart: vm.isGroupStart,
+        isGroupEnd: vm.isGroupEnd,
+        cornerWidthStore,
+        groupPrevMessageId,
+        groupNextMessageId,
+      });
 
       // ── Thread press handler ──────────────────────────────────────────
       const handleThreadPress = useCallback(() => {
@@ -358,6 +360,7 @@ export const StackedMessageRenderer: React.FC<StackedMessageRendererProps> =
                 {/* Content column — name + message in one vertical flow */}
                 <View style={s.contentColumn}>
                   <View
+                    onLayout={handleCardLayout}
                     style={[
                       s.cardWrapper,
                       {
@@ -365,13 +368,11 @@ export const StackedMessageRenderer: React.FC<StackedMessageRendererProps> =
                         overflow: "hidden",
                       },
                       groupCardRadius,
-                      snapMinWidth !== undefined && { minWidth: snapMinWidth },
                     ]}
                   >
                     {/* Highlight overlay for reply navigation */}
                     <MessageHighlightOverlay isHighlighted={isHighlighted} />
                     <View
-                      onLayout={handleCardLayout}
                       style={[
                         s.cardContent,
                         {
@@ -412,11 +413,7 @@ export const StackedMessageRenderer: React.FC<StackedMessageRendererProps> =
                       )}
 
                       {/* Message content — no bubble wrapper */}
-                      <View
-                        style={[message.status === "failed" && s.failedContent]}
-                      >
-                        {renderContent()}
-                      </View>
+                      {renderContent()}
 
                       {/* Reaction pills — always left-aligned in feed mode */}
                       {reactions.length > 0 && (
@@ -474,7 +471,8 @@ const s = StyleSheet.create({
   // ── Row containers ──────────────────────────────────────────────────
   feedRow: {
     width: "100%",
-    paddingHorizontal: F.rowPaddingH,
+    paddingLeft: F.rowPaddingH - 6,
+    paddingRight: F.rowPaddingH + 6,
   },
   feedRowGroupStart: {
     marginTop: F.groupGap,
@@ -494,6 +492,7 @@ const s = StyleSheet.create({
     marginRight: F.gutterGap,
     alignItems: "center",
     paddingTop: 2,
+    transform: [{ translateX: 4 }],
   },
   authorName: {
     fontSize: F.authorNameFontSize,
@@ -522,7 +521,7 @@ const s = StyleSheet.create({
   },
   cardContent: {
     alignSelf: "flex-start" as const,
-    paddingHorizontal: F.rowPaddingH + 4,
+    paddingHorizontal: DM_STACKED_CARD_PADDING_H,
   },
 
   // ── Message text (no bubble) ────────────────────────────────────────
@@ -557,10 +556,5 @@ const s = StyleSheet.create({
     flexDirection: "row",
     alignItems: "flex-start",
     marginTop: 2,
-  },
-
-  // ── Failed message styling ──────────────────────────────────────────
-  failedContent: {
-    opacity: 0.8,
   },
 });

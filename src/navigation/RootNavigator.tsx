@@ -10,6 +10,7 @@ import React, { useCallback, useEffect, useMemo, useRef } from "react";
 import { StyleSheet } from "react-native";
 
 import AppGate from "@/components/AppGate";
+import ErrorBoundary from "@/components/ErrorBoundary";
 import WarningModal from "@/components/WarningModal";
 import { ComposerSheetProvider } from "@/contexts/ComposerSheetContext";
 import { clearLastOpenChat, getLastOpenChat } from "@/services/lastOpenChat";
@@ -270,7 +271,7 @@ function ProfileStack() {
       <ProfileStack_Nav.Screen
         name="Settings"
         component={SettingsScreen}
-        options={{ title: "Settings" }}
+        options={{ headerShown: false }}
       />
       <ProfileStack_Nav.Screen
         name="Tasks"
@@ -439,9 +440,11 @@ function MainStack() {
         }}
       >
         {(props) => (
-          <ComposerSheetProvider>
-            <ChatScreen {...props} />
-          </ComposerSheetProvider>
+          <ErrorBoundary>
+            <ComposerSheetProvider>
+              <ChatScreen {...props} />
+            </ComposerSheetProvider>
+          </ErrorBoundary>
         )}
       </MainStack_Nav.Screen>
       <MainStack_Nav.Screen
@@ -458,12 +461,17 @@ function MainStack() {
       </MainStack_Nav.Screen>
       <MainStack_Nav.Screen
         name="ThreadView"
-        component={ThreadScreen}
         options={{
           headerShown: false,
           animation: "slide_from_right",
         }}
-      />
+      >
+        {(props) => (
+          <ComposerSheetProvider>
+            <ThreadScreen {...props} />
+          </ComposerSheetProvider>
+        )}
+      </MainStack_Nav.Screen>
       <MainStack_Nav.Screen
         name="GroupChatCreate"
         component={GroupChatCreateScreen}

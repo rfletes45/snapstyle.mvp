@@ -10,6 +10,7 @@
  * @module screens/chat/InboxSettingsScreen
  */
 
+import { ScreenHeader } from "@/components/shared/ScreenHeader";
 import { Spacing } from "@/constants/theme";
 import {
   subscribeToInboxSettings,
@@ -27,7 +28,6 @@ import React, { useCallback, useEffect, useState } from "react";
 import { ScrollView, StyleSheet, View } from "react-native";
 import {
   ActivityIndicator,
-  Appbar,
   Button,
   Dialog,
   Divider,
@@ -151,10 +151,7 @@ export default function InboxSettingsScreen() {
   if (loading) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <Appbar.Header style={{ backgroundColor: colors.surface }}>
-          <Appbar.BackAction onPress={() => navigation.goBack()} />
-          <Appbar.Content title="Chat Settings" />
-        </Appbar.Header>
+        <ScreenHeader title="Chat Settings" />
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
           <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
@@ -168,10 +165,7 @@ export default function InboxSettingsScreen() {
   if (!settings) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <Appbar.Header style={{ backgroundColor: colors.surface }}>
-          <Appbar.BackAction onPress={() => navigation.goBack()} />
-          <Appbar.Content title="Chat Settings" />
-        </Appbar.Header>
+        <ScreenHeader title="Chat Settings" />
         <View style={styles.loadingContainer}>
           <Text style={[styles.errorText, { color: colors.error }]}>
             Failed to load settings
@@ -208,10 +202,7 @@ export default function InboxSettingsScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Header */}
-      <Appbar.Header style={{ backgroundColor: colors.surface }}>
-        <Appbar.BackAction onPress={() => navigation.goBack()} />
-        <Appbar.Content title="Chat Settings" />
-      </Appbar.Header>
+      <ScreenHeader title="Chat Settings" />
 
       <ScrollView
         contentContainerStyle={{ paddingBottom: insets.bottom + Spacing.lg }}

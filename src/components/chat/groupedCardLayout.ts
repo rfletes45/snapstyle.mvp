@@ -1,5 +1,15 @@
 export const GROUPED_CARD_RADIUS = 8;
-export const GROUPED_CARD_SNAP_THRESHOLD = 24;
+
+/**
+ * Minimum width difference (px) before a right-side corner flattens.
+ * Absorbs tiny reflow jitter so corners remain visually stable.
+ */
+export const GROUPED_CARD_CORNER_THRESHOLD = 6;
+
+/** Snap a width to the nearest 2px grid. Used by width estimation utilities. */
+export function normalizeGroupedCardWidth(width: number): number {
+  return Math.max(0, Math.ceil(width / 2) * 2);
+}
 
 export interface GroupedCardRadiusStyle {
   borderTopLeftRadius: number;
@@ -11,122 +21,51 @@ export interface GroupedCardRadiusStyle {
 export interface BuildGroupedCardRadiiArgs {
   isGroupStart: boolean;
   isGroupEnd: boolean;
+  /** Current card's measured natural width (for right-side corner logic). */
   currentWidth?: number;
+  /** Previous neighbor's measured natural width. */
   prevWidth?: number;
+  /** Next neighbor's measured natural width. */
   nextWidth?: number;
   radius?: number;
 }
 
-export interface ResolveGroupedCardSnapClusterArgs {
-  messageId: string;
-  getWidth: (id: string) => number | undefined;
-  getPrevMessageId: (id: string) => string | undefined;
-  getNextMessageId: (id: string) => string | undefined;
-  threshold?: number;
-}
-
-export function normalizeGroupedCardWidth(width: number): number {
-  return Math.max(0, Math.ceil(width / 2) * 2);
-}
-
-export function shouldSnapGroupedCardWidths(
-  a?: number,
-  b?: number,
-  threshold = GROUPED_CARD_SNAP_THRESHOLD,
-): boolean {
-  return a !== undefined && b !== undefined && Math.abs(a - b) <= threshold;
-}
-
-function collectSnapClusterIdsInDirection(
-  startId: string,
-  getAdjacentId: (id: string) => string | undefined,
-  getWidth: (id: string) => number | undefined,
-  threshold: number,
-): string[] {
-  const clusterIds: string[] = [];
-  let currentId = startId;
-
-  while (true) {
-    const adjacentId = getAdjacentId(currentId);
-    if (!adjacentId) {
-      break;
-    }
-
-    const currentWidth = getWidth(currentId);
-    const adjacentWidth = getWidth(adjacentId);
-    if (!shouldSnapGroupedCardWidths(currentWidth, adjacentWidth, threshold)) {
-      break;
-    }
-
-    clusterIds.push(adjacentId);
-    currentId = adjacentId;
-  }
-
-  return clusterIds;
-}
-
-export function resolveGroupedCardSnapCluster(
-  args: ResolveGroupedCardSnapClusterArgs,
-): string[] {
-  const {
-    messageId,
-    getWidth,
-    getPrevMessageId,
-    getNextMessageId,
-    threshold = GROUPED_CARD_SNAP_THRESHOLD,
-  } = args;
-
-  if (getWidth(messageId) === undefined) {
-    return [];
-  }
-
-  const prevIds = collectSnapClusterIdsInDirection(
-    messageId,
-    getPrevMessageId,
-    getWidth,
-    threshold,
-  ).reverse();
-  const nextIds = collectSnapClusterIdsInDirection(
-    messageId,
-    getNextMessageId,
-    getWidth,
-    threshold,
-  );
-
-  return [...prevIds, messageId, ...nextIds];
-}
-
-export function resolveGroupedCardSnappedWidth(
-  args: ResolveGroupedCardSnapClusterArgs,
-): number | undefined {
-  const clusterIds = resolveGroupedCardSnapCluster(args);
-  if (clusterIds.length === 0) {
-    return undefined;
-  }
-
-  let maxWidth = 0;
-  for (const id of clusterIds) {
-    const width = args.getWidth(id);
-    if (width !== undefined && width > maxWidth) {
-      maxWidth = width;
-    }
-  }
-
-  return maxWidth > 0 ? maxWidth : undefined;
-}
-
-function resolveDirectionalRightRadius(
+/**
+ * Return the right-edge radius for a non-boundary edge.
+ *
+ * The corner is rounded (radius) when:
+ *  - either width is unknown (safe default), or
+ *  - the adjacent card is NOT meaningfully wider than the current one
+ *
+ * The corner is flat (0) when the adjacent card is wider by at least
+ * GROUPED_CARD_CORNER_THRESHOLD px — this creates the visual "tuck"
+ * that makes grouped stacks look intentional.
+ */
+function resolveRightCorner(
   currentWidth: number | undefined,
   adjacentWidth: number | undefined,
   radius: number,
 ): number {
   if (currentWidth === undefined || adjacentWidth === undefined) {
-    return 0;
+    return radius;
   }
-
-  return currentWidth > adjacentWidth ? radius : 0;
+  return adjacentWidth - currentWidth >= GROUPED_CARD_CORNER_THRESHOLD
+    ? 0
+    : radius;
 }
 
+/**
+ * Corner rounding with group-position left edge and width-aware right edge.
+ *
+ * Left edge: flush through grouped stack (flat for non-boundary messages).
+ * Right edge: rounded by default, flattened only when the adjacent neighbor
+ * is meaningfully wider (≥ GROUPED_CARD_CORNER_THRESHOLD px).
+ *
+ * Solo:   all corners rounded
+ * Start:  TL=R, TR=R (default), BL=0, BR=width-aware
+ * Middle: TL=0, TR=width-aware, BL=0, BR=width-aware
+ * End:    TL=0, TR=width-aware, BL=R, BR=R
+ */
 export function buildGroupedCardRadii(
   args: BuildGroupedCardRadiiArgs,
 ): GroupedCardRadiusStyle {
@@ -146,34 +85,10 @@ export function buildGroupedCardRadii(
     borderTopLeftRadius: args.isGroupStart ? radius : 0,
     borderTopRightRadius: args.isGroupStart
       ? radius
-      : resolveDirectionalRightRadius(
-          args.currentWidth,
-          args.prevWidth,
-          radius,
-        ),
+      : resolveRightCorner(args.currentWidth, args.prevWidth, radius),
     borderBottomLeftRadius: args.isGroupEnd ? radius : 0,
     borderBottomRightRadius: args.isGroupEnd
       ? radius
-      : resolveDirectionalRightRadius(
-          args.currentWidth,
-          args.nextWidth,
-          radius,
-        ),
+      : resolveRightCorner(args.currentWidth, args.nextWidth, radius),
   };
-}
-
-export function getGroupedCardMinWidth(
-  rawWidth?: number,
-  snappedWidth?: number,
-): number | undefined {
-  if (
-    rawWidth === undefined ||
-    rawWidth <= 0 ||
-    snappedWidth === undefined ||
-    snappedWidth <= 0
-  ) {
-    return undefined;
-  }
-
-  return snappedWidth;
 }

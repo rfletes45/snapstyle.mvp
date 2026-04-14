@@ -43,10 +43,14 @@ interface CardWidthNode {
 export interface CardWidthSnapshot {
   rawWidth?: number;
   snappedWidth?: number;
+  /** Snap resolved using only measured (non-estimated) widths. */
+  measuredSnappedWidth?: number;
   prevSnappedWidth?: number;
   nextSnappedWidth?: number;
   prevMessageId?: string;
   nextMessageId?: string;
+  /** True when this card's width is from an estimate, not a live measurement or cache. */
+  isEstimated?: boolean;
 }
 
 const EMPTY_SNAPSHOT: CardWidthSnapshot = Object.freeze({});
@@ -57,6 +61,17 @@ const EMPTY_SNAPSHOT: CardWidthSnapshot = Object.freeze({});
 // known widths instead of waiting for onLayout to fire again.
 const WIDTH_CACHE = new Map<string, number>();
 const WIDTH_CACHE_MAX_SIZE = 5000;
+
+function isGroupedCardDebugEnabled(): boolean {
+  if (!__DEV__) return false;
+  return Boolean(
+    (
+      globalThis as {
+        __SNAPSTYLE_DEBUG_GROUPED_CARDS__?: boolean;
+      }
+    ).__SNAPSTYLE_DEBUG_GROUPED_CARDS__,
+  );
+}
 
 function cacheWidth(id: string, width: number): void {
   WIDTH_CACHE.set(id, width);
@@ -167,6 +182,49 @@ export class CardWidthTracker {
     }
   }
 
+  /**
+   * Prime a visible batch before rows mount by seeding widths AND wiring the
+   * local group graph synchronously, without publishing transitional snapshots.
+   *
+   * This lets row hooks read a fully connected estimated cluster from their
+   * very first `getSnapshot()` call instead of painting from an incomplete
+   * graph and correcting on the next flush.
+   */
+  primeBatch(
+    entries: {
+      id: string;
+      estimatedWidth: number;
+      prevId?: string;
+      nextId?: string;
+    }[],
+  ): void {
+    if (entries.length === 0) return;
+
+    for (const entry of entries) {
+      this.seed(entry.id, entry.estimatedWidth);
+    }
+
+    for (const entry of entries) {
+      const node = this.ensureNode(entry.id);
+      node.prevId = entry.prevId;
+      node.nextId = entry.nextId;
+
+      if (entry.prevId) {
+        this.ensureNode(entry.prevId).nextId = entry.id;
+      }
+      if (entry.nextId) {
+        this.ensureNode(entry.nextId).prevId = entry.id;
+      }
+    }
+
+    if (isGroupedCardDebugEnabled()) {
+      console.debug("[GroupedCardTracker] primeBatch", {
+        count: entries.length,
+        ids: entries.slice(0, 12).map((entry) => entry.id.slice(0, 8)),
+      });
+    }
+  }
+
   /** Check whether a stored width is an estimate (not yet measured). */
   isEstimated(id: string): boolean {
     return this.estimatedIds.has(id);
@@ -245,21 +303,34 @@ export class CardWidthTracker {
       const cached = WIDTH_CACHE.get(id);
       if (cached !== undefined) {
         const seeded = this.ensureNode(id);
+        const isEst = this.estimatedIds.has(id);
+        const runReady = !isEst && this.isRunFullyMeasured(id);
         return {
           rawWidth: seeded.width,
           snappedWidth:
             seeded.width !== undefined
               ? this.resolveSnappedWidth(id)
               : undefined,
+          measuredSnappedWidth:
+            runReady && seeded.width !== undefined
+              ? this.resolveMeasuredSnappedWidth(id)
+              : undefined,
+          isEstimated: isEst,
         };
       }
       return EMPTY_SNAPSHOT;
     }
 
+    const isEst = this.estimatedIds.has(id);
+    const runReady =
+      !isEst && node.width !== undefined && this.isRunFullyMeasured(id);
     return {
       rawWidth: node.width,
       snappedWidth:
         node.width !== undefined ? this.resolveSnappedWidth(id) : undefined,
+      measuredSnappedWidth: runReady
+        ? this.resolveMeasuredSnappedWidth(id)
+        : undefined,
       prevSnappedWidth: node.prevId
         ? this.resolveSnappedWidth(node.prevId)
         : undefined,
@@ -268,6 +339,7 @@ export class CardWidthTracker {
         : undefined,
       prevMessageId: node.prevId,
       nextMessageId: node.nextId,
+      isEstimated: isEst,
     };
   }
 
@@ -305,6 +377,54 @@ export class CardWidthTracker {
       getPrevMessageId: (messageId) => this.nodes.get(messageId)?.prevId,
       getNextMessageId: (messageId) => this.nodes.get(messageId)?.nextId,
     });
+  }
+
+  /**
+   * Resolve snap width using only measured (non-estimated) widths.
+   *
+   * Estimated widths are excluded from the cluster max calculation so that
+   * the visible `snapMinWidth` is never based on a rough estimate that will
+   * later shrink when the real measurement arrives.  This guarantees that
+   * measuredSnappedWidth can only increase over time as more neighbours
+   * report real measurements — the user only sees expansion, never shrink.
+   */
+  private resolveMeasuredSnappedWidth(id: string): number | undefined {
+    return resolveGroupedCardSnappedWidth({
+      messageId: id,
+      getWidth: (messageId) => {
+        // Exclude estimated nodes from visible snap resolution
+        if (this.estimatedIds.has(messageId)) return undefined;
+        return this.nodes.get(messageId)?.width ?? WIDTH_CACHE.get(messageId);
+      },
+      getPrevMessageId: (messageId) => this.nodes.get(messageId)?.prevId,
+      getNextMessageId: (messageId) => this.nodes.get(messageId)?.nextId,
+    });
+  }
+
+  /**
+   * Check whether every mounted (subscribed) member of the local connected
+   * run for `id` has a real measured width (not estimated, not undefined).
+   *
+   * This is used to gate `measuredSnappedWidth` so that the visible snap
+   * equalization for a run is committed atomically — only when the full run
+   * is measured.  Unmounted members (no active subscribers) are ignored so
+   * off-screen cards don’t block stabilization of the visible portion.
+   */
+  private isRunFullyMeasured(id: string): boolean {
+    const groupIds = new Set<string>();
+    this.collectGroupIds(id, groupIds);
+
+    for (const memberId of groupIds) {
+      const listeners = this.listeners.get(memberId);
+      if (!listeners || listeners.size === 0) continue;
+
+      if (this.estimatedIds.has(memberId)) return false;
+
+      const node = this.nodes.get(memberId);
+      if (!node || node.width === undefined) return false;
+    }
+
+    return true;
   }
 
   private collectGroupIds(
@@ -368,6 +488,14 @@ export class CardWidthTracker {
       if (this.pendingNotifyIds.size === 0) return;
       const ids = this.pendingNotifyIds;
       this.pendingNotifyIds = new Set();
+      if (isGroupedCardDebugEnabled()) {
+        console.debug("[GroupedCardTracker] flush", {
+          count: ids.size,
+          ids: Array.from(ids)
+            .slice(0, 16)
+            .map((id) => id.slice(0, 8)),
+        });
+      }
       this.flushNow(ids);
     }, 0);
   }

@@ -54,6 +54,7 @@ import {
   NativeComposerInput,
   type NativeComposerInputRef,
 } from "./NativeComposerInput";
+import { preloadPickersForToolbar } from "./pickerPreload";
 import { ReplyPreviewBar } from "./ReplyPreviewBar";
 import { SendButton } from "./SendButton";
 import { StickerButton } from "./StickerButton";
@@ -409,6 +410,11 @@ export function ChatComposer({
 
   // Determine which toolbar items to render (use provided or defaults)
   const activeToolbarItems = toolbarItems ?? DEFAULT_TOOLBAR_ITEMS;
+
+  // Preload picker bundles for equipped toolbar items on mount / layout change
+  useEffect(() => {
+    preloadPickersForToolbar(activeToolbarItems.map((i) => i.id));
+  }, [activeToolbarItems]);
 
   // ── Toolbar item renderer ─────────────────────────────────────────────
   const renderToolbarItem = useCallback(

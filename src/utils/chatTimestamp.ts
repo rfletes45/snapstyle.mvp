@@ -38,7 +38,7 @@ function localDayKey(ts: number): string {
  * Formats the time portion as "h:mmAM/PM" with no leading zero and no space
  * before the meridiem. Examples: "2:53PM", "12:05AM".
  */
-function formatTimeOnly(date: Date): string {
+export function formatTimeOnly(date: Date): string {
   let hours = date.getHours();
   const minutes = date.getMinutes();
   const ampm = hours >= 12 ? "PM" : "AM";
@@ -105,4 +105,28 @@ export function formatChatTimestamp(timestamp: unknown, now?: number): string {
   const day = date.getDate();
   const year = String(date.getFullYear()).slice(-2); // last 2 digits
   return `${month}/${day}/${year}, ${time}`; // e.g. "3/25/26, 2:53PM"
+}
+
+/**
+ * Format a message timestamp for bubble-mode display (time only, no date).
+ *
+ * Accepts the same input formats as `formatChatTimestamp` but always returns
+ * the time portion only (e.g. "2:53PM"), matching group-chat bubble behavior.
+ */
+export function formatBubbleTimestamp(timestamp: unknown): string {
+  let ms: number;
+
+  if (timestamp instanceof Date) {
+    ms = timestamp.getTime();
+  } else if (typeof timestamp === "string") {
+    const parsed = Date.parse(timestamp);
+    if (isNaN(parsed)) return "";
+    ms = parsed;
+  } else {
+    ms = toTimestamp(timestamp);
+  }
+
+  if (!ms || !isFinite(ms)) return "";
+
+  return formatTimeOnly(new Date(ms));
 }

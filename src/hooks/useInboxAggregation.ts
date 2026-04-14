@@ -16,18 +16,26 @@
 
 import { CHAT_FEATURES } from "@/constants/featureFlags";
 import {
+  batchFetchProfiles,
+  getCachedProfileSync,
+} from "@/services/cache/profileCache";
+import { rememberPreparedGroupChatData } from "@/services/chat/groupWallpaperDebug";
+import {
   getDefaultMemberState,
   normalizeConversationFromInboxEntry,
   RECENTLY_READ_TTL_MS,
   sortInboxConversations,
 } from "@/services/chat/normalizeInboxRow";
+import { isDMVisible } from "@/services/chatMembers";
 import { getFirestoreInstance } from "@/services/firebase";
+import { isGroupVisible } from "@/services/groupMembers";
 import {
   InboxConversation,
   InboxEntry,
   MemberStatePrivate,
 } from "@/types/messaging";
 import { createLogger } from "@/utils/log";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   collection,
   doc,
@@ -39,6 +47,45 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 const log = createLogger("useInboxAggregation");
+
+// =============================================================================
+// AsyncStorage Cold-Start Cache
+// =============================================================================
+
+const AGG_CACHE_KEY = "@agg_inbox_cache:";
+const AGG_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+interface AggCacheData {
+  conversations: InboxConversation[];
+  timestamp: number;
+}
+
+async function loadAggCache(uid: string): Promise<AggCacheData | null> {
+  try {
+    const raw = await AsyncStorage.getItem(`${AGG_CACHE_KEY}${uid}`);
+    if (raw) {
+      const data = JSON.parse(raw) as AggCacheData;
+      if (Date.now() - data.timestamp < AGG_CACHE_TTL) return data;
+    }
+  } catch {
+    // non-critical
+  }
+  return null;
+}
+
+async function saveAggCache(
+  uid: string,
+  conversations: InboxConversation[],
+): Promise<void> {
+  try {
+    await AsyncStorage.setItem(
+      `${AGG_CACHE_KEY}${uid}`,
+      JSON.stringify({ conversations, timestamp: Date.now() } as AggCacheData),
+    );
+  } catch {
+    // non-critical
+  }
+}
 
 // =============================================================================
 // Types
@@ -98,6 +145,34 @@ function toMillisLike(value: unknown): number | null {
     return (value as { toMillis: () => number }).toMillis();
   }
   return null;
+}
+
+/**
+ * Build MemberStatePrivate from the Inbox entry's synced fields.
+ * Returns null if the entry is missing lastSeenAtPrivate (pre-sync entry),
+ * signalling the caller should fall back to a MembersPrivate fetch.
+ */
+function buildMemberStateFromEntry(
+  uid: string,
+  entry: InboxEntry,
+): MemberStatePrivate | null {
+  // If lastSeenAtPrivate has never been synced to this Inbox doc,
+  // we can't compute unread correctly — fall back to MembersPrivate.
+  if (entry.lastSeenAtPrivate == null) return null;
+
+  return {
+    uid,
+    archived: entry.archived ?? false,
+    mutedUntil: toMillisLike(entry.mutedUntil) ?? null,
+    notifyLevel: entry.notifyLevel ?? "all",
+    sendReadReceipts: true, // Not synced — default is fine for inbox display
+    lastSeenAtPrivate: toMillisLike(entry.lastSeenAtPrivate) ?? 0,
+    lastMarkedUnreadAt: toMillisLike(entry.lastMarkedUnreadAt) ?? undefined,
+    pinnedAt: toMillisLike(entry.pinnedAt) ?? null,
+    deletedAt: toMillisLike(entry.deletedAt) ?? null,
+    hiddenUntilNewMessage: entry.hiddenUntilNewMessage ?? false,
+    showMemberChatStyles: true, // Not synced — not needed for inbox display
+  };
 }
 
 async function getMemberPrivateStateForEntry(
@@ -172,7 +247,30 @@ export function useInboxAggregation(uid: string): UseInboxAggregationResult {
   const [refreshKey, setRefreshKey] = useState(0);
   const recentlyReadRef = useRef<Map<string, number>>(new Map());
 
-  const enabled = CHAT_FEATURES.CHAT_INBOX_AGGREGATION;
+  // ── Blocked users tracking ──────────────────────────────────────────
+  const blockedUserIdsRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!uid) return;
+    const db = getFirestoreInstance();
+    const blockedRef = collection(db, "Users", uid, "blockedUsers");
+    const unsubscribe = onSnapshot(
+      blockedRef,
+      (snapshot) => {
+        const ids = new Set<string>();
+        snapshot.docs.forEach((d) => ids.add(d.id));
+        blockedUserIdsRef.current = ids;
+      },
+      (err) => {
+        log.warn("Blocked users subscription error (agg)", { error: err });
+      },
+    );
+    return unsubscribe;
+  }, [uid]);
+
+  // In dev mode, always subscribe so parity telemetry can compare
+  // fan-out vs aggregated results even when the flag is off.
+  const enabled = CHAT_FEATURES.CHAT_INBOX_AGGREGATION || __DEV__;
 
   // -------------------------------------------------------
   // Subscribe to Users/{uid}/Inbox ordered by lastActivityAt
@@ -183,7 +281,16 @@ export function useInboxAggregation(uid: string): UseInboxAggregationResult {
       return;
     }
 
-    setLoading(true);
+    let isCancelled = false;
+
+    // Load cold-start cache for instant render
+    loadAggCache(uid).then((cached) => {
+      if (cached && !isCancelled) {
+        setEntries(cached.conversations);
+        setLoading(false);
+      }
+    });
+
     const db = getFirestoreInstance();
     const inboxRef = collection(db, "Users", uid, "Inbox");
     const q = query(inboxRef, orderBy("lastActivityAt", "desc"));
@@ -192,40 +299,150 @@ export function useInboxAggregation(uid: string): UseInboxAggregationResult {
       q,
       async (snapshot) => {
         try {
-          const inboxEntries = snapshot.docs.map(
-            (docSnap) => docSnap.data() as InboxEntry,
-          );
+          // Convert Firestore Timestamps to millis at the boundary so
+          // all downstream code sees plain numbers.
+          const inboxEntries = snapshot.docs.map((docSnap) => {
+            const data = docSnap.data();
+            return {
+              ...data,
+              lastActivityAt: toMillisLike(data.lastActivityAt) ?? 0,
+            } as InboxEntry;
+          });
+
+          // ── Member state hydration ──
+          // Try to build MemberStatePrivate from Inbox entry fields first
+          // (zero Firestore reads). Fall back to MembersPrivate fetch for
+          // entries that haven't had their read watermark synced yet.
           const memberStates = await Promise.all(
-            inboxEntries.map((entry) =>
-              getMemberPrivateStateForEntry(uid, entry),
-            ),
-          );
-          const convos = inboxEntries.map((entry, index) =>
-            normalizeConversationFromInboxEntry(
-              entry,
-              memberStates[index] || getDefaultMemberState(uid),
-              recentlyReadRef.current.get(entry.conversationId),
-              uid,
-            ),
+            inboxEntries.map((entry) => {
+              const fromEntry = buildMemberStateFromEntry(uid, entry);
+              if (fromEntry) return Promise.resolve(fromEntry);
+              return getMemberPrivateStateForEntry(uid, entry);
+            }),
           );
 
-          setEntries(sortInboxConversations(convos));
-          setError(null);
+          // ── Visibility filtering (Blocker #1) ──
+          const visibleEntries: {
+            entry: InboxEntry;
+            state: MemberStatePrivate;
+          }[] = [];
+          for (let i = 0; i < inboxEntries.length; i++) {
+            const entry = inboxEntries[i];
+            const state = memberStates[i] || getDefaultMemberState(uid);
+            if (entry.scope === "dm" && !isDMVisible(state)) continue;
+            if (entry.scope === "group" && !isGroupVisible(state)) continue;
+            // Hide DM conversations with blocked users
+            if (
+              entry.scope === "dm" &&
+              entry.otherUserId &&
+              blockedUserIdsRef.current.has(entry.otherUserId)
+            )
+              continue;
+            visibleEntries.push({ entry, state });
+          }
+
+          // ── Avatar / profile hydration (Blocker #2) ──
+          // DM: batch-fetch user profiles for avatar + profilePicture
+          const dmOtherUids = visibleEntries
+            .filter((v) => v.entry.scope === "dm" && v.entry.otherUserId)
+            .map((v) => v.entry.otherUserId!);
+          if (dmOtherUids.length > 0) {
+            await batchFetchProfiles(dmOtherUids);
+          }
+
+          // Group: fetch Group docs in parallel for avatar + background visual data
+          const groupEntryIds = visibleEntries
+            .filter((v) => v.entry.scope === "group")
+            .map((v) => v.entry.conversationId);
+          const groupVisualsMap = new Map<
+            string,
+            { avatarUrl: string | null; backgroundUrl: string | null }
+          >();
+          if (groupEntryIds.length > 0) {
+            await Promise.all(
+              groupEntryIds.map(async (groupId) => {
+                try {
+                  const groupSnap = await getDoc(doc(db, "Groups", groupId));
+                  if (groupSnap.exists()) {
+                    groupVisualsMap.set(groupId, {
+                      avatarUrl: groupSnap.data()?.avatarUrl || null,
+                      backgroundUrl: groupSnap.data()?.backgroundUrl || null,
+                    });
+                  }
+                } catch {
+                  // non-critical — group will show generic icon
+                }
+              }),
+            );
+          }
+
+          const convos = visibleEntries.map(({ entry, state }) => {
+            const convo = normalizeConversationFromInboxEntry(
+              entry,
+              state,
+              recentlyReadRef.current.get(entry.conversationId),
+              uid,
+            );
+
+            // Hydrate DM avatar fields from profile cache
+            if (entry.scope === "dm" && entry.otherUserId) {
+              const cached = getCachedProfileSync(entry.otherUserId);
+              if (cached) {
+                convo.avatarUrl = cached.avatar ?? null;
+                convo.avatarConfig = cached.avatarConfig;
+                convo.profilePictureUrl = cached.profilePictureUrl ?? null;
+                convo.decorationId = cached.decorationId ?? null;
+              }
+            }
+
+            // Hydrate group avatar from fetched Group doc
+            if (entry.scope === "group") {
+              const visuals = groupVisualsMap.get(entry.conversationId);
+              convo.avatarUrl = visuals?.avatarUrl ?? null;
+              convo.backgroundUrl = visuals?.backgroundUrl ?? null;
+              rememberPreparedGroupChatData(
+                entry.conversationId,
+                {
+                  name: convo.name,
+                  avatarUrl: visuals?.avatarUrl ?? null,
+                  backgroundUrl: visuals?.backgroundUrl ?? null,
+                },
+                "use-inbox-aggregation-group-visuals",
+              );
+            }
+
+            return convo;
+          });
+
+          const sorted = sortInboxConversations(convos);
+          if (!isCancelled) {
+            setEntries(sorted);
+            setError(null);
+            // Persist for cold-start
+            saveAggCache(uid, sorted);
+          }
         } catch (e) {
           log.error("Error processing inbox snapshot", { data: { error: e } });
-          setError(e instanceof Error ? e : new Error(String(e)));
+          if (!isCancelled) {
+            setError(e instanceof Error ? e : new Error(String(e)));
+          }
         } finally {
-          setLoading(false);
+          if (!isCancelled) setLoading(false);
         }
       },
       (err) => {
         log.error("Inbox snapshot error", { data: { error: err } });
-        setError(err);
-        setLoading(false);
+        if (!isCancelled) {
+          setError(err);
+          setLoading(false);
+        }
       },
     );
 
-    return unsub;
+    return () => {
+      isCancelled = true;
+      unsub();
+    };
   }, [uid, enabled, refreshKey]);
 
   // -------------------------------------------------------

@@ -31,8 +31,12 @@ import { IconButton, useTheme } from "react-native-paper";
 
 import type { DraggableBottomSheetHandle } from "./DraggableBottomSheet";
 import { PickerLoadingFallback } from "./PickerLoadingFallback";
+import {
+  getResolvedStickerPicker,
+  getStickerPickerImport,
+} from "./pickerPreload";
 
-const LazyStickerPicker = React.lazy(() => import("./StickerPicker"));
+const LazyStickerPicker = React.lazy(() => getStickerPickerImport());
 
 // =============================================================================
 // Types
@@ -94,6 +98,8 @@ function StickerButtonBase({
     [onStickerSelected],
   );
 
+  const ResolvedPicker = pickerOpen ? getResolvedStickerPicker() : null;
+
   return (
     <>
       <IconButton
@@ -105,9 +111,9 @@ function StickerButtonBase({
         accessibilityLabel="Open sticker picker"
         accessibilityRole="button"
       />
-      {pickerOpen && (
-        <Suspense fallback={<PickerLoadingFallback />}>
-          <LazyStickerPicker
+      {pickerOpen &&
+        (ResolvedPicker ? (
+          <ResolvedPicker
             ref={sheetRef}
             open={pickerOpen}
             onClose={handleClose}
@@ -115,8 +121,18 @@ function StickerButtonBase({
             keyboardHeight={lastKeyboardHeight}
             sharedTranslateY={sheetTranslateY}
           />
-        </Suspense>
-      )}
+        ) : (
+          <Suspense fallback={<PickerLoadingFallback />}>
+            <LazyStickerPicker
+              ref={sheetRef}
+              open={pickerOpen}
+              onClose={handleClose}
+              onStickerSelected={handleStickerSelected}
+              keyboardHeight={lastKeyboardHeight}
+              sharedTranslateY={sheetTranslateY}
+            />
+          </Suspense>
+        ))}
     </>
   );
 }

@@ -1,156 +1,140 @@
-import { CardWidthTracker } from "@/components/chat/CardWidthTracker";
 import {
   buildGroupedCardRadii,
-  getGroupedCardMinWidth,
+  GROUPED_CARD_CORNER_THRESHOLD,
   GROUPED_CARD_RADIUS,
-  normalizeGroupedCardWidth,
 } from "@/components/chat/groupedCardLayout";
 
-function connectChain(tracker: CardWidthTracker, ids: string[]) {
-  ids.forEach((id, index) => {
-    tracker.setGroupNeighbors(id, ids[index - 1], ids[index + 1]);
-  });
-}
-
 describe("grouped card layout", () => {
-  it("rounds only the right side where the current message is wider", () => {
-    const narrowerAboveWiderBelow = buildGroupedCardRadii({
-      isGroupStart: false,
-      isGroupEnd: false,
-      currentWidth: 180,
-      prevWidth: 220,
-      nextWidth: 140,
+  describe("deterministic corner rounding (no widths)", () => {
+    it("rounds all corners for a solo message", () => {
+      const radii = buildGroupedCardRadii({
+        isGroupStart: true,
+        isGroupEnd: true,
+      });
+
+      expect(radii.borderTopLeftRadius).toBe(GROUPED_CARD_RADIUS);
+      expect(radii.borderTopRightRadius).toBe(GROUPED_CARD_RADIUS);
+      expect(radii.borderBottomLeftRadius).toBe(GROUPED_CARD_RADIUS);
+      expect(radii.borderBottomRightRadius).toBe(GROUPED_CARD_RADIUS);
     });
 
-    expect(narrowerAboveWiderBelow.borderTopRightRadius).toBe(0);
-    expect(narrowerAboveWiderBelow.borderBottomRightRadius).toBe(
-      GROUPED_CARD_RADIUS,
-    );
+    it("rounds top and right for group start, flat bottom-left", () => {
+      const radii = buildGroupedCardRadii({
+        isGroupStart: true,
+        isGroupEnd: false,
+      });
 
-    const widerAboveNarrowerBelow = buildGroupedCardRadii({
-      isGroupStart: false,
-      isGroupEnd: false,
-      currentWidth: 220,
-      prevWidth: 180,
-      nextWidth: 250,
+      expect(radii.borderTopLeftRadius).toBe(GROUPED_CARD_RADIUS);
+      expect(radii.borderTopRightRadius).toBe(GROUPED_CARD_RADIUS);
+      expect(radii.borderBottomLeftRadius).toBe(0);
+      expect(radii.borderBottomRightRadius).toBe(GROUPED_CARD_RADIUS);
     });
 
-    expect(widerAboveNarrowerBelow.borderTopRightRadius).toBe(
-      GROUPED_CARD_RADIUS,
-    );
-    expect(widerAboveNarrowerBelow.borderBottomRightRadius).toBe(0);
+    it("flattens left edge and rounds right edge for group middle", () => {
+      const radii = buildGroupedCardRadii({
+        isGroupStart: false,
+        isGroupEnd: false,
+      });
+
+      expect(radii.borderTopLeftRadius).toBe(0);
+      expect(radii.borderTopRightRadius).toBe(GROUPED_CARD_RADIUS);
+      expect(radii.borderBottomLeftRadius).toBe(0);
+      expect(radii.borderBottomRightRadius).toBe(GROUPED_CARD_RADIUS);
+    });
+
+    it("rounds bottom and right for group end, flat top-left", () => {
+      const radii = buildGroupedCardRadii({
+        isGroupStart: false,
+        isGroupEnd: true,
+      });
+
+      expect(radii.borderTopLeftRadius).toBe(0);
+      expect(radii.borderTopRightRadius).toBe(GROUPED_CARD_RADIUS);
+      expect(radii.borderBottomLeftRadius).toBe(GROUPED_CARD_RADIUS);
+      expect(radii.borderBottomRightRadius).toBe(GROUPED_CARD_RADIUS);
+    });
+
+    it("supports a custom radius value", () => {
+      const radii = buildGroupedCardRadii({
+        isGroupStart: false,
+        isGroupEnd: false,
+        radius: 12,
+      });
+
+      expect(radii.borderTopLeftRadius).toBe(0);
+      expect(radii.borderTopRightRadius).toBe(12);
+      expect(radii.borderBottomLeftRadius).toBe(0);
+      expect(radii.borderBottomRightRadius).toBe(12);
+    });
+
+    it("produces consistent results regardless of call order", () => {
+      const first = buildGroupedCardRadii({
+        isGroupStart: true,
+        isGroupEnd: false,
+      });
+      const second = buildGroupedCardRadii({
+        isGroupStart: true,
+        isGroupEnd: false,
+      });
+
+      expect(first).toEqual(second);
+    });
   });
 
-  it("keeps group boundary right corners rounded", () => {
-    const firstMessage = buildGroupedCardRadii({
-      isGroupStart: true,
-      isGroupEnd: false,
-      currentWidth: 180,
-      nextWidth: 220,
+  describe("width-aware right-side corners", () => {
+    const T = GROUPED_CARD_CORNER_THRESHOLD;
+    const R = GROUPED_CARD_RADIUS;
+
+    it("flattens TR when prev is wider by threshold", () => {
+      const radii = buildGroupedCardRadii({
+        isGroupStart: false,
+        isGroupEnd: false,
+        currentWidth: 100,
+        prevWidth: 100 + T,
+      });
+      expect(radii.borderTopRightRadius).toBe(0);
     });
 
-    expect(firstMessage.borderTopRightRadius).toBe(GROUPED_CARD_RADIUS);
-    expect(firstMessage.borderBottomRightRadius).toBe(0);
-
-    const lastMessage = buildGroupedCardRadii({
-      isGroupStart: false,
-      isGroupEnd: true,
-      currentWidth: 180,
-      prevWidth: 220,
+    it("flattens BR when next is wider by threshold", () => {
+      const radii = buildGroupedCardRadii({
+        isGroupStart: false,
+        isGroupEnd: false,
+        currentWidth: 100,
+        nextWidth: 100 + T,
+      });
+      expect(radii.borderBottomRightRadius).toBe(0);
     });
 
-    expect(lastMessage.borderTopRightRadius).toBe(0);
-    expect(lastMessage.borderBottomRightRadius).toBe(GROUPED_CARD_RADIUS);
-  });
-
-  it("snaps an entire contiguous width cluster to the widest message", () => {
-    const tracker = new CardWidthTracker();
-    connectChain(tracker, ["a", "b", "c"]);
-
-    tracker.report("a", 100);
-    tracker.report("b", 120);
-    tracker.report("c", 140);
-
-    expect(tracker.getSnapshot("a").snappedWidth).toBe(140);
-    expect(tracker.getSnapshot("b").snappedWidth).toBe(140);
-    expect(tracker.getSnapshot("c").snappedWidth).toBe(140);
-  });
-
-  it("keeps internal right corners flat when snapped neighbors resolve equal", () => {
-    const tracker = new CardWidthTracker();
-    connectChain(tracker, ["a", "b", "c"]);
-
-    tracker.report("a", 180);
-    tracker.report("b", 190);
-    tracker.report("c", 200);
-
-    const snapshotA = tracker.getSnapshot("a");
-    const snapshotB = tracker.getSnapshot("b");
-    const snapshotC = tracker.getSnapshot("c");
-
-    expect(snapshotA.snappedWidth).toBe(200);
-    expect(snapshotB.snappedWidth).toBe(200);
-    expect(snapshotC.snappedWidth).toBe(200);
-
-    const middleRadii = buildGroupedCardRadii({
-      isGroupStart: false,
-      isGroupEnd: false,
-      currentWidth: snapshotB.snappedWidth,
-      prevWidth: snapshotA.snappedWidth,
-      nextWidth: snapshotC.snappedWidth,
+    it("stays rounded when diff is below threshold", () => {
+      const radii = buildGroupedCardRadii({
+        isGroupStart: false,
+        isGroupEnd: false,
+        currentWidth: 100,
+        prevWidth: 100 + T - 1,
+        nextWidth: 100 + T - 1,
+      });
+      expect(radii.borderTopRightRadius).toBe(R);
+      expect(radii.borderBottomRightRadius).toBe(R);
     });
 
-    expect(middleRadii.borderTopRightRadius).toBe(0);
-    expect(middleRadii.borderBottomRightRadius).toBe(0);
-  });
-
-  it("keeps unresolved internal corners flat until adjacent widths are known", () => {
-    const unresolved = buildGroupedCardRadii({
-      isGroupStart: false,
-      isGroupEnd: false,
-      currentWidth: 180,
-      prevWidth: undefined,
-      nextWidth: undefined,
+    it("group-start TR always rounded even with wide prev", () => {
+      const radii = buildGroupedCardRadii({
+        isGroupStart: true,
+        isGroupEnd: false,
+        currentWidth: 100,
+        prevWidth: 300,
+      });
+      expect(radii.borderTopRightRadius).toBe(R);
     });
 
-    expect(unresolved.borderTopRightRadius).toBe(0);
-    expect(unresolved.borderBottomRightRadius).toBe(0);
-  });
-
-  it("applies the normalized snapped width to every measured card in a snap cluster", () => {
-    expect(normalizeGroupedCardWidth(180.1)).toBe(182);
-    expect(getGroupedCardMinWidth(182, 182)).toBe(182);
-    expect(getGroupedCardMinWidth(180, 182)).toBe(182);
-  });
-
-  it("preserves subscriptions across tracker clears so remounted chats can recover", () => {
-    jest.useFakeTimers();
-    const tracker = new CardWidthTracker();
-    connectChain(tracker, ["a", "b"]);
-
-    const snapshots: (number | undefined)[] = [];
-    const unsubscribe = tracker.subscribe("a", (snapshot) => {
-      snapshots.push(snapshot.snappedWidth);
+    it("group-end BR always rounded even with wide next", () => {
+      const radii = buildGroupedCardRadii({
+        isGroupStart: false,
+        isGroupEnd: true,
+        currentWidth: 100,
+        nextWidth: 300,
+      });
+      expect(radii.borderBottomRightRadius).toBe(R);
     });
-
-    tracker.report("a", 120);
-    tracker.report("b", 100);
-    // Flush coalesced notifications so the 120 snapshot arrives
-    jest.runAllTimers();
-
-    tracker.clear();
-
-    tracker.setGroupNeighbors("a", undefined, "b");
-    tracker.setGroupNeighbors("b", "a", undefined);
-    tracker.report("a", 160);
-    tracker.report("b", 100);
-    // Flush coalesced notifications so the 160 snapshot arrives
-    jest.runAllTimers();
-
-    expect(snapshots).toContain(120);
-    expect(snapshots).toContain(160);
-
-    unsubscribe();
-    jest.useRealTimers();
   });
 });

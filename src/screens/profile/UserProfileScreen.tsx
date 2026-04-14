@@ -549,13 +549,13 @@ function UserProfileScreenContent({
     async (reason?: string) => {
       if (!currentUserId || !userId) return;
 
-      try {
-        await blockUser(currentUserId, userId, reason);
-        setBlockModalVisible(false);
+      const success = await blockUser(currentUserId, userId, reason);
+      setBlockModalVisible(false);
+      if (success) {
         await loadProfileData();
         Alert.alert("User Blocked", `${profile?.displayName} has been blocked`);
-      } catch (err: any) {
-        Alert.alert("Error", err.message || "Failed to block user");
+      } else {
+        Alert.alert("Error", "Failed to block user. Please try again.");
       }
     },
     [currentUserId, userId, profile, loadProfileData],

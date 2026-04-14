@@ -16,6 +16,7 @@
  * @module gamesV4/screens/GamesHubScreenV4
  */
 
+import { ScreenHeader } from "@/components/shared/ScreenHeader";
 import { MAX_REWARD_LEVEL } from "@/data/levelRewards";
 import {
   GAME_METADATA,
@@ -388,57 +389,27 @@ export default function GamesHubScreenV4() {
   return (
     <View style={[styles.container, { backgroundColor: bgColor }]}>
       {/* Header */}
-      <View
-        style={[
-          styles.header,
-          {
-            backgroundColor: theme.colors.headerBackground ?? bgColor,
-            borderBottomColor: borderColor,
-          },
-        ]}
-      >
-        <View style={styles.headerLeft}>
+      <ScreenHeader
+        title="Games"
+        renderRight={() => (
           <TouchableOpacity
-            onPress={() => {
-              if (navigation.canGoBack()) {
-                navigation.goBack();
-              }
-            }}
-            style={styles.backButton}
+            onPress={handleMyStats}
+            style={[styles.headerButton, { backgroundColor: accentBg }]}
             activeOpacity={0.7}
           >
             <MaterialCommunityIcons
-              name="arrow-left"
-              size={24}
-              color={theme.colors.headerText ?? textColor}
+              name="chart-bar"
+              size={18}
+              color={theme.colors.primary}
             />
+            <Text
+              style={[styles.headerButtonText, { color: theme.colors.primary }]}
+            >
+              My Stats
+            </Text>
           </TouchableOpacity>
-          <Text
-            style={[
-              styles.headerTitle,
-              { color: theme.colors.headerText ?? textColor },
-            ]}
-          >
-            Games
-          </Text>
-        </View>
-        <TouchableOpacity
-          onPress={handleMyStats}
-          style={[styles.headerButton, { backgroundColor: accentBg }]}
-          activeOpacity={0.7}
-        >
-          <MaterialCommunityIcons
-            name="chart-bar"
-            size={18}
-            color={theme.colors.primary}
-          />
-          <Text
-            style={[styles.headerButtonText, { color: theme.colors.primary }]}
-          >
-            My Stats
-          </Text>
-        </TouchableOpacity>
-      </View>
+        )}
+      />
 
       <ScrollView
         contentContainerStyle={styles.scrollContent}
@@ -812,27 +783,6 @@ export default function GamesHubScreenV4() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingTop: 56,
-    paddingBottom: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  headerLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  backButton: {
-    padding: 4,
-  },
-  headerTitle: {
-    fontSize: 28,
-    fontWeight: "800",
   },
   headerButton: {
     flexDirection: "row",

@@ -7,7 +7,15 @@
  * @file src/services/cache/profileCache.ts
  */
 
+import { getFirestoreInstance } from "@/services/firebase";
 import { getUserProfileByUid } from "@/services/friends";
+import {
+  collection,
+  documentId,
+  getDocs,
+  query,
+  where,
+} from "firebase/firestore";
 
 // =============================================================================
 // Types
@@ -19,6 +27,8 @@ export interface CachedProfile {
   displayName?: string;
   avatar?: string | null;
   avatarConfig?: any;
+  profilePictureUrl?: string | null;
+  decorationId?: string | null;
   bio?: string;
   isOnline?: boolean;
   lastSeen?: Date | null;
@@ -96,6 +106,11 @@ export async function getCachedProfile(userId: string): Promise<CachedProfile> {
     username: profile.username,
     displayName: profile.displayName,
     avatarConfig: profile.avatarConfig,
+    profilePictureUrl: profile.profilePicture?.url || null,
+    decorationId:
+      profile.avatarDecoration?.decorationId ||
+      profile.avatarDecoration?.equippedId ||
+      null,
   };
 
   setCachedProfile(userId, cachedProfile);
@@ -121,16 +136,96 @@ export function setCachedProfile(userId: string, profile: CachedProfile): void {
 }
 
 /**
- * Prefetch multiple profiles into cache
- * Useful when loading inbox to prepare for chat entry
+ * Prefetch multiple profiles into cache using Firestore batch queries.
+ * Uses `where(documentId(), 'in', ...)` to fetch up to 30 profiles per
+ * round-trip instead of N individual getDoc calls.
  */
 export async function prefetchProfiles(userIds: string[]): Promise<void> {
   const uncached = userIds.filter((id) => !getCachedProfileSync(id));
-
   if (uncached.length === 0) return;
 
-  // Fetch in parallel, but don't block on errors
-  await Promise.allSettled(uncached.map((id) => getCachedProfile(id)));
+  await batchFetchProfiles(uncached);
+}
+
+/**
+ * Batch-fetch profiles from Firestore using `documentId() in [...]` queries.
+ * Firestore limits disjunction (`in`) to 30 values, so we chunk accordingly.
+ * All fetched profiles are written into the cache.
+ */
+const FIRESTORE_IN_LIMIT = 30;
+
+export async function batchFetchProfiles(
+  userIds: string[],
+): Promise<Map<string, CachedProfile>> {
+  const results = new Map<string, CachedProfile>();
+  if (userIds.length === 0) return results;
+
+  // Return cached hits immediately, collect misses
+  const uncached: string[] = [];
+  for (const uid of userIds) {
+    const cached = getCachedProfileSync(uid);
+    if (cached) {
+      results.set(uid, cached);
+    } else {
+      uncached.push(uid);
+    }
+  }
+
+  if (uncached.length === 0) return results;
+
+  const db = getFirestoreInstance();
+  const usersRef = collection(db, "Users");
+
+  // Chunk into groups of FIRESTORE_IN_LIMIT (30) for the `in` operator
+  const chunks: string[][] = [];
+  for (let i = 0; i < uncached.length; i += FIRESTORE_IN_LIMIT) {
+    chunks.push(uncached.slice(i, i + FIRESTORE_IN_LIMIT));
+  }
+
+  const chunkResults = await Promise.allSettled(
+    chunks.map(async (chunk) => {
+      const q = query(usersRef, where(documentId(), "in", chunk));
+      const snap = await getDocs(q);
+      const found = new Set<string>();
+
+      for (const docSnap of snap.docs) {
+        const data = docSnap.data();
+        const profile: CachedProfile = {
+          uid: docSnap.id,
+          username: data.username || "Unknown",
+          displayName: data.displayName,
+          avatar: data.avatarUrl || null,
+          avatarConfig: data.avatarConfig,
+          profilePictureUrl: data.profilePicture?.url || null,
+          decorationId:
+            data.avatarDecoration?.decorationId ||
+            data.avatarDecoration?.equippedId ||
+            null,
+        };
+        setCachedProfile(docSnap.id, profile);
+        results.set(docSnap.id, profile);
+        found.add(docSnap.id);
+      }
+
+      // Cache "Unknown" fallback for UIDs not found in Firestore
+      for (const uid of chunk) {
+        if (!found.has(uid)) {
+          const fallback: CachedProfile = { uid, username: "Unknown" };
+          setCachedProfile(uid, fallback);
+          results.set(uid, fallback);
+        }
+      }
+    }),
+  );
+
+  // Log failures but don't throw — partial results are fine
+  for (const result of chunkResults) {
+    if (result.status === "rejected") {
+      console.warn("[profileCache] Batch fetch chunk failed:", result.reason);
+    }
+  }
+
+  return results;
 }
 
 /**

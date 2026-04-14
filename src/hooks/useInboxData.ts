@@ -19,6 +19,7 @@ import {
   normalizeFanoutDMConversation,
   normalizeFanoutGroupConversation,
 } from "@/services/chat/fanoutInboxNormalization";
+import { compareInboxParity } from "@/services/chat/inboxParityTelemetry";
 import {
   getDefaultMemberState,
   RECENTLY_READ_TTL_MS,
@@ -284,6 +285,29 @@ export function useInboxData(uid: string): UseInboxDataResult {
   const [groupLoading, setGroupLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const [filter, setFilter] = useState<InboxFilter>("all");
+
+  // ── Blocked users tracking ──────────────────────────────────────────
+  // Real-time subscription to the current user's blockedUsers subcollection.
+  // DM conversations with blocked users are filtered out of the inbox.
+  const blockedUserIdsRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!uid) return;
+    const db = getFirestoreInstance();
+    const blockedRef = collection(db, "Users", uid, "blockedUsers");
+    const unsubscribe = onSnapshot(
+      blockedRef,
+      (snapshot) => {
+        const ids = new Set<string>();
+        snapshot.docs.forEach((d) => ids.add(d.id));
+        blockedUserIdsRef.current = ids;
+      },
+      (err) => {
+        log.warn("Blocked users subscription error", { error: err });
+      },
+    );
+    return unsubscribe;
+  }, [uid]);
 
   // ── Staging infrastructure ────────────────────────────────────────────
   // Snapshot handlers store processed results HERE first.
@@ -623,6 +647,9 @@ export function useInboxData(uid: string): UseInboxDataResult {
             // Check visibility
             if (!isDMVisible(memberState)) continue;
 
+            // Hide conversations with blocked users
+            if (blockedUserIdsRef.current.has(otherUserId)) continue;
+
             const lastMessageAt = toMillis(chatData.lastMessageAt);
             const recentlyReadAt = recentlyReadRef.current.get(chatId);
 
@@ -954,6 +981,31 @@ export function useInboxData(uid: string): UseInboxDataResult {
       }
     };
   }, []);
+
+  // =============================================================================
+  // Dev-Mode Parity Telemetry
+  // Shadow-compare fan-out vs aggregated inbox in __DEV__ to detect drift
+  // before the CHAT_INBOX_AGGREGATION flag is flipped.
+  // =============================================================================
+
+  useEffect(() => {
+    if (!__DEV__ || useAggregatedInbox) return;
+    if (dmLoading || groupLoading || aggregation.loading) return;
+    if (
+      allConversations.length === 0 &&
+      aggregation.allConversations.length === 0
+    )
+      return;
+
+    compareInboxParity(allConversations, aggregation.allConversations);
+  }, [
+    allConversations,
+    aggregation.allConversations,
+    aggregation.loading,
+    dmLoading,
+    groupLoading,
+    useAggregatedInbox,
+  ]);
 
   // =============================================================================
   // Save to Cache when Data Changes

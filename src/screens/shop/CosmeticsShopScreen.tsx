@@ -1401,7 +1401,10 @@ export default function CosmeticsShopScreen() {
           style={[styles.appbar, { backgroundColor: colors.background }]}
           statusBarHeight={0}
         >
-          <Appbar.BackAction onPress={() => navigation.goBack()} />
+          <Appbar.BackAction
+            onPress={() => navigation.goBack()}
+            color={colors.text}
+          />
           <Appbar.Content title="Cosmetics Shop" />
           {/* Wallet balance */}
           <View style={styles.walletChip}>

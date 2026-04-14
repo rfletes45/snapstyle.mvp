@@ -9,6 +9,7 @@
  * - Account management section
  */
 
+import { ScreenHeader } from "@/components/shared/ScreenHeader";
 import {
   DeleteAccountError,
   executeAccountDeletion,
@@ -335,654 +336,686 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
   // =============================================================================
 
   return (
-    <ScrollView
-      style={[styles.container, { backgroundColor: theme.colors.background }]}
+    <View
+      style={[
+        styles.outerContainer,
+        { backgroundColor: theme.colors.background },
+      ]}
     >
-      {/* Account Section */}
-      <List.Section>
-        <List.Subheader style={styles.sectionHeader}>Account</List.Subheader>
-
-        <List.Item
-          title="Display Name"
-          description={profile?.displayName || "Not set"}
-          left={(props) => <List.Icon {...props} icon="account" />}
-          right={(props) => <List.Icon {...props} icon="pencil" />}
-          onPress={() => {
-            setEditDisplayName(profile?.displayName || "");
-            setShowEditName(true);
-          }}
-        />
-
-        <List.Item
-          title="Email"
-          description={currentFirebaseUser?.email || "Not set"}
-          left={(props) => <List.Icon {...props} icon="email" />}
-        />
-
-        <List.Item
-          title="Username"
-          description={profile?.username || "Not set"}
-          left={(props) => <List.Icon {...props} icon="at" />}
-        />
-      </List.Section>
-
-      <Divider />
-
-      {/* Appearance Section */}
-      <List.Section>
-        <List.Subheader style={styles.sectionHeader}>Appearance</List.Subheader>
-
-        <View style={styles.themeButtonsContainer}>
-          <Button
-            mode={!useSystemTheme && !isDark ? "contained" : "outlined"}
-            onPress={() => {
-              setTheme("catppuccin-latte");
-              if (currentFirebaseUser?.uid)
-                equipTheme(currentFirebaseUser.uid, "catppuccin-latte").catch(
-                  () => {},
-                );
-              showSuccess("Light theme enabled");
-            }}
-            style={styles.themeButton}
-            icon="weather-sunny"
-          >
-            Light
-          </Button>
-
-          <Button
-            mode={!useSystemTheme && isDark ? "contained" : "outlined"}
-            onPress={() => {
-              setTheme("catppuccin-mocha");
-              if (currentFirebaseUser?.uid)
-                equipTheme(currentFirebaseUser.uid, "catppuccin-mocha").catch(
-                  () => {},
-                );
-              showSuccess("Dark theme enabled");
-            }}
-            style={styles.themeButton}
-            icon="weather-night"
-          >
-            Dark
-          </Button>
-
-          <Button
-            mode={useSystemTheme ? "contained" : "outlined"}
-            onPress={() => {
-              setUseSystemTheme(true);
-              // Sync the resolved system theme to Firestore
-              const resolved = isDark ? "catppuccin-mocha" : "catppuccin-latte";
-              if (currentFirebaseUser?.uid)
-                equipTheme(currentFirebaseUser.uid, resolved).catch(() => {});
-              showSuccess("System theme enabled");
-            }}
-            style={styles.themeButton}
-            icon="brightness-auto"
-          >
-            Auto
-          </Button>
-        </View>
-
-        {/* Conversation Style */}
-        <Text
-          style={[
-            styles.conversationStyleLabel,
-            { color: theme.colors.onSurface },
-          ]}
-        >
-          Conversation Style
-        </Text>
-        <Text
-          style={[
-            styles.conversationStyleDescription,
-            { color: theme.colors.onSurfaceVariant },
-          ]}
-        >
-          Choose how messages appear on your screen. This only affects your
-          view.
-        </Text>
-        <View style={styles.themeButtonsContainer}>
-          <Button
-            mode={displayMode === "bubbles" ? "contained" : "outlined"}
-            onPress={() => {
-              setDisplayMode("bubbles");
-              showSuccess("Bubbles mode enabled");
-            }}
-            style={styles.themeButton}
-            icon="chat"
-          >
-            Bubbles
-          </Button>
-          <Button
-            mode={displayMode === "stacked" ? "contained" : "outlined"}
-            onPress={() => {
-              setDisplayMode("stacked");
-              showSuccess("Stacked mode enabled");
-            }}
-            style={styles.themeButton}
-            icon="format-list-text"
-          >
-            Stacked
-          </Button>
-        </View>
-      </List.Section>
-
-      <Divider />
-
-      {/* Notifications Section */}
-      <List.Section>
-        <List.Subheader style={styles.sectionHeader}>
-          Notifications
-        </List.Subheader>
-
-        <Text
-          style={[
-            styles.notificationDisclaimer,
-            { color: theme.colors.onSurfaceVariant },
-          ]}
-        >
-          These controls back the server-side notification rules. Foreground
-          banners use the in-app channel, while background and offline delivery
-          uses push.
-        </Text>
-
-        <List.Item
-          title="All Notifications"
-          description="Master switch for alerts and notification feed writes"
-          left={(props) => <List.Icon {...props} icon="bell-ring" />}
-          right={() => (
-            <Switch
-              value={notificationSettings?.notificationsEnabled !== false}
-              onValueChange={(value) =>
-                toggleNotificationSetting(
-                  "notificationsEnabled",
-                  "Notifications",
-                  value,
-                )
-              }
-              color={theme.colors.primary}
-            />
-          )}
-        />
-
-        <List.Item
-          title="In-App Banners"
-          description="Foreground banners while you're actively using the app"
-          left={(props) => <List.Icon {...props} icon="bell-badge" />}
-          right={() => (
-            <Switch
-              value={notificationSettings?.inAppNotificationsEnabled !== false}
-              onValueChange={(value) =>
-                toggleNotificationSetting(
-                  "inAppNotificationsEnabled",
-                  "In-app banners",
-                  value,
-                )
-              }
-              color={theme.colors.primary}
-            />
-          )}
-        />
-
-        <List.Item
-          title="Messages"
-          description="Direct messages, group messages, and message requests"
-          left={(props) => <List.Icon {...props} icon="message" />}
-          right={() => (
-            <Switch
-              value={
-                notificationSettings?.messageNotificationsEnabled !== false
-              }
-              onValueChange={(value) =>
-                toggleNotificationSetting(
-                  "messageNotificationsEnabled",
-                  "Message notifications",
-                  value,
-                )
-              }
-              color={theme.colors.primary}
-            />
-          )}
-        />
-
-        <List.Item
-          title="Social"
-          description="Friend requests and accepted requests"
-          left={(props) => <List.Icon {...props} icon="account-plus" />}
-          right={() => (
-            <Switch
-              value={notificationSettings?.socialNotificationsEnabled !== false}
-              onValueChange={(value) =>
-                toggleNotificationSetting(
-                  "socialNotificationsEnabled",
-                  "Social notifications",
-                  value,
-                )
-              }
-              color={theme.colors.primary}
-            />
-          )}
-        />
-
-        <List.Item
-          title="Games"
-          description="Invites, lobby ready events, turns, and results"
-          left={(props) => <List.Icon {...props} icon="gamepad-variant" />}
-          right={() => (
-            <Switch
-              value={notificationSettings?.gameNotificationsEnabled !== false}
-              onValueChange={(value) =>
-                toggleNotificationSetting(
-                  "gameNotificationsEnabled",
-                  "Game notifications",
-                  value,
-                )
-              }
-              color={theme.colors.primary}
-            />
-          )}
-        />
-
-        <List.Item
-          title="Achievements"
-          description="Achievement unlocks and progression milestones"
-          left={(props) => <List.Icon {...props} icon="trophy-outline" />}
-          right={() => (
-            <Switch
-              value={
-                notificationSettings?.achievementNotificationsEnabled !== false
-              }
-              onValueChange={(value) =>
-                toggleNotificationSetting(
-                  "achievementNotificationsEnabled",
-                  "Achievement notifications",
-                  value,
-                )
-              }
-              color={theme.colors.primary}
-            />
-          )}
-        />
-
-        <List.Item
-          title="Gifts"
-          description="Gift received and gift opened events"
-          left={(props) => <List.Icon {...props} icon="gift-outline" />}
-          right={() => (
-            <Switch
-              value={notificationSettings?.giftNotificationsEnabled !== false}
-              onValueChange={(value) =>
-                toggleNotificationSetting(
-                  "giftNotificationsEnabled",
-                  "Gift notifications",
-                  value,
-                )
-              }
-              color={theme.colors.primary}
-            />
-          )}
-        />
-
-        <List.Item
-          title="Moments"
-          description="Story and moments alerts when enabled by the backend"
-          left={(props) => <List.Icon {...props} icon="image-multiple" />}
-          right={() => (
-            <Switch
-              value={notificationSettings?.storyNotificationsEnabled !== false}
-              onValueChange={(value) =>
-                toggleNotificationSetting(
-                  "storyNotificationsEnabled",
-                  "Moments notifications",
-                  value,
-                )
-              }
-              color={theme.colors.primary}
-            />
-          )}
-        />
-
-        <List.Item
-          title="Ritual Reminders"
-          description="Get reminded about expiring rituals"
-          left={(props) => <List.Icon {...props} icon="fire" />}
-          right={() => (
-            <Switch
-              value={notificationSettings?.streakNotificationsEnabled !== false}
-              onValueChange={(value) =>
-                toggleNotificationSetting(
-                  "streakNotificationsEnabled",
-                  "Ritual reminders",
-                  value,
-                )
-              }
-              color={theme.colors.primary}
-            />
-          )}
-        />
-
-        <List.Item
-          title="App Badge"
-          description="Show unread notification count on the app icon"
-          left={(props) => <List.Icon {...props} icon="numeric" />}
-          right={() => (
-            <Switch
-              value={notificationSettings?.badgeCountEnabled !== false}
-              onValueChange={(value) =>
-                toggleNotificationSetting(
-                  "badgeCountEnabled",
-                  "Badge count",
-                  value,
-                )
-              }
-              color={theme.colors.primary}
-            />
-          )}
-        />
-      </List.Section>
-
-      <Divider />
-
-      {/* Privacy Section */}
-      <List.Section>
-        <List.Subheader style={styles.sectionHeader}>
-          Privacy & Safety
-        </List.Subheader>
-
-        <List.Item
-          title="Chat Settings"
-          description="Read receipts, typing indicators, online status"
-          left={(props) => <List.Icon {...props} icon="message-cog" />}
-          right={(props) => <List.Icon {...props} icon="chevron-right" />}
-          onPress={() => {
-            navigation.navigate("InboxSettings" as any);
-          }}
-        />
-
-        <List.Item
-          title="Privacy Settings"
-          description="Control who can see your profile and contact you"
-          left={(props) => <List.Icon {...props} icon="shield-account" />}
-          right={(props) => <List.Icon {...props} icon="chevron-right" />}
-          onPress={() => navigation.navigate("PrivacySettings")}
-        />
-
-        <List.Item
-          title="Blocked Users"
-          description="Manage blocked users"
-          left={(props) => <List.Icon {...props} icon="account-cancel" />}
-          right={(props) => <List.Icon {...props} icon="chevron-right" />}
-          onPress={() => navigation.navigate("BlockedUsers")}
-        />
-
-        <List.Item
-          title="Privacy Policy"
-          description="Read our privacy policy"
-          left={(props) => <List.Icon {...props} icon="shield-lock" />}
-          right={(props) => <List.Icon {...props} icon="chevron-right" />}
-          onPress={() => {
-            Linking.openURL("https://vibeapp.com/privacy").catch(() =>
-              showInfo("Could not open privacy policy"),
-            );
-          }}
-        />
-      </List.Section>
-
-      <Divider />
-
-      {/* Admin Section (Only shown to admins) */}
-      {customClaims?.admin === true && (
-        <>
-          <List.Section>
-            <List.Subheader
-              style={[styles.sectionHeaderAdmin, { color: theme.colors.error }]}
-            >
-              🛡️ Admin Tools
-            </List.Subheader>
-
-            <List.Item
-              title="Reports Queue"
-              description="Review pending user reports"
-              left={(props) => (
-                <List.Icon
-                  {...props}
-                  icon="alert-circle"
-                  color={theme.colors.error}
-                />
-              )}
-              right={(props) => <List.Icon {...props} icon="chevron-right" />}
-              onPress={() => navigation.navigate("AdminReports")}
-              style={{ backgroundColor: theme.colors.errorContainer }}
-            />
-          </List.Section>
-
-          <Divider />
-        </>
-      )}
-
-      {/* Account Actions */}
-      <View style={styles.actionsSection}>
-        <Button
-          mode="outlined"
-          onPress={handleSignOut}
-          icon="logout"
-          style={styles.actionButton}
-        >
-          Sign Out
-        </Button>
-
-        <Button
-          mode="outlined"
-          onPress={() => setShowDeleteDialog(true)}
-          textColor={theme.colors.error}
-          icon="delete"
-          style={[
-            styles.actionButton,
-            styles.deleteButton,
-            { borderColor: theme.colors.error },
-          ]}
-        >
-          Delete Account
-        </Button>
-      </View>
-
-      {/* App Version */}
-      <Text
-        style={[styles.versionText, { color: theme.colors.onSurfaceVariant }]}
+      <ScreenHeader title="Settings" />
+      <ScrollView
+        style={[styles.container, { backgroundColor: theme.colors.background }]}
       >
-        Vibe v{Constants.expoConfig?.version || "1.0.0"} (Build{" "}
-        {Constants.expoConfig?.ios?.buildNumber ||
-          Constants.expoConfig?.android?.versionCode ||
-          "dev"}
-        )
-      </Text>
+        {/* Account Section */}
+        <List.Section>
+          <List.Subheader style={styles.sectionHeader}>Account</List.Subheader>
 
-      {/* Edit Display Name Dialog */}
-      <Portal>
-        <Dialog visible={showEditName} onDismiss={() => setShowEditName(false)}>
-          <Dialog.Title>Edit Display Name</Dialog.Title>
-          <Dialog.Content>
-            <TextInput
-              label="Display Name"
-              value={editDisplayName}
-              onChangeText={setEditDisplayName}
-              mode="outlined"
-              maxLength={50}
-            />
-          </Dialog.Content>
-          <Dialog.Actions>
-            <Button onPress={() => setShowEditName(false)}>Cancel</Button>
+          <List.Item
+            title="Display Name"
+            description={profile?.displayName || "Not set"}
+            left={(props) => <List.Icon {...props} icon="account" />}
+            right={(props) => <List.Icon {...props} icon="pencil" />}
+            onPress={() => {
+              setEditDisplayName(profile?.displayName || "");
+              setShowEditName(true);
+            }}
+          />
+
+          <List.Item
+            title="Email"
+            description={currentFirebaseUser?.email || "Not set"}
+            left={(props) => <List.Icon {...props} icon="email" />}
+          />
+
+          <List.Item
+            title="Username"
+            description={profile?.username || "Not set"}
+            left={(props) => <List.Icon {...props} icon="at" />}
+          />
+        </List.Section>
+
+        <Divider />
+
+        {/* Appearance Section */}
+        <List.Section>
+          <List.Subheader style={styles.sectionHeader}>
+            Appearance
+          </List.Subheader>
+
+          <View style={styles.themeButtonsContainer}>
             <Button
-              onPress={handleSaveDisplayName}
-              loading={savingName}
-              disabled={savingName}
+              mode={!useSystemTheme && !isDark ? "contained" : "outlined"}
+              onPress={() => {
+                setTheme("catppuccin-latte");
+                if (currentFirebaseUser?.uid)
+                  equipTheme(currentFirebaseUser.uid, "catppuccin-latte").catch(
+                    () => {},
+                  );
+                showSuccess("Light theme enabled");
+              }}
+              style={styles.themeButton}
+              icon="weather-sunny"
             >
-              Save
+              Light
             </Button>
-          </Dialog.Actions>
-        </Dialog>
-      </Portal>
 
-      {/* Delete Account Confirmation Dialog */}
-      <Portal>
-        <Dialog
-          visible={showDeleteDialog}
-          onDismiss={deleteStep === "deleting" ? undefined : resetDeleteDialog}
-          dismissable={deleteStep !== "deleting"}
-        >
-          {/* ── Step: Confirm ── */}
-          {deleteStep === "confirm" && (
-            <>
-              <Dialog.Title style={{ color: theme.colors.error }}>
-                Delete Account
-              </Dialog.Title>
-              <Dialog.Content>
-                <Text
-                  style={[styles.deleteWarning, { color: theme.colors.error }]}
-                >
-                  ⚠️ This is permanent and cannot be undone.
-                </Text>
-                <Text style={styles.deleteDetail}>
-                  Deleting your account will permanently remove:
-                </Text>
-                <Text style={styles.deleteBullet}>
-                  • Your profile, avatar, and all settings
-                </Text>
-                <Text style={styles.deleteBullet}>
-                  • All messages, photos, and stories you sent
-                </Text>
-                <Text style={styles.deleteBullet}>
-                  • Friends list, game history, and achievements
-                </Text>
-                <Text style={styles.deleteBullet}>
-                  • Your wallet balance and all purchased items
-                </Text>
-                <Text style={styles.deleteBullet}>
-                  • Your badges, streaks, and leaderboard entries
-                </Text>
+            <Button
+              mode={!useSystemTheme && isDark ? "contained" : "outlined"}
+              onPress={() => {
+                setTheme("catppuccin-mocha");
+                if (currentFirebaseUser?.uid)
+                  equipTheme(currentFirebaseUser.uid, "catppuccin-mocha").catch(
+                    () => {},
+                  );
+                showSuccess("Dark theme enabled");
+              }}
+              style={styles.themeButton}
+              icon="weather-night"
+            >
+              Dark
+            </Button>
 
-                <Text style={styles.deleteNote}>
-                  Your username will become available for others to claim.
-                </Text>
-                <Text style={styles.deleteNote}>
-                  You can use the same email to create a new account later.
-                </Text>
+            <Button
+              mode={useSystemTheme ? "contained" : "outlined"}
+              onPress={() => {
+                setUseSystemTheme(true);
+                // Sync the resolved system theme to Firestore
+                const resolved = isDark
+                  ? "catppuccin-mocha"
+                  : "catppuccin-latte";
+                if (currentFirebaseUser?.uid)
+                  equipTheme(currentFirebaseUser.uid, resolved).catch(() => {});
+                showSuccess("System theme enabled");
+              }}
+              style={styles.themeButton}
+              icon="brightness-auto"
+            >
+              Auto
+            </Button>
+          </View>
 
-                <Text style={[styles.deleteInstruction, { marginTop: 16 }]}>
-                  Type DELETE to confirm:
-                </Text>
-                <TextInput
-                  value={deleteConfirmText}
-                  onChangeText={setDeleteConfirmText}
-                  mode="outlined"
-                  placeholder="DELETE"
-                  autoCapitalize="characters"
-                  style={styles.deleteInput}
-                />
-              </Dialog.Content>
-              <Dialog.Actions>
-                <Button onPress={resetDeleteDialog}>Cancel</Button>
-                <Button
-                  onPress={handleDeleteAccount}
-                  textColor={theme.colors.error}
-                  disabled={deleteConfirmText !== "DELETE"}
-                  icon="delete-forever"
-                >
-                  Delete My Account
-                </Button>
-              </Dialog.Actions>
-            </>
-          )}
+          {/* Conversation Style */}
+          <Text
+            style={[
+              styles.conversationStyleLabel,
+              { color: theme.colors.onSurface },
+            ]}
+          >
+            Conversation Style
+          </Text>
+          <Text
+            style={[
+              styles.conversationStyleDescription,
+              { color: theme.colors.onSurfaceVariant },
+            ]}
+          >
+            Choose how messages appear on your screen. This only affects your
+            view.
+          </Text>
+          <View style={styles.themeButtonsContainer}>
+            <Button
+              mode={displayMode === "bubbles" ? "contained" : "outlined"}
+              onPress={() => {
+                setDisplayMode("bubbles");
+                showSuccess("Bubbles mode enabled");
+              }}
+              style={styles.themeButton}
+              icon="chat"
+            >
+              Bubbles
+            </Button>
+            <Button
+              mode={displayMode === "stacked" ? "contained" : "outlined"}
+              onPress={() => {
+                setDisplayMode("stacked");
+                showSuccess("Stacked mode enabled");
+              }}
+              style={styles.themeButton}
+              icon="format-list-text"
+            >
+              Stacked
+            </Button>
+          </View>
+        </List.Section>
 
-          {/* ── Step: Re-authentication ── */}
-          {deleteStep === "reauth" && (
-            <>
-              <Dialog.Title>Verify Your Identity</Dialog.Title>
-              <Dialog.Content>
-                <Text style={styles.deleteDetail}>
-                  For security, please enter your password to continue with
-                  account deletion.
-                </Text>
-                <TextInput
-                  label="Password"
-                  value={reauthPassword}
-                  onChangeText={setReauthPassword}
-                  mode="outlined"
-                  secureTextEntry
-                  autoFocus
-                  style={styles.deleteInput}
-                />
-              </Dialog.Content>
-              <Dialog.Actions>
-                <Button onPress={resetDeleteDialog}>Cancel</Button>
-                <Button
-                  onPress={handleReauthAndDelete}
-                  textColor={theme.colors.error}
-                  disabled={!reauthPassword || reauthLoading}
-                  loading={reauthLoading}
-                >
-                  Verify & Delete
-                </Button>
-              </Dialog.Actions>
-            </>
-          )}
+        <Divider />
 
-          {/* ── Step: Deleting (in progress) ── */}
-          {deleteStep === "deleting" && (
-            <>
-              <Dialog.Title>Deleting Account...</Dialog.Title>
-              <Dialog.Content>
-                <View style={styles.deletingContainer}>
-                  <ActivityIndicator
-                    size="large"
+        {/* Notifications Section */}
+        <List.Section>
+          <List.Subheader style={styles.sectionHeader}>
+            Notifications
+          </List.Subheader>
+
+          <Text
+            style={[
+              styles.notificationDisclaimer,
+              { color: theme.colors.onSurfaceVariant },
+            ]}
+          >
+            These controls back the server-side notification rules. Foreground
+            banners use the in-app channel, while background and offline
+            delivery uses push.
+          </Text>
+
+          <List.Item
+            title="All Notifications"
+            description="Master switch for alerts and notification feed writes"
+            left={(props) => <List.Icon {...props} icon="bell-ring" />}
+            right={() => (
+              <Switch
+                value={notificationSettings?.notificationsEnabled !== false}
+                onValueChange={(value) =>
+                  toggleNotificationSetting(
+                    "notificationsEnabled",
+                    "Notifications",
+                    value,
+                  )
+                }
+                color={theme.colors.primary}
+              />
+            )}
+          />
+
+          <List.Item
+            title="In-App Banners"
+            description="Foreground banners while you're actively using the app"
+            left={(props) => <List.Icon {...props} icon="bell-badge" />}
+            right={() => (
+              <Switch
+                value={
+                  notificationSettings?.inAppNotificationsEnabled !== false
+                }
+                onValueChange={(value) =>
+                  toggleNotificationSetting(
+                    "inAppNotificationsEnabled",
+                    "In-app banners",
+                    value,
+                  )
+                }
+                color={theme.colors.primary}
+              />
+            )}
+          />
+
+          <List.Item
+            title="Messages"
+            description="Direct messages, group messages, and message requests"
+            left={(props) => <List.Icon {...props} icon="message" />}
+            right={() => (
+              <Switch
+                value={
+                  notificationSettings?.messageNotificationsEnabled !== false
+                }
+                onValueChange={(value) =>
+                  toggleNotificationSetting(
+                    "messageNotificationsEnabled",
+                    "Message notifications",
+                    value,
+                  )
+                }
+                color={theme.colors.primary}
+              />
+            )}
+          />
+
+          <List.Item
+            title="Social"
+            description="Friend requests and accepted requests"
+            left={(props) => <List.Icon {...props} icon="account-plus" />}
+            right={() => (
+              <Switch
+                value={
+                  notificationSettings?.socialNotificationsEnabled !== false
+                }
+                onValueChange={(value) =>
+                  toggleNotificationSetting(
+                    "socialNotificationsEnabled",
+                    "Social notifications",
+                    value,
+                  )
+                }
+                color={theme.colors.primary}
+              />
+            )}
+          />
+
+          <List.Item
+            title="Games"
+            description="Invites, lobby ready events, turns, and results"
+            left={(props) => <List.Icon {...props} icon="gamepad-variant" />}
+            right={() => (
+              <Switch
+                value={notificationSettings?.gameNotificationsEnabled !== false}
+                onValueChange={(value) =>
+                  toggleNotificationSetting(
+                    "gameNotificationsEnabled",
+                    "Game notifications",
+                    value,
+                  )
+                }
+                color={theme.colors.primary}
+              />
+            )}
+          />
+
+          <List.Item
+            title="Achievements"
+            description="Achievement unlocks and progression milestones"
+            left={(props) => <List.Icon {...props} icon="trophy-outline" />}
+            right={() => (
+              <Switch
+                value={
+                  notificationSettings?.achievementNotificationsEnabled !==
+                  false
+                }
+                onValueChange={(value) =>
+                  toggleNotificationSetting(
+                    "achievementNotificationsEnabled",
+                    "Achievement notifications",
+                    value,
+                  )
+                }
+                color={theme.colors.primary}
+              />
+            )}
+          />
+
+          <List.Item
+            title="Gifts"
+            description="Gift received and gift opened events"
+            left={(props) => <List.Icon {...props} icon="gift-outline" />}
+            right={() => (
+              <Switch
+                value={notificationSettings?.giftNotificationsEnabled !== false}
+                onValueChange={(value) =>
+                  toggleNotificationSetting(
+                    "giftNotificationsEnabled",
+                    "Gift notifications",
+                    value,
+                  )
+                }
+                color={theme.colors.primary}
+              />
+            )}
+          />
+
+          <List.Item
+            title="Moments"
+            description="Story and moments alerts when enabled by the backend"
+            left={(props) => <List.Icon {...props} icon="image-multiple" />}
+            right={() => (
+              <Switch
+                value={
+                  notificationSettings?.storyNotificationsEnabled !== false
+                }
+                onValueChange={(value) =>
+                  toggleNotificationSetting(
+                    "storyNotificationsEnabled",
+                    "Moments notifications",
+                    value,
+                  )
+                }
+                color={theme.colors.primary}
+              />
+            )}
+          />
+
+          <List.Item
+            title="Ritual Reminders"
+            description="Get reminded about expiring rituals"
+            left={(props) => <List.Icon {...props} icon="fire" />}
+            right={() => (
+              <Switch
+                value={
+                  notificationSettings?.streakNotificationsEnabled !== false
+                }
+                onValueChange={(value) =>
+                  toggleNotificationSetting(
+                    "streakNotificationsEnabled",
+                    "Ritual reminders",
+                    value,
+                  )
+                }
+                color={theme.colors.primary}
+              />
+            )}
+          />
+
+          <List.Item
+            title="App Badge"
+            description="Show unread notification count on the app icon"
+            left={(props) => <List.Icon {...props} icon="numeric" />}
+            right={() => (
+              <Switch
+                value={notificationSettings?.badgeCountEnabled !== false}
+                onValueChange={(value) =>
+                  toggleNotificationSetting(
+                    "badgeCountEnabled",
+                    "Badge count",
+                    value,
+                  )
+                }
+                color={theme.colors.primary}
+              />
+            )}
+          />
+        </List.Section>
+
+        <Divider />
+
+        {/* Privacy Section */}
+        <List.Section>
+          <List.Subheader style={styles.sectionHeader}>
+            Privacy & Safety
+          </List.Subheader>
+
+          <List.Item
+            title="Chat Settings"
+            description="Read receipts, typing indicators, online status"
+            left={(props) => <List.Icon {...props} icon="message-cog" />}
+            right={(props) => <List.Icon {...props} icon="chevron-right" />}
+            onPress={() => {
+              navigation.navigate("InboxSettings" as any);
+            }}
+          />
+
+          <List.Item
+            title="Privacy Settings"
+            description="Control who can see your profile and contact you"
+            left={(props) => <List.Icon {...props} icon="shield-account" />}
+            right={(props) => <List.Icon {...props} icon="chevron-right" />}
+            onPress={() => navigation.navigate("PrivacySettings")}
+          />
+
+          <List.Item
+            title="Blocked Users"
+            description="Manage blocked users"
+            left={(props) => <List.Icon {...props} icon="account-cancel" />}
+            right={(props) => <List.Icon {...props} icon="chevron-right" />}
+            onPress={() => navigation.navigate("BlockedUsers")}
+          />
+
+          <List.Item
+            title="Privacy Policy"
+            description="Read our privacy policy"
+            left={(props) => <List.Icon {...props} icon="shield-lock" />}
+            right={(props) => <List.Icon {...props} icon="chevron-right" />}
+            onPress={() => {
+              Linking.openURL("https://vibeapp.com/privacy").catch(() =>
+                showInfo("Could not open privacy policy"),
+              );
+            }}
+          />
+        </List.Section>
+
+        <Divider />
+
+        {/* Admin Section (Only shown to admins) */}
+        {customClaims?.admin === true && (
+          <>
+            <List.Section>
+              <List.Subheader
+                style={[
+                  styles.sectionHeaderAdmin,
+                  { color: theme.colors.error },
+                ]}
+              >
+                🛡️ Admin Tools
+              </List.Subheader>
+
+              <List.Item
+                title="Reports Queue"
+                description="Review pending user reports"
+                left={(props) => (
+                  <List.Icon
+                    {...props}
+                    icon="alert-circle"
                     color={theme.colors.error}
-                    style={{ marginBottom: 16 }}
                   />
-                  <Text style={styles.deletingText}>
-                    Please wait while we permanently remove your account and all
-                    associated data. This may take a moment.
-                  </Text>
-                  <Text style={styles.deletingSubtext}>
-                    Do not close the app.
-                  </Text>
-                </View>
-              </Dialog.Content>
-            </>
-          )}
+                )}
+                right={(props) => <List.Icon {...props} icon="chevron-right" />}
+                onPress={() => navigation.navigate("AdminReports")}
+                style={{ backgroundColor: theme.colors.errorContainer }}
+              />
+            </List.Section>
 
-          {/* ── Step: Error ── */}
-          {deleteStep === "error" && (
-            <>
-              <Dialog.Title style={{ color: theme.colors.error }}>
-                Deletion Error
-              </Dialog.Title>
-              <Dialog.Content>
-                <Text style={styles.deleteDetail}>
-                  {deleteError ||
-                    "Something went wrong during account deletion."}
-                </Text>
-                <Text style={[styles.deleteNote, { marginTop: 12 }]}>
-                  Your deletion request has been recorded. You can retry now or
-                  contact support for assistance.
-                </Text>
-              </Dialog.Content>
-              <Dialog.Actions>
-                <Button onPress={resetDeleteDialog}>Close</Button>
-                <Button
-                  onPress={() => {
-                    setDeleteStep("confirm");
-                    setDeleteConfirmText("");
-                    setDeleteError(null);
-                  }}
-                  textColor={theme.colors.error}
-                >
-                  Retry
-                </Button>
-              </Dialog.Actions>
-            </>
-          )}
-        </Dialog>
-      </Portal>
-    </ScrollView>
+            <Divider />
+          </>
+        )}
+
+        {/* Account Actions */}
+        <View style={styles.actionsSection}>
+          <Button
+            mode="outlined"
+            onPress={handleSignOut}
+            icon="logout"
+            style={styles.actionButton}
+          >
+            Sign Out
+          </Button>
+
+          <Button
+            mode="outlined"
+            onPress={() => setShowDeleteDialog(true)}
+            textColor={theme.colors.error}
+            icon="delete"
+            style={[
+              styles.actionButton,
+              styles.deleteButton,
+              { borderColor: theme.colors.error },
+            ]}
+          >
+            Delete Account
+          </Button>
+        </View>
+
+        {/* App Version */}
+        <Text
+          style={[styles.versionText, { color: theme.colors.onSurfaceVariant }]}
+        >
+          Vibe v{Constants.expoConfig?.version || "1.0.0"} (Build{" "}
+          {Constants.expoConfig?.ios?.buildNumber ||
+            Constants.expoConfig?.android?.versionCode ||
+            "dev"}
+          )
+        </Text>
+
+        {/* Edit Display Name Dialog */}
+        <Portal>
+          <Dialog
+            visible={showEditName}
+            onDismiss={() => setShowEditName(false)}
+          >
+            <Dialog.Title>Edit Display Name</Dialog.Title>
+            <Dialog.Content>
+              <TextInput
+                label="Display Name"
+                value={editDisplayName}
+                onChangeText={setEditDisplayName}
+                mode="outlined"
+                maxLength={50}
+              />
+            </Dialog.Content>
+            <Dialog.Actions>
+              <Button onPress={() => setShowEditName(false)}>Cancel</Button>
+              <Button
+                onPress={handleSaveDisplayName}
+                loading={savingName}
+                disabled={savingName}
+              >
+                Save
+              </Button>
+            </Dialog.Actions>
+          </Dialog>
+        </Portal>
+
+        {/* Delete Account Confirmation Dialog */}
+        <Portal>
+          <Dialog
+            visible={showDeleteDialog}
+            onDismiss={
+              deleteStep === "deleting" ? undefined : resetDeleteDialog
+            }
+            dismissable={deleteStep !== "deleting"}
+          >
+            {/* ── Step: Confirm ── */}
+            {deleteStep === "confirm" && (
+              <>
+                <Dialog.Title style={{ color: theme.colors.error }}>
+                  Delete Account
+                </Dialog.Title>
+                <Dialog.Content>
+                  <Text
+                    style={[
+                      styles.deleteWarning,
+                      { color: theme.colors.error },
+                    ]}
+                  >
+                    ⚠️ This is permanent and cannot be undone.
+                  </Text>
+                  <Text style={styles.deleteDetail}>
+                    Deleting your account will permanently remove:
+                  </Text>
+                  <Text style={styles.deleteBullet}>
+                    • Your profile, avatar, and all settings
+                  </Text>
+                  <Text style={styles.deleteBullet}>
+                    • All messages, photos, and stories you sent
+                  </Text>
+                  <Text style={styles.deleteBullet}>
+                    • Friends list, game history, and achievements
+                  </Text>
+                  <Text style={styles.deleteBullet}>
+                    • Your wallet balance and all purchased items
+                  </Text>
+                  <Text style={styles.deleteBullet}>
+                    • Your badges, streaks, and leaderboard entries
+                  </Text>
+
+                  <Text style={styles.deleteNote}>
+                    Your username will become available for others to claim.
+                  </Text>
+                  <Text style={styles.deleteNote}>
+                    You can use the same email to create a new account later.
+                  </Text>
+
+                  <Text style={[styles.deleteInstruction, { marginTop: 16 }]}>
+                    Type DELETE to confirm:
+                  </Text>
+                  <TextInput
+                    value={deleteConfirmText}
+                    onChangeText={setDeleteConfirmText}
+                    mode="outlined"
+                    placeholder="DELETE"
+                    autoCapitalize="characters"
+                    style={styles.deleteInput}
+                  />
+                </Dialog.Content>
+                <Dialog.Actions>
+                  <Button onPress={resetDeleteDialog}>Cancel</Button>
+                  <Button
+                    onPress={handleDeleteAccount}
+                    textColor={theme.colors.error}
+                    disabled={deleteConfirmText !== "DELETE"}
+                    icon="delete-forever"
+                  >
+                    Delete My Account
+                  </Button>
+                </Dialog.Actions>
+              </>
+            )}
+
+            {/* ── Step: Re-authentication ── */}
+            {deleteStep === "reauth" && (
+              <>
+                <Dialog.Title>Verify Your Identity</Dialog.Title>
+                <Dialog.Content>
+                  <Text style={styles.deleteDetail}>
+                    For security, please enter your password to continue with
+                    account deletion.
+                  </Text>
+                  <TextInput
+                    label="Password"
+                    value={reauthPassword}
+                    onChangeText={setReauthPassword}
+                    mode="outlined"
+                    secureTextEntry
+                    autoFocus
+                    style={styles.deleteInput}
+                  />
+                </Dialog.Content>
+                <Dialog.Actions>
+                  <Button onPress={resetDeleteDialog}>Cancel</Button>
+                  <Button
+                    onPress={handleReauthAndDelete}
+                    textColor={theme.colors.error}
+                    disabled={!reauthPassword || reauthLoading}
+                    loading={reauthLoading}
+                  >
+                    Verify & Delete
+                  </Button>
+                </Dialog.Actions>
+              </>
+            )}
+
+            {/* ── Step: Deleting (in progress) ── */}
+            {deleteStep === "deleting" && (
+              <>
+                <Dialog.Title>Deleting Account...</Dialog.Title>
+                <Dialog.Content>
+                  <View style={styles.deletingContainer}>
+                    <ActivityIndicator
+                      size="large"
+                      color={theme.colors.error}
+                      style={{ marginBottom: 16 }}
+                    />
+                    <Text style={styles.deletingText}>
+                      Please wait while we permanently remove your account and
+                      all associated data. This may take a moment.
+                    </Text>
+                    <Text style={styles.deletingSubtext}>
+                      Do not close the app.
+                    </Text>
+                  </View>
+                </Dialog.Content>
+              </>
+            )}
+
+            {/* ── Step: Error ── */}
+            {deleteStep === "error" && (
+              <>
+                <Dialog.Title style={{ color: theme.colors.error }}>
+                  Deletion Error
+                </Dialog.Title>
+                <Dialog.Content>
+                  <Text style={styles.deleteDetail}>
+                    {deleteError ||
+                      "Something went wrong during account deletion."}
+                  </Text>
+                  <Text style={[styles.deleteNote, { marginTop: 12 }]}>
+                    Your deletion request has been recorded. You can retry now
+                    or contact support for assistance.
+                  </Text>
+                </Dialog.Content>
+                <Dialog.Actions>
+                  <Button onPress={resetDeleteDialog}>Close</Button>
+                  <Button
+                    onPress={() => {
+                      setDeleteStep("confirm");
+                      setDeleteConfirmText("");
+                      setDeleteError(null);
+                    }}
+                    textColor={theme.colors.error}
+                  >
+                    Retry
+                  </Button>
+                </Dialog.Actions>
+              </>
+            )}
+          </Dialog>
+        </Portal>
+      </ScrollView>
+    </View>
   );
 }
 
@@ -991,6 +1024,9 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
 // =============================================================================
 
 const styles = StyleSheet.create({
+  outerContainer: {
+    flex: 1,
+  },
   container: {
     flex: 1,
     // backgroundColor applied inline via theme

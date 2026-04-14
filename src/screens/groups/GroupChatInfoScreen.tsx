@@ -2092,8 +2092,9 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
           { paddingTop: STATUS_BAR_HEIGHT },
         ]}
       >
-        {/* Animated background fill */}
+        {/* Animated background fill — pointerEvents none so it never steals touches */}
         <Animated.View
+          pointerEvents="none"
           style={[
             StyleSheet.absoluteFill,
             {
@@ -2106,8 +2107,8 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
         {/* Header content — always interactive */}
         <View style={styles.compactHeader}>
           {/* Back button */}
-          <View>
-            {/* Solid layer — fades in */}
+          <View style={{ width: 36, height: 36 }}>
+            {/* Solid layer — fades in (visual only) */}
             <Animated.View
               style={[
                 styles.headerCircle,
@@ -2124,8 +2125,9 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
                 color={colors.text}
               />
             </Animated.View>
-            {/* Glass layer — fades out (sits on top for touches) */}
+            {/* Glass layer — fades out (visual only) */}
             <Animated.View
+              pointerEvents="none"
               style={[
                 styles.headerCircle,
                 styles.headerCircleAbsolute,
@@ -2139,19 +2141,22 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
                 },
               ]}
             >
-              <TouchableOpacity
-                style={styles.headerCircleTouchable}
-                activeOpacity={0.7}
-                onPress={() => navigation.goBack()}
-                accessibilityLabel="Go back"
-              >
-                <MaterialCommunityIcons
-                  name="arrow-left"
-                  size={20}
-                  color={group.backgroundUrl ? "#FFF" : colors.text}
-                />
-              </TouchableOpacity>
+              <MaterialCommunityIcons
+                name="arrow-left"
+                size={20}
+                color={group.backgroundUrl ? "#FFF" : colors.text}
+              />
             </Animated.View>
+            {/* Touch target — always interactive, sits on top */}
+            <TouchableOpacity
+              style={[
+                styles.headerCircleTouchable,
+                styles.headerCircleAbsolute,
+              ]}
+              activeOpacity={0.7}
+              onPress={() => navigation.goBack()}
+              accessibilityLabel="Go back"
+            />
           </View>
 
           {/* Group avatar + name — fades in with header */}
@@ -2184,7 +2189,7 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
           <View style={styles.headerRight}>
             {/* Permissions button */}
             {can(GroupPermission.MANAGE_PERMISSIONS) && (
-              <View>
+              <View style={{ width: 36, height: 36 }}>
                 <Animated.View
                   style={[
                     styles.headerCircle,
@@ -2202,6 +2207,7 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
                   />
                 </Animated.View>
                 <Animated.View
+                  pointerEvents="none"
                   style={[
                     styles.headerCircle,
                     styles.headerCircleAbsolute,
@@ -2215,28 +2221,28 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
                     },
                   ]}
                 >
-                  <TouchableOpacity
-                    style={styles.headerCircleTouchable}
-                    activeOpacity={0.7}
-                    onPress={() =>
-                      navigation.navigate("GroupPermissions", { groupId })
-                    }
-                    accessibilityLabel="Admin permissions"
-                  >
-                    <MaterialCommunityIcons
-                      name="shield-key-outline"
-                      size={20}
-                      color={
-                        group.backgroundUrl ? "#FFF" : colors.textSecondary
-                      }
-                    />
-                  </TouchableOpacity>
+                  <MaterialCommunityIcons
+                    name="shield-key-outline"
+                    size={20}
+                    color={group.backgroundUrl ? "#FFF" : colors.textSecondary}
+                  />
                 </Animated.View>
+                <TouchableOpacity
+                  style={[
+                    styles.headerCircleTouchable,
+                    styles.headerCircleAbsolute,
+                  ]}
+                  activeOpacity={0.7}
+                  onPress={() =>
+                    navigation.navigate("GroupPermissions", { groupId })
+                  }
+                  accessibilityLabel="Admin permissions"
+                />
               </View>
             )}
 
             {/* Settings button */}
-            <View>
+            <View style={{ width: 36, height: 36 }}>
               <Animated.View
                 style={[
                   styles.headerCircle,
@@ -2254,6 +2260,7 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
                 />
               </Animated.View>
               <Animated.View
+                pointerEvents="none"
                 style={[
                   styles.headerCircle,
                   styles.headerCircleAbsolute,
@@ -2267,25 +2274,27 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
                   },
                 ]}
               >
-                <TouchableOpacity
-                  style={styles.headerCircleTouchable}
-                  activeOpacity={0.7}
-                  onPress={() =>
-                    navigation.navigate("ChatSettings", {
-                      groupId,
-                      chatType: "group",
-                      chatName: group.name,
-                    })
-                  }
-                  accessibilityLabel="Group settings"
-                >
-                  <MaterialCommunityIcons
-                    name="cog-outline"
-                    size={20}
-                    color={group.backgroundUrl ? "#FFF" : colors.textSecondary}
-                  />
-                </TouchableOpacity>
+                <MaterialCommunityIcons
+                  name="cog-outline"
+                  size={20}
+                  color={group.backgroundUrl ? "#FFF" : colors.textSecondary}
+                />
               </Animated.View>
+              <TouchableOpacity
+                style={[
+                  styles.headerCircleTouchable,
+                  styles.headerCircleAbsolute,
+                ]}
+                activeOpacity={0.7}
+                onPress={() =>
+                  navigation.navigate("ChatSettings", {
+                    groupId,
+                    chatType: "group",
+                    chatName: group.name,
+                  })
+                }
+                accessibilityLabel="Group settings"
+              />
             </View>
           </View>
         </View>

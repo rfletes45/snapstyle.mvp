@@ -154,38 +154,47 @@ export function initializePresence(uid: string): void {
     log.info("Initializing presence", { operation: "init", data: { uid } });
 
     // Listen for connection state changes
-    onValue(connectedRef, (snapshot) => {
-      if (snapshot.val() === true) {
-        // We're connected!
-        log.debug("Connected to RTDB", { operation: "connected" });
+    onValue(
+      connectedRef,
+      (snapshot) => {
+        if (snapshot.val() === true) {
+          // We're connected!
+          log.debug("Connected to RTDB", { operation: "connected" });
 
-        if (currentUserPresenceRef) {
-          // When we disconnect, set offline status
-          // Always write onDisconnect so absent presence looks offline
-          onDisconnect(currentUserPresenceRef).set({
-            online: false,
-            lastSeen: shouldPublishLastSeen ? serverTimestamp() : null,
-          });
-
-          // Set online status — respect privacy flag
-          if (shouldPublishOnlineStatus) {
-            set(currentUserPresenceRef, {
-              online: true,
-              lastSeen: shouldPublishLastSeen ? serverTimestamp() : null,
-            });
-          } else {
-            // User opted out of online status; write offline so stale
-            // "online: true" from a previous session doesn't linger.
-            set(currentUserPresenceRef, {
+          if (currentUserPresenceRef) {
+            // When we disconnect, set offline status
+            // Always write onDisconnect so absent presence looks offline
+            onDisconnect(currentUserPresenceRef).set({
               online: false,
               lastSeen: shouldPublishLastSeen ? serverTimestamp() : null,
             });
+
+            // Set online status — respect privacy flag
+            if (shouldPublishOnlineStatus) {
+              set(currentUserPresenceRef, {
+                online: true,
+                lastSeen: shouldPublishLastSeen ? serverTimestamp() : null,
+              });
+            } else {
+              // User opted out of online status; write offline so stale
+              // "online: true" from a previous session doesn't linger.
+              set(currentUserPresenceRef, {
+                online: false,
+                lastSeen: shouldPublishLastSeen ? serverTimestamp() : null,
+              });
+            }
           }
+        } else {
+          log.debug("Disconnected from RTDB", { operation: "disconnected" });
         }
-      } else {
-        log.debug("Disconnected from RTDB", { operation: "disconnected" });
-      }
-    });
+      },
+      (error) => {
+        log.error("Connection state listener error", {
+          operation: "init",
+          error,
+        });
+      },
+    );
 
     presenceInitialized = true;
   } catch (error) {
@@ -340,7 +349,15 @@ export function subscribeToPresence(
     });
   };
 
-  onValue(presenceRef, handleValue);
+  onValue(presenceRef, handleValue, (error) => {
+    log.error("Presence subscription error", { uid, error });
+    callback({
+      online: false,
+      lastSeen: null,
+      canSeeOnlineStatus: true,
+      canSeeLastSeen: true,
+    });
+  });
 
   return () => {
     off(presenceRef, "value", handleValue);
@@ -457,7 +474,11 @@ export function subscribeToStatusVisibility(
     });
   };
 
-  onValue(visRef, handleValue);
+  onValue(visRef, handleValue, (error) => {
+    log.error("Status visibility subscription error", { uid, error });
+    // Fall back to "allowed" so the UI degrades gracefully
+    callback({ onlineAllowed: true, lastSeenAllowed: true });
+  });
 
   return () => {
     off(visRef, "value", handleValue);

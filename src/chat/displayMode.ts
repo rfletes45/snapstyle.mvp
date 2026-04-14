@@ -175,13 +175,13 @@ export interface FeedLayoutTokens {
 export const FEED_LAYOUT: FeedLayoutTokens = {
   screenEdgeInset: 0,
   gutterWidth: 40,
-  gutterGap: 14,
-  contentIndent: 54, // 0 + 40 + 14
+  gutterGap: 10,
+  contentIndent: 50, // 0 + 40 + 10
   avatarSize: 40,
   groupGap: 14,
   withinGroupGap: 0,
   rowPaddingV: 2,
-  rowPaddingH: 8,
+  rowPaddingH: 12,
   mediaRadius: 8,
   imageMaxWidth: 260,
   imageMaxHeight: 300,

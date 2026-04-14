@@ -28,10 +28,13 @@ import {
   VoiceMessagePlayer,
 } from "@/components/chat";
 import { AnimalBubble } from "@/components/chat/AnimalBubble";
-import type { CardWidthTracker } from "@/components/chat/CardWidthTracker";
+import { GROUP_STACKED_CARD_PADDING_H } from "@/components/chat/groupedCardMetrics";
 import { MessageHighlightOverlay } from "@/components/chat/MessageHighlightOverlay";
 import { StackedReplyReference } from "@/components/chat/StackedReplyReference";
-import { useGroupedCardLayout } from "@/components/chat/useGroupedCardLayout";
+import {
+  useGroupedCardLayout,
+  type CardCornerWidthStore,
+} from "@/components/chat/useGroupedCardLayout";
 import { ProfilePictureWithDecoration } from "@/components/profile/ProfilePicture";
 import { hasUrls } from "@/services/linkPreview";
 import type { MentionableMember } from "@/services/mentionParser";
@@ -110,11 +113,11 @@ export interface GroupStackedMessageRendererProps {
   onOptimisticReaction?: (messageId: string, emoji: string) => void;
   /** Stable callback — renderer passes message ID */
   onThreadPress: (messageId: string) => void;
-  /** Shared tracker for adaptive card-width rounding */
-  cardWidthTracker?: CardWidthTracker;
-  /** Message ID of neighbor above in same group */
+  /** Shared width store for corner-only neighbor comparison. */
+  cornerWidthStore?: CardCornerWidthStore;
+  /** Previous neighbor in same group (for right-side corner shape). */
   groupPrevMessageId?: string;
-  /** Message ID of neighbor below in same group */
+  /** Next neighbor in same group (for right-side corner shape). */
   groupNextMessageId?: string;
 }
 
@@ -151,7 +154,7 @@ export const GroupStackedMessageRenderer: React.FC<GroupStackedMessageRendererPr
       onImagePress,
       onOptimisticReaction,
       onThreadPress,
-      cardWidthTracker,
+      cornerWidthStore,
       groupPrevMessageId,
       groupNextMessageId,
     }) => {
@@ -223,17 +226,16 @@ export const GroupStackedMessageRenderer: React.FC<GroupStackedMessageRendererPr
           }
         : undefined;
 
-      // ── Adaptive card-width tracking ──────────────────────────────
+      // ── Deterministic card corners ────────────────────────────────
       const groupCardBg = colors.background;
-      const { handleCardLayout, groupCardRadius, snapMinWidth } =
-        useGroupedCardLayout({
-          messageId: item.id,
-          cardWidthTracker,
-          groupPrevMessageId,
-          groupNextMessageId,
-          isGroupStart: vm.isGroupStart,
-          isGroupEnd: vm.isGroupEnd,
-        });
+      const { groupCardRadius, handleCardLayout } = useGroupedCardLayout({
+        messageId: item.id,
+        isGroupStart: vm.isGroupStart,
+        isGroupEnd: vm.isGroupEnd,
+        cornerWidthStore,
+        groupPrevMessageId,
+        groupNextMessageId,
+      });
 
       // ── Within-group vertical tightening ────────────────────────────
       const cardPaddingTop = vm.isGroupStart ? CARD_PAD_V : CARD_PAD_V_INNER;
@@ -382,6 +384,7 @@ export const GroupStackedMessageRenderer: React.FC<GroupStackedMessageRendererPr
                 {/* Content column — name + message in one vertical flow */}
                 <View style={gs.contentColumn}>
                   <View
+                    onLayout={handleCardLayout}
                     style={[
                       gs.cardWrapper,
                       {
@@ -389,14 +392,12 @@ export const GroupStackedMessageRenderer: React.FC<GroupStackedMessageRendererPr
                         overflow: "hidden",
                       },
                       groupCardRadius,
-                      snapMinWidth !== undefined && { minWidth: snapMinWidth },
                       mentionRowStyle,
                     ]}
                   >
                     {/* Highlight overlay */}
                     <MessageHighlightOverlay isHighlighted={isHighlighted} />
                     <View
-                      onLayout={handleCardLayout}
                       style={[
                         gs.cardContent,
                         {
@@ -494,7 +495,8 @@ GroupStackedMessageRenderer.displayName = "GroupStackedMessageRenderer";
 const gs = StyleSheet.create({
   feedRow: {
     width: "100%",
-    paddingHorizontal: F.rowPaddingH,
+    paddingLeft: F.rowPaddingH - 6,
+    paddingRight: F.rowPaddingH + 6,
   },
   feedRowGroupStart: {
     marginTop: F.groupGap,
@@ -514,6 +516,7 @@ const gs = StyleSheet.create({
     marginRight: F.gutterGap,
     alignItems: "center",
     paddingTop: 2,
+    transform: [{ translateX: 4 }],
   },
   avatarPlaceholder: {
     width: F.avatarSize,
@@ -553,7 +556,7 @@ const gs = StyleSheet.create({
   },
   cardContent: {
     alignSelf: "flex-start" as const,
-    paddingHorizontal: F.rowPaddingH + 4,
+    paddingHorizontal: GROUP_STACKED_CARD_PADDING_H,
   },
 
   // Message text (no bubble)

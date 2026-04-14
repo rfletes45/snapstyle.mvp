@@ -319,7 +319,7 @@ export const CHAT_FEATURES = {
   // =========================================================================
 
   /** Query Users/{uid}/Inbox instead of Chats + Groups collections */
-  CHAT_INBOX_AGGREGATION: false,
+  CHAT_INBOX_AGGREGATION: true,
 
   // =========================================================================
   // Phase 1 â€” Delivery Acks
@@ -334,5 +334,4 @@ export const CHAT_FEATURES = {
 
   /** Route typing/read/delivery writes through Cloud Function callables */
   CHAT_PRIVACY_SERVER_ENFORCED: false,
-
 } as const;

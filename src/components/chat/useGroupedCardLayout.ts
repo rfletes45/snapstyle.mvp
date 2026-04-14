@@ -1,189 +1,187 @@
 import React from "react";
 import type { LayoutChangeEvent } from "react-native";
 
-import type {
-  CardWidthSnapshot,
-  CardWidthTracker,
-} from "@/components/chat/CardWidthTracker";
 import {
   buildGroupedCardRadii,
-  getGroupedCardMinWidth,
   normalizeGroupedCardWidth,
 } from "@/components/chat/groupedCardLayout";
 
-const EMPTY_CARD_SNAPSHOT: CardWidthSnapshot = Object.freeze({});
+// ---------------------------------------------------------------------------
+// Lightweight corner-width store with subscriber notifications
+// ---------------------------------------------------------------------------
+
+/** Callback invoked when any card writes a new width. */
+type CornerWidthListener = (changedMessageId: string) => void;
 
 /**
- * Shallow-compare the subset of CardWidthSnapshot fields that drive visual
- * output (border radii + snap min-width).  Neighbor message IDs are ignored
- * because they only affect tracker graph structure, not render output.
+ * Shared width store for corner-only neighbor comparisons.
+ *
+ * Each mounted card writes its measured natural width here via onLayout.
+ * Neighbors subscribe so they re-render when a relevant width changes.
+ * No equalization, no minWidth — purely informational for corner shape.
  */
-function snapshotWidthsEqual(
-  a: CardWidthSnapshot,
-  b: CardWidthSnapshot,
-): boolean {
-  return (
-    a.rawWidth === b.rawWidth &&
-    a.snappedWidth === b.snappedWidth &&
-    a.prevSnappedWidth === b.prevSnappedWidth &&
-    a.nextSnappedWidth === b.nextSnappedWidth
-  );
+export interface CardCornerWidthStore {
+  get(messageId: string): number | undefined;
+  set(messageId: string, width: number): void;
+  subscribe(listener: CornerWidthListener): () => void;
 }
+
+/** Create a new CardCornerWidthStore. */
+export function createCardCornerWidthStore(): CardCornerWidthStore {
+  const widths = new Map<string, number>();
+  const listeners = new Set<CornerWidthListener>();
+
+  return {
+    get(messageId: string) {
+      return widths.get(messageId);
+    },
+    set(messageId: string, width: number) {
+      const prev = widths.get(messageId);
+      if (prev === width) return; // no change, no notification
+      widths.set(messageId, width);
+      for (const fn of listeners) {
+        fn(messageId);
+      }
+    },
+    subscribe(listener: CornerWidthListener) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Hook
+// ---------------------------------------------------------------------------
 
 export interface UseGroupedCardLayoutArgs {
   messageId: string;
-  cardWidthTracker?: CardWidthTracker;
-  groupPrevMessageId?: string;
-  groupNextMessageId?: string;
   isGroupStart: boolean;
   isGroupEnd: boolean;
+  /** Shared width store for corner comparison (created per screen). */
+  cornerWidthStore?: CardCornerWidthStore;
+  /** Previous neighbor in same group (for corner comparison). */
+  groupPrevMessageId?: string;
+  /** Next neighbor in same group (for corner comparison). */
+  groupNextMessageId?: string;
 }
 
+/**
+ * Grouped-card layout hook with width-aware right-side corners.
+ *
+ * Corner radii are determined by:
+ * - Left side: pure group-position (flush through run)
+ * - Right side: group-position + neighbor width comparison
+ *
+ * No width adjustment, no snap equalization, no minWidth.
+ * Cards always render at their natural content width.
+ */
 export function useGroupedCardLayout({
   messageId,
-  cardWidthTracker,
-  groupPrevMessageId,
-  groupNextMessageId,
   isGroupStart,
   isGroupEnd,
+  cornerWidthStore,
+  groupPrevMessageId,
+  groupNextMessageId,
 }: UseGroupedCardLayoutArgs) {
-  // ── Initial snapshot: pre-seed from tracker (which reads width cache) ──
-  const [layoutSnapshot, setLayoutSnapshot] = React.useState<CardWidthSnapshot>(
-    () => cardWidthTracker?.getSnapshot(messageId) ?? EMPTY_CARD_SNAPSHOT,
-  );
+  // Snapshot of own + neighbor widths, kept in a single state to batch updates
+  const [widthSnapshot, setWidthSnapshot] = React.useState<{
+    own: number | undefined;
+    prev: number | undefined;
+    next: number | undefined;
+  }>(() => ({
+    own: cornerWidthStore?.get(messageId),
+    prev: groupPrevMessageId
+      ? cornerWidthStore?.get(groupPrevMessageId)
+      : undefined,
+    next: groupNextMessageId
+      ? cornerWidthStore?.get(groupNextMessageId)
+      : undefined,
+  }));
 
-  // DEV: log first-mount width source for diagnosing cold-row estimation
-  if (__DEV__) {
-    const mountRef = React.useRef(true);
-    if (mountRef.current) {
-      mountRef.current = false;
-      const src =
-        layoutSnapshot.rawWidth == null
-          ? "none"
-          : cardWidthTracker?.isEstimated(messageId)
-            ? "estimated"
-            : "cached";
-      if (src !== "cached") {
-        // Only log non-cached (interesting) cases to reduce noise
-        console.debug(
-          `[GroupedCard] mount ${messageId.slice(0, 8)} width-src=${src}`,
-        );
-      }
-    }
-  }
+  // Keep neighbor IDs in a ref so the subscription callback sees current values
+  const prevIdRef = React.useRef(groupPrevMessageId);
+  prevIdRef.current = groupPrevMessageId;
+  const nextIdRef = React.useRef(groupNextMessageId);
+  nextIdRef.current = groupNextMessageId;
 
-  // Stable setter that skips state updates when visual-relevant width fields
-  // are unchanged, preventing cascading re-renders from group-wide tracker
-  // notifications where THIS message's snapshot data didn't actually change.
-  const stableSetSnapshot = React.useCallback((next: CardWidthSnapshot) => {
-    setLayoutSnapshot((prev) =>
-      snapshotWidthsEqual(prev, next) ? prev : next,
-    );
-  }, []);
+  // Subscribe to width changes so we re-render when a neighbor stores its width
+  React.useEffect(() => {
+    if (!cornerWidthStore) return;
 
-  // ── useLayoutEffect: runs BEFORE first paint ──────────────────────────
-  // Registering neighbors and reading the snapshot before paint ensures the
-  // very first visible frame reflects any cached neighbor widths (warm-cache
-  // conversations) instead of rendering with EMPTY_CARD_SNAPSHOT and then
-  // visibly correcting on the next frame.
-  //
-  // The stableSetSnapshot comparison prevents a re-render when the snapshot
-  // data is identical (common for cold-cache rows where all widths are
-  // undefined in both the initial state and the post-setGroupNeighbors
-  // snapshot).
-  React.useLayoutEffect(() => {
-    if (!cardWidthTracker) {
-      setLayoutSnapshot((prev) => {
-        const next: CardWidthSnapshot = {
-          rawWidth: prev.rawWidth,
-          snappedWidth: prev.rawWidth,
-          prevMessageId: groupPrevMessageId,
-          nextMessageId: groupNextMessageId,
-        };
-        return snapshotWidthsEqual(prev, next) ? prev : next;
+    const unsubscribe = cornerWidthStore.subscribe((changedId) => {
+      const prevId = prevIdRef.current;
+      const nextId = nextIdRef.current;
+
+      // Only re-render if the changed ID is a current neighbor
+      if (changedId !== prevId && changedId !== nextId) return;
+
+      setWidthSnapshot((prev) => {
+        const newPrev = prevId ? cornerWidthStore.get(prevId) : undefined;
+        const newNext = nextId ? cornerWidthStore.get(nextId) : undefined;
+        // Avoid spurious re-renders if values haven't actually changed
+        if (prev.prev === newPrev && prev.next === newNext) return prev;
+        return { ...prev, prev: newPrev, next: newNext };
       });
-      return;
-    }
+    });
 
-    cardWidthTracker.setGroupNeighbors(
-      messageId,
-      groupPrevMessageId,
-      groupNextMessageId,
-    );
-    stableSetSnapshot(cardWidthTracker.getSnapshot(messageId));
-    return cardWidthTracker.subscribe(messageId, stableSetSnapshot);
-  }, [
-    cardWidthTracker,
-    messageId,
-    groupPrevMessageId,
-    groupNextMessageId,
-    stableSetSnapshot,
-  ]);
+    return unsubscribe;
+  }, [cornerWidthStore]);
 
-  const handleCardLayout = React.useCallback(
-    (e: LayoutChangeEvent) => {
-      const width = normalizeGroupedCardWidth(e.nativeEvent.layout.width);
-
-      if (cardWidthTracker) {
-        if (__DEV__ && cardWidthTracker.isEstimated(messageId)) {
-          const prev = cardWidthTracker.getSnapshot(messageId);
-          const delta =
-            prev.rawWidth != null ? Math.abs(width - prev.rawWidth) : -1;
-          if (delta > 2) {
-            console.debug(
-              `[GroupedCard] refine ${messageId.slice(0, 8)} est=${prev.rawWidth} meas=${width} Δ=${delta}`,
-            );
-          }
-        }
-        cardWidthTracker.report(messageId, width);
-        return;
-      }
-
-      setLayoutSnapshot((prev) => {
-        if (prev.rawWidth === width && prev.snappedWidth === width) {
-          return prev;
-        }
-
-        return {
-          ...prev,
-          rawWidth: width,
-          snappedWidth: width,
-        };
-      });
-    },
-    [cardWidthTracker, messageId],
-  );
+  // When neighbor IDs change (e.g. new message added to group), re-read widths
+  React.useEffect(() => {
+    if (!cornerWidthStore) return;
+    setWidthSnapshot((prev) => {
+      const newPrev = groupPrevMessageId
+        ? cornerWidthStore.get(groupPrevMessageId)
+        : undefined;
+      const newNext = groupNextMessageId
+        ? cornerWidthStore.get(groupNextMessageId)
+        : undefined;
+      if (prev.prev === newPrev && prev.next === newNext) return prev;
+      return { ...prev, prev: newPrev, next: newNext };
+    });
+  }, [cornerWidthStore, groupPrevMessageId, groupNextMessageId]);
 
   const groupCardRadius = React.useMemo(
     () =>
       buildGroupedCardRadii({
         isGroupStart,
         isGroupEnd,
-        currentWidth: layoutSnapshot.snappedWidth,
-        prevWidth: layoutSnapshot.prevSnappedWidth,
-        nextWidth: layoutSnapshot.nextSnappedWidth,
+        currentWidth: widthSnapshot.own,
+        prevWidth: widthSnapshot.prev,
+        nextWidth: widthSnapshot.next,
       }),
-    [
-      isGroupEnd,
-      isGroupStart,
-      layoutSnapshot.nextSnappedWidth,
-      layoutSnapshot.prevSnappedWidth,
-      layoutSnapshot.snappedWidth,
-    ],
+    [isGroupStart, isGroupEnd, widthSnapshot],
   );
 
-  const snapMinWidth = React.useMemo(
-    () =>
-      getGroupedCardMinWidth(
-        layoutSnapshot.rawWidth,
-        layoutSnapshot.snappedWidth,
-      ),
-    [layoutSnapshot.rawWidth, layoutSnapshot.snappedWidth],
+  const handleCardLayout = React.useCallback(
+    (e: LayoutChangeEvent) => {
+      const width = normalizeGroupedCardWidth(e.nativeEvent.layout.width);
+      if (cornerWidthStore) {
+        // Write to shared store — this notifies neighbor subscribers
+        cornerWidthStore.set(messageId, width);
+      }
+      // Update own width in local state
+      setWidthSnapshot((prev) => {
+        if (prev.own === width) return prev;
+        // Also snapshot current neighbor widths while we're here
+        const prevId = prevIdRef.current;
+        const nextId = nextIdRef.current;
+        return {
+          own: width,
+          prev: prevId ? cornerWidthStore?.get(prevId) : undefined,
+          next: nextId ? cornerWidthStore?.get(nextId) : undefined,
+        };
+      });
+    },
+    [cornerWidthStore, messageId],
   );
 
   return {
-    handleCardLayout,
     groupCardRadius,
-    snapMinWidth,
+    handleCardLayout,
   };
 }

@@ -30,15 +30,15 @@ import React, {
 import {
   ActivityIndicator,
   Alert,
-  InteractionManager,
   Keyboard,
   Platform,
   StyleSheet,
   Text,
+  TouchableOpacity,
   useWindowDimensions,
   View,
 } from "react-native";
-import { IconButton, Menu, useTheme } from "react-native-paper";
+import { IconButton, Text as PaperText, useTheme } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 // Auth & notifications
@@ -98,10 +98,9 @@ import { useTwoPhaseListConfig } from "@/hooks/chat/useTwoPhaseListConfig";
 import { useComposerToolbarLayout } from "@/hooks/useComposerToolbarLayout";
 
 // UI components
-import { CardWidthTracker } from "@/components/chat/CardWidthTracker";
 import { ChatHeader } from "@/components/chat/ChatHeader";
 import { ChatMessageRenderer } from "@/components/chat/ChatMessageRenderer";
-import { estimateMessageWidth } from "@/components/chat/estimateMessageWidth";
+import { createCardCornerWidthStore } from "@/components/chat/useGroupedCardLayout";
 import { useComposerSheet } from "@/contexts/ComposerSheetContext";
 import { PinnedInviteBar } from "@/gamesV4/components/PinnedInviteBar";
 import { createGameInvite } from "@/gamesV4/services/gameServiceV4";
@@ -116,6 +115,7 @@ import {
   setChatScrollViewConfig,
   useRenderChatScrollComponent,
 } from "@/components/chat/ChatKeyboardScrollView";
+import { DraggableBottomSheet } from "@/components/chat/DraggableBottomSheet";
 import { SheetDismissLayer } from "@/components/chat/SheetDismissLayer";
 
 // Services
@@ -126,7 +126,7 @@ import {
   sendMediaAttachmentMessage,
   sendVoiceRecordingMessage,
 } from "@/chat/sendDraft";
-import { blockUser } from "@/services/blocking";
+import { blockUser, hasBlockBetweenUsers } from "@/services/blocking";
 import { getOrCreateChat } from "@/services/chat";
 import { safeSystemText } from "@/services/chat/normalizeMessage";
 import { getUserProfileByUid } from "@/services/friends";
@@ -164,6 +164,7 @@ import { clearLastOpenChat, saveLastOpenChat } from "@/services/lastOpenChat";
 import { syncMessagesAroundTarget } from "@/services/sync/syncEngine";
 import { chatPerf } from "@/utils/chatPerf";
 import { createLogger } from "@/utils/log";
+import { scheduleIdleWork } from "@/utils/scheduleIdleWork";
 const logger = createLogger("screens/chat/ChatScreen");
 
 /** Trigger haptic feedback with Android-safe fallback */
@@ -213,7 +214,7 @@ interface ChatScreenParams {
 }
 
 // ==========================================================================
-// ChatDMHeaderMenu — isolated so menu toggle doesn't re-render ChatScreen
+// ChatDMHeaderMenu — bottom sheet action menu
 // ==========================================================================
 function ChatDMHeaderMenu({
   chatId,
@@ -229,68 +230,120 @@ function ChatDMHeaderMenu({
   navigation: any;
 }) {
   const [visible, setVisible] = useState(false);
-  const closingRef = useRef(false);
   const theme = useTheme();
-  const contentStyle = useMemo(
-    () => ({ backgroundColor: theme.colors.surface }),
-    [theme.colors.surface],
-  );
 
-  const handleOpen = useCallback(() => {
-    // Prevent opening while a dismiss animation is still in progress
-    if (closingRef.current) return;
-    setVisible(true);
-  }, []);
-
-  const handleDismiss = useCallback(() => {
-    closingRef.current = true;
-    setVisible(false);
-    // Allow re-opening after Paper's dismiss animation completes (~300ms)
-    setTimeout(() => {
-      closingRef.current = false;
-    }, 350);
-  }, []);
+  const handleOpen = useCallback(() => setVisible(true), []);
+  const handleClose = useCallback(() => setVisible(false), []);
 
   return (
-    <Menu
-      visible={visible}
-      onDismiss={handleDismiss}
-      anchor={
-        <IconButton icon="dots-vertical" size={24} onPress={handleOpen} />
-      }
-      contentStyle={contentStyle}
-    >
-      <Menu.Item
-        onPress={() => {
-          handleDismiss();
-          navigation.navigate("ChatSettings", {
-            chatId,
-            chatType: "dm",
-            chatName,
-          });
-        }}
-        title="Settings"
-        leadingIcon="cog-outline"
-      />
-      <Menu.Item
-        onPress={() => {
-          handleDismiss();
-          onBlock();
-        }}
-        title="Block User"
-        leadingIcon="block-helper"
-      />
-      <Menu.Item
-        onPress={() => {
-          handleDismiss();
-          onReport();
-        }}
-        title="Report User"
-        leadingIcon="flag"
-      />
-    </Menu>
+    <>
+      <IconButton icon="dots-vertical" size={24} onPress={handleOpen} />
+      <DraggableBottomSheet
+        open={visible}
+        onClose={handleClose}
+        snapPoints={[0.32]}
+        initialSnapIndex={0}
+      >
+        <View style={dmMenuStyles.container}>
+          <PaperText
+            variant="titleMedium"
+            style={[dmMenuStyles.title, { color: theme.colors.onSurface }]}
+          >
+            Options
+          </PaperText>
+          <TouchableOpacity
+            style={dmMenuStyles.row}
+            activeOpacity={0.6}
+            onPress={() => {
+              handleClose();
+              navigation.navigate("ChatSettings", {
+                chatId,
+                chatType: "dm",
+                chatName,
+              });
+            }}
+          >
+            <IconButton
+              icon="cog-outline"
+              size={22}
+              iconColor={theme.colors.onSurface}
+              style={dmMenuStyles.rowIcon}
+            />
+            <PaperText
+              variant="bodyLarge"
+              style={{ color: theme.colors.onSurface }}
+            >
+              Settings
+            </PaperText>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={dmMenuStyles.row}
+            activeOpacity={0.6}
+            onPress={() => {
+              handleClose();
+              onBlock();
+            }}
+          >
+            <IconButton
+              icon="block-helper"
+              size={22}
+              iconColor={theme.colors.error}
+              style={dmMenuStyles.rowIcon}
+            />
+            <PaperText
+              variant="bodyLarge"
+              style={{ color: theme.colors.error }}
+            >
+              Block User
+            </PaperText>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={dmMenuStyles.row}
+            activeOpacity={0.6}
+            onPress={() => {
+              handleClose();
+              onReport();
+            }}
+          >
+            <IconButton
+              icon="flag-outline"
+              size={22}
+              iconColor={theme.colors.error}
+              style={dmMenuStyles.rowIcon}
+            />
+            <PaperText
+              variant="bodyLarge"
+              style={{ color: theme.colors.error }}
+            >
+              Report User
+            </PaperText>
+          </TouchableOpacity>
+        </View>
+      </DraggableBottomSheet>
+    </>
   );
 }
+
+const dmMenuStyles = StyleSheet.create({
+  container: {
+    paddingHorizontal: Spacing.lg,
+    paddingBottom: Spacing.xl,
+  },
+  title: {
+    fontWeight: "600",
+    marginBottom: Spacing.sm,
+    paddingHorizontal: Spacing.xs,
+  },
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: Spacing.sm,
+  },
+  rowIcon: {
+    margin: 0,
+    marginRight: Spacing.sm,
+  },
+});
 
 // ==========================================================================
 // ChatScreen Component
@@ -363,6 +416,7 @@ export default function ChatScreen({
   const [reportModalVisible, setReportModalVisible] = useState(false);
   const [scheduleModalVisible, setScheduleModalVisible] = useState(false);
   const [animalPickerVisible, setAnimalPickerVisible] = useState(false);
+  const [dmBlocked, setDmBlocked] = useState(false);
 
   // Games V4 state
   const [gameInviteCreating, setGameInviteCreating] = useState(false);
@@ -631,6 +685,20 @@ export default function ChatScreen({
     [chatId, screen.messages, uid, getReceiptStatus],
   );
 
+  // In DM bubble mode, only the newest eligible outgoing message shows
+  // the read/delivered stamp. "Eligible" = sent by current user, not failed.
+  // Messages are ordered newest-first (inverted list), so the first match
+  // in displayMessages is the newest outgoing message.
+  const newestStatusMessageId = useMemo(() => {
+    if (displayMode !== "bubbles") return undefined;
+    for (const msg of displayMessages) {
+      if (msg.senderId === uid && msg.status !== "failed") {
+        return msg.id;
+      }
+    }
+    return undefined;
+  }, [displayMessages, uid, displayMode]);
+
   const areMessagesGrouped = useCallback(
     (msg1: MessageV2 | null, msg2: MessageV2 | null): boolean => {
       if (!msg1 || !msg2) return false;
@@ -857,8 +925,8 @@ export default function ChatScreen({
 
             // Background refresh — don't block, and never overwrite
             // a valid profile with undefined (transient Firestore error).
-            // Defer until after transition to avoid competing with animation.
-            InteractionManager.runAfterInteractions(() => {
+            // Deferred to idle to avoid competing with animation frames.
+            const cancelIdle = scheduleIdleWork(() => {
               getUserProfileByUid(friendUid)
                 .then((p) => {
                   if (p) setFriendProfile(p);
@@ -867,6 +935,8 @@ export default function ChatScreen({
                   logger.warn("Background profile refresh failed:", e),
                 );
             });
+            // Store cancel for cleanup if the component unmounts before idle fires
+            (initializeChat as any).__cancelIdle = cancelIdle;
             return;
           }
 
@@ -886,6 +956,14 @@ export default function ChatScreen({
             setFriendProfile(fetchedProfile);
           }
           chatInitializedRef.current = true;
+
+          // Check block status after init — if either direction has a block,
+          // disable the composer so messages can't be sent.
+          hasBlockBetweenUsers(uid, friendUid)
+            .then((blocked) => {
+              if (blocked) setDmBlocked(true);
+            })
+            .catch(() => {});
         } catch (error: any) {
           logger.error("❌ [ChatScreen] Init error:", error);
           Alert.alert("Error", error.message || "Failed to initialize chat");
@@ -907,13 +985,13 @@ export default function ChatScreen({
 
   useEffect(() => {
     if (!uid || !chatId) return;
-    // Defer notification marking until after screen transition completes
-    const task = InteractionManager.runAfterInteractions(() => {
+    // Defer notification marking to idle — pure backend side-effect with no UI impact
+    const cancel = scheduleIdleWork(() => {
       markConversationNotificationsRead(uid, chatId, "dm").catch((error) => {
         logger.warn("Failed to mark DM notifications read:", error);
       });
     });
-    return () => task.cancel();
+    return cancel;
   }, [uid, chatId]);
 
   // Derive header subtitle from presence / typing
@@ -1067,54 +1145,25 @@ export default function ChatScreen({
   const timelineDataRef = useRef(timelineData);
   timelineDataRef.current = timelineData;
 
+  // Lightweight shared store for corner-only width comparisons (no equalization)
+  const cornerWidthStore = useMemo(() => createCardCornerWidthStore(), []);
+
   // ── Live refs for volatile data read inside renderTimelineItem ─────
   // By reading these from refs the useCallback stays stable across state
   // changes, preventing FlatList from re-diffing every cell.
   const messageReactionsRef = useRef(messageReactions);
   messageReactionsRef.current = messageReactions;
+  const fallbackReactionsRef = useRef<Map<string, ReactionSummary[]>>(
+    new Map(),
+  );
   const highlightedMessageIdRef = useRef(highlightedMessageId);
   highlightedMessageIdRef.current = highlightedMessageId;
+  const newestStatusMessageIdRef = useRef(newestStatusMessageId);
+  newestStatusMessageIdRef.current = newestStatusMessageId;
 
-  // Card-width tracker for adaptive stacked-mode rounding
-  const trackerConversationKey = chatId ?? "__pending-chat__";
-  const cardWidthTracker = useMemo(() => {
-    void trackerConversationKey;
-    return new CardWidthTracker();
-  }, [trackerConversationKey]);
-
-  // Pre-seed estimated widths for cold-cache rows before they mount.
-  // Only seed the initial render window to keep first-paint fast.
-  // Additional rows are seeded as they mount via useGroupedCardLayout.
-  useMemo(() => {
-    if (displayMode !== "stacked") return;
-    const entries: { id: string; estimatedWidth: number }[] = [];
-    const limit = listConfig.initialNumToRender + 5; // seed slightly beyond initial render
-    let count = 0;
-    for (const tl of timelineData) {
-      if (count >= limit) break;
-      if (tl.type !== "message") continue;
-      const msg = tl.data;
-      if (msg.kind === "system") continue;
-      entries.push({
-        id: msg.id,
-        estimatedWidth: estimateMessageWidth({
-          text: msg.text,
-          kind: msg.kind,
-          attachments: msg.attachments,
-          hasReplyPreview: !!msg.replyTo,
-          hasThread: !!msg.replyCount && msg.replyCount > 0,
-          hasReactions:
-            !!msg.reactionsSummary &&
-            Object.keys(msg.reactionsSummary).length > 0,
-          isGroupStart: !tl.isGroupedWithPrevious,
-          screenWidth: windowWidth,
-        }),
-      });
-      count++;
-    }
-    if (entries.length > 0) cardWidthTracker.seedBatch(entries);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [timelineData, cardWidthTracker, displayMode, windowWidth]);
+  useEffect(() => {
+    fallbackReactionsRef.current.clear();
+  }, [displayMessages, uid]);
 
   // Enhanced scroll-to-message with highlight animation
   const scrollToMessage = useCallback(
@@ -1268,20 +1317,28 @@ export default function ChatScreen({
     [refreshProfile],
   );
 
-  const handleBlockConfirm = async (reason?: string) => {
-    if (!uid) return;
-    try {
-      await blockUser(uid, friendUid, reason);
+  const handleBlockConfirm = useCallback(
+    async (reason?: string) => {
+      if (!uid) return;
+      const success = await blockUser(uid, friendUid, reason);
       setBlockModalVisible(false);
-      Alert.alert(
-        "User Blocked",
-        `${friendProfile?.username || "User"} has been blocked.`,
-        [{ text: "OK", onPress: () => navigation.goBack() }],
-      );
-    } catch (error: any) {
-      Alert.alert("Error", error.message || "Failed to block user");
-    }
-  };
+      if (success) {
+        // Navigate away FIRST to tear down subscriptions immediately,
+        // then show the confirmation alert on the previous screen.
+        navigation.goBack();
+        // Use setTimeout so the alert shows after navigation completes
+        setTimeout(() => {
+          Alert.alert(
+            "User Blocked",
+            `${friendProfile?.username || "User"} has been blocked.`,
+          );
+        }, 100);
+      } else {
+        Alert.alert("Error", "Failed to block user. Please try again.");
+      }
+    },
+    [uid, friendUid, friendProfile?.username, navigation],
+  );
 
   const handleReportSubmit = async (
     reason: ReportReason,
@@ -1393,17 +1450,30 @@ export default function ChatScreen({
         return <SystemMessageChip text={safeSystemText(msg.text)} />;
       }
 
-      // Neighbor IDs in same group (for adaptive card-width rounding)
-      const prevTl = timelineDataRef.current[index + 1];
-      const nextTl = timelineDataRef.current[index - 1];
-      const groupPrevMessageId =
-        item.isGroupedWithPrevious && prevTl && "data" in prevTl
-          ? prevTl.data.id
+      // Neighbor IDs for width-aware right-side corners.
+      // In the inverted FlatList (newest-first), "previous" (visually above)
+      // lives at index + 1, and "next" (visually below) lives at index - 1.
+      const aboveTl = timelineDataRef.current[index + 1];
+      const groupPrevMsgId =
+        item.isGroupedWithPrevious && aboveTl?.type === "message"
+          ? aboveTl.data.id
           : undefined;
-      const groupNextMessageId =
-        item.isGroupedWithNext && nextTl && "data" in nextTl
-          ? nextTl.data.id
+      const belowTl = timelineDataRef.current[index - 1];
+      const groupNextMsgId =
+        item.isGroupedWithNext && belowTl?.type === "message"
+          ? belowTl.data.id
           : undefined;
+
+      const renderedReactions =
+        messageReactionsRef.current.get(msg.id) ??
+        (() => {
+          const cached = fallbackReactionsRef.current.get(msg.id);
+          if (cached) return cached;
+          if (!uid || !msg.reactionsSummary) return EMPTY_REACTIONS;
+          const parsed = parseReactionsFromMessage(msg.reactionsSummary, uid);
+          fallbackReactionsRef.current.set(msg.id, parsed);
+          return parsed;
+        })();
 
       return (
         <AnimatedMessageRow
@@ -1424,9 +1494,7 @@ export default function ChatScreen({
             onRetry={handleRetryMessage}
             onImagePress={handleOpenMediaViewer}
             isHighlighted={msg.id === highlightedMessageIdRef.current}
-            reactions={
-              messageReactionsRef.current.get(msg.id) ?? EMPTY_REACTIONS
-            }
+            reactions={renderedReactions}
             onOptimisticReaction={handleOptimisticReaction}
             displayMode={displayMode}
             isGroupChat={false}
@@ -1444,9 +1512,10 @@ export default function ChatScreen({
             currentUserDecorationId={
               (profile as any)?.avatarDecoration?.decorationId ?? null
             }
-            cardWidthTracker={cardWidthTracker}
-            groupPrevMessageId={groupPrevMessageId}
-            groupNextMessageId={groupNextMessageId}
+            newestStatusMessageId={newestStatusMessageIdRef.current}
+            cornerWidthStore={cornerWidthStore}
+            groupPrevMessageId={groupPrevMsgId}
+            groupNextMessageId={groupNextMsgId}
           />
         </AnimatedMessageRow>
       );
@@ -1462,7 +1531,6 @@ export default function ChatScreen({
       handleRetryMessage,
       handleOpenMediaViewer,
       handleOptimisticReaction,
-      cardWidthTracker,
       screen.chat.messageEnterAnimation,
       displayMode,
       profile?.displayName,
@@ -1567,18 +1635,6 @@ export default function ChatScreen({
                       color={theme.colors.primary}
                     />
                   </View>
-                ) : !screen.chat.pagination.hasMoreOlder ? (
-                  <View style={styles.loadMoreContainer}>
-                    <Text
-                      style={{
-                        color: theme.colors.onSurfaceVariant,
-                        textAlign: "center",
-                        fontSize: 12,
-                      }}
-                    >
-                      Beginning of conversation
-                    </Text>
-                  </View>
                 ) : null
               }
               ListEmptyComponent={
@@ -1639,79 +1695,92 @@ export default function ChatScreen({
             />
           )}
 
-          <ChatComposer
-            scope="dm"
-            value={screen.composer.text}
-            onChangeText={handleTextChange}
-            onSend={handleSendMessage}
-            hasAttachments={attachmentPicker.attachments.length > 0}
-            sendDisabled={
-              !chatId ||
-              (!screen.composer.text.trim() &&
-                attachmentPicker.attachments.length === 0) ||
-              screen.sending ||
-              attachmentPicker.isUploading
-            }
-            isSending={screen.sending || attachmentPicker.isUploading}
-            placeholder="Message..."
-            leftAccessory={cameraButton}
-            additionalRightAccessory={scheduleButton}
-            headerContent={
-              attachmentPicker.attachments.length > 0 ? (
-                <AttachmentTray
-                  attachments={attachmentPicker.attachments}
-                  uploadProgress={attachmentPicker.uploadProgress}
-                  onRemove={attachmentPicker.removeAttachment}
-                  onAdd={handleAddAttachment}
-                  maxAttachments={10}
-                />
-              ) : null
-            }
-            replyTo={screen.chat.replyTo}
-            onCancelReply={handleCancelReply}
-            currentUid={uid}
-            onGameSelected={GAMES_V4_ENABLED ? handleGameSelected : undefined}
-            onAnimalPress={handleAnimalPress}
-            animalThemeId={animalEntitlement.equippedAnimalId}
-            animalLocked={!animalEntitlement.canSend}
-            animalPickerVisible={animalPickerVisible}
-            onAnimalLongPress={() => setAnimalPickerVisible(true)}
-            onAnimalPickerClose={() => setAnimalPickerVisible(false)}
-            currentUserId={uid}
-            onAnimalEquipped={handleAnimalEquipped}
-            voiceButtonComponent={
-              voiceRecorder.isAvailable &&
-              !screen.composer.text.trim() &&
-              attachmentPicker.attachments.length === 0 ? (
-                <VoiceRecordButton
-                  onRecordingComplete={handleVoiceRecordingComplete}
-                  onRecordingCancelled={NOOP}
-                  disabled={screen.sending}
-                  size={32}
-                  maxDuration={60000}
-                />
-              ) : undefined
-            }
-            // Customizable toolbar
-            toolbarItems={toolbar.items}
-            toolbarEditing={toolbar.isEditing}
-            toolbarSaving={toolbar.saving}
-            onToolbarEnterEdit={toolbar.enterEditMode}
-            onToolbarSaveAndExit={toolbar.saveAndExit}
-            onToolbarCancelEdit={toolbar.cancelEdit}
-            onToolbarMoveItem={toolbar.moveItem}
-            onToolbarAddItem={toolbar.addItem}
-            onToolbarRemoveItem={toolbar.removeItem}
-            onToolbarResetDefaults={toolbar.resetToDefaults}
-            onEmojiSelected={handleEmojiInsert}
-            onGifSelected={GIF_PICKER_ENABLED ? handleGifSelected : undefined}
-            onStickerSelected={
-              STICKER_PICKER_ENABLED ? handleStickerSelected : undefined
-            }
-            onSchedulePress={() => setScheduleModalVisible(true)}
-            onImagesPicked={handleDirectGallerySend}
-            imagePickerDisabled={screen.sending}
-          />
+          {dmBlocked ? (
+            <View style={styles.blockedBanner}>
+              <Text
+                style={[
+                  styles.blockedBannerText,
+                  { color: theme.colors.onSurfaceVariant },
+                ]}
+              >
+                You can't send messages in this conversation.
+              </Text>
+            </View>
+          ) : (
+            <ChatComposer
+              scope="dm"
+              value={screen.composer.text}
+              onChangeText={handleTextChange}
+              onSend={handleSendMessage}
+              hasAttachments={attachmentPicker.attachments.length > 0}
+              sendDisabled={
+                !chatId ||
+                (!screen.composer.text.trim() &&
+                  attachmentPicker.attachments.length === 0) ||
+                screen.sending ||
+                attachmentPicker.isUploading
+              }
+              isSending={screen.sending || attachmentPicker.isUploading}
+              placeholder="Message..."
+              leftAccessory={cameraButton}
+              additionalRightAccessory={scheduleButton}
+              headerContent={
+                attachmentPicker.attachments.length > 0 ? (
+                  <AttachmentTray
+                    attachments={attachmentPicker.attachments}
+                    uploadProgress={attachmentPicker.uploadProgress}
+                    onRemove={attachmentPicker.removeAttachment}
+                    onAdd={handleAddAttachment}
+                    maxAttachments={10}
+                  />
+                ) : null
+              }
+              replyTo={screen.chat.replyTo}
+              onCancelReply={handleCancelReply}
+              currentUid={uid}
+              onGameSelected={GAMES_V4_ENABLED ? handleGameSelected : undefined}
+              onAnimalPress={handleAnimalPress}
+              animalThemeId={animalEntitlement.equippedAnimalId}
+              animalLocked={!animalEntitlement.canSend}
+              animalPickerVisible={animalPickerVisible}
+              onAnimalLongPress={() => setAnimalPickerVisible(true)}
+              onAnimalPickerClose={() => setAnimalPickerVisible(false)}
+              currentUserId={uid}
+              onAnimalEquipped={handleAnimalEquipped}
+              voiceButtonComponent={
+                voiceRecorder.isAvailable &&
+                !screen.composer.text.trim() &&
+                attachmentPicker.attachments.length === 0 ? (
+                  <VoiceRecordButton
+                    onRecordingComplete={handleVoiceRecordingComplete}
+                    onRecordingCancelled={NOOP}
+                    disabled={screen.sending}
+                    size={32}
+                    maxDuration={60000}
+                  />
+                ) : undefined
+              }
+              // Customizable toolbar
+              toolbarItems={toolbar.items}
+              toolbarEditing={toolbar.isEditing}
+              toolbarSaving={toolbar.saving}
+              onToolbarEnterEdit={toolbar.enterEditMode}
+              onToolbarSaveAndExit={toolbar.saveAndExit}
+              onToolbarCancelEdit={toolbar.cancelEdit}
+              onToolbarMoveItem={toolbar.moveItem}
+              onToolbarAddItem={toolbar.addItem}
+              onToolbarRemoveItem={toolbar.removeItem}
+              onToolbarResetDefaults={toolbar.resetToDefaults}
+              onEmojiSelected={handleEmojiInsert}
+              onGifSelected={GIF_PICKER_ENABLED ? handleGifSelected : undefined}
+              onStickerSelected={
+                STICKER_PICKER_ENABLED ? handleStickerSelected : undefined
+              }
+              onSchedulePress={() => setScheduleModalVisible(true)}
+              onImagesPicked={handleDirectGallerySend}
+              imagePickerDisabled={screen.sending}
+            />
+          )}
           <KeyboardSafeAreaSpacer backgroundColor={theme.colors.background} />
         </ChatFooterWrapper>
 
@@ -1865,5 +1934,14 @@ const styles = StyleSheet.create({
   gameInviteLoadingText: {
     fontSize: 14,
     fontWeight: "600",
+  },
+  blockedBanner: {
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    alignItems: "center",
+  },
+  blockedBannerText: {
+    fontSize: 14,
+    textAlign: "center",
   },
 });

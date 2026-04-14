@@ -5,7 +5,7 @@
 > custom font colors, data contracts, inbox/unread, threading, notifications,
 > performance, known issues, and sustaining roadmap.
 
-Last verified: 2026-04-12
+Last verified: 2026-04-13
 
 ---
 
@@ -48,7 +48,7 @@ Last verified: 2026-04-12
 | Native messaging runtime (SQLite-first)    | Implemented and primary                                      |
 | Web messaging runtime (Firestore fallback) | Implemented as compatibility path                            |
 | Inbox aggregation backend                  | Implemented                                                  |
-| Inbox aggregation client default           | Not yet switched on (`CHAT_INBOX_AGGREGATION = false`)       |
+| Inbox aggregation client default           | Enabled (`CHAT_INBOX_AGGREGATION = true`)                    |
 | DM + group detail screens                  | Unified around shared `MessageV2` foundation                 |
 | Threads                                    | Implemented (specialized screen)                             |
 | Display modes (Bubbles + Stacked)          | Implemented, viewer-side setting                             |
@@ -176,7 +176,8 @@ This means:
 | `src/components/chat/DateDivider.tsx`                 | Day separator                                            |
 | `src/components/chat/ChatKeyboardScrollView.tsx`      | KCSV adapter + ChatFooterWrapper + isKCSVAvailable       |
 | `src/components/chat/PickerLoadingFallback.tsx`       | Suspense fallback for lazy-loaded picker buttons         |
-| `src/components/chat/lazyChatComponents.tsx`          | React.lazy wrappers for picker sheets (GIF, emoji, etc)  |
+| `src/components/chat/lazyChatComponents.tsx`          | React.lazy wrappers for modals (emoji, schedule, block)  |
+| `src/components/chat/pickerPreload.ts`                | Eager preload registry for toolbar picker sheet bundles  |
 
 ### Hooks & Services
 
@@ -200,6 +201,7 @@ This means:
 | `src/services/chat/threadIdentityWarmup.ts`           | Pre-navigation identity/asset warmup                      |
 | `src/services/chat/unifiedMessagesLifecycle.ts`       | Realtime + pagination merge                               |
 | `src/services/chat/inboxAggregation.ts`               | Aggregated inbox mark-read                                |
+| `src/services/chat/inboxParityTelemetry.ts`           | Debug-mode fan-out vs aggregated inbox parity comparison  |
 | `src/services/messaging/send.ts`                      | Send orchestration (web path)                             |
 | `src/services/messaging/subscribe.ts`                 | Firestore realtime subscriptions                          |
 | `src/services/messaging/messageMerge.ts`              | Merge helper                                              |
@@ -232,12 +234,16 @@ This means:
 
 ### Composer & Toolbar
 
-| File                                            | Purpose                           |
-| ----------------------------------------------- | --------------------------------- |
-| `src/components/chat/ChatComposer.tsx`          | Main composer component           |
-| `src/components/chat/ComposerToolbar.tsx`       | Customizable toolbar rendering    |
-| `src/components/chat/ComposerToolbarEditor.tsx` | Edit/drag-and-drop toolbar editor |
-| `src/hooks/useComposerToolbar.ts`               | Toolbar state management hook     |
+| File                                                               | Purpose                               |
+| ------------------------------------------------------------------ | ------------------------------------- |
+| `src/components/chat/ChatComposer.tsx`                             | Main composer component               |
+| `src/components/chat/ComposerToolbar/ComposerToolbarRegistry.ts`   | Central item definition catalog       |
+| `src/components/chat/ComposerToolbar/ComposerToolbarRow.tsx`       | Toolbar rendering row                 |
+| `src/components/chat/ComposerToolbar/ComposerCustomizeToolbar.tsx` | Edit/drag-and-drop toolbar editor     |
+| `src/components/chat/ComposerToolbar/ComposerItemPicker.tsx`       | Item picker for adding toolbar items  |
+| `src/components/chat/ComposerToolbar/types.ts`                     | Toolbar type definitions and defaults |
+| `src/hooks/useComposerToolbarLayout.ts`                            | Toolbar state + persistence hook      |
+| `src/components/chat/pickerPreload.ts`                             | Eager import cache for picker sheets  |
 
 ### GIF Integration
 
@@ -267,18 +273,21 @@ This means:
 | `src/utils/chatPerf.ts`                         | Lightweight perf instrumentation (mount/focus/buildTimeline timing) |
 | `src/hooks/chat/useTwoPhaseListConfig.ts`       | Two-phase FlatList promotion with chatPerf instrumentation          |
 | `src/components/chat/PickerLoadingFallback.tsx` | Suspense fallback for lazy-loaded picker buttons (260px spinner)    |
-| `src/components/chat/lazyChatComponents.tsx`    | React.lazy wrappers — code-split picker sheets from chat bundle     |
+| `src/components/chat/lazyChatComponents.tsx`    | React.lazy wrappers — code-split modal sheets from chat bundle      |
+| `src/components/chat/pickerPreload.ts`          | Eager preload cache — imports picker bundles on composer mount      |
+| `src/utils/imagePrefetch.ts`                    | Image.prefetch utilities + usePrefetch hook                         |
+| `src/utils/remoteImageSource.ts`                | URL normalization + source builder for expo-image cache alignment   |
 
 ### Backend
 
-| File                                                   | Purpose                                 |
-| ------------------------------------------------------ | --------------------------------------- |
-| `firebase-backend/functions/src/messaging.ts`          | sendMessageV2, toggleReactionV2         |
-| `firebase-backend/functions/src/messageRequests.ts`    | Message request endpoints               |
-| `firebase-backend/functions/src/inboxTriggers.ts`      | Per-user aggregated inbox triggers      |
-| `firebase-backend/functions/src/chatMedia.ts`          | Chat media upload/finalization          |
-| `firebase-backend/functions/src/notificationCenter.ts` | Notification routing (in-app/push/none) |
-| `firebase-backend/functions/src/notifications.ts`      | Legacy DM/group push triggers           |
+| File                                                   | Purpose                                                |
+| ------------------------------------------------------ | ------------------------------------------------------ |
+| `firebase-backend/functions/src/messaging.ts`          | sendMessageV2, toggleReactionV2                        |
+| `firebase-backend/functions/src/messageRequests.ts`    | Message request endpoints                              |
+| `firebase-backend/functions/src/inboxTriggers.ts`      | Per-user aggregated inbox triggers + member-state sync |
+| `firebase-backend/functions/src/chatMedia.ts`          | Chat media upload/finalization                         |
+| `firebase-backend/functions/src/notificationCenter.ts` | Notification routing (in-app/push/none)                |
+| `firebase-backend/functions/src/notifications.ts`      | Canonical DM/group push triggers                       |
 
 ---
 
@@ -292,17 +301,73 @@ Navigation from the inbox to a chat screen follows a **navigate-first** pattern:
 2. Identity/asset warmup (`prepareDmThreadEntry`, `prepareGroupChatNavigation` from `threadIdentityWarmup.ts`) runs in the background as fire-and-forget
 3. Cached data (name, avatar, group metadata) is passed via nav params as `initialData` / `initialGroupData` for instant display before subscriptions deliver full data
 
+### Press-In Preloading
+
+`ChatListScreenV2.handleConversationPressIn` fires on touch-down (~150–300 ms before tap completes):
+
+- **DM**: calls `prepareDmThreadEntry` (avatar + decoration warmup)
+- **Group**: normalizes `backgroundUrl` via `normalizeRemoteImageUrl()`, calls `prefetchImages([bgUrl])` for earliest possible cache hit, then fires `prepareGroupChatNavigation()` in parallel
+
+This overlaps warmup work with the user's finger-down duration, giving the background image ~150–300 ms of loading time before the screen even mounts.
+
+### Group Background Loading Architecture
+
+Group chat backgrounds pass through a multi-layered warmup pipeline to ensure instant display on both first open and subsequent reopens.
+
+#### Cache Alignment
+
+All paths use `normalizeRemoteImageUrl()` (trims whitespace) before interacting with expo-image. The render path uses `buildRemoteImageSource(url)` which normalizes internally. This ensures the prefetch cache key, warmup cache key, and render cache key are always identical.
+
+#### Warmup Pipeline
+
+```
+handleConversationPressIn (touch-down, ~150-300ms before navigation)
+├─ prefetchImages([normalizedUrl])        → Image.prefetch("memory-disk")
+└─ prepareGroupChatNavigation()           → fire-and-forget
+    └─ prepareGroupThreadEntry()
+        ├─ warmIdentityImageUrls([bgUrl]) → Image.loadAsync(normalizedUrl)
+        └─ (runs in parallel with member fetch)
+
+handleConversationPress (tap complete)
+└─ navigation.navigate("GroupChat", { initialGroupData })
+    └─ GroupChatScreen mounts
+        ├─ useState initializer seeds group.backgroundUrl from initialGroupData
+        ├─ usePrefetch(groupBackgroundUrls) schedules Image.prefetch()
+        └─ AppImage renders with buildRemoteImageSource(group.backgroundUrl)
+```
+
+#### Rendering
+
+`GroupChatScreen` renders the background via `AppImage` inside `ChatKeyboardContainer.backgroundLayer`:
+
+- `source={buildRemoteImageSource(group.backgroundUrl)}` — normalized URI for cache alignment
+- `priority="high"` — signals expo-image to prioritize this load
+- `transition={0}` — no cross-dissolve animation
+- `cachePolicy="memory-disk"` — reads from memory first, falls back to disk
+- Container uses `backgroundColor: "#121212"` (dark neutral) as fallback when `backgroundUrl` is set, eliminating white flash in light mode
+
+#### Reopen Stability
+
+`warmRemoteImage()` in `threadIdentityWarmup.ts` always calls `Image.loadAsync()` regardless of whether a previous load succeeded (no JS-side ImageRef caching). Concurrent calls to the same URL are deduped via `imageWarmPromises`. This ensures the native memory cache is re-warmed on every open — the platform may evict decoded bitmaps from memory after a screen unmounts, so re-calling `Image.loadAsync()` is required to guarantee memory residency.
+
+When `group.backgroundUrl` from Firestore matches `initialGroupData.backgroundUrl`, `usePrefetch`'s string-keyed dedup skips redundant prefetch calls. The `groupBackgroundUrls` useMemo dependency on `group?.backgroundUrl` prevents unnecessary recomputation.
+
 ### Deferred Mount Work
 
-Both `ChatScreen` and `GroupChatScreen` defer non-critical work via `InteractionManager.runAfterInteractions()`:
+Both `ChatScreen` and `GroupChatScreen` defer non-critical work via `scheduleIdleWork()` (yields to the next idle frame) to avoid blocking navigation transitions:
 
-- `markConversationNotificationsRead` — deferred until transition completes
+- `markConversationNotificationsRead` — deferred to idle (pure backend side-effect)
 - `getGroupMemberPrivate` (group only) — deferred member preferences read
-- Background profile refresh on DM re-focus — deferred
+- Background profile refresh on DM re-focus — deferred to idle
+- Link preview fetching (group only) — deferred to idle
+
+The `isGroupMember` membership check remains gated on `InteractionManager.runAfterInteractions()` because its error state would cause a jarring UI change during transition animation.
 
 ### Screen Freeze on Blur
 
 The `MainStack` navigator uses `freezeOnBlur: true`, which freezes inactive screens via `react-native-screens`. When navigating Chat → Thread or Chat → GroupInfo, the chat screen receives no React re-renders, effects, or state updates. Return-to-chat is near-instant (native view unfreeze).
+
+Note: `freezeOnBlur` only applies to screens already in the back stack. When the user navigates **back** (e.g., from GroupChat to Inbox), GroupChatScreen is popped and unmounted — each navigation to GroupChat creates a fresh component instance.
 
 ### Performance Instrumentation
 
@@ -346,7 +411,7 @@ Entry hook: `src/hooks/useInboxData.ts`
 - **Aggregated mode** (`CHAT_FEATURES.CHAT_INBOX_AGGREGATION=true`):
   - `useInboxAggregation` (`src/hooks/useInboxAggregation.ts`)
   - Reads `Users/{uid}/Inbox/*`
-  - Still pulls `MembersPrivate` for authoritative unread and settings parity
+  - Builds `MemberStatePrivate` from synced Inbox entry fields (zero extra reads) when `lastSeenAtPrivate` is present; falls back to `MembersPrivate` fetch for pre-sync entries
 
 Both modes produce the same `InboxConversation` shape via `src/services/chat/normalizeInboxRow.ts`.
 
@@ -375,7 +440,7 @@ The requests tab in `ChatListScreenV2` renders this single typed stream with:
 - **Foreground in-app notifications**: `src/store/InAppNotificationsContext.tsx` with listeners for friend requests, chat updates, group updates, and `Users/{uid}/InAppNotificationsV4`
 - **Legacy DM/group push triggers**: `firebase-backend/functions/src/notifications.ts`
 
-Note: `CHAT_LEGACY_PUSH_ENABLED` was documented as an env flag for gating legacy push triggers but has no implementation in the codebase. Legacy push triggers are not separately gated.
+Note: Legacy push triggers were removed from `legacy.ts` on 2026-04-13 (~450 LOC of dead code). `index.ts` imports only canonical versions from `notifications.ts`. All chat push notifications route through `notificationCenter.ts` with atomic dedupe.
 
 ### Runtime Mode Parity Guarantees
 
@@ -1065,12 +1130,39 @@ The main composer component (`ChatComposer.tsx`) handles:
 
 Users can rearrange and customize toolbar items through a drag-and-drop editor.
 
+#### Architecture
+
+The toolbar system is modeled after the WidgetBoard registry pattern:
+
+| File                                        | Role                                                         |
+| ------------------------------------------- | ------------------------------------------------------------ |
+| `ComposerToolbarRegistry.ts`                | Central item definition catalog (metadata, constraints)      |
+| `ComposerToolbarRow.tsx`                    | Runtime toolbar rendering                                    |
+| `ComposerCustomizeToolbar.tsx`              | Drag-and-drop editor overlay                                 |
+| `ComposerItemPicker.tsx`                    | Category-grouped picker for adding items                     |
+| `types.ts`                                  | `ComposerToolbarItemId`, `ComposerToolbarItem`, layout types |
+| `useComposerToolbarLayout.ts` (in `hooks/`) | Persistence, validation, and state management                |
+
 #### Data Model
 
 ```typescript
-interface ComposerToolbarLayout {
-  toolbar: string[]; // Ordered list of visible item IDs
-  overflow: string[]; // Items hidden in overflow menu
+type ComposerToolbarItemId =
+  | "message-bar"
+  | "camera"
+  | "game"
+  | "animal"
+  | "send"
+  | "emoji"
+  | "schedule"
+  | "gif"
+  | "sticker"
+  | "gif-sticker"
+  | "image-picker";
+
+interface ComposerToolbarItem {
+  id: ComposerToolbarItemId;
+  position: number; // 0-based left-to-right
+  flexWeight?: number; // Only for message-bar (0.3–0.8)
 }
 ```
 
@@ -1078,28 +1170,19 @@ Stored at `Users/{uid}.composerToolbar` in Firestore.
 
 #### Available Item IDs
 
-| ID           | Label         | Removable                            |
-| ------------ | ------------- | ------------------------------------ |
-| `camera`     | Camera        | Yes                                  |
-| `gallery`    | Photo Library | Yes                                  |
-| `gif`        | GIFs          | Yes                                  |
-| `sticker`    | Stickers      | Yes                                  |
-| `voice`      | Voice Note    | Yes                                  |
-| `file`       | File          | Yes                                  |
-| `schedule`   | Schedule Send | Yes                                  |
-| `animal`     | Send Animal   | Yes                                  |
-| `gameInvite` | Game Invite   | Yes                                  |
-| `mention`    | Mention (@)   | Yes                                  |
-| `messageBar` | Message Bar   | **No** (fixed position, always last) |
-
-**Constraints**: Maximum 6 items in the toolbar. The `messageBar` item is non-removable and always appears last.
-
-#### Default Layout
-
-```typescript
-toolbar: ["camera", "gallery", "gif", "sticker", "voice", "messageBar"];
-overflow: ["file", "schedule", "animal", "gameInvite", "mention"];
-```
+| ID             | Label           | Category | Removable               |
+| -------------- | --------------- | -------- | ----------------------- |
+| `message-bar`  | Message Bar     | core     | **No** (always present) |
+| `camera`       | Camera          | media    | Yes                     |
+| `game`         | Games           | actions  | Yes                     |
+| `animal`       | Animal          | actions  | Yes                     |
+| `send`         | Send Button     | core     | Yes                     |
+| `emoji`        | Emoji           | actions  | Yes                     |
+| `schedule`     | Schedule        | actions  | Yes                     |
+| `gif`          | GIF             | media    | Yes                     |
+| `sticker`      | Stickers        | media    | Yes                     |
+| `gif-sticker`  | GIFs & Stickers | media    | Yes                     |
+| `image-picker` | Photos          | media    | Yes                     |
 
 #### Persistence (Dual-Write)
 
@@ -1123,13 +1206,32 @@ Read priority: Firestore snapshot > AsyncStorage fallback > hardcoded default.
 3. **Dragging** — active gesture, swap detection running
 4. **Confirming** — save pending (dual-write in progress)
 
-#### Adding New Toolbar Items
+### Picker Sheet Eager Preloading
 
-1. Add new ID to `TOOLBAR_ITEM_IDS` array
-2. Add icon/label mapping to `TOOLBAR_ITEM_META`
-3. Add to `DEFAULT_OVERFLOW` array (or `DEFAULT_TOOLBAR` if default-visible)
-4. Wire action handler in `ComposerToolbar.tsx`'s `handleItemPress`
-5. Existing users: new item auto-appears in overflow (layout merge handles unknown IDs)
+Toolbar picker buttons (GIF, Emoji, Sticker, Game, GifSticker) are code-split via `React.lazy()` for bundle size reduction. To eliminate the ~3-second loading spinner on first tap, the picker bundles are eagerly preloaded when the composer mounts.
+
+#### How It Works
+
+`src/components/chat/pickerPreload.ts` maintains a singleton cache of `import()` promises per picker module:
+
+```
+preloadPickersForToolbar(["gif", "emoji", "sticker"]) → starts imports
+  ├─ getGifPickerImport()      → import("./GifPicker")         [cached]
+  ├─ getEmojiPickerImport()    → import("./FullEmojiPicker")   [cached]
+  └─ getStickerPickerImport()  → import("./StickerPicker")     [cached]
+```
+
+Each button component's `React.lazy()` factory calls the same getter (e.g., `React.lazy(() => getGifPickerImport())`), so when the user taps the button, `React.lazy` resolves instantly from the cached promise — no Suspense fallback visible.
+
+#### Trigger
+
+`ChatComposer.tsx` calls `preloadPickersForToolbar(activeToolbarItems.map(i => i.id))` in a `useEffect` on mount and whenever the toolbar layout changes. Only items with picker sheets are matched; non-picker items (camera, send, message-bar) are ignored.
+
+#### Adding New Picker Items
+
+1. Add the lazy import getter to `pickerPreload.ts`
+2. Map the toolbar item ID to the getter in `PRELOAD_MAP`
+3. Update the button component's `React.lazy` factory to use the getter
 
 ---
 
@@ -1144,6 +1246,10 @@ The keyboard architecture has gone through 3 iterations trying to solve a fundam
 - **Expo Go**: KCSV (KeyboardChatScrollView) is NOT available — requires native build
 - Available: KSV (KeyboardStickyView), KAV (KeyboardAvoidingView), `useReanimatedKeyboardAnimation`, `useKeyboardHandler`
 - `KeyboardProvider` already wraps the app
+
+### Expo Go Keyboard Fallback
+
+`src/utils/optionalKeyboardController.tsx` provides `useFallbackKeyboardAnimation()` — a compatibility bridge that feeds RN `Keyboard.addListener` events into Reanimated shared values so chat screens animate correctly in Expo Go. Uses `keyboardWillShow`/`keyboardWillHide` on iOS; `keyboardDidShow`/`keyboardDidHide` on Android. Shared values animate via `withTiming` for smooth transitions.
 
 ### The Fundamental Problem
 
@@ -1168,9 +1274,11 @@ KAV's `"height"` behavior sets explicit `height` + `flex: 0`. This triggers layo
 - Safe-area spacer stays visible (gap issue)
 - Frame measurement issues with stale `initialFrame`
 
-### Current Architecture (v3 KAV)
+### Current Architecture (KCSV + Fallback)
 
-The current implementation uses KAV with `behavior: "height"`, which has known jitter but provides the closest-to-correct behavior for the current constraints.
+All three chat screens (ChatScreen, GroupChatScreen, ThreadScreen) now use `ChatKeyboardContainer` which routes to native KCSV when available or to a `FallbackKeyboardContainer` (animated `paddingBottom`) in Expo Go. `ChatFooterWrapper` positions the composer via `KeyboardStickyView` on the KCSV path or inherits the fallback container's padding. The FlatList receives `renderScrollComponent` which resolves to `KeyboardChatScrollView` (native 60fps inset-driven) or plain `ScrollView`.
+
+**Note:** The older KAV `behavior="height"` approach described in prior doc versions has been fully replaced.
 
 ### Chat Screen Flex Stack
 
@@ -1199,24 +1307,29 @@ Must have:
 8. Works in both stacked and bubble display modes
 9. Works for both ChatScreen (DM) and GroupChatScreen
 
-### Solution Path
+### Native KCSV Path (Active)
 
-When a native build (`expo-dev-client`) is available, the **KCSV + KSV** architecture is the intended solution:
+All three chat screens use the native **KCSV + KSV** architecture when `isKCSVAvailable` is true (native build with `expo-dev-client`):
 
-- KCSV handles `contentInset` on the UI thread (zero layout reflow for the FlatList)
-- KSV handles footer positioning with smooth `translateY`
-- This is what `react-native-keyboard-controller` was designed for
+- `KeyboardChatScrollView` handles `contentInset` on the UI thread (zero layout reflow)
+- `KeyboardStickyView` handles footer positioning with smooth `translateY`
+- `setChatScrollViewConfig()` configures offset and lift behavior per screen
+- `useRenderChatScrollComponent()` provides the scroll component factory
+
+When KCSV is unavailable (Expo Go), the system falls back to `FallbackKeyboardContainer` with `useFallbackKeyboardAnimation()` driving Reanimated shared values from RN `Keyboard` events.
 
 ### Key Files
 
-| File                                             | Role                                               |
-| ------------------------------------------------ | -------------------------------------------------- |
-| `src/components/chat/ChatKeyboardScrollView.tsx` | KCSV adapter + ChatFooterWrapper + isKCSVAvailable |
-| `src/components/chat/ChatMessageList.tsx`        | Inverted FlatList                                  |
-| `src/components/chat/ChatComposer.tsx`           | Composer UI                                        |
-| `src/hooks/chat/useChatKeyboard.ts`              | Keyboard SharedValues + JS state                   |
-| `src/screens/chat/ChatScreen.tsx`                | DM — KeyboardAvoidingView + ChatFooterWrapper      |
-| `src/screens/groups/GroupChatScreen.tsx`         | Group — same pattern                               |
+| File                                             | Role                                                             |
+| ------------------------------------------------ | ---------------------------------------------------------------- |
+| `src/components/chat/ChatKeyboardScrollView.tsx` | KCSV adapter + ChatFooterWrapper + isKCSVAvailable               |
+| `src/components/chat/ChatMessageList.tsx`        | Inverted FlatList                                                |
+| `src/components/chat/ChatComposer.tsx`           | Composer UI                                                      |
+| `src/hooks/chat/useChatKeyboard.ts`              | Keyboard SharedValues + JS state                                 |
+| `src/screens/chat/ChatScreen.tsx`                | DM — ChatKeyboardContainer + KCSV scroll + ChatFooterWrapper     |
+| `src/screens/groups/GroupChatScreen.tsx`         | Group — same KCSV pattern                                        |
+| `src/screens/chat/ThreadScreen.tsx`              | Thread — ChatKeyboardContainer + KCSV scroll + ChatFooterWrapper |
+| `src/utils/optionalKeyboardController.tsx`       | Expo Go keyboard fallback (Keyboard→SharedValue bridge)          |
 
 ---
 
@@ -1304,7 +1417,7 @@ Both chat screens use a `reactionTargetKey` — a `useMemo`-derived sorted comma
 ### Known Limitations
 
 - Denormalized `reactionsSummary` doesn't include per-user data — `hasReacted` is always `false` from summary alone. Full reaction subscriptions needed for accurate state.
-- `ReactionDetailSheet` loads profiles one-by-one; slow for many reactors.
+- `ReactionDetailSheet` batch-fetches all reactor profiles on open using `batchFetchProfiles()` (Firestore `documentId() in [...]` query, max 30 per chunk). Profiles are cached in `profileCache.ts` with 5-minute TTL. Tab switching resolves from cache synchronously.
 - If Cloud Function fails silently, optimistic state persists until Firestore listener delivers authoritative data.
 
 ---
@@ -1634,6 +1747,8 @@ interface InboxEntry {
   avatarPath?: string;
   memberCount?: number;
 
+  lastSenderName?: string;
+
   otherUserName?: string;
   otherUserId?: string;
 }
@@ -1766,7 +1881,9 @@ Values: empty for `<=0`, numeric `1..99`, cap `99+`.
 ### Current Migration State
 
 - Backend always maintains `Users/{uid}/Inbox/*`
-- Client still defaults to fan-out reads (`CHAT_INBOX_AGGREGATION = false`)
+- Client defaults to aggregated reads (`CHAT_INBOX_AGGREGATION = true`) since 2026-04-13
+- Fan-out path remains available as immediate rollback (`CHAT_INBOX_AGGREGATION = false`)
+- Dev mode runs both paths in parallel with parity telemetry via `compareInboxParity()`
 - `markInboxRead` resets aggregated inbox hint but does NOT replace member-private unread state
 
 ---
@@ -1783,7 +1900,7 @@ Thread subscriptions are lifecycle-scoped via `src/screens/chat/threadLifecycle.
 
 ### Thread Screen
 
-`ThreadScreen.tsx` remains a specialized thread-focused screen (intentional exception — not part of the shared chat surface).
+`ThreadScreen.tsx` is a specialized thread-focused screen. It now uses the shared keyboard architecture (`ChatKeyboardContainer` + `ChatFooterWrapper` + `KeyboardSafeAreaSpacer`) and is wrapped in `ComposerSheetProvider` via `RootNavigator.tsx`. The FlatList uses `keyboardDismissMode="interactive"` and `keyboardShouldPersistTaps="handled"`. Since threads use a non-inverted list, KCSV is not used — the `FallbackKeyboardContainer` path applies.
 
 ### Thread Model
 
@@ -1841,8 +1958,10 @@ Responsibilities:
 
 - Update per-user aggregated inbox docs on DM/group message creation
 - Reset sender unread, increment recipients unread
-- Maintain preview and snapshot fields
+- Maintain preview and snapshot fields (including `lastSenderName` for group messages)
 - Expose `markInboxRead` callable to clear unread hints
+- `onDMMemberStateChanged` — `onUpdate` trigger for `Chats/{chatId}/MembersPrivate/{uid}` that syncs pin/archive/mute/notifyLevel/deletedAt/hiddenUntilNewMessage/lastSeenAtPrivate/lastMarkedUnreadAt to the user's aggregated inbox entry
+- `onGroupMemberStateChanged` — same pattern for `Groups/{groupId}/MembersPrivate/{uid}`
 
 ### Backend Contract Expectations
 
@@ -1898,18 +2017,34 @@ Hook: `src/hooks/chat/useTwoPhaseListConfig.ts`
 
 Both `ChatScreen` and `GroupChatScreen` use a two-phase FlatList configuration to speed up initial render:
 
-- **Phase 1 (conservative)**: `initialNumToRender: 12`, `maxToRenderPerBatch: 6`, `windowSize: 5` — fast first paint
-- **Phase 2 (full)**: Promoted after `InteractionManager.runAfterInteractions` + 300 ms delay — `maxToRenderPerBatch: 12`, `windowSize: 11`
+- **Phase 1 (conservative)**: `initialNumToRender: 15`, `maxToRenderPerBatch: 10`, `windowSize: 11`, `updateCellsBatchingPeriod: 50` — fast first paint
+- **Phase 2 (full)**: Promoted after `InteractionManager.runAfterInteractions` + 300 ms delay, wrapped in `startTransition` — `maxToRenderPerBatch: 50`, `windowSize: 101`, `updateCellsBatchingPeriod: 16`
 
-Phase 2 promotion is instrumented via `chatPerf.mark("phase2-promote")` and `chatPerf.measure("phase2-delay")`.
+Phase 2 promotion is instrumented via `chatPerf.mark("phase2:{conversationId}")` and `chatPerf.measure()` at interaction-done and promoted checkpoints.
 
 ### Lazy-Loaded Picker Buttons
 
-File: `src/components/chat/lazyChatComponents.tsx`
+File: `src/components/chat/pickerPreload.ts` (registry) + individual button files
 
-Five toolbar picker sheets (GIF, Emoji, Sticker, Game, GifSticker) are code-split with `React.lazy()`. Each button component wraps its sheet in `<Suspense fallback={<PickerLoadingFallback />}>`.
+Five toolbar picker sheets (GIF, Emoji, Sticker, Game, GifSticker) are code-split with `React.lazy()`. Each button component (`GifButton`, `EmojiButton`, `StickerButton`, `GameButton`, `GifStickerButton`) wraps its sheet in `<Suspense fallback={<PickerLoadingFallback />}>` as a fallback path.
 
-`PickerLoadingFallback` (`src/components/chat/PickerLoadingFallback.tsx`) renders a centered `ActivityIndicator` at 260px height.
+**Eager preloading + resolved component cache**: `ChatComposer` calls `preloadPickersForToolbar(activeToolbarItems)` on mount, which starts the dynamic imports for all equipped picker items immediately. When each import settles, `pickerPreload.ts` stores the resolved component reference in a module-level cache. Each button reads this cache synchronously via `getResolved*Picker()` at render time. If the component is already loaded, the button renders it directly — bypassing `React.lazy()` and `Suspense` entirely. This eliminates the 1-frame fallback flash that `React.lazy` always produces (it suspends for at least one microtask even when the underlying promise is settled). The `Suspense` + `React.lazy` path is kept as a fallback for the rare case where a picker is tapped before preloading finishes.
+
+**Seamless sheet switching** (three layers):
+
+1. **switchingRef guard**: `ComposerSheetContext.activateSheet()` uses a `switchingRef` flag when transitioning between pickers. When one picker replaces another, the old sheet's close callback fires but `deactivateSheet()` skips resetting the shared animated values (`sheetTranslateY`, `isSheetActive`, etc.) because they are about to be overwritten by the incoming sheet.
+
+2. **Portal overlap via requestAnimationFrame**: The old sheet's teardown (`prev()`) is deferred by one frame using `requestAnimationFrame`. This ensures the new sheet's Portal registers with `PortalManager` (via `componentDidMount`) before the old one unregisters (via `componentWillUnmount`), preventing the gap where neither Portal is visible. React Native Paper's Portal uses class lifecycle methods → `PortalManager.setState`, which re-renders one frame later; without overlap the old sheet disappears before the new one appears.
+
+3. **Pre-positioned translateY on mount**: `DraggableBottomSheet` initializes its internal `translateY` from `sharedTranslateY.value` (when provided, i.e. keyboard-replacement mode) instead of always starting at `SCREEN_HEIGHT`. This means the new sheet renders at the correct snap position on its very first frame, instead of rendering off-screen and then jumping to the snap position when the `useEffect` fires.
+
+`PickerLoadingFallback` (`src/components/chat/PickerLoadingFallback.tsx`) renders a centered `ActivityIndicator` at 260px height. It is only visible if a picker is tapped before the preload completes (e.g., within the first ~1 s of screen mount on slow devices).
+
+### Group Background Image Warmup
+
+See [Section 4 — Group Background Loading Architecture](#group-background-loading-architecture).
+
+Key invariant: `warmRemoteImage()` always calls `Image.loadAsync()` — it does not cache `ImageRef` objects across calls. This prevents stale JS-side cache references from masking native memory-cache eviction after screen unmount. Concurrent calls to the same URL are deduped via `imageWarmPromises` (in-flight promise map).
 
 ### Inbox Press-In Preloading
 
@@ -1924,6 +2059,8 @@ Five toolbar picker sheets (GIF, Emoji, Sticker, Game, GifSticker) are code-spli
 - `__tests__/services/normalizeMessage.test.ts`
 - `__tests__/services/chatV2.mergeMessagesWithOutbox.test.ts`
 - `__tests__/services/normalizeInboxRow.test.ts`
+- `__tests__/services/normalizeInboxRow.expanded.test.ts` — 53 tests covering boundary constants, field passthrough, sorting, edge cases
+- `__tests__/services/inboxVisibilityParity.test.ts` — visibility filtering + parity telemetry (archive/mute/pin mismatch detection)
 - `__tests__/services/normalizeNotification.test.ts`
 - `__tests__/services/messageRequests.test.ts`
 
@@ -1974,14 +2111,16 @@ All major Phase 3+ risks have been resolved:
 | Group chat runtime crash (timestamp)              | **Fixed** | Hardened Firestore timestamp parsing                  |
 | Text-node rendering warning                       | **Fixed** | Guarded slot/children rendering                       |
 | GroupChatInfoScreen hero buttons not pressable    | **Fixed** | Counter-translate cover-sheet architecture (see §6)   |
+| Group background slow on reopen                   | **Fixed** | Removed stale ImageRef cache; always re-warm (see §4) |
+| Toolbar picker ~3s spinner on first tap           | **Fixed** | Eager preload on composer mount (see §10)             |
 
 ### Current Non-Blocking Risks
 
-#### Legacy push trigger overlap (Low)
+#### Legacy push trigger overlap (Resolved — Dead Code Removed)
 
-`CHAT_LEGACY_PUSH_ENABLED` was documented as a gating flag but has no implementation. Legacy push triggers are not separately gated.
+`CHAT_LEGACY_PUSH_ENABLED` was previously documented as a gating flag but was never implemented in code. Investigation confirmed that legacy push triggers in `legacy.ts` were **dead code** — `index.ts` only imports the canonical triggers from `notifications.ts`, which route through `notificationCenter.ts` with atomic dedupe via `dedupeKey`.
 
-**Mitigation**: canonical payload adapter + dedupe keys reduce duplicates on client. `notificationCenter.ts` handles channel selection.
+**Resolution (2026-04-13)**: The dead triggers (`onNewMessage`, `onNewGroupMessageV2`, `onNewFriendRequest`) and their private helpers (~450 LOC) were removed from `legacy.ts`. Live functions preserved: `onStoryViewed`, `onDeleteMessage`, `seedShopCatalog`, scheduled jobs.
 
 #### Full repo type-check not usable as chat gate (Medium)
 
@@ -1989,25 +2128,29 @@ Unrelated TypeScript errors outside chat reduce confidence in `npx tsc --noEmit`
 
 **Mitigation**: targeted chat unit/integration suites are green.
 
-#### Aggregated inbox enrichments are minimal (Low)
+#### Aggregated inbox enrichments (Mostly Resolved)
 
-Aggregated docs keep compact preview fields; richer avatar/profile parity still depends on client lookups.
+Aggregated docs now include `lastSenderName` for group message previews. Client-side `useInboxAggregation` hydrates DM avatars via `batchFetchProfiles`, filters with `isDMVisible`/`isGroupVisible`, and caches results in AsyncStorage for cold-start performance. Backend `onUpdate` triggers sync pin/archive/mute/deletedAt/hiddenUntilNewMessage/lastSeenAtPrivate/lastMarkedUnreadAt changes to inbox entries, enabling the client to skip per-entry `MembersPrivate` reads for synced entries.
 
-**Mitigation**: client normalization preserves parity behavior and fallback defaults.
+**Remaining gap**: Group avatar arrays (`avatarIds`) still require client-side lookups.
 
-#### Keyboard jitter on KAV (Medium)
+#### Keyboard jitter on KAV (Resolved)
 
-Current KAV `behavior: "height"` has known jitter due to async layout lag between Reanimated UI thread and RN Yoga JS thread.
+All chat screens migrated from KAV to KCSV-native architecture. Native builds use `KeyboardChatScrollView` for 60fps inset-driven keyboard sync. Expo Go fallback uses animated `paddingBottom` from `Keyboard.addListener` events.
 
-**Resolution path**: Install `expo-dev-client` for native build → use KCSV + KSV architecture.
+#### Expo Go keyboard fallback uses post-layout events on Android (Low)
+
+`useFallbackKeyboardAnimation()` uses `keyboardDidShow`/`keyboardDidHide` on Android (post-layout events) rather than `keyboardWillShow`/`keyboardWillHide` (iOS-only). This causes slight visual lag on Android in Expo Go. No workaround without a native module.
+
+**Mitigation**: Dev-client builds use KCSV which handles this natively.
 
 ---
 
 ## 24. Sustaining Roadmap
 
-### S1 — Notification Migration Guardrails (Low)
+### S1 — Notification Migration Guardrails (Resolved — Cleaned Up)
 
-Prevent duplicate delivery when legacy triggers coexist with in-app channels. If separate legacy push gating is needed, implement `CHAT_LEGACY_PUSH_ENABLED` before relying on it.
+Legacy dead push triggers (`onNewMessage`, `onNewGroupMessageV2`, `onNewFriendRequest`) and their private helpers (~450 LOC) were removed from `legacy.ts` on 2026-04-13. Canonical triggers in `notifications.ts` route through `notificationCenter.ts` with atomic dedupe. No duplicate delivery risk exists.
 
 ### S2 — High-Volume Merge Stress Testing (Medium)
 
@@ -2018,9 +2161,20 @@ Targets:
 - `__tests__/integration/unifiedChat.test.ts`
 - `__tests__/services/chatV2.mergeMessagesWithOutbox.test.ts`
 
-### S3 — Inbox Parity Telemetry (Low)
+### S3 — Inbox Parity Telemetry (Blockers Resolved)
 
-Emit diagnostic counters in debug builds for fan-out vs aggregated row count and unread deltas. Track pinned ordering mismatches.
+Debug-mode shadow comparison utility implemented in `src/services/chat/inboxParityTelemetry.ts`. Compares fan-out and aggregated inbox results and logs divergences in conversation count, unread state, sort order, pin/archive/mute parity.
+
+**Aggregated inbox blockers — all 5 resolved (2026-04-13):**
+
+1. ~~No visibility filtering~~ → `useInboxAggregation` now filters with `isDMVisible()`/`isGroupVisible()`
+2. ~~No avatar/profile hydration~~ → DM rows hydrated via `batchFetchProfiles`; avatars resolved from profile cache
+3. ~~No group message sender name~~ → `inboxTriggers.ts` now writes `lastSenderName`; `normalizeConversationFromInboxEntry` uses it
+4. ~~Backend triggers don't sync pin/archive/mute~~ → `onDMMemberStateChanged` and `onGroupMemberStateChanged` `onUpdate` triggers deployed; now also sync `lastSeenAtPrivate`, `lastMarkedUnreadAt`, `deletedAt`, `hiddenUntilNewMessage` — enabling client to skip per-entry `MembersPrivate` reads
+5. ~~No cold-start AsyncStorage cache~~ → `loadAggCache`/`saveAggCache` with 5-min TTL added
+6. ~~Per-entry MembersPrivate N+1 reads~~ → `buildMemberStateFromEntry` constructs state from synced Inbox fields; falls back to `getMemberPrivateStateForEntry` only for pre-sync entries
+
+**Status**: Flag flipped to `true` on 2026-04-13. Dev-mode parity telemetry runs both paths in shadow to detect drift. Rollback: set `CHAT_INBOX_AGGREGATION = false` in `featureFlags.ts`.
 
 ### S4 — Aggregated Inbox Enrichment (Low, Optional)
 
@@ -2036,19 +2190,23 @@ Add route churn tests for rapid thread switching. Verify no callback execution a
 
 These checkpoints record the Phase 2→3+ cleanup effort:
 
-| Checkpoint | Date       | Theme                                                                       | Status   |
-| ---------- | ---------- | --------------------------------------------------------------------------- | -------- |
-| C1         | 2026-03-04 | Thread listener and notification correctness                                | Complete |
-| C2         | 2026-03-04 | Requests tab integration and dead code cleanup                              | Complete |
-| C3         | 2026-03-04 | Local message lifecycle reset hardening                                     | Complete |
-| C4         | 2026-03-04 | Merge and dedupe helper extraction                                          | Complete |
-| C5         | 2026-03-05 | Canonical message normalization parity                                      | Complete |
-| C6         | 2026-03-05 | Inbox normalization and unread source-of-truth                              | Complete |
-| C7         | 2026-03-05 | Unified inbox requests typed hook                                           | Complete |
-| C8         | 2026-03-05 | Notification payload adapter and legacy gating                              | Complete |
-| C9         | 2026-03-05 | Group chat runtime crash and text-node warning                              | Complete |
-| C10        | 2026-04    | Chat-entry performance (two-phase FlatList, lazy pickers, press-in preload) | Complete |
-| C11        | 2026-04    | GroupChatInfoScreen fixed-hero cover-sheet architecture                     | Complete |
+| Checkpoint | Date       | Theme                                                                                                                                                                                                                       | Status   |
+| ---------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| C1         | 2026-03-04 | Thread listener and notification correctness                                                                                                                                                                                | Complete |
+| C2         | 2026-03-04 | Requests tab integration and dead code cleanup                                                                                                                                                                              | Complete |
+| C3         | 2026-03-04 | Local message lifecycle reset hardening                                                                                                                                                                                     | Complete |
+| C4         | 2026-03-04 | Merge and dedupe helper extraction                                                                                                                                                                                          | Complete |
+| C5         | 2026-03-05 | Canonical message normalization parity                                                                                                                                                                                      | Complete |
+| C6         | 2026-03-05 | Inbox normalization and unread source-of-truth                                                                                                                                                                              | Complete |
+| C7         | 2026-03-05 | Unified inbox requests typed hook                                                                                                                                                                                           | Complete |
+| C8         | 2026-03-05 | Notification payload adapter and legacy gating                                                                                                                                                                              | Complete |
+| C9         | 2026-03-05 | Group chat runtime crash and text-node warning                                                                                                                                                                              | Complete |
+| C10        | 2026-04    | Chat-entry performance (two-phase FlatList, lazy pickers, press-in preload)                                                                                                                                                 | Complete |
+| C11        | 2026-04    | GroupChatInfoScreen fixed-hero cover-sheet architecture                                                                                                                                                                     | Complete |
+| C12        | 2026-04-13 | ThreadScreen keyboard migration, Expo Go fallback fix, legacy trigger cleanup, inbox aggregation blockers (5/5), test expansion (+58 tests)                                                                                 | Complete |
+| C13        | 2026-04-13 | KCSV native path confirmed for all screens, ThreadScreen scroll routing complete, aggregated inbox flag flipped, parity telemetry wired, merge/lifecycle stress tests (+15 tests)                                           | Complete |
+| C14        | 2026-04-13 | Group background reopen regression fixed (stale ImageRef cache removed), composer picker eager preload added, background warmup pipeline fully normalized (cache-key alignment, dark fallback, priority high, transition 0) | Complete |
+| C15        | 2026-04-13 | Picker presentation polish: resolved component cache bypasses React.lazy Suspense flash, switchingRef in ComposerSheetContext prevents visual gap during picker-to-picker transitions                                       | Complete |
 
 ---
 
@@ -2070,7 +2228,7 @@ Good extension seams:
 
 ## Intentional Exceptions
 
-- `ThreadScreen.tsx` remains a specialized screen (not part of shared chat surface)
+- `ThreadScreen.tsx` remains a specialized screen (not part of shared chat surface) but now uses the shared keyboard architecture (`ChatKeyboardContainer` + `ChatFooterWrapper` + `KeyboardSafeAreaSpacer`)
 - Web still uses the Firestore-first compatibility runtime underneath `useChat`
 
 ## Migration Notes

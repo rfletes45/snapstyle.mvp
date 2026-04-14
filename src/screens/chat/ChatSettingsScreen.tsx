@@ -12,6 +12,7 @@
  * @module screens/chat/ChatSettingsScreen
  */
 
+import { ScreenHeader } from "@/components/shared/ScreenHeader";
 import {
   getDMMemberPrivate,
   setArchived,
@@ -34,7 +35,6 @@ import React, { useCallback, useEffect, useState } from "react";
 import { Alert, ScrollView, StyleSheet, View } from "react-native";
 import {
   ActivityIndicator,
-  Appbar,
   Button,
   Divider,
   List,
@@ -45,7 +45,6 @@ import {
   Text,
   useTheme,
 } from "react-native-paper";
-import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useAppTheme } from "@/store/ThemeContext";
 
@@ -323,42 +322,20 @@ export default function ChatSettingsScreen({
 
   if (loading) {
     return (
-      <SafeAreaView
-        style={[styles.container, { backgroundColor: colors.background }]}
-        edges={["bottom"]}
-      >
-        <Appbar.Header style={{ backgroundColor: colors.background }}>
-          <Appbar.BackAction
-            onPress={() => navigation.goBack()}
-            iconColor={colors.text}
-          />
-          <Appbar.Content
-            title="Settings"
-            titleStyle={{ color: colors.text }}
-          />
-        </Appbar.Header>
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <ScreenHeader title="Settings" />
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
   return (
-    <SafeAreaView
-      style={[styles.container, { backgroundColor: colors.background }]}
-      edges={["bottom"]}
-    >
-      <Appbar.Header style={{ backgroundColor: colors.background }}>
-        <Appbar.BackAction
-          onPress={() => navigation.goBack()}
-          iconColor={colors.text}
-        />
-        <Appbar.Content
-          title={chatName ? `${chatName} Settings` : "Chat Settings"}
-          titleStyle={{ color: colors.text }}
-        />
-      </Appbar.Header>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <ScreenHeader
+        title={chatName ? `${chatName} Settings` : "Chat Settings"}
+      />
 
       <ScrollView style={styles.content}>
         {/* Notifications Section */}
@@ -603,7 +580,7 @@ export default function ChatSettingsScreen({
           </View>
         </Modal>
       </Portal>
-    </SafeAreaView>
+    </View>
   );
 }
 

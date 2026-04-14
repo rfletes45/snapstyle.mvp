@@ -563,6 +563,9 @@ export interface InboxEntry {
   /** Kind of the last message */
   lastMessageKind: string;
 
+  /** Display name of the last message sender (groups only, optional) */
+  lastSenderName?: string;
+
   /**
    * Preview text of the last message.
    * Populated by Cloud Function trigger.
@@ -595,6 +598,20 @@ export interface InboxEntry {
   /** Notification level override for this thread */
   notifyLevel: "all" | "mentions" | "none";
 
+  // ---- Synced MembersPrivate fields (populated by backend triggers) ----
+
+  /** Soft delete timestamp (null if not deleted) */
+  deletedAt?: number | null;
+
+  /** Hide conversation until new message arrives */
+  hiddenUntilNewMessage?: boolean;
+
+  /** Private last-seen watermark — synced from MembersPrivate by trigger */
+  lastSeenAtPrivate?: number | null;
+
+  /** Manual "mark as unread" timestamp — synced from MembersPrivate by trigger */
+  lastMarkedUnreadAt?: number | null;
+
   // ---- Group-specific snapshot fields ----
 
   /** Group display name (groups only) */
@@ -605,6 +622,9 @@ export interface InboxEntry {
 
   /** Member count snapshot (groups only) */
   memberCount?: number;
+
+  /** Group background image URL snapshot (groups only) */
+  backgroundUrl?: string | null;
 
   // ---- DM-specific snapshot fields ----
 

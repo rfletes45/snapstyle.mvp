@@ -16,8 +16,8 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
 
+import { ScreenHeader } from "@/components/shared/ScreenHeader";
 import { callSettingsService } from "@/services/calls";
 import { useAppTheme } from "@/store/ThemeContext";
 import {
@@ -388,38 +388,26 @@ export function CallSettingsScreen() {
   // Loading state
   if (isLoading) {
     return (
-      <SafeAreaView
-        style={[styles.container, { backgroundColor: colors.background }]}
-      >
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <ScreenHeader title="Call Settings" />
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
   return (
-    <SafeAreaView
-      style={[styles.container, { backgroundColor: colors.background }]}
-      edges={["top"]}
-    >
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Header */}
-      <View style={[styles.header, { borderBottomColor: colors.border }]}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => navigation.goBack()}
-        >
-          <Ionicons name="arrow-back" size={24} color={colors.text} />
-        </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: colors.text }]}>
-          Call Settings
-        </Text>
-        {isSaving ? (
-          <ActivityIndicator size="small" color={colors.primary} />
-        ) : (
-          <View style={styles.headerSpacer} />
-        )}
-      </View>
+      <ScreenHeader
+        title="Call Settings"
+        renderRight={() =>
+          isSaving ? (
+            <ActivityIndicator size="small" color={colors.primary} />
+          ) : null
+        }
+      />
 
       <ScrollView
         style={styles.scrollView}
@@ -632,7 +620,7 @@ export function CallSettingsScreen() {
         {/* Bottom padding */}
         <View style={styles.bottomPadding} />
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -644,27 +632,6 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-  },
-
-  // Header
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-  },
-  backButton: {
-    padding: 4,
-  },
-  headerTitle: {
-    flex: 1,
-    fontSize: 20,
-    fontWeight: "600",
-    marginLeft: 12,
-  },
-  headerSpacer: {
-    width: 24,
   },
 
   // Scroll

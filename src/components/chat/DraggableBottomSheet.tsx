@@ -107,7 +107,17 @@ export const DraggableBottomSheet = forwardRef<
   const dismissY = SCREEN_HEIGHT; // fully off screen
   const startIndex = initialSnapIndex ?? snapPoints.length - 1;
 
-  const translateY = useSharedValue(dismissY);
+  // When in keyboard-replacement mode and a shared translateY is already at
+  // a valid snap position (e.g. pre-seeded by activateSheet during a
+  // picker-to-picker switch), start there instead of dismissY.  This
+  // eliminates the 1-frame gap where the sheet renders off-screen before
+  // useEffect fires to move it to the snap position.
+  const initialY =
+    sharedTranslateY && sharedTranslateY.value < dismissY
+      ? sharedTranslateY.value
+      : dismissY;
+
+  const translateY = useSharedValue(initialY);
   const startY = useSharedValue(0);
   const activeSnapIndex = useSharedValue(startIndex);
 
@@ -456,6 +466,5 @@ const styles = StyleSheet.create({
   },
 });
 
-export { SCREEN_HEIGHT as SHEET_SCREEN_HEIGHT };
-export { HANDLE_ZONE_HEIGHT };
+export { HANDLE_ZONE_HEIGHT, SCREEN_HEIGHT as SHEET_SCREEN_HEIGHT };
 export default DraggableBottomSheet;

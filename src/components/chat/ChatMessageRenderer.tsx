@@ -14,8 +14,8 @@ import React from "react";
 
 import type { ConversationDisplayMode } from "@/chat/displayMode";
 import { buildMessageViewModel } from "@/chat/displayMode";
-import type { CardWidthTracker } from "@/components/chat/CardWidthTracker";
 import { StackedMessageRenderer } from "@/components/chat/StackedMessageRenderer";
+import type { CardCornerWidthStore } from "@/components/chat/useGroupedCardLayout";
 import { DMMessageItem } from "@/components/DMMessageItem";
 import type { ChatAppearance } from "@/cosmetics/types";
 import type { ReactionSummary } from "@/services/reactions";
@@ -66,11 +66,13 @@ export interface ChatMessageRendererProps {
   currentUserProfilePictureUrl?: string | null;
   /** Current user's decoration ID (for stacked mode avatars) */
   currentUserDecorationId?: string | null;
-  /** Shared tracker for adaptive card-width rounding */
-  cardWidthTracker?: CardWidthTracker;
-  /** Message ID of neighbor above in same group */
+  /** ID of the newest outgoing message that should show read/delivered status (DM bubble mode) */
+  newestStatusMessageId?: string;
+  /** Shared width store for corner-only neighbor comparison (stacked mode). */
+  cornerWidthStore?: CardCornerWidthStore;
+  /** Previous neighbor in same group (for right-side corner shape). */
   groupPrevMessageId?: string;
-  /** Message ID of neighbor below in same group */
+  /** Next neighbor in same group (for right-side corner shape). */
   groupNextMessageId?: string;
 }
 
@@ -101,7 +103,8 @@ export const ChatMessageRenderer: React.FC<ChatMessageRendererProps> =
       currentUserDisplayName,
       currentUserProfilePictureUrl,
       currentUserDecorationId,
-      cardWidthTracker,
+      newestStatusMessageId,
+      cornerWidthStore,
       groupPrevMessageId,
       groupNextMessageId,
     }) => {
@@ -177,6 +180,12 @@ export const ChatMessageRenderer: React.FC<ChatMessageRendererProps> =
 
       // ── Bubble mode → existing DMMessageItem ──────────────────────────
       if (displayMode === "bubbles") {
+        // In DM bubble mode, only the newest outgoing message shows status
+        const shouldShowStatus =
+          !isGroupChat && newestStatusMessageId
+            ? message.id === newestStatusMessageId
+            : true;
+
         return (
           <DMMessageItem
             message={message}
@@ -193,6 +202,8 @@ export const ChatMessageRenderer: React.FC<ChatMessageRendererProps> =
             isGrouped={isGroupedWithPrevious}
             isGroupedWithNext={isGroupedWithNext}
             showTimestamp={vm.showTimestamp}
+            useTimeOnly={!isGroupChat}
+            showStatus={shouldShowStatus}
             reactions={reactions}
             onOptimisticReaction={onOptimisticReaction}
           />
@@ -219,7 +230,7 @@ export const ChatMessageRenderer: React.FC<ChatMessageRendererProps> =
           senderDisplayName={senderDisplayName}
           senderProfilePictureUrl={senderProfilePictureUrl}
           senderDecorationId={senderDecorationId}
-          cardWidthTracker={cardWidthTracker}
+          cornerWidthStore={cornerWidthStore}
           groupPrevMessageId={groupPrevMessageId}
           groupNextMessageId={groupNextMessageId}
         />

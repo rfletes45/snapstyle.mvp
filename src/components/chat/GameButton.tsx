@@ -30,12 +30,9 @@ import { IconButton, useTheme } from "react-native-paper";
 
 import type { DraggableBottomSheetHandle } from "./DraggableBottomSheet";
 import { PickerLoadingFallback } from "./PickerLoadingFallback";
+import { getGamePickerImport, getResolvedGamePicker } from "./pickerPreload";
 
-const LazyGamePickerModal = React.lazy(() =>
-  import("@/gamesV4/components/GamePickerModal").then((m) => ({
-    default: m.GamePickerModal,
-  })),
-);
+const LazyGamePickerModal = React.lazy(() => getGamePickerImport());
 
 // =============================================================================
 // Types
@@ -88,6 +85,7 @@ function GameButtonBase({
   }, [deactivateSheet]);
 
   const handlePress = useCallback(() => {
+    if (pickerOpenRef.current) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     activateSheet(undefined, handleClose);
     setPickerOpen(true);
@@ -101,6 +99,8 @@ function GameButtonBase({
     [onGameSelected],
   );
 
+  const ResolvedPicker = pickerOpen ? getResolvedGamePicker() : null;
+
   return (
     <>
       <IconButton
@@ -112,9 +112,9 @@ function GameButtonBase({
         accessibilityLabel="Open game picker"
         accessibilityRole="button"
       />
-      {pickerOpen && (
-        <Suspense fallback={<PickerLoadingFallback />}>
-          <LazyGamePickerModal
+      {pickerOpen &&
+        (ResolvedPicker ? (
+          <ResolvedPicker
             ref={sheetRef}
             open={pickerOpen}
             onSelect={handleGameSelected}
@@ -123,8 +123,19 @@ function GameButtonBase({
             keyboardHeight={lastKeyboardHeight}
             sharedTranslateY={sheetTranslateY}
           />
-        </Suspense>
-      )}
+        ) : (
+          <Suspense fallback={<PickerLoadingFallback />}>
+            <LazyGamePickerModal
+              ref={sheetRef}
+              open={pickerOpen}
+              onSelect={handleGameSelected}
+              onClose={handleClose}
+              multiplayerOnly={multiplayerOnly}
+              keyboardHeight={lastKeyboardHeight}
+              sharedTranslateY={sheetTranslateY}
+            />
+          </Suspense>
+        ))}
     </>
   );
 }

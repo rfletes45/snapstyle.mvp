@@ -14,7 +14,10 @@
  */
 
 import { BorderRadius, Spacing } from "@/constants/theme";
-import { getUserProfileByUid } from "@/services/friends";
+import {
+  batchFetchProfiles,
+  getCachedProfileSync,
+} from "@/services/cache/profileCache";
 import {
   formatReactionCount,
   getReactions,
@@ -87,17 +90,40 @@ export const ReactionDetailSheet = memo(function ReactionDetailSheet({
   );
   const [loading, setLoading] = useState(true);
 
-  // Load reactions from Firestore
+  // Load reactions from Firestore, then batch-prefetch ALL reactor profiles
   useEffect(() => {
     if (!visible || !messageId) return;
 
     setLoading(true);
     getReactions(scope, conversationId, messageId, currentUid)
-      .then((result) => {
+      .then(async (result) => {
         setReactions(result);
         // Select the first emoji by default
         if (result.length > 0 && !selectedEmoji) {
           setSelectedEmoji(result[0].emoji);
+        }
+
+        // Collect ALL unique UIDs across ALL emoji tabs and batch-fetch
+        // into the profile cache in one pass. This avoids N individual
+        // Firestore reads when switching between tabs.
+        const allUids = new Set<string>();
+        for (const r of result) {
+          for (const uid of r.userIds) {
+            allUids.add(uid);
+          }
+        }
+
+        if (allUids.size > 0) {
+          const profiles = await batchFetchProfiles([...allUids]);
+          const newProfiles: Record<string, UserProfile> = {};
+          profiles.forEach((cached, uid) => {
+            newProfiles[uid] = {
+              uid,
+              username: cached.username,
+              displayName: cached.displayName,
+            };
+          });
+          setUserProfiles((prev) => ({ ...prev, ...newProfiles }));
         }
       })
       .catch((err) => {
@@ -106,37 +132,52 @@ export const ReactionDetailSheet = memo(function ReactionDetailSheet({
       .finally(() => setLoading(false));
   }, [visible, scope, conversationId, messageId, currentUid]);
 
-  // Load user profiles for the selected reaction
+  // Load user profiles for the selected reaction tab (cache-first, fallback batch)
   useEffect(() => {
     if (!selectedEmoji || !visible) return;
 
     const selected = reactions.find((r) => r.emoji === selectedEmoji);
     if (!selected) return;
 
-    // Load profiles for users we don't have cached
+    // Check which UIDs aren't already in component state
     const unknownUids = selected.userIds.filter((uid) => !userProfiles[uid]);
     if (unknownUids.length === 0) return;
 
-    Promise.all(
-      unknownUids.map(async (uid) => {
-        try {
-          const profile = await getUserProfileByUid(uid);
-          return {
+    // Try synchronous cache hits first
+    const resolved: Record<string, UserProfile> = {};
+    const stillMissing: string[] = [];
+    for (const uid of unknownUids) {
+      const cached = getCachedProfileSync(uid);
+      if (cached) {
+        resolved[uid] = {
+          uid,
+          username: cached.username,
+          displayName: cached.displayName,
+        };
+      } else {
+        stillMissing.push(uid);
+      }
+    }
+
+    // Apply sync hits immediately
+    if (Object.keys(resolved).length > 0) {
+      setUserProfiles((prev) => ({ ...prev, ...resolved }));
+    }
+
+    // Batch-fetch any remaining misses
+    if (stillMissing.length > 0) {
+      batchFetchProfiles(stillMissing).then((profiles) => {
+        const newProfiles: Record<string, UserProfile> = {};
+        profiles.forEach((cached, uid) => {
+          newProfiles[uid] = {
             uid,
-            username: profile?.username,
-            displayName: profile?.displayName,
+            username: cached.username,
+            displayName: cached.displayName,
           };
-        } catch {
-          return { uid, username: uid.substring(0, 8) };
-        }
-      }),
-    ).then((profiles) => {
-      const newProfiles: Record<string, UserProfile> = {};
-      profiles.forEach((p) => {
-        newProfiles[p.uid] = p;
+        });
+        setUserProfiles((prev) => ({ ...prev, ...newProfiles }));
       });
-      setUserProfiles((prev) => ({ ...prev, ...newProfiles }));
-    });
+    }
   }, [selectedEmoji, reactions, visible]);
 
   // Reset state when closing

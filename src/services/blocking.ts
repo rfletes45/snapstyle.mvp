@@ -15,7 +15,6 @@ import {
 } from "firebase/firestore";
 import { getFirestoreInstance } from "./firebase";
 
-
 import { createLogger } from "@/utils/log";
 const logger = createLogger("services/blocking");
 /**
@@ -46,7 +45,7 @@ export async function blockUser(
     const blockData: BlockedUser = {
       blockedUserId: userToBlockId,
       blockedAt: Date.now(),
-      reason,
+      ...(reason !== undefined && { reason }),
     };
 
     await setDoc(blockedRef, blockData);

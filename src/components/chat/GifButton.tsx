@@ -31,8 +31,9 @@ import { IconButton, useTheme } from "react-native-paper";
 
 import type { DraggableBottomSheetHandle } from "./DraggableBottomSheet";
 import { PickerLoadingFallback } from "./PickerLoadingFallback";
+import { getGifPickerImport, getResolvedGifPicker } from "./pickerPreload";
 
-const LazyGifPicker = React.lazy(() => import("./GifPicker"));
+const LazyGifPicker = React.lazy(() => getGifPickerImport());
 
 // =============================================================================
 // Types
@@ -82,6 +83,7 @@ function GifButtonBase({ onGifSelected, size = 24 }: GifButtonProps) {
   }, [deactivateSheet]);
 
   const handlePress = useCallback(() => {
+    if (pickerOpenRef.current) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     activateSheet(undefined, handleClose);
     setPickerOpen(true);
@@ -95,6 +97,12 @@ function GifButtonBase({ onGifSelected, size = 24 }: GifButtonProps) {
     [onGifSelected],
   );
 
+  // Bypass React.lazy + Suspense when the preloaded import has resolved.
+  // React.lazy always suspends for at least one microtask even when the
+  // promise is settled, producing a 1-frame fallback flash. Reading the
+  // resolved ref synchronously eliminates that flash entirely.
+  const ResolvedPicker = pickerOpen ? getResolvedGifPicker() : null;
+
   return (
     <>
       <IconButton
@@ -106,9 +114,9 @@ function GifButtonBase({ onGifSelected, size = 24 }: GifButtonProps) {
         accessibilityLabel="Open GIF picker"
         accessibilityRole="button"
       />
-      {pickerOpen && (
-        <Suspense fallback={<PickerLoadingFallback />}>
-          <LazyGifPicker
+      {pickerOpen &&
+        (ResolvedPicker ? (
+          <ResolvedPicker
             ref={sheetRef}
             open={pickerOpen}
             onClose={handleClose}
@@ -116,8 +124,18 @@ function GifButtonBase({ onGifSelected, size = 24 }: GifButtonProps) {
             keyboardHeight={lastKeyboardHeight}
             sharedTranslateY={sheetTranslateY}
           />
-        </Suspense>
-      )}
+        ) : (
+          <Suspense fallback={<PickerLoadingFallback />}>
+            <LazyGifPicker
+              ref={sheetRef}
+              open={pickerOpen}
+              onClose={handleClose}
+              onGifSelected={handleGifSelected}
+              keyboardHeight={lastKeyboardHeight}
+              sharedTranslateY={sheetTranslateY}
+            />
+          </Suspense>
+        ))}
     </>
   );
 }

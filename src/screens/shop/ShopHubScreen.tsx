@@ -8,13 +8,13 @@
  * @see docs/SHOP_OVERHAUL_PLAN.md
  */
 
+import { ScreenHeader } from "@/components/shared/ScreenHeader";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { LinearGradient } from "expo-linear-gradient";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import Animated, {
-  FadeInDown,
   FadeInUp,
   useAnimatedStyle,
   useSharedValue,
@@ -110,12 +110,6 @@ export default function ShopHubScreen() {
     navigation.navigate("PurchaseHistory");
   }, [navigation]);
 
-  const handleBack = useCallback(() => {
-    if (navigation.canGoBack()) {
-      navigation.goBack();
-    }
-  }, [navigation]);
-
   // Compute cosmetics item count from the static catalog
   const cosmeticsItemCount = useMemo(() => {
     try {
@@ -165,70 +159,40 @@ export default function ShopHubScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Header */}
-      <Animated.View
-        entering={FadeInDown.duration(300)}
-        style={[
-          styles.header,
-          {
-            paddingTop: insets.top + 8,
-            backgroundColor: colors.headerBackground,
-          },
-        ]}
-      >
-        {/* Back button - only shown when there's navigation history */}
-        {navigation.canGoBack() ? (
+      <ScreenHeader
+        title="Shop"
+        renderRight={() => (
           <Pressable
-            onPress={handleBack}
-            style={styles.backButton}
+            style={styles.walletContainer}
+            onPress={() => navigation.navigate("Wallet")}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            accessibilityLabel="Go back"
             accessibilityRole="button"
+            accessibilityLabel={`Token balance: ${walletLoading ? "loading" : walletError ? "error" : (wallet?.tokensBalance?.toLocaleString() ?? "0")}. Tap to open wallet`}
           >
             <MaterialCommunityIcons
-              name="arrow-left"
-              size={24}
-              color={colors.headerText}
+              name="star-circle"
+              size={20}
+              color="#FFD700"
             />
+            <Text
+              style={[
+                styles.walletBalance,
+                {
+                  color: walletError
+                    ? (colors.error ?? "#ff4444")
+                    : colors.text,
+                },
+              ]}
+            >
+              {walletLoading
+                ? "..."
+                : walletError
+                  ? "Error"
+                  : (wallet?.tokensBalance?.toLocaleString() ?? "0")}
+            </Text>
           </Pressable>
-        ) : (
-          <View style={styles.backButton} />
         )}
-
-        <Text style={[styles.headerTitle, { color: colors.headerText }]}>
-          Shop
-        </Text>
-
-        {/* Wallet Balance — tappable, navigates to Wallet screen */}
-        <Pressable
-          style={styles.walletContainer}
-          onPress={() => navigation.navigate("Wallet")}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          accessibilityRole="button"
-          accessibilityLabel={`Token balance: ${walletLoading ? "loading" : walletError ? "error" : (wallet?.tokensBalance?.toLocaleString() ?? "0")}. Tap to open wallet`}
-        >
-          <MaterialCommunityIcons
-            name="star-circle"
-            size={20}
-            color="#FFD700"
-          />
-          <Text
-            style={[
-              styles.walletBalance,
-              {
-                color: walletError
-                  ? (colors.error ?? "#ff4444")
-                  : colors.headerText,
-              },
-            ]}
-          >
-            {walletLoading
-              ? "..."
-              : walletError
-                ? "Error"
-                : (wallet?.tokensBalance?.toLocaleString() ?? "0")}
-          </Text>
-        </Pressable>
-      </Animated.View>
+      />
 
       {/* Content */}
       <ScrollView
@@ -409,21 +373,6 @@ function ShopOptionCard({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingBottom: 12,
-  },
-  backButton: {
-    padding: 4,
-  },
-  headerTitle: {
-    flex: 1,
-    fontSize: 20,
-    fontWeight: "700",
-    marginLeft: 12,
   },
   walletContainer: {
     flexDirection: "row",

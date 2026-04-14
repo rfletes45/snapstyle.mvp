@@ -31,8 +31,12 @@ import { IconButton, useTheme } from "react-native-paper";
 
 import type { DraggableBottomSheetHandle } from "./DraggableBottomSheet";
 import { PickerLoadingFallback } from "./PickerLoadingFallback";
+import {
+  getGifStickerPickerImport,
+  getResolvedGifStickerPicker,
+} from "./pickerPreload";
 
-const LazyGifStickerPicker = React.lazy(() => import("./GifStickerPicker"));
+const LazyGifStickerPicker = React.lazy(() => getGifStickerPickerImport());
 
 // =============================================================================
 // Types
@@ -85,6 +89,7 @@ function GifStickerButtonBase({
   }, [deactivateSheet]);
 
   const handlePress = useCallback(() => {
+    if (pickerOpenRef.current) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     activateSheet(undefined, handleClose);
     setPickerOpen(true);
@@ -104,6 +109,8 @@ function GifStickerButtonBase({
     [onStickerSelected],
   );
 
+  const ResolvedPicker = pickerOpen ? getResolvedGifStickerPicker() : null;
+
   return (
     <>
       <IconButton
@@ -115,9 +122,9 @@ function GifStickerButtonBase({
         accessibilityLabel="Open GIF and Sticker picker"
         accessibilityRole="button"
       />
-      {pickerOpen && (
-        <Suspense fallback={<PickerLoadingFallback />}>
-          <LazyGifStickerPicker
+      {pickerOpen &&
+        (ResolvedPicker ? (
+          <ResolvedPicker
             ref={sheetRef}
             open={pickerOpen}
             onClose={handleClose}
@@ -126,8 +133,19 @@ function GifStickerButtonBase({
             keyboardHeight={lastKeyboardHeight}
             sharedTranslateY={sheetTranslateY}
           />
-        </Suspense>
-      )}
+        ) : (
+          <Suspense fallback={<PickerLoadingFallback />}>
+            <LazyGifStickerPicker
+              ref={sheetRef}
+              open={pickerOpen}
+              onClose={handleClose}
+              onGifSelected={handleGifSelected}
+              onStickerSelected={handleStickerSelected}
+              keyboardHeight={lastKeyboardHeight}
+              sharedTranslateY={sheetTranslateY}
+            />
+          </Suspense>
+        ))}
     </>
   );
 }

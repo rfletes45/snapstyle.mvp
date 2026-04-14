@@ -25,6 +25,10 @@
 
 import { AppImage } from "@/components/AppImage";
 import { usePrefetch, usePrefetchChatImages } from "@/utils/imagePrefetch";
+import {
+  buildRemoteImageSource,
+  normalizeRemoteImageUrl,
+} from "@/utils/remoteImageSource";
 
 const IMAGE_MAX_WIDTH = 240;
 const IMAGE_MAX_HEIGHT = 320;
@@ -139,7 +143,14 @@ import {
 } from "@/chat/sendDraft";
 import { safeSystemText } from "@/services/chat/normalizeMessage";
 import {
+  describeRemoteUrlForLog,
+  getPreparedGroupChatData,
+  rememberPreparedGroupChatData,
+  traceGroupWallpaper,
+} from "@/services/chat/groupWallpaperDebug";
+import {
   cachePreparedGroupMembers,
+  getCachedBackgroundRef,
   getPreparedGroupMembers,
   prepareGroupThreadEntry,
   warmGroupIdentityAssets,
@@ -177,10 +188,9 @@ import {
   timelineKeyExtractor,
 } from "@/chat/buildTimeline";
 import { AnimalBubble } from "@/components/chat/AnimalBubble";
-import { CardWidthTracker } from "@/components/chat/CardWidthTracker";
 import { DateDivider } from "@/components/chat/DateDivider";
-import { estimateMessageWidth } from "@/components/chat/estimateMessageWidth";
 import { GroupStackedMessageRenderer } from "@/components/chat/GroupStackedMessageRenderer";
+import { createCardCornerWidthStore } from "@/components/chat/useGroupedCardLayout";
 import { useComposerSheet } from "@/contexts/ComposerSheetContext";
 import { useAnimalEntitlement } from "@/hooks/useAnimalEntitlement";
 import { playAnimalSound } from "@/services/chat/animalSoundService";
@@ -228,6 +238,7 @@ import { SheetDismissLayer } from "@/components/chat/SheetDismissLayer";
 import { useTwoPhaseListConfig } from "@/hooks/chat/useTwoPhaseListConfig";
 import { chatPerf } from "@/utils/chatPerf";
 import { createLogger } from "@/utils/log";
+import { scheduleIdleWork } from "@/utils/scheduleIdleWork";
 const logger = createLogger("screens/groups/GroupChatScreen");
 // =============================================================================
 // Constants
@@ -267,6 +278,38 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     jumpRequestId,
     initialGroupData,
   } = route.params;
+  const preparedGroupData = useMemo(
+    () => getPreparedGroupChatData(groupId, "group-chat-screen-mount"),
+    [groupId],
+  );
+  const seededGroupIdentity = useMemo(() => {
+    const name =
+      initialGroupData?.name || preparedGroupData?.name || initialGroupName || "";
+    const avatarUrl =
+      normalizeRemoteImageUrl(
+        initialGroupData?.avatarUrl ?? preparedGroupData?.avatarUrl,
+      ) ?? null;
+    const backgroundUrl =
+      normalizeRemoteImageUrl(
+        initialGroupData?.backgroundUrl ?? preparedGroupData?.backgroundUrl,
+      ) ?? null;
+
+    if (!name && !avatarUrl && !backgroundUrl) return null;
+
+    return {
+      name,
+      avatarUrl,
+      backgroundUrl,
+    };
+  }, [
+    initialGroupData?.avatarUrl,
+    initialGroupData?.backgroundUrl,
+    initialGroupData?.name,
+    initialGroupName,
+    preparedGroupData?.avatarUrl,
+    preparedGroupData?.backgroundUrl,
+    preparedGroupData?.name,
+  ]);
 
   // Two-phase FlatList: lightweight for first paint, full for steady-state
   const { listConfig } = useTwoPhaseListConfig(groupId);
@@ -340,16 +383,12 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   // Seed group state from navigation params for instant header + background rendering.
   // The full group data will overwrite this once Firestore responds.
   const [group, setGroup] = useState<Group | null>(() => {
-    if (
-      initialGroupData?.avatarUrl ||
-      initialGroupData?.backgroundUrl ||
-      initialGroupName
-    ) {
+    if (seededGroupIdentity) {
       return {
         id: groupId,
-        name: initialGroupData?.name || initialGroupName || "",
-        avatarUrl: initialGroupData?.avatarUrl || null,
-        backgroundUrl: initialGroupData?.backgroundUrl ?? null,
+        name: seededGroupIdentity.name,
+        avatarUrl: seededGroupIdentity.avatarUrl,
+        backgroundUrl: seededGroupIdentity.backgroundUrl,
       } as Group;
     }
     return null;
@@ -432,14 +471,52 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   // Show/hide other members' custom chat styles (viewer preference)
   const [showMemberChatStyles, setShowMemberChatStyles] = useState(true);
 
+  useEffect(() => {
+    rememberPreparedGroupChatData(
+      groupId,
+      {
+        name: seededGroupIdentity?.name,
+        avatarUrl:
+          seededGroupIdentity?.avatarUrl === undefined
+            ? undefined
+            : seededGroupIdentity.avatarUrl,
+        backgroundUrl:
+          seededGroupIdentity?.backgroundUrl === undefined
+            ? undefined
+            : seededGroupIdentity.backgroundUrl,
+      },
+      "group-chat-screen-seed",
+    );
+
+    if (__DEV__) {
+      traceGroupWallpaper(groupId, "group-chat-screen-seed", {
+        routeBackgroundKey: describeRemoteUrlForLog(
+          initialGroupData?.backgroundUrl,
+        ).key,
+        preparedBackgroundKey: describeRemoteUrlForLog(
+          preparedGroupData?.backgroundUrl,
+        ).key,
+        seededBackgroundKey: describeRemoteUrlForLog(
+          seededGroupIdentity?.backgroundUrl,
+        ).key,
+      });
+    }
+  }, [
+    groupId,
+    initialGroupData?.backgroundUrl,
+    preparedGroupData?.backgroundUrl,
+    seededGroupIdentity?.avatarUrl,
+    seededGroupIdentity?.backgroundUrl,
+    seededGroupIdentity?.name,
+  ]);
+
   // Re-read on focus so toggling in ChatSettingsScreen takes effect immediately.
-  // Uses InteractionManager to defer the read until after the transition
-  // completes, preventing the Firestore call from competing with animation frames.
+  // Deferred to idle to avoid competing with transition animation frames.
   useFocusEffect(
     useCallback(() => {
       if (!groupId || !uid) return;
       let cancelled = false;
-      const task = InteractionManager.runAfterInteractions(() => {
+      const cancel = scheduleIdleWork(() => {
         getGroupMemberPrivate(groupId, uid).then((priv) => {
           if (!cancelled && priv) {
             const newVal = priv.showMemberChatStyles !== false;
@@ -451,7 +528,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
       });
       return () => {
         cancelled = true;
-        task.cancel();
+        cancel();
       };
     }, [groupId, uid]),
   );
@@ -518,26 +595,136 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   usePrefetch(memberAvatarUrls.length > 0 ? memberAvatarUrls : undefined);
 
   // Prefetch the group avatar for instant header rendering
+  const resolvedGroupAvatarUrl = useMemo(
+    () =>
+      normalizeRemoteImageUrl(
+        group?.avatarUrl ?? seededGroupIdentity?.avatarUrl,
+      ) ?? null,
+    [group?.avatarUrl, seededGroupIdentity?.avatarUrl],
+  );
   const groupAvatarUrls = useMemo(
-    () => (group?.avatarUrl ? [group.avatarUrl] : undefined),
-    [group?.avatarUrl],
+    () => (resolvedGroupAvatarUrl ? [resolvedGroupAvatarUrl] : undefined),
+    [resolvedGroupAvatarUrl],
   );
   usePrefetch(groupAvatarUrls);
 
-  // Prefetch the group background image for instant display
-  const groupBackgroundUrls = useMemo(
-    () => (group?.backgroundUrl ? [group.backgroundUrl] : undefined),
-    [group?.backgroundUrl],
+  // Prefetch the group background image for instant display.
+  // Normalize the URL so the prefetch cache key matches what warmRemoteImage
+  // uses (Image.loadAsync with normalizeRemoteImageUrl). Without this, the
+  // prefetch and warmup can populate different cache entries and the render
+  // misses the warm cache — the key reason backgrounds loaded slower than avatars.
+  const resolvedGroupBackgroundUrl = useMemo(
+    () =>
+      normalizeRemoteImageUrl(
+        group?.backgroundUrl ?? seededGroupIdentity?.backgroundUrl,
+      ) ?? null,
+    [group?.backgroundUrl, seededGroupIdentity?.backgroundUrl],
   );
+  const groupBackgroundUrls = useMemo(() => {
+    return resolvedGroupBackgroundUrl ? [resolvedGroupBackgroundUrl] : undefined;
+  }, [resolvedGroupBackgroundUrl]);
   usePrefetch(groupBackgroundUrls);
+  const cachedBackgroundRef = useMemo(
+    () => getCachedBackgroundRef(resolvedGroupBackgroundUrl),
+    [resolvedGroupBackgroundUrl],
+  );
+  const wallpaperSource = useMemo(
+    () =>
+      cachedBackgroundRef ??
+      buildRemoteImageSource(resolvedGroupBackgroundUrl ?? undefined),
+    [cachedBackgroundRef, resolvedGroupBackgroundUrl],
+  );
+  const wallpaperSourceKind = cachedBackgroundRef
+    ? "image-ref"
+    : resolvedGroupBackgroundUrl
+      ? "url"
+      : "none";
+  const wallpaperLoadStartRef = useRef<number | null>(null);
+  const resolvedGroupName =
+    group?.name || seededGroupIdentity?.name || initialGroupName || "Group Chat";
+
+  const handleWallpaperLoadStart = useCallback(() => {
+    wallpaperLoadStartRef.current = performance.now();
+    chatPerf.traceCheckpoint("GroupChatScreen", groupId, "wallpaper-load-start");
+    if (__DEV__) {
+      traceGroupWallpaper(groupId, "group-chat-screen-wallpaper-load-start", {
+        sourceKind: wallpaperSourceKind,
+        sinceMountMs: Math.round(performance.now() - renderStartRef.current),
+        backgroundKey: describeRemoteUrlForLog(resolvedGroupBackgroundUrl).key,
+      });
+    }
+  }, [groupId, resolvedGroupBackgroundUrl, wallpaperSourceKind]);
+
+  const handleWallpaperLoad = useCallback(() => {
+    chatPerf.traceCheckpoint("GroupChatScreen", groupId, "wallpaper-load");
+    if (__DEV__) {
+      traceGroupWallpaper(groupId, "group-chat-screen-wallpaper-load", {
+        sourceKind: wallpaperSourceKind,
+        sinceMountMs: Math.round(performance.now() - renderStartRef.current),
+        sinceLoadStartMs:
+          wallpaperLoadStartRef.current == null
+            ? null
+            : Math.round(performance.now() - wallpaperLoadStartRef.current),
+      });
+    }
+  }, [groupId, wallpaperSourceKind]);
+
+  const handleWallpaperDisplay = useCallback(() => {
+    chatPerf.traceCheckpoint("GroupChatScreen", groupId, "wallpaper-display");
+    if (__DEV__) {
+      traceGroupWallpaper(groupId, "group-chat-screen-wallpaper-display", {
+        sourceKind: wallpaperSourceKind,
+        sinceMountMs: Math.round(performance.now() - renderStartRef.current),
+        sinceLoadStartMs:
+          wallpaperLoadStartRef.current == null
+            ? null
+            : Math.round(performance.now() - wallpaperLoadStartRef.current),
+      });
+    }
+  }, [groupId, wallpaperSourceKind]);
+
+  const handleWallpaperError = useCallback(
+    (event: { error: string }) => {
+      if (__DEV__) {
+        traceGroupWallpaper(groupId, "group-chat-screen-wallpaper-error", {
+          sourceKind: wallpaperSourceKind,
+          backgroundKey: describeRemoteUrlForLog(resolvedGroupBackgroundUrl).key,
+          error: event.error,
+        });
+      }
+    },
+    [groupId, resolvedGroupBackgroundUrl, wallpaperSourceKind],
+  );
+
+  useEffect(() => {
+    if (__DEV__) {
+      traceGroupWallpaper(groupId, "group-chat-screen-background-source", {
+        liveBackgroundKey: describeRemoteUrlForLog(group?.backgroundUrl).key,
+        seededBackgroundKey: describeRemoteUrlForLog(
+          seededGroupIdentity?.backgroundUrl,
+        ).key,
+        resolvedBackgroundKey: describeRemoteUrlForLog(
+          resolvedGroupBackgroundUrl,
+        ).key,
+        sourceKind: wallpaperSourceKind,
+        cachedRefHit: !!cachedBackgroundRef,
+      });
+    }
+  }, [
+    cachedBackgroundRef,
+    group?.backgroundUrl,
+    groupId,
+    resolvedGroupBackgroundUrl,
+    seededGroupIdentity?.backgroundUrl,
+    wallpaperSourceKind,
+  ]);
 
   useEffect(() => {
     if (!groupId || groupMembers.length > 0) return;
 
     prepareGroupThreadEntry(groupId, {
-      groupAvatarUrl: group?.avatarUrl || initialGroupData?.avatarUrl || null,
-      backgroundUrl:
-        group?.backgroundUrl || initialGroupData?.backgroundUrl || null,
+      groupAvatarUrl: resolvedGroupAvatarUrl,
+      backgroundUrl: resolvedGroupBackgroundUrl,
     })
       .then((members) => {
         if (members.length > 0) {
@@ -555,10 +742,10 @@ export default function GroupChatScreen({ route, navigation }: Props) {
         setMemberBootstrapPending(false);
       });
   }, [
-    group?.avatarUrl,
     groupId,
     groupMembers.length,
-    initialGroupData?.avatarUrl,
+    resolvedGroupAvatarUrl,
+    resolvedGroupBackgroundUrl,
   ]);
 
   // Seed reactions from denormalized reactionsSummary for instant first render.
@@ -763,7 +950,29 @@ export default function GroupChatScreen({ route, navigation }: Props) {
             return;
           }
 
-          setGroup(groupData);
+          rememberPreparedGroupChatData(
+            groupId,
+            {
+              name: groupData.name,
+              avatarUrl: groupData.avatarUrl ?? null,
+              backgroundUrl: groupData.backgroundUrl ?? null,
+            },
+            "group-chat-screen-subscription",
+          );
+
+          setGroup((current) => {
+            if (__DEV__) {
+              traceGroupWallpaper(groupId, "group-chat-screen-subscription-update", {
+                previousBackgroundKey: describeRemoteUrlForLog(
+                  current?.backgroundUrl,
+                ).key,
+                nextBackgroundKey: describeRemoteUrlForLog(
+                  groupData.backgroundUrl,
+                ).key,
+              });
+            }
+            return groupData;
+          });
           setPermissionsConfig(groupData.permissionsConfig);
           setGroupLoading(false);
         });
@@ -826,8 +1035,9 @@ export default function GroupChatScreen({ route, navigation }: Props) {
           }
 
           void warmGroupIdentityAssets({
-            groupAvatarUrl:
-              group?.avatarUrl || initialGroupData?.avatarUrl || null,
+            groupId,
+            groupAvatarUrl: resolvedGroupAvatarUrl,
+            backgroundUrl: resolvedGroupBackgroundUrl,
             members: enrichedMembers,
           });
         })
@@ -844,19 +1054,19 @@ export default function GroupChatScreen({ route, navigation }: Props) {
       active = false;
       unsubscribe();
     };
-  }, [group?.avatarUrl, groupId, initialGroupData?.avatarUrl, uid]);
+  }, [groupId, resolvedGroupAvatarUrl, resolvedGroupBackgroundUrl, uid]);
 
   useEffect(() => {
     if (!uid || !groupId) return;
-    // Defer notification marking until after screen transition completes
-    const task = InteractionManager.runAfterInteractions(() => {
+    // Defer notification marking to idle — pure backend side-effect with no UI impact
+    const cancel = scheduleIdleWork(() => {
       markConversationNotificationsRead(uid, groupId, "group").catch(
         (error) => {
           logger.warn("Failed to mark group notifications read:", error);
         },
       );
     });
-    return () => task.cancel();
+    return cancel;
   }, [uid, groupId]);
 
   // NOTE: Tab bar visibility is now handled at the navigator level
@@ -877,9 +1087,8 @@ export default function GroupChatScreen({ route, navigation }: Props) {
 
   useEffect(() => {
     let cancelled = false;
-    // Defer link preview fetching until after the transition completes
-    // to avoid competing with first-paint rendering
-    const task = InteractionManager.runAfterInteractions(() => {
+    // Defer link preview fetching to idle to avoid competing with first-paint
+    const cancel = scheduleIdleWork(() => {
       const fetchLinkPreviews = async () => {
         for (const message of messages) {
           if (cancelled) break;
@@ -912,7 +1121,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     });
     return () => {
       cancelled = true;
-      task.cancel();
+      cancel();
     };
     // Only re-run when messages change, not when preview state changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1123,6 +1332,9 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   const timelineDataRef = useRef(timelineData);
   timelineDataRef.current = timelineData;
 
+  // Lightweight shared store for corner-only width comparisons (no equalization)
+  const cornerWidthStore = useMemo(() => createCardCornerWidthStore(), []);
+
   // ── Live refs for volatile data read inside renderMessage ──────────
   // By reading these from refs, renderMessage's dependency array stays small
   // and the callback reference stays stable across state changes.  This
@@ -1131,6 +1343,9 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   // force a re-render diff of every visible cell.
   const messageReactionsRef = useRef(messageReactions);
   messageReactionsRef.current = messageReactions;
+  const fallbackReactionsRef = useRef<Map<string, ReactionSummary[]>>(
+    new Map(),
+  );
   const linkPreviewsRef = useRef(linkPreviews);
   linkPreviewsRef.current = linkPreviews;
   const loadingPreviewsRef = useRef(loadingPreviews);
@@ -1140,46 +1355,9 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   const mentionableMembersRef = useRef(mentionableMembers);
   mentionableMembersRef.current = mentionableMembers;
 
-  // Card-width tracker for adaptive stacked-mode rounding
-  const trackerConversationKey = groupId ?? "__pending-group__";
-  const cardWidthTracker = useMemo(() => {
-    void trackerConversationKey;
-    return new CardWidthTracker();
-  }, [trackerConversationKey]);
-
-  // Pre-seed estimated widths for cold-cache rows before they mount.
-  // Only seed the initial render window to keep first-paint fast.
-  // Additional rows are seeded as they mount via useGroupedCardLayout.
-  useMemo(() => {
-    if (displayMode !== "stacked") return;
-    const entries: { id: string; estimatedWidth: number }[] = [];
-    const limit = listConfig.initialNumToRender + 5;
-    let count = 0;
-    for (const tl of timelineData) {
-      if (count >= limit) break;
-      if (tl.type !== "message") continue;
-      const msg = tl.data;
-      if (msg.kind === "system") continue;
-      entries.push({
-        id: msg.id,
-        estimatedWidth: estimateMessageWidth({
-          text: msg.text,
-          kind: msg.kind,
-          attachments: msg.attachments,
-          hasReplyPreview: !!msg.replyTo,
-          hasThread: !!msg.replyCount && msg.replyCount > 0,
-          hasReactions:
-            !!msg.reactionsSummary &&
-            Object.keys(msg.reactionsSummary).length > 0,
-          isGroupStart: !tl.isGroupedWithPrevious,
-          screenWidth: windowWidth,
-        }),
-      });
-      count++;
-    }
-    if (entries.length > 0) cardWidthTracker.seedBatch(entries);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [timelineData, cardWidthTracker, displayMode, windowWidth]);
+  useEffect(() => {
+    fallbackReactionsRef.current.clear();
+  }, [messages, uid]);
 
   // Enhanced scroll-to-message with highlight animation
   const scrollToMessage = useCallback((messageId: string) => {
@@ -1557,16 +1735,18 @@ export default function GroupChatScreen({ route, navigation }: Props) {
       const isGroupedWithPrev = timelineItem.isGroupedWithPrevious;
       const isGroupedWithNextMsg = timelineItem.isGroupedWithNext;
 
-      // Neighbor IDs in same group (for adaptive card-width rounding)
-      const prevTl = timelineDataRef.current[index + 1];
-      const nextTl = timelineDataRef.current[index - 1];
-      const groupPrevMessageId =
-        isGroupedWithPrev && prevTl && "data" in prevTl
-          ? prevTl.data.id
+      // Neighbor IDs for width-aware right-side corners.
+      // In the inverted FlatList (newest-first), "previous" (visually above)
+      // lives at index + 1, and "next" (visually below) lives at index - 1.
+      const aboveTl = timelineDataRef.current[index + 1];
+      const groupPrevMsgId =
+        isGroupedWithPrev && aboveTl?.type === "message"
+          ? aboveTl.data.id
           : undefined;
-      const groupNextMessageId =
-        isGroupedWithNextMsg && nextTl && "data" in nextTl
-          ? nextTl.data.id
+      const belowTl = timelineDataRef.current[index - 1];
+      const groupNextMsgId =
+        isGroupedWithNextMsg && belowTl?.type === "message"
+          ? belowTl.data.id
           : undefined;
 
       const showSender = !isGroupedWithPrev && item.kind !== "system";
@@ -1575,6 +1755,16 @@ export default function GroupChatScreen({ route, navigation }: Props) {
       const isGrouped = isGroupedWithPrev;
       const senderDisplayName = getSenderDisplayName(item);
       const senderProfile = getSenderProfileInfo(item.senderId);
+      const renderedReactions =
+        messageReactionsRef.current.get(item.id) ??
+        (() => {
+          const cached = fallbackReactionsRef.current.get(item.id);
+          if (cached) return cached;
+          if (!uid || !item.reactionsSummary) return EMPTY_REACTIONS;
+          const parsed = parseReactionsFromMessage(item.reactionsSummary, uid);
+          fallbackReactionsRef.current.set(item.id, parsed);
+          return parsed;
+        })();
 
       // ── Stacked mode branch ─────────────────────────────────────────
       if (displayMode === "stacked" && item.kind !== "system") {
@@ -1612,10 +1802,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
               groupId={groupId}
               isGroupedWithPrevious={isGroupedWithPrev}
               isGroupedWithNext={isGroupedWithNextMsg}
-              hasReactions={
-                (messageReactionsRef.current.get(item.id) ?? EMPTY_REACTIONS)
-                  .length > 0
-              }
+              hasReactions={renderedReactions.length > 0}
               hasReplyPreview={!!item.replyTo}
               hasThread={!!item.replyCount && item.replyCount > 0}
               senderDisplayName={senderDisplayName}
@@ -1625,9 +1812,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
               bubbleFontFamily={fntFamily}
               fontColorHex={fntColorHex}
               isHighlighted={item.id === highlightedMessageIdRef.current}
-              reactions={
-                messageReactionsRef.current.get(item.id) ?? EMPTY_REACTIONS
-              }
+              reactions={renderedReactions}
               linkPreview={
                 linkPreviewsRef.current.get(item.id) ||
                 (hasUrls(item.text || "")
@@ -1646,9 +1831,9 @@ export default function GroupChatScreen({ route, navigation }: Props) {
               onImagePress={handleOpenMediaViewer}
               onOptimisticReaction={handleOptimisticReaction}
               onThreadPress={handleStackedThreadPress}
-              cardWidthTracker={cardWidthTracker}
-              groupPrevMessageId={groupPrevMessageId}
-              groupNextMessageId={groupNextMessageId}
+              cornerWidthStore={cornerWidthStore}
+              groupPrevMessageId={groupPrevMsgId}
+              groupNextMessageId={groupNextMsgId}
             />
           </AnimatedMessageRow>
         );
@@ -1908,14 +2093,21 @@ export default function GroupChatScreen({ route, navigation }: Props) {
                       ]}
                       pointerEvents="none"
                     >
-                      <Text
+                      <View
                         style={[
-                          styles.messageTime,
-                          { color: colors.textMuted },
+                          styles.timestampPill,
+                          { backgroundColor: colors.background },
                         ]}
                       >
-                        {formatTime(item.createdAt)}
-                      </Text>
+                        <Text
+                          style={[
+                            styles.messageTime,
+                            { color: colors.textMuted },
+                          ]}
+                        >
+                          {formatTime(item.createdAt)}
+                        </Text>
+                      </View>
                     </View>
                   )}
                 </View>
@@ -1973,7 +2165,6 @@ export default function GroupChatScreen({ route, navigation }: Props) {
       handleStackedThreadPress,
       scrollToMessage,
       handleOptimisticReaction,
-      cardWidthTracker,
       screen.chat.messageEnterAnimation,
       displayMode,
       navigation,
@@ -2076,10 +2267,10 @@ export default function GroupChatScreen({ route, navigation }: Props) {
         <ChatHeader
           onBack={() => navigation.goBack()}
           chatType="group"
-          title={group?.name || initialGroupName || "Group Chat"}
+          title={resolvedGroupName}
           subtitle="Unavailable"
-          avatarUrl={group?.avatarUrl}
-          avatarFallbackName={group?.name || initialGroupName || "Group Chat"}
+          avatarUrl={resolvedGroupAvatarUrl}
+          avatarFallbackName={resolvedGroupName}
         />
         <ErrorState
           message={error}
@@ -2097,15 +2288,33 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   return (
     <>
       <ChatKeyboardContainer
-        style={[styles.container, { backgroundColor: colors.background }]}
+        style={[
+          styles.container,
+          {
+            // When a group background image is expected, use a dark neutral
+            // instead of the theme background (which may be white). This
+            // eliminates the brief white flash visible while the image
+            // loads from cache — the dark fallback is nearly imperceptible
+            // behind any background image for the 1-3 frames before paint.
+            backgroundColor: resolvedGroupBackgroundUrl
+              ? "#121212"
+              : colors.background,
+          },
+        ]}
         backgroundLayer={
-          group?.backgroundUrl ? (
+          resolvedGroupBackgroundUrl && wallpaperSource ? (
             <AppImage
-              source={{ uri: group.backgroundUrl }}
+              source={wallpaperSource}
               style={styles.chatBackground}
               contentFit="cover"
               transition={0}
               cachePolicy="memory-disk"
+              priority="high"
+              onLoadStart={handleWallpaperLoadStart}
+              onLoad={handleWallpaperLoad}
+              onDisplay={handleWallpaperDisplay}
+              onError={handleWallpaperError}
+              debugLabel="GroupChatWallpaper"
             />
           ) : undefined
         }
@@ -2113,11 +2322,11 @@ export default function GroupChatScreen({ route, navigation }: Props) {
         <ChatHeader
           onBack={() => navigation.goBack()}
           chatType="group"
-          title={group?.name || initialGroupName || "Group Chat"}
+          title={resolvedGroupName}
           subtitle={groupHeaderSubtitle}
           subtitleColor={groupHeaderSubtitleColor}
-          avatarUrl={group?.avatarUrl}
-          avatarFallbackName={group?.name || initialGroupName || "Group Chat"}
+          avatarUrl={resolvedGroupAvatarUrl}
+          avatarFallbackName={resolvedGroupName}
           onTitlePress={() => navigation.navigate("GroupChatInfo", { groupId })}
           renderRight={renderHeaderRight}
         />
@@ -2434,6 +2643,11 @@ const styles = StyleSheet.create({
   timestampRow: { flexDirection: "row", alignItems: "center", marginTop: 6 },
   timestampRowSent: { alignSelf: "flex-end", marginRight: 4 },
   timestampRowReceived: { alignSelf: "flex-start", marginLeft: 4 },
+  timestampPill: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
   loadMoreContainer: {
     alignItems: "center",
     paddingVertical: 16,

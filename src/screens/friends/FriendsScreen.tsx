@@ -108,8 +108,17 @@ const HEADER_ROW_HEIGHT = 48;
 const SEARCH_ROW_HEIGHT = 38;
 const HEADER_EXPANDED = HEADER_ROW_HEIGHT + SEARCH_ROW_HEIGHT;
 const HEADER_COLLAPSED = HEADER_ROW_HEIGHT;
-const SCROLL_RANGE = 60;
 const SEARCH_BAR_HEIGHT = 32;
+// SCROLL_RANGE must match the search bar's actual travel distance so
+// the bar and the 1:1-scrolling content stay visually synchronized.
+// Travel = searchExpandedTop − searchCollapsedTop
+//        = (HEADER_ROW_HEIGHT + (SEARCH_ROW_HEIGHT − SEARCH_BAR_HEIGHT) / 2)
+//          − ((HEADER_ROW_HEIGHT − SEARCH_BAR_HEIGHT) / 2)
+//        = SEARCH_ROW_HEIGHT  (= 38 + a small centering remainder = 43)
+const SCROLL_RANGE =
+  HEADER_ROW_HEIGHT +
+  (SEARCH_ROW_HEIGHT - SEARCH_BAR_HEIGHT) / 2 -
+  (HEADER_ROW_HEIGHT - SEARCH_BAR_HEIGHT) / 2;
 // Horizontal space reserved for back / add-friends IconButtons.
 // react-native-paper IconButton default touch target is 48.
 const ICON_BTN_WIDTH = 48;
@@ -952,13 +961,13 @@ export default function FriendsScreen({ navigation }: any) {
   const handleBlockConfirm = useCallback(
     async (reason?: string) => {
       if (!uid || !selectedUser) return;
-      try {
-        await blockUser(uid, selectedUser.uid, reason);
-        setBlockModalVisible(false);
-        setSelectedUser(null);
+      const success = await blockUser(uid, selectedUser.uid, reason);
+      setBlockModalVisible(false);
+      setSelectedUser(null);
+      if (success) {
         showSnackbar(`${selectedUser.username} has been blocked`);
-      } catch (error: any) {
-        showSnackbar(error.message || "Failed to block user", "error");
+      } else {
+        showSnackbar("Failed to block user. Please try again.", "error");
       }
     },
     [uid, selectedUser, showSnackbar],

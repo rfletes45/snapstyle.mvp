@@ -26,8 +26,9 @@ import { IconButton, useTheme } from "react-native-paper";
 
 import type { DraggableBottomSheetHandle } from "./DraggableBottomSheet";
 import { PickerLoadingFallback } from "./PickerLoadingFallback";
+import { getEmojiPickerImport, getResolvedEmojiPicker } from "./pickerPreload";
 
-const LazyFullEmojiPicker = React.lazy(() => import("./FullEmojiPicker"));
+const LazyFullEmojiPicker = React.lazy(() => getEmojiPickerImport());
 
 // =============================================================================
 // Types
@@ -73,6 +74,7 @@ function EmojiButtonBase({ onEmojiSelected, size = 24 }: EmojiButtonProps) {
   }, [deactivateSheet]);
 
   const handlePress = useCallback(() => {
+    if (pickerOpenRef.current) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     activateSheet(undefined, handleClose);
     setPickerOpen(true);
@@ -86,6 +88,8 @@ function EmojiButtonBase({ onEmojiSelected, size = 24 }: EmojiButtonProps) {
     [onEmojiSelected],
   );
 
+  const ResolvedPicker = pickerOpen ? getResolvedEmojiPicker() : null;
+
   return (
     <>
       <IconButton
@@ -97,9 +101,9 @@ function EmojiButtonBase({ onEmojiSelected, size = 24 }: EmojiButtonProps) {
         accessibilityLabel="Open emoji picker"
         accessibilityRole="button"
       />
-      {pickerOpen && (
-        <Suspense fallback={<PickerLoadingFallback />}>
-          <LazyFullEmojiPicker
+      {pickerOpen &&
+        (ResolvedPicker ? (
+          <ResolvedPicker
             ref={sheetRef}
             open={pickerOpen}
             onClose={handleClose}
@@ -107,8 +111,18 @@ function EmojiButtonBase({ onEmojiSelected, size = 24 }: EmojiButtonProps) {
             keyboardHeight={lastKeyboardHeight}
             sharedTranslateY={sheetTranslateY}
           />
-        </Suspense>
-      )}
+        ) : (
+          <Suspense fallback={<PickerLoadingFallback />}>
+            <LazyFullEmojiPicker
+              ref={sheetRef}
+              open={pickerOpen}
+              onClose={handleClose}
+              onEmojiSelected={handleEmojiSelected}
+              keyboardHeight={lastKeyboardHeight}
+              sharedTranslateY={sheetTranslateY}
+            />
+          </Suspense>
+        ))}
     </>
   );
 }

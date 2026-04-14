@@ -27,7 +27,6 @@ import React, {
 } from "react";
 import {
   FlatList,
-  KeyboardAvoidingView,
   Platform,
   StyleSheet,
   Text,
@@ -36,6 +35,15 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+
+// Shared keyboard architecture
+import {
+  ChatFooterWrapper,
+  ChatKeyboardContainer,
+  KeyboardSafeAreaSpacer,
+  setChatScrollViewConfig,
+  useRenderChatScrollComponent,
+} from "@/components/chat/ChatKeyboardScrollView";
 
 // Chat rendering pipeline
 import { MediaViewerModal, MessageActionsSheet } from "@/components/chat";
@@ -130,6 +138,14 @@ export default function ThreadScreen({ navigation, route }: Props) {
   );
   const [viewerSenderName, setViewerSenderName] = useState("");
   const [viewerTimestamp, setViewerTimestamp] = useState<Date | undefined>();
+
+  // ---------------------------------------------------------------------------
+  // Keyboard scroll component (KCSV integration)
+  // ---------------------------------------------------------------------------
+  useMemo(() => {
+    setChatScrollViewConfig({ offset: 0 });
+  }, []);
+  const renderScrollComponent = useRenderChatScrollComponent();
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -533,10 +549,8 @@ export default function ThreadScreen({ navigation, route }: Props) {
         </Text>
       </View>
 
-      <KeyboardAvoidingView
-        style={styles.flex}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        keyboardVerticalOffset={0}
+      <ChatKeyboardContainer
+        style={[styles.flex, { backgroundColor: colors.background }]}
       >
         {/* Root message */}
         {renderRootMessage()}
@@ -547,8 +561,11 @@ export default function ThreadScreen({ navigation, route }: Props) {
           data={replies}
           renderItem={renderItem}
           keyExtractor={keyExtractor}
+          renderScrollComponent={renderScrollComponent}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
+          keyboardDismissMode="interactive"
+          keyboardShouldPersistTaps="handled"
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
               <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
@@ -559,70 +576,77 @@ export default function ThreadScreen({ navigation, route }: Props) {
         />
 
         {/* Composer */}
-        <View
-          style={[
-            styles.composerBar,
-            {
-              borderTopColor: colors.outline,
-              backgroundColor: colors.background,
-            },
-          ]}
-        >
+        <ChatFooterWrapper>
           <View
             style={[
-              styles.composerInput,
+              styles.composerBar,
               {
-                backgroundColor:
-                  colors.inputBackground ?? colors.surfaceVariant,
-                borderColor: colors.outline,
+                borderTopColor: colors.outline,
+                backgroundColor: colors.background,
               },
             ]}
           >
-            <TextInput
-              value={replyText}
-              onChangeText={setReplyText}
-              placeholder="Reply in thread..."
-              placeholderTextColor={
-                colors.inputPlaceholder ?? colors.textSecondary
-              }
-              multiline
-              style={[styles.input, { color: colors.text }]}
-              selectionColor={colors.primary}
-              keyboardAppearance={
-                Platform.OS === "ios" ? (isDark ? "dark" : "light") : undefined
-              }
-              editable={!sending}
-              returnKeyType="default"
-            />
-          </View>
+            <View
+              style={[
+                styles.composerInput,
+                {
+                  backgroundColor:
+                    colors.inputBackground ?? colors.surfaceVariant,
+                  borderColor: colors.outline,
+                },
+              ]}
+            >
+              <TextInput
+                value={replyText}
+                onChangeText={setReplyText}
+                placeholder="Reply in thread..."
+                placeholderTextColor={
+                  colors.inputPlaceholder ?? colors.textSecondary
+                }
+                multiline
+                style={[styles.input, { color: colors.text }]}
+                selectionColor={colors.primary}
+                keyboardAppearance={
+                  Platform.OS === "ios"
+                    ? isDark
+                      ? "dark"
+                      : "light"
+                    : undefined
+                }
+                editable={!sending}
+                returnKeyType="default"
+              />
+            </View>
 
-          <TouchableOpacity
-            onPress={handleSend}
-            disabled={!replyText.trim() || sending}
-            style={[
-              styles.sendButton,
-              {
-                backgroundColor:
+            <TouchableOpacity
+              onPress={handleSend}
+              disabled={!replyText.trim() || sending}
+              style={[
+                styles.sendButton,
+                {
+                  backgroundColor:
+                    replyText.trim() && !sending
+                      ? colors.primary
+                      : colors.surfaceVariant,
+                },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel="Send reply"
+            >
+              <MaterialCommunityIcons
+                name="send"
+                size={20}
+                color={
                   replyText.trim() && !sending
-                    ? colors.primary
-                    : colors.surfaceVariant,
-              },
-            ]}
-            accessibilityRole="button"
-            accessibilityLabel="Send reply"
-          >
-            <MaterialCommunityIcons
-              name="send"
-              size={20}
-              color={
-                replyText.trim() && !sending
-                  ? colors.onPrimary
-                  : colors.textSecondary
-              }
-            />
-          </TouchableOpacity>
-        </View>
-      </KeyboardAvoidingView>
+                    ? colors.onPrimary
+                    : colors.textSecondary
+                }
+              />
+            </TouchableOpacity>
+          </View>
+          <KeyboardSafeAreaSpacer backgroundColor={colors.background} />
+        </ChatFooterWrapper>
+      </ChatKeyboardContainer>
 
       {/* Message Actions Sheet */}
       <MessageActionsSheet

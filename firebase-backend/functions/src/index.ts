@@ -90,7 +90,9 @@ import { cleanupStagingOrphans, mintChatMediaUrl } from "./chatMedia";
 // Inbox Aggregation Triggers (Segment 4)
 import {
   markInboxRead,
+  onDMMemberStateChanged,
   onDMMessageInbox,
+  onGroupMemberStateChanged,
   onGroupMessageInbox,
 } from "./inboxTriggers";
 
@@ -199,9 +201,11 @@ export {
   markInboxRead,
   mintChatMediaUrl,
   onDeleteMessage,
+  onDMMemberStateChanged,
   onDMMessageInbox,
   onFriendAddedTaskProgress,
   onFriendRequestAccepted,
+  onGroupMemberStateChanged,
   onGroupMessageInbox,
   onMessageRequestCreatedNotification,
   onMessageSentTaskProgress,

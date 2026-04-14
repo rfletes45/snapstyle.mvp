@@ -199,10 +199,11 @@ export function normalizeConversationFromInboxEntry(
       ? entry.otherUserName || "Chat"
       : entry.groupName || "Group Chat",
     avatarUrl: null,
+    backgroundUrl: entry.backgroundUrl ?? null,
     otherUserId: isDm ? entry.otherUserId : undefined,
     participantCount: entry.memberCount,
     lastMessageText: entry.lastMessagePreview || "",
-    lastMessageSenderName: "",
+    lastMessageSenderName: entry.lastSenderName || "",
     lastMessageKind: entry.lastMessageKind,
     lastActivityAt,
     createdAt: lastActivityAt,
