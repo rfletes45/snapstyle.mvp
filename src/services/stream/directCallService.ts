@@ -21,6 +21,12 @@ import {
   startCallAudioSession,
   stopCallAudioSession,
 } from "./callSessionManager";
+import {
+  applyCallMediaPreferences,
+  applyCallReconnectPolicy,
+  applyPreferredCameraDirection,
+  joinCallWithRetry,
+} from "./callRuntime";
 import { getStreamClient } from "./streamClient";
 import { ensureStreamUsersExist } from "./streamUserProvisioning";
 import { toStreamDevice } from "./streamUtils";
@@ -63,10 +69,16 @@ export async function startDirectCall(
     );
   }
 
-  const requestedPermissions = await requestCallPermissions({
-    microphone: true,
-    camera: wantsCameraOn,
-  });
+  let requestedPermissions;
+  try {
+    requestedPermissions = await requestCallPermissions({
+      microphone: true,
+      camera: wantsCameraOn,
+    });
+  } catch (err) {
+    console.warn(`${TAG} Permission request failed during call start:`, err);
+    throw err;
+  }
   const cameraOn = wantsCameraOn && requestedPermissions.cameraGranted;
 
   const call = client.call(DIRECT_CALL_TYPE, callId);
@@ -104,6 +116,8 @@ export async function startDirectCall(
     throw new Error(classifyCallError(createErr, "create"));
   }
 
+  applyCallReconnectPolicy(call, `direct call ${callId}`);
+
   const deviceEndpoint =
     mode === "video" ? "speaker" : toStreamDevice(config.audio.defaultOutput);
   try {
@@ -113,6 +127,7 @@ export async function startDirectCall(
   }
 
   watchLocalDeviceSetupOnJoin(call, {
+    context: `outgoing direct call ${callId}`,
     enableMicrophone: true,
     enableCamera: cameraOn,
   });
@@ -126,10 +141,16 @@ export async function acceptDirectCall(
   const CallingState = getCallingState();
   const config = callSettingsService.getCallConfig();
   const wantsCameraOn = mode === "video" && config.video.startEnabled;
-  const requestedPermissions = await requestCallPermissions({
-    microphone: true,
-    camera: wantsCameraOn,
-  });
+  let requestedPermissions;
+  try {
+    requestedPermissions = await requestCallPermissions({
+      microphone: true,
+      camera: wantsCameraOn,
+    });
+  } catch (err) {
+    console.warn(`${TAG} Permission request failed during call accept:`, err);
+    throw err;
+  }
   const cameraOn = wantsCameraOn && requestedPermissions.cameraGranted;
 
   const deviceEndpoint =
@@ -140,21 +161,26 @@ export async function acceptDirectCall(
     console.warn(`${TAG} callManager.start failed:`, err);
   }
 
+  applyCallReconnectPolicy(call, `direct call ${call.id}`);
+
   try {
     if (
       call.state.callingState !== CallingState.JOINING &&
       call.state.callingState !== CallingState.JOINED
     ) {
-      await call.join();
+      await joinCallWithRetry(call, undefined, `direct call ${call.id}`);
     }
 
     await ensureLocalDevices(call, {
+      context: `accepted direct call ${call.id}`,
       enableMicrophone: true,
       enableCamera: cameraOn,
     });
+    applyCallMediaPreferences(call, `accepted direct call ${call.id}`);
   } catch (err) {
+    console.error(`${TAG} Accept/join failed:`, err);
     await stopCallAudioSession();
-    throw err;
+    throw new Error(classifyCallError(err, "join"));
   }
 }
 
@@ -189,6 +215,7 @@ export async function endDirectCall(call: Call): Promise<void> {
 function watchLocalDeviceSetupOnJoin(
   call: Call,
   options: {
+    context: string;
     enableMicrophone: boolean;
     enableCamera: boolean;
   },
@@ -197,9 +224,13 @@ function watchLocalDeviceSetupOnJoin(
   const subscription = call.state.callingState$.subscribe((state) => {
     if (state === CallingState.JOINED) {
       subscription.unsubscribe();
-      ensureLocalDevices(call, options).catch((err) => {
-        console.warn(`${TAG} Failed to prepare local devices after join:`, err);
-      });
+      ensureLocalDevices(call, options)
+        .then(() => {
+          applyCallMediaPreferences(call, options.context);
+        })
+        .catch((err) => {
+          console.warn(`${TAG} Failed to prepare local devices after join:`, err);
+        });
       return;
     }
 
@@ -216,6 +247,7 @@ function watchLocalDeviceSetupOnJoin(
 async function ensureLocalDevices(
   call: Call,
   options: {
+    context: string;
     enableMicrophone: boolean;
     enableCamera: boolean;
   },
@@ -227,6 +259,8 @@ async function ensureLocalDevices(
       console.warn(`${TAG} microphone.enable failed:`, err);
     }
   }
+
+  await applyPreferredCameraDirection(call, options.context);
 
   if (options.enableCamera) {
     try {
@@ -250,6 +284,9 @@ function classifyCallError(err: any, phase: "create" | "join"): string {
   if (code === "permission-denied" || raw.includes("permission-denied")) {
     return "You don't have permission to call this user.";
   }
+  if (raw.includes("Microphone permission is required")) {
+    return raw;
+  }
 
   if (raw.includes("call type") && raw.includes("not found")) {
     return `Call type not configured on server. Contact support. (${phase})`;
@@ -265,7 +302,9 @@ function classifyCallError(err: any, phase: "create" | "join"): string {
     raw.includes("timeout") ||
     raw.includes("ECONNREFUSED")
   ) {
-    return "Network error - check your connection and try again.";
+    return phase === "join"
+      ? "Connection failed while joining the call. Check your network and try again."
+      : "Network error - check your connection and try again.";
   }
 
   return `Unable to ${phase === "create" ? "start" : "connect to"} call: ${raw}`;

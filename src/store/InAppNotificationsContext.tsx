@@ -1,3 +1,4 @@
+import { ACHIEVEMENT_BY_TYPE } from "@/gamesV4/data/achievementDefinitions";
 import type { GameRuntimeType } from "@/gamesV4/types/common";
 import {
   subscribeToInboxSettings,
@@ -140,13 +141,38 @@ function buildToast(
     return null;
   }
 
+  // Resolve raw achievement type keys to human-readable names in the body.
+  // This guards against legacy notifications that were written with internal IDs.
+  let body = notification.body;
+  if (notification.type === "achievement_unlocked" && body) {
+    const def = ACHIEVEMENT_BY_TYPE[body];
+    if (def) {
+      body = def.name;
+    } else if (notification.data?.achievementTitles) {
+      const titles = notification.data.achievementTitles as
+        | string[]
+        | undefined;
+      const ids = notification.data.achievementIds as string[] | undefined;
+      if (titles && Array.isArray(titles) && titles.length > 0) {
+        const resolvedTitles = titles.map(
+          (t: string) => ACHIEVEMENT_BY_TYPE[t]?.name ?? t,
+        );
+        const count = ids?.length ?? resolvedTitles.length;
+        body =
+          count === 1
+            ? resolvedTitles[0]
+            : `${resolvedTitles.slice(0, 2).join(", ")}${count > 2 ? " and more" : ""}`;
+      }
+    }
+  }
+
   return {
     id: `toast_${notification.id}`,
     notificationId: notification.id,
     dedupeKey: normalized.dedupeKey,
     type: normalized.type,
     title: notification.title,
-    body: notification.body,
+    body,
     entityId:
       notification.conversationId ||
       notification.sessionId ||

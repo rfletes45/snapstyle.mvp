@@ -57,18 +57,27 @@ export const streamCallWebhook = functions.https.onRequest(async (req, res) => {
   const apiSecret = process.env.STREAM_API_SECRET;
   const signature = req.headers["x-signature"] as string | undefined;
 
-  if (apiSecret && signature) {
-    const expectedSignature = crypto
-      .createHmac("sha256", apiSecret)
-      .update(req.rawBody)
-      .digest("hex");
-    if (signature !== expectedSignature) {
-      functions.logger.warn("Stream webhook: invalid X-Signature");
-      res.status(401).send("Unauthorized");
-      return;
-    }
-  } else if (apiSecret && !signature) {
+  if (!apiSecret) {
+    functions.logger.error(
+      "Stream webhook: STREAM_API_SECRET not configured — rejecting request. " +
+        "Set it in firebase-backend/functions/.env",
+    );
+    res.status(500).send("Server misconfiguration");
+    return;
+  }
+
+  if (!signature) {
     functions.logger.warn("Stream webhook: missing X-Signature header");
+    res.status(401).send("Unauthorized");
+    return;
+  }
+
+  const expectedSignature = crypto
+    .createHmac("sha256", apiSecret)
+    .update(req.rawBody)
+    .digest("hex");
+  if (signature !== expectedSignature) {
+    functions.logger.warn("Stream webhook: invalid X-Signature");
     res.status(401).send("Unauthorized");
     return;
   }
@@ -165,7 +174,9 @@ function writeSessionEndedEntries(
 
   const members = getDirectParticipants(call);
   for (const member of members) {
-    const otherMember = members.find((candidate) => candidate.user_id !== member.user_id);
+    const otherMember = members.find(
+      (candidate) => candidate.user_id !== member.user_id,
+    );
     const entry = buildDirectEntry({
       call,
       userId: member.user_id,
@@ -308,8 +319,9 @@ function writeMissedEntries(
   const endedAt = toMillis(event.created_at, undefined);
   const createdAt = endedAt ?? Date.now();
   const caller =
-    getDirectParticipants(call).find((member) => member.user_id === createdBy) ??
-    normalizeUser(call.created_by);
+    getDirectParticipants(call).find(
+      (member) => member.user_id === createdBy,
+    ) ?? normalizeUser(call.created_by);
 
   const missedMembers: NormalizedUser[] = Array.isArray(event.members)
     ? event.members.map(normalizeUser)
@@ -348,7 +360,8 @@ function buildDirectEntry(params: {
     id: params.call.id,
     userId: params.userId,
     callId: params.call.id,
-    entryType: params.call.custom?.mode === "video" ? "direct_video" : "direct_audio",
+    entryType:
+      params.call.custom?.mode === "video" ? "direct_video" : "direct_audio",
     direction: params.direction,
     result: params.result,
     startedAt: params.startedAt,
@@ -384,9 +397,9 @@ function writeHistoryEntry(
 
 function isVoiceRoomCall(call: any): boolean {
   return (
-    typeof call?.id === "string" &&
-    call.id.startsWith("voice_channel_")
-  ) || Boolean(call?.custom?.groupId || call?.custom?.groupName);
+    (typeof call?.id === "string" && call.id.startsWith("voice_channel_")) ||
+    Boolean(call?.custom?.groupId || call?.custom?.groupName)
+  );
 }
 
 function getDirectParticipants(call: any): NormalizedUser[] {

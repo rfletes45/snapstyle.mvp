@@ -1,19 +1,18 @@
 /**
- * Games V4 — Achievements Hub Screen
+ * Games V4 — Achievements Hub Screen (Redesigned v2)
  *
- * Lists all achievement sections as cards with:
- * - Filter bar (All / Turn-Based / Solo / General / Realtime)
- * - Per-section unclaimed reward count badges
- * - Progress bar (earned / total achievements)
- * - "Claim Badge" button when section is complete
- * - Chevron affordance for tap navigation
- *
- * Navigates to AchievementSection on card tap.
+ * Two-column grid of compact game section cards with:
+ * - Search bar (outside FlatList to prevent keyboard dismissal)
+ * - Horizontal filter strip with gradient fade edges
+ * - Hero progress card
+ * - Purple unclaimed-count badge replacing chevron
+ * - Progress count at bottom center of each card
  *
  * @module gamesV4/screens/AchievementsHubScreen
  */
 
 import {
+  ACHIEVEMENT_DEFS,
   ACHIEVEMENT_SECTIONS,
   DIFFICULTY_META,
   getDefsForSection,
@@ -33,14 +32,24 @@ import type { MainStackParamList } from "@/types/navigation/root";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { LinearGradient } from "expo-linear-gradient";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   FlatList,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -55,24 +64,20 @@ interface ClaimedSection {
 
 type FilterKey = "all" | AchievementRuntimeCategory;
 
-const FILTER_CHIPS: { key: FilterKey; label: string }[] = [
-  { key: "all", label: "All" },
-  { key: "turn_based", label: "Turn-Based" },
-  { key: "solo", label: "Solo" },
-  { key: "realtime", label: "Realtime" },
-  { key: "general", label: "General" },
+const FILTER_CHIPS: { key: FilterKey; label: string; icon: string }[] = [
+  { key: "all", label: "All", icon: "trophy-outline" },
+  { key: "turn_based", label: "Turn-Based", icon: "chess-pawn" },
+  { key: "solo", label: "Solo", icon: "account" },
+  { key: "realtime", label: "Realtime", icon: "lightning-bolt" },
+  { key: "general", label: "General", icon: "star-four-points" },
 ];
 
-/**
- * Determine if an achievement entry is "unclaimed" (earned but reward not yet collected).
- * Legacy docs (schemaVersion undefined / < 2) are treated as already claimed since tokens
- * were auto-credited before the manual-claim system was introduced.
- */
+const PURPLE = "#8B5CF6";
+
 function isUnclaimed(entry: AchievementEntryV4): boolean {
   if (entry.schemaVersion && entry.schemaVersion >= 2) {
     return entry.status === "earned_unclaimed";
   }
-  // Legacy: tokens were auto-awarded, treat as claimed
   return false;
 }
 
@@ -81,14 +86,30 @@ export default function AchievementsHubScreen() {
   const { currentFirebaseUser } = useAuth();
   const navigation = useNavigation<Nav>();
   const uid = currentFirebaseUser?.uid;
+  const colors = theme.colors;
+  const isDark = theme.isDark;
 
   const [earned, setEarned] = useState<AchievementEntryV4[]>([]);
   const [claimedSections, setClaimedSections] = useState<ClaimedSection[]>([]);
   const [loading, setLoading] = useState(true);
   const [claimingSection, setClaimingSection] = useState<string | null>(null);
   const [activeFilter, setActiveFilter] = useState<FilterKey>("all");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchFocused, setSearchFocused] = useState(false);
+  const searchInputRef = useRef<TextInput>(null);
 
-  // Subscribe to achievements
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (!loading) {
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 400,
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [loading, fadeAnim]);
+
   useEffect(() => {
     if (!uid) return;
     const unsub = subscribeToAchievements(
@@ -102,7 +123,6 @@ export default function AchievementsHubScreen() {
     return unsub;
   }, [uid]);
 
-  // Subscribe to claimed sections
   useEffect(() => {
     if (!uid) return;
     const unsub = subscribeToAchievementSections(uid, setClaimedSections);
@@ -133,7 +153,6 @@ export default function AchievementsHubScreen() {
     [claimedSections],
   );
 
-  // Per-section unclaimed counts
   const unclaimedBySection = useMemo(() => {
     const counts = new Map<string, number>();
     for (const section of ACHIEVEMENT_SECTIONS) {
@@ -148,34 +167,86 @@ export default function AchievementsHubScreen() {
     return counts;
   }, [earnedMap]);
 
-  // Total unclaimed
   const totalUnclaimed = useMemo(() => {
     let total = 0;
     for (const v of unclaimedBySection.values()) total += v;
     return total;
   }, [unclaimedBySection]);
 
-  // Total unclaimed token value
   const totalUnclaimedTokens = useMemo(() => {
     let total = 0;
     for (const entry of earned) {
-      if (isUnclaimed(entry)) {
-        total += entry.tokenReward || 0;
-      }
+      if (isUnclaimed(entry)) total += entry.tokenReward || 0;
     }
     return total;
   }, [earned]);
 
-  // Filtered sections
-  const filteredSections = useMemo(
+  const totalAchievements = useMemo(
     () =>
+      ACHIEVEMENT_SECTIONS.reduce(
+        (sum, s) => sum + getDefsForSection(s.sectionId).length,
+        0,
+      ),
+    [],
+  );
+
+  // Search + Filter + Sort (with claimable prioritization)
+  const processedSections = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+
+    let sections =
       activeFilter === "all"
-        ? ACHIEVEMENT_SECTIONS
+        ? [...ACHIEVEMENT_SECTIONS]
         : ACHIEVEMENT_SECTIONS.filter(
             (s) => s.runtimeCategory === activeFilter,
-          ),
-    [activeFilter],
-  );
+          );
+
+    if (query.length > 0) {
+      sections = sections.filter((section) => {
+        if (section.name.toLowerCase().includes(query)) return true;
+        if (section.description.toLowerCase().includes(query)) return true;
+        const defs = getDefsForSection(section.sectionId);
+        return defs.some(
+          (def) =>
+            def.name.toLowerCase().includes(query) ||
+            def.description.toLowerCase().includes(query) ||
+            DIFFICULTY_META[def.difficulty].label.toLowerCase().includes(query),
+        );
+      });
+    }
+
+    // Sort: unclaimed first, then by progress descending
+    sections.sort((a, b) => {
+      const aUnclaimed = unclaimedBySection.get(a.sectionId) ?? 0;
+      const bUnclaimed = unclaimedBySection.get(b.sectionId) ?? 0;
+      if (aUnclaimed > 0 && bUnclaimed === 0) return -1;
+      if (bUnclaimed > 0 && aUnclaimed === 0) return 1;
+      if (aUnclaimed > 0 && bUnclaimed > 0) return bUnclaimed - aUnclaimed;
+      const aDefs = getDefsForSection(a.sectionId);
+      const bDefs = getDefsForSection(b.sectionId);
+      const aP =
+        aDefs.length > 0
+          ? aDefs.filter((d) => earnedSet.has(d.type)).length / aDefs.length
+          : 0;
+      const bP =
+        bDefs.length > 0
+          ? bDefs.filter((d) => earnedSet.has(d.type)).length / bDefs.length
+          : 0;
+      return bP - aP;
+    });
+
+    return sections;
+  }, [activeFilter, searchQuery, unclaimedBySection, earnedSet]);
+
+  const searchMatchCount = useMemo(() => {
+    if (searchQuery.trim().length === 0) return 0;
+    const query = searchQuery.trim().toLowerCase();
+    return ACHIEVEMENT_DEFS.filter(
+      (def) =>
+        def.name.toLowerCase().includes(query) ||
+        def.description.toLowerCase().includes(query),
+    ).length;
+  }, [searchQuery]);
 
   const handleClaimBadge = useCallback(async (sectionId: string) => {
     setClaimingSection(sectionId);
@@ -192,43 +263,39 @@ export default function AchievementsHubScreen() {
     }
   }, []);
 
-  const colors = theme.colors;
-
-  // Total progress
-  const totalAchievements = useMemo(
-    () =>
-      ACHIEVEMENT_SECTIONS.reduce(
-        (sum, s) => sum + getDefsForSection(s.sectionId).length,
-        0,
-      ),
-    [],
-  );
-
-  const renderSection = useCallback(
-    ({ item: section }: { item: AchievementSectionDef }) => {
+  const renderSectionCard = useCallback(
+    ({
+      item: section,
+      index,
+    }: {
+      item: AchievementSectionDef;
+      index: number;
+    }) => {
       const defs = getDefsForSection(section.sectionId);
       const earnedCount = defs.filter((d) => earnedSet.has(d.type)).length;
       const total = defs.length;
       const isComplete = earnedCount === total;
       const isClaimed = claimedSet.has(section.sectionId);
-      const progress = total > 0 ? earnedCount / total : 0;
       const sectionUnclaimed = unclaimedBySection.get(section.sectionId) ?? 0;
 
-      // Difficulty range
-      const difficulties = [...new Set(defs.map((d) => d.difficulty))];
-      const maxDifficulty = difficulties.reduce((max, d) => {
-        const order = ["easy", "medium", "hard", "expert", "legendary"];
-        return order.indexOf(d) > order.indexOf(max) ? d : max;
-      }, difficulties[0]);
+      const cardBg = isDark ? colors.surfaceVariant : colors.surface;
+      const isLeft = index % 2 === 0;
 
       return (
         <TouchableOpacity
           style={[
             styles.sectionCard,
             {
-              backgroundColor: theme.isDark ? "#1C1C1E" : "#FFF",
-              borderLeftWidth: sectionUnclaimed > 0 ? 3 : 0,
-              borderLeftColor: sectionUnclaimed > 0 ? "#FF9500" : "transparent",
+              backgroundColor: cardBg,
+              marginRight: isLeft ? 5 : 0,
+              marginLeft: isLeft ? 0 : 5,
+              borderWidth: sectionUnclaimed > 0 ? 1.5 : isComplete ? 1.5 : 0,
+              borderColor:
+                sectionUnclaimed > 0
+                  ? PURPLE
+                  : isComplete
+                    ? "#FFD700"
+                    : "transparent",
             },
           ]}
           onPress={() =>
@@ -236,111 +303,98 @@ export default function AchievementsHubScreen() {
               sectionId: section.sectionId,
             })
           }
-          activeOpacity={0.7}
+          activeOpacity={0.65}
         >
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionIcon}>{section.icon}</Text>
-            <View style={styles.sectionTitleArea}>
-              <View style={styles.sectionNameRow}>
-                <Text
-                  style={[
-                    styles.sectionName,
-                    { color: theme.isDark ? "#FFF" : "#000" },
-                  ]}
-                >
-                  {section.name}
-                </Text>
-                {sectionUnclaimed > 0 && (
-                  <View style={styles.unclaimedBadge}>
-                    <Text style={styles.unclaimedBadgeText}>
-                      {sectionUnclaimed}
-                    </Text>
-                  </View>
-                )}
-              </View>
-              <Text
-                style={[
-                  styles.sectionDesc,
-                  { color: theme.isDark ? "#AAA" : "#666" },
-                ]}
-              >
-                {section.description}
-              </Text>
+          {/* Unclaimed icon top-right */}
+          {sectionUnclaimed > 0 && (
+            <View style={styles.unclaimedIconWrap}>
+              <MaterialCommunityIcons name="gift" size={16} color={PURPLE} />
             </View>
-            {isClaimed && (
+          )}
+
+          {/* Completed badge icon top-right */}
+          {sectionUnclaimed === 0 && isClaimed && (
+            <View style={styles.claimedIconWrap}>
               <MaterialCommunityIcons
                 name="check-decagram"
-                size={24}
-                color="#34C759"
-              />
-            )}
-            <MaterialCommunityIcons
-              name="chevron-right"
-              size={22}
-              color={theme.isDark ? "#666" : "#999"}
-            />
-          </View>
-
-          {/* Progress bar */}
-          <View style={styles.progressRow}>
-            <View
-              style={[
-                styles.progressBarBg,
-                { backgroundColor: theme.isDark ? "#333" : "#E0E0E0" },
-              ]}
-            >
-              <View
-                style={[
-                  styles.progressBarFill,
-                  {
-                    width: `${progress * 100}%`,
-                    backgroundColor: isComplete ? "#34C759" : colors.primary,
-                  },
-                ]}
+                size={16}
+                color={colors.success}
               />
             </View>
+          )}
+
+          {/* Section icon */}
+          <View
+            style={[
+              styles.sectionIconWrap,
+              {
+                backgroundColor: isDark
+                  ? colors.background + "80"
+                  : "rgba(128,128,128,0.06)",
+              },
+            ]}
+          >
+            <Text style={styles.sectionIcon}>{section.icon}</Text>
+          </View>
+
+          {/* Name */}
+          <Text
+            style={[styles.cardName, { color: colors.text }]}
+            numberOfLines={2}
+          >
+            {section.name}
+          </Text>
+
+          {/* Right indicator: purple count circle or chevron */}
+          <View style={styles.cardTrailing}>
+            {sectionUnclaimed > 0 ? (
+              <View style={styles.unclaimedCircle}>
+                <Text style={styles.unclaimedCircleText}>
+                  {sectionUnclaimed}
+                </Text>
+              </View>
+            ) : (
+              <MaterialCommunityIcons
+                name="chevron-right"
+                size={18}
+                color={colors.textMuted}
+              />
+            )}
+          </View>
+
+          {/* Claim badge CTA */}
+          {isComplete && !isClaimed && (
+            <TouchableOpacity
+              style={styles.claimBadgeBtn}
+              onPress={() => handleClaimBadge(section.sectionId)}
+              disabled={claimingSection === section.sectionId}
+              activeOpacity={0.7}
+            >
+              {claimingSection === section.sectionId ? (
+                <ActivityIndicator size="small" color="#FFF" />
+              ) : (
+                <>
+                  <MaterialCommunityIcons
+                    name="shield-check"
+                    size={12}
+                    color="#FFF"
+                  />
+                  <Text style={styles.claimBadgeBtnText}>Claim</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          )}
+
+          {/* Progress count at bottom center, overlapping border */}
+          <View style={[styles.progressBadge, { backgroundColor: cardBg }]}>
             <Text
               style={[
-                styles.progressText,
-                { color: theme.isDark ? "#AAA" : "#666" },
+                styles.progressBadgeText,
+                { color: colors.textSecondary },
               ]}
             >
               {earnedCount}/{total}
             </Text>
-          </View>
-
-          {/* Difficulty + Claim */}
-          <View style={styles.sectionFooter}>
-            <View
-              style={[
-                styles.difficultyChip,
-                {
-                  backgroundColor: DIFFICULTY_META[maxDifficulty].color + "20",
-                },
-              ]}
-            >
-              <Text
-                style={[
-                  styles.difficultyText,
-                  { color: DIFFICULTY_META[maxDifficulty].color },
-                ]}
-              >
-                Up to {DIFFICULTY_META[maxDifficulty].label}
-              </Text>
-            </View>
-            {isComplete && !isClaimed && (
-              <TouchableOpacity
-                style={[styles.claimButton, { backgroundColor: "#34C759" }]}
-                onPress={() => handleClaimBadge(section.sectionId)}
-                disabled={claimingSection === section.sectionId}
-              >
-                {claimingSection === section.sectionId ? (
-                  <ActivityIndicator size="small" color="#FFF" />
-                ) : (
-                  <Text style={styles.claimButtonText}>Claim Badge</Text>
-                )}
-              </TouchableOpacity>
-            )}
           </View>
         </TouchableOpacity>
       );
@@ -350,23 +404,31 @@ export default function AchievementsHubScreen() {
       claimedSet,
       claimingSection,
       unclaimedBySection,
-      theme,
+      isDark,
       colors,
       navigation,
       handleClaimBadge,
     ],
   );
 
+  const bgColor = colors.background;
+  const gradientTransparent = isDark ? "rgba(0,0,0,0)" : "rgba(255,255,255,0)";
+  const gradientSolid = bgColor;
+
+  const overallProgress =
+    totalAchievements > 0 ? earnedSet.size / totalAchievements : 0;
+  const progressPct = Math.round(overallProgress * 100);
+
   if (loading) {
     return (
       <SafeAreaView
-        style={[
-          styles.container,
-          { backgroundColor: theme.isDark ? "#000" : colors.background },
-        ]}
+        style={[styles.container, { backgroundColor: colors.background }]}
       >
         <View style={styles.center}>
           <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
+            Loading achievements...
+          </Text>
         </View>
       </SafeAreaView>
     );
@@ -374,147 +436,300 @@ export default function AchievementsHubScreen() {
 
   return (
     <SafeAreaView
-      style={[
-        styles.container,
-        { backgroundColor: theme.isDark ? "#000" : colors.background },
-      ]}
+      style={[styles.container, { backgroundColor: colors.background }]}
     >
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity
           onPress={() => navigation.goBack()}
           style={styles.backButton}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
           <MaterialCommunityIcons
             name="arrow-left"
             size={24}
-            color={theme.isDark ? "#FFF" : "#000"}
+            color={colors.text}
           />
         </TouchableOpacity>
-        <Text
-          style={[
-            styles.headerTitle,
-            { color: theme.isDark ? "#FFF" : "#000" },
-          ]}
-        >
+        <Text style={[styles.headerTitle, { color: colors.text }]}>
           Achievements
         </Text>
         <View style={styles.headerSpacer} />
       </View>
 
-      {/* Overall progress + unclaimed summary */}
+      {/* Search bar — OUTSIDE FlatList to prevent keyboard dismissal */}
       <View
         style={[
-          styles.overallCard,
-          { backgroundColor: theme.isDark ? "#1C1C1E" : "#F2F2F7" },
+          styles.searchBar,
+          {
+            backgroundColor: isDark ? colors.surfaceVariant : colors.surface,
+            borderColor: searchFocused ? colors.primary + "60" : "transparent",
+            borderWidth: 1.5,
+          },
         ]}
       >
-        <MaterialCommunityIcons name="trophy" size={28} color="#FFD700" />
-        <View style={styles.overallInfo}>
-          <Text
-            style={[
-              styles.overallTitle,
-              { color: theme.isDark ? "#FFF" : "#000" },
-            ]}
+        <MaterialCommunityIcons
+          name="magnify"
+          size={20}
+          color={searchFocused ? colors.primary : colors.textMuted}
+        />
+        <TextInput
+          ref={searchInputRef}
+          style={[styles.searchInput, { color: colors.text }]}
+          placeholder="Search achievements..."
+          placeholderTextColor={colors.textMuted}
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          onFocus={() => setSearchFocused(true)}
+          onBlur={() => setSearchFocused(false)}
+          autoCorrect={false}
+          autoCapitalize="none"
+          returnKeyType="search"
+        />
+        {searchQuery.length > 0 && (
+          <TouchableOpacity
+            onPress={() => {
+              setSearchQuery("");
+              searchInputRef.current?.blur();
+            }}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
-            {earnedSet.size} / {totalAchievements} Achievements
-          </Text>
-          <View
-            style={[
-              styles.progressBarBg,
-              { backgroundColor: theme.isDark ? "#333" : "#DDD" },
-            ]}
-          >
-            <View
-              style={[
-                styles.progressBarFill,
-                {
-                  width: `${totalAchievements > 0 ? (earnedSet.size / totalAchievements) * 100 : 0}%`,
-                  backgroundColor: colors.primary,
-                },
-              ]}
+            <MaterialCommunityIcons
+              name="close-circle"
+              size={18}
+              color={colors.textMuted}
             />
-          </View>
-          {totalUnclaimed > 0 && (
-            <Text style={styles.unclaimedSummaryText}>
-              {totalUnclaimed} unclaimed reward{totalUnclaimed !== 1 ? "s" : ""}{" "}
-              (+{totalUnclaimedTokens} tokens)
-            </Text>
-          )}
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {searchQuery.trim().length > 0 && (
+        <Text
+          style={[styles.searchResultsText, { color: colors.textSecondary }]}
+        >
+          {processedSections.length === 0
+            ? "No matching sections"
+            : `${processedSections.length} section${processedSections.length !== 1 ? "s" : ""} (${searchMatchCount} achievement${searchMatchCount !== 1 ? "s" : ""} match)`}
+        </Text>
+      )}
+
+      {/* Filter chips — horizontal scroll with gradient edges */}
+      <View style={styles.filterContainer}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filterScrollContent}
+          keyboardShouldPersistTaps="always"
+        >
+          {FILTER_CHIPS.map((chip) => {
+            const isActive = activeFilter === chip.key;
+            return (
+              <TouchableOpacity
+                key={chip.key}
+                style={[
+                  styles.filterChip,
+                  {
+                    backgroundColor: isActive
+                      ? colors.primary
+                      : isDark
+                        ? colors.surfaceVariant
+                        : colors.surfaceVariant,
+                    borderColor: isActive ? colors.primary : colors.border,
+                    borderWidth: 1,
+                  },
+                ]}
+                onPress={() => setActiveFilter(chip.key)}
+                activeOpacity={0.7}
+              >
+                <MaterialCommunityIcons
+                  name={chip.icon as any}
+                  size={14}
+                  color={isActive ? "#FFF" : colors.textSecondary}
+                />
+                <Text
+                  style={[
+                    styles.filterChipText,
+                    { color: isActive ? "#FFF" : colors.textSecondary },
+                  ]}
+                >
+                  {chip.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+        {/* Left fade gradient */}
+        <View style={styles.gradientLeft} pointerEvents="none">
+          <LinearGradient
+            colors={[gradientSolid, gradientTransparent]}
+            start={{ x: 0, y: 0.5 }}
+            end={{ x: 1, y: 0.5 }}
+            style={StyleSheet.absoluteFill}
+          />
+        </View>
+        {/* Right fade gradient */}
+        <View style={styles.gradientRight} pointerEvents="none">
+          <LinearGradient
+            colors={[gradientTransparent, gradientSolid]}
+            start={{ x: 0, y: 0.5 }}
+            end={{ x: 1, y: 0.5 }}
+            style={StyleSheet.absoluteFill}
+          />
         </View>
       </View>
 
-      {/* Filter chips */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.filterRow}
-      >
-        {FILTER_CHIPS.map((chip) => {
-          const isActive = activeFilter === chip.key;
-          return (
-            <TouchableOpacity
-              key={chip.key}
-              style={[
-                styles.filterChip,
-                {
-                  backgroundColor: isActive
-                    ? colors.primary
-                    : theme.isDark
-                      ? "#2C2C2E"
-                      : "#E8E8E8",
-                },
-              ]}
-              onPress={() => setActiveFilter(chip.key)}
-              activeOpacity={0.7}
-            >
-              <Text
+      {/* Main content */}
+      <Animated.View style={{ flex: 1, opacity: fadeAnim }}>
+        <FlatList
+          data={processedSections}
+          keyExtractor={(item) => item.sectionId}
+          renderItem={renderSectionCard}
+          numColumns={2}
+          ListHeaderComponent={
+            <>
+              {/* Hero progress card */}
+              <View
                 style={[
-                  styles.filterChipText,
+                  styles.heroCard,
                   {
-                    color: isActive ? "#FFF" : theme.isDark ? "#CCC" : "#444",
+                    backgroundColor: isDark
+                      ? colors.surfaceVariant
+                      : colors.surface,
                   },
                 ]}
               >
-                {chip.label}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </ScrollView>
+                <View style={styles.heroTopRow}>
+                  <View style={styles.heroIconWrap}>
+                    <MaterialCommunityIcons
+                      name="trophy"
+                      size={32}
+                      color="#FFD700"
+                    />
+                  </View>
+                  <View style={styles.heroInfo}>
+                    <Text style={[styles.heroTitle, { color: colors.text }]}>
+                      {earnedSet.size} of {totalAchievements}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.heroSubtitle,
+                        { color: colors.textSecondary },
+                      ]}
+                    >
+                      achievements earned
+                    </Text>
+                  </View>
+                  <View
+                    style={[
+                      styles.heroPctWrap,
+                      { backgroundColor: colors.primary + "18" },
+                    ]}
+                  >
+                    <Text
+                      style={[styles.heroPctText, { color: colors.primary }]}
+                    >
+                      {progressPct}%
+                    </Text>
+                  </View>
+                </View>
 
-      {/* Section list */}
-      <FlatList
-        data={filteredSections}
-        keyExtractor={(item) => item.sectionId}
-        renderItem={renderSection}
-        contentContainerStyle={styles.list}
-        showsVerticalScrollIndicator={false}
-        ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Text
-              style={[
-                styles.emptyText,
-                { color: theme.isDark ? "#666" : "#999" },
-              ]}
-            >
-              No sections in this category
-            </Text>
-          </View>
-        }
-      />
+                <View
+                  style={[
+                    styles.heroProgressTrack,
+                    {
+                      backgroundColor: isDark
+                        ? colors.background
+                        : colors.surfaceVariant,
+                    },
+                  ]}
+                >
+                  <View
+                    style={[
+                      styles.heroProgressFill,
+                      {
+                        width: `${overallProgress * 100}%`,
+                        backgroundColor: colors.primary,
+                      },
+                    ]}
+                  />
+                </View>
+
+                {totalUnclaimed > 0 && (
+                  <View
+                    style={[
+                      styles.heroUnclaimedBar,
+                      { backgroundColor: colors.warning + "12" },
+                    ]}
+                  >
+                    <MaterialCommunityIcons
+                      name="gift-outline"
+                      size={16}
+                      color={colors.warning}
+                    />
+                    <Text
+                      style={[
+                        styles.heroUnclaimedText,
+                        { color: colors.warning },
+                      ]}
+                    >
+                      {totalUnclaimed} unclaimed reward
+                      {totalUnclaimed !== 1 ? "s" : ""} — +
+                      {totalUnclaimedTokens} tokens waiting
+                    </Text>
+                  </View>
+                )}
+              </View>
+
+              <Text
+                style={[styles.sectionCountLabel, { color: colors.textMuted }]}
+              >
+                {processedSections.length} section
+                {processedSections.length !== 1 ? "s" : ""}
+              </Text>
+            </>
+          }
+          contentContainerStyle={styles.list}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="always"
+          keyboardDismissMode="on-drag"
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <MaterialCommunityIcons
+                name={
+                  searchQuery.length > 0 ? "magnify-close" : "trophy-broken"
+                }
+                size={48}
+                color={colors.textMuted}
+              />
+              <Text
+                style={[styles.emptyTitle, { color: colors.textSecondary }]}
+              >
+                {searchQuery.length > 0
+                  ? "No results found"
+                  : "No sections in this category"}
+              </Text>
+              <Text style={[styles.emptyDesc, { color: colors.textMuted }]}>
+                {searchQuery.length > 0
+                  ? "Try a different search term or filter"
+                  : "Try selecting a different filter above"}
+              </Text>
+            </View>
+          }
+        />
+      </Animated.View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  center: { flex: 1, justifyContent: "center", alignItems: "center" },
+  center: { flex: 1, justifyContent: "center", alignItems: "center", gap: 12 },
+  loadingText: { fontSize: 14, fontWeight: "500" },
   header: {
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 10,
   },
   backButton: { padding: 4 },
   headerTitle: {
@@ -522,100 +737,215 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: "700",
     textAlign: "center",
+    letterSpacing: 0.3,
   },
   headerSpacer: { width: 32 },
-  overallCard: {
+  searchBar: {
     flexDirection: "row",
     alignItems: "center",
-    marginHorizontal: 16,
-    marginBottom: 12,
     borderRadius: 12,
-    padding: 16,
-    gap: 12,
+    paddingHorizontal: 14,
+    paddingVertical: Platform.OS === "ios" ? 10 : 4,
+    gap: 10,
+    marginHorizontal: 16,
+    marginBottom: 10,
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000",
+        shadowOpacity: 0.04,
+        shadowRadius: 4,
+        shadowOffset: { width: 0, height: 2 },
+      },
+      android: { elevation: 1 },
+    }),
   },
-  overallInfo: { flex: 1, gap: 6 },
-  overallTitle: { fontSize: 16, fontWeight: "700" },
-  unclaimedSummaryText: {
+  searchInput: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: "500",
+    paddingVertical: 0,
+  },
+  searchResultsText: {
     fontSize: 12,
-    fontWeight: "600",
-    color: "#FF9500",
+    fontWeight: "500",
+    marginBottom: 4,
+    paddingHorizontal: 20,
   },
-  filterRow: {
+  filterContainer: {
+    position: "relative",
+    marginBottom: 10,
+  },
+  filterScrollContent: {
     paddingHorizontal: 16,
-    paddingBottom: 12,
     gap: 8,
+  },
+  gradientLeft: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 20,
+  },
+  gradientRight: {
+    position: "absolute",
+    right: 0,
+    top: 0,
+    bottom: 0,
+    width: 20,
   },
   filterChip: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 16,
+    flexDirection: "row",
     alignItems: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 20,
+    gap: 5,
+  },
+  filterChipText: { fontSize: 12.5, fontWeight: "600" },
+  list: { paddingHorizontal: 16, paddingBottom: 40 },
+  heroCard: {
+    borderRadius: 16,
+    padding: 18,
+    marginBottom: 14,
+    gap: 12,
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000",
+        shadowOpacity: 0.06,
+        shadowRadius: 8,
+        shadowOffset: { width: 0, height: 3 },
+      },
+      android: { elevation: 3 },
+    }),
+  },
+  heroTopRow: { flexDirection: "row", alignItems: "center", gap: 14 },
+  heroIconWrap: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: "#FFD70018",
     justifyContent: "center",
-    minHeight: 36,
+    alignItems: "center",
   },
-  filterChipText: {
-    fontSize: 13,
-    fontWeight: "600",
-    lineHeight: 18,
+  heroInfo: { flex: 1 },
+  heroTitle: { fontSize: 22, fontWeight: "800", letterSpacing: -0.3 },
+  heroSubtitle: { fontSize: 13, fontWeight: "500", marginTop: 1 },
+  heroPctWrap: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 10,
   },
-  list: { paddingHorizontal: 16, paddingBottom: 32, gap: 12 },
-  sectionCard: {
-    borderRadius: 12,
-    padding: 16,
-    gap: 10,
-    shadowColor: "#000",
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
-  },
-  sectionHeader: { flexDirection: "row", alignItems: "center", gap: 12 },
-  sectionIcon: { fontSize: 28 },
-  sectionTitleArea: { flex: 1 },
-  sectionNameRow: {
+  heroPctText: { fontSize: 16, fontWeight: "800", letterSpacing: -0.2 },
+  heroProgressTrack: { height: 6, borderRadius: 3, overflow: "hidden" },
+  heroProgressFill: { height: "100%", borderRadius: 3 },
+  heroUnclaimedBar: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-  },
-  sectionName: { fontSize: 16, fontWeight: "700" },
-  sectionDesc: { fontSize: 12, marginTop: 2 },
-  unclaimedBadge: {
-    backgroundColor: "#FF9500",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     borderRadius: 10,
-    minWidth: 20,
-    height: 20,
+  },
+  heroUnclaimedText: { fontSize: 12.5, fontWeight: "600", flex: 1 },
+  sectionCountLabel: {
+    fontSize: 11,
+    fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+    marginBottom: 10,
+    paddingHorizontal: 2,
+  },
+  sectionCard: {
+    flex: 1,
+    borderRadius: 14,
+    padding: 12,
+    paddingBottom: 18,
+    marginBottom: 14,
+    alignItems: "center",
+    position: "relative",
+    overflow: "visible",
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000",
+        shadowOpacity: 0.04,
+        shadowRadius: 4,
+        shadowOffset: { width: 0, height: 2 },
+      },
+      android: { elevation: 2 },
+    }),
+  },
+  unclaimedIconWrap: {
+    position: "absolute",
+    top: 8,
+    right: 8,
+    zIndex: 1,
+  },
+  claimedIconWrap: {
+    position: "absolute",
+    top: 8,
+    right: 8,
+    zIndex: 1,
+  },
+  sectionIconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
     justifyContent: "center",
     alignItems: "center",
-    paddingHorizontal: 6,
+    marginTop: 4,
+    marginBottom: 8,
   },
-  unclaimedBadgeText: {
+  sectionIcon: { fontSize: 26 },
+  cardName: {
+    fontSize: 13,
+    fontWeight: "700",
+    letterSpacing: -0.1,
+    textAlign: "center",
+    lineHeight: 17,
+  },
+  cardTrailing: {
+    position: "absolute",
+    bottom: 6,
+    right: 6,
+  },
+  unclaimedCircle: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: PURPLE,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  unclaimedCircleText: {
     color: "#FFF",
     fontSize: 11,
-    fontWeight: "700",
+    fontWeight: "800",
   },
-  progressRow: { flexDirection: "row", alignItems: "center", gap: 8 },
-  progressBarBg: { flex: 1, height: 8, borderRadius: 4, overflow: "hidden" },
-  progressBarFill: { height: "100%", borderRadius: 4 },
-  progressText: {
-    fontSize: 12,
-    fontWeight: "600",
-    minWidth: 28,
-    textAlign: "right",
-  },
-  sectionFooter: {
+  claimBadgeBtn: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
+    backgroundColor: "#34C759",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    gap: 4,
+    marginTop: 6,
   },
-  difficultyChip: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
-  difficultyText: { fontSize: 11, fontWeight: "600" },
-  claimButton: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 8 },
-  claimButtonText: { color: "#FFF", fontSize: 13, fontWeight: "700" },
-  emptyContainer: {
-    paddingVertical: 40,
-    alignItems: "center",
+  claimBadgeBtnText: { color: "#FFF", fontSize: 11, fontWeight: "700" },
+  progressBadge: {
+    position: "absolute",
+    bottom: -8,
+    alignSelf: "center",
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
   },
-  emptyText: {
-    fontSize: 14,
+  progressBadgeText: {
+    fontSize: 13,
+    fontWeight: "800",
+    letterSpacing: -0.2,
   },
+  emptyContainer: { paddingVertical: 60, alignItems: "center", gap: 8 },
+  emptyTitle: { fontSize: 16, fontWeight: "600", marginTop: 4 },
+  emptyDesc: { fontSize: 13, textAlign: "center", maxWidth: 240 },
 });

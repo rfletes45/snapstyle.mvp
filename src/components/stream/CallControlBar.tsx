@@ -4,7 +4,7 @@
  * Polished, reusable bottom control bar for active calls and voice rooms.
  * Provides consistent hierarchy:
  *   - Core media toggles: mic, camera (when applicable)
- *   - Secondary: speaker route, camera flip, screen share
+ *   - Secondary: speaker route, camera flip
  *   - Primary destructive: leave / end call
  *
  * All controls reflect real capability and current state.
@@ -47,15 +47,6 @@ export interface CallControlBarProps {
   /** Whether flip is available (camera must be on) */
   showFlipCamera?: boolean;
 
-  /** Whether screen share is currently active */
-  isScreenSharing?: boolean;
-  /** Toggle screen share */
-  onToggleScreenShare?: () => void;
-  /** Whether screen share control should be shown */
-  showScreenShare?: boolean;
-  /** Reason screen share is unavailable */
-  screenShareDisabledReason?: string;
-
   /** Disable mic control (e.g., before call is fully joined) */
   micDisabled?: boolean;
 
@@ -80,18 +71,12 @@ export function CallControlBar({
   showSpeaker = false,
   onFlipCamera,
   showFlipCamera = false,
-  isScreenSharing = false,
-  onToggleScreenShare,
-  showScreenShare = false,
-  screenShareDisabledReason,
   micDisabled = false,
   onLeave,
   leaveLabel = "Leave",
 }: CallControlBarProps) {
   const { colors } = useAppTheme();
   const insets = useSafeAreaInsets();
-
-  const isScreenShareDisabled = showScreenShare && !!screenShareDisabledReason;
 
   return (
     <View
@@ -150,20 +135,6 @@ export function CallControlBar({
           />
         )}
 
-        {/* ── Screen Share ───────────────────────────────── */}
-        {showScreenShare && onToggleScreenShare && (
-          <ControlPill
-            icon={isScreenSharing ? "monitor-off" : "monitor-share"}
-            label={isScreenSharing ? "Stop Share" : "Share"}
-            isActive={isScreenSharing}
-            activeColor="#FF9800"
-            disabled={isScreenShareDisabled}
-            disabledReason={screenShareDisabledReason}
-            onPress={onToggleScreenShare}
-            colors={colors}
-          />
-        )}
-
         {/* ── Leave / End ────────────────────────────────── */}
         <Pressable
           onPress={onLeave}
@@ -193,7 +164,6 @@ interface ControlPillProps {
   isActive?: boolean;
   activeColor?: string;
   disabled?: boolean;
-  disabledReason?: string;
   colors: ThemeColors;
 }
 

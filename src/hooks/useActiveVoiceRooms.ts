@@ -24,6 +24,10 @@ export interface ActiveVoiceRoom {
 interface UseActiveVoiceRoomsResult {
   rooms: ActiveVoiceRoom[];
   loading: boolean;
+  error: boolean;
+  errorMessage: string | null;
+  hasPartialFailures: boolean;
+  lastUpdatedAt: number | null;
   refresh: () => Promise<void>;
 }
 
@@ -38,13 +42,25 @@ export function useActiveVoiceRooms(
 
   const [rooms, setRooms] = useState<ActiveVoiceRoom[]>([]);
   const [loading, setLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [hasPartialFailures, setHasPartialFailures] = useState(false);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
   const mountedRef = useRef(true);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const fetchingRef = useRef(false);
 
   const fetchRooms = useCallback(
     async (force = false) => {
-      if (!uid || !CALL_FEATURES.CALLS_ENABLED) return;
+      if (!uid || !CALL_FEATURES.CALLS_ENABLED) {
+        if (mountedRef.current) {
+          setRooms([]);
+          setErrorMessage(null);
+          setHasPartialFailures(false);
+          setLastUpdatedAt(null);
+          setLoading(false);
+        }
+        return;
+      }
       if (!force && fetchingRef.current) return;
       fetchingRef.current = true;
 
@@ -60,39 +76,70 @@ export function useActiveVoiceRooms(
 
         const results = await Promise.allSettled(
           groupsToCheck.map(async (group) => {
-            const result = await queryVoiceChannel(group.id);
-            if (!result) return null;
-
-            const participants = result.state.participants ?? [];
-            if (participants.length === 0) return null;
-
             return {
-              groupId: group.id,
-              groupName: group.name,
-              groupAvatar: group.avatarUrl,
-              channelId: `voice_channel_${group.id}`,
-              occupants: participants.map((p) => ({
-                userId: p.userId,
-                name: p.name || p.userId,
-                image: p.image || undefined,
-              })),
-              occupantCount: participants.length,
-            } as ActiveVoiceRoom;
+              group,
+              result: await queryVoiceChannel(group.id),
+            };
           }),
         );
 
         if (!mountedRef.current) return;
 
         const active: ActiveVoiceRoom[] = [];
+        let queryErrorCount = 0;
         for (const r of results) {
-          if (r.status === "fulfilled" && r.value !== null) {
-            active.push(r.value);
+          if (r.status !== "fulfilled") {
+            queryErrorCount += 1;
+            continue;
           }
+
+          const { group, result } = r.value;
+          if (result.status === "error") {
+            queryErrorCount += 1;
+            continue;
+          }
+          if (result.status !== "active") {
+            continue;
+          }
+
+          const participants = result.state.participants ?? [];
+          if (participants.length === 0) continue;
+
+          active.push({
+            groupId: group.id,
+            groupName: group.name,
+            groupAvatar: group.avatarUrl,
+            channelId: `voice_channel_${group.id}`,
+            occupants: participants.map((p) => ({
+              userId: p.userId,
+              name: p.name || p.userId,
+              image: p.image || undefined,
+            })),
+            occupantCount: participants.length,
+          });
         }
 
         setRooms(active);
-      } catch {
-        // Swallow — groups or Stream may not be ready
+        if (queryErrorCount > 0 && __DEV__) {
+          console.warn(
+            `[useActiveVoiceRooms] ${queryErrorCount} room discovery request(s) failed during refresh`,
+          );
+        }
+        setErrorMessage(
+          queryErrorCount > 0
+            ? active.length > 0
+              ? "Some active room statuses could not be refreshed."
+              : "Active rooms are temporarily unavailable."
+            : null,
+        );
+        setHasPartialFailures(queryErrorCount > 0 && active.length > 0);
+        setLastUpdatedAt(Date.now());
+      } catch (err) {
+        console.warn("[useActiveVoiceRooms] Failed to refresh active rooms:", err);
+        if (mountedRef.current) {
+          setErrorMessage("Active rooms are temporarily unavailable.");
+          setHasPartialFailures(false);
+        }
       } finally {
         fetchingRef.current = false;
         if (mountedRef.current) setLoading(false);
@@ -113,13 +160,16 @@ export function useActiveVoiceRooms(
     mountedRef.current = true;
     fetchRooms();
 
-    intervalRef.current = setInterval(fetchRooms, interval);
+    // Add jitter (±20%) to prevent synchronized polling storms
+    const jitter = interval * (0.8 + Math.random() * 0.4);
+    intervalRef.current = setInterval(fetchRooms, jitter);
 
     const subscription = AppState.addEventListener("change", (state) => {
       if (state === "active") {
         fetchRooms();
         if (!intervalRef.current) {
-          intervalRef.current = setInterval(fetchRooms, interval);
+          const resumeJitter = interval * (0.8 + Math.random() * 0.4);
+          intervalRef.current = setInterval(fetchRooms, resumeJitter);
         }
       } else if (intervalRef.current) {
         clearInterval(intervalRef.current);
@@ -137,5 +187,13 @@ export function useActiveVoiceRooms(
     };
   }, [uid, interval, fetchRooms]);
 
-  return { rooms, loading, refresh };
+  return {
+    rooms,
+    loading,
+    error: errorMessage !== null,
+    errorMessage,
+    hasPartialFailures,
+    lastUpdatedAt,
+    refresh,
+  };
 }

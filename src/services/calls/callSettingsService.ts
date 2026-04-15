@@ -73,8 +73,11 @@ class CallSettingsService {
     try {
       // Try local storage first (faster)
       const localData = await AsyncStorage.getItem(SETTINGS_STORAGE_KEY);
+      let localUpdatedAt = 0;
       if (localData) {
-        this.settings = { ...DEFAULT_CALL_SETTINGS, ...JSON.parse(localData) };
+        const parsed = JSON.parse(localData);
+        localUpdatedAt = parsed._lastUpdatedAt ?? 0;
+        this.settings = { ...DEFAULT_CALL_SETTINGS, ...parsed };
       }
 
       // Then sync from Firestore if authenticated
@@ -84,10 +87,18 @@ class CallSettingsService {
         const docSnap = await getDoc(docRef);
 
         if (docSnap.exists()) {
-          const cloudSettings = docSnap.data() as Partial<CallSettings>;
-          this.settings = { ...this.settings, ...cloudSettings };
+          const cloudSettings = docSnap.data() as Partial<CallSettings> & {
+            _lastUpdatedAt?: number;
+          };
+          const cloudUpdatedAt = cloudSettings._lastUpdatedAt ?? 0;
 
-          // Update local storage with cloud data
+          // Only overwrite local with cloud if cloud is newer (or local has
+          // no timestamp, meaning it was written before this fix)
+          if (cloudUpdatedAt >= localUpdatedAt) {
+            this.settings = { ...this.settings, ...cloudSettings };
+          }
+
+          // Sync the merged result back to local storage
           await AsyncStorage.setItem(
             SETTINGS_STORAGE_KEY,
             JSON.stringify(this.settings),
@@ -133,19 +144,27 @@ class CallSettingsService {
       // Merge with existing settings
       this.settings = { ...this.settings, ...updates };
 
-      // Save to local storage
+      // Save to local storage immediately (without timestamp — stamped after cloud sync)
       await AsyncStorage.setItem(
         SETTINGS_STORAGE_KEY,
         JSON.stringify(this.settings),
       );
 
-      // Save to Firestore if authenticated
+      // Save to Firestore if authenticated — stamp _lastUpdatedAt only on success
+      // so a failed write doesn't prevent cloud data from syncing on next load
       const userId = getAuth().currentUser?.uid;
       if (userId) {
+        const now = Date.now();
+        const withTimestamp = { ...this.settings, _lastUpdatedAt: now };
         const docRef = doc(getDb(), "Users", userId, "Settings", "calls");
         // Strip undefined values — Firestore rejects them
-        const cleaned = JSON.parse(JSON.stringify(this.settings));
+        const cleaned = JSON.parse(JSON.stringify(withTimestamp));
         await setDoc(docRef, cleaned, { merge: true });
+        // Firestore succeeded — persist the timestamp locally too
+        await AsyncStorage.setItem(
+          SETTINGS_STORAGE_KEY,
+          JSON.stringify(withTimestamp),
+        );
       }
 
       // Notify listeners
@@ -165,6 +184,7 @@ class CallSettingsService {
     try {
       this.settings = { ...DEFAULT_CALL_SETTINGS };
 
+      // Save to local storage immediately (without timestamp)
       await AsyncStorage.setItem(
         SETTINGS_STORAGE_KEY,
         JSON.stringify(this.settings),
@@ -172,9 +192,16 @@ class CallSettingsService {
 
       const userId = getAuth().currentUser?.uid;
       if (userId) {
+        const now = Date.now();
+        const withTimestamp = { ...this.settings, _lastUpdatedAt: now };
         const docRef = doc(getDb(), "Users", userId, "Settings", "calls");
-        const cleaned = JSON.parse(JSON.stringify(this.settings));
+        const cleaned = JSON.parse(JSON.stringify(withTimestamp));
         await setDoc(docRef, cleaned);
+        // Firestore succeeded — persist timestamp locally
+        await AsyncStorage.setItem(
+          SETTINGS_STORAGE_KEY,
+          JSON.stringify(withTimestamp),
+        );
       }
 
       this.notifyListeners();

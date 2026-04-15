@@ -16,6 +16,7 @@
  */
 
 import { ProfilePicture } from "@/components/profile/ProfilePicture/ProfilePicture";
+import { CallConnectionBadge } from "@/components/stream/CallConnectionBadge";
 import type { AudioRoute } from "@/components/stream/AudioRoutePicker";
 import {
   AudioRoutePicker,
@@ -24,6 +25,7 @@ import {
 } from "@/components/stream/AudioRoutePicker";
 import { CallControlBar } from "@/components/stream/CallControlBar";
 import { useStreamCall } from "@/contexts/StreamCallContext";
+import { callSettingsService } from "@/services/calls";
 import { useAppTheme } from "@/store/ThemeContext";
 import type { MainStackParamList } from "@/types/navigation/root";
 import { requestCameraPermission } from "@/utils/permissions";
@@ -91,33 +93,42 @@ export default function DirectCallScreen({ route, navigation }: Props) {
   // we never fire it again — which would cause redundant state resets and
   // rapid <StreamCall> mount/unmount cycles that trigger hook ordering errors.
   const endedRef = useRef(false);
+  const dismissedRef = useRef(false);
+
+  const dismissScreen = useCallback(() => {
+    if (dismissedRef.current) return;
+    dismissedRef.current = true;
+    if (navigation.canGoBack()) navigation.goBack();
+  }, [navigation]);
 
   const handleEndCall = useCallback(async () => {
     if (endedRef.current) return;
     endedRef.current = true;
+    ringtoneService?.stopRingtone();
     try {
       await endCall();
     } catch (err) {
       console.error("[DirectCallScreen] endCall error:", err);
     } finally {
-      if (navigation.canGoBack()) navigation.goBack();
+      dismissScreen();
     }
-  }, [endCall, navigation]);
+  }, [dismissScreen, endCall]);
 
   // Minimize — go back but stay in call
   const handleMinimize = useCallback(() => {
     if (navigation.canGoBack()) navigation.goBack();
   }, [navigation]);
 
-  // Auto-dismiss if no active call after a short delay
+  // Auto-dismiss if no active call after a short delay.
+  // Skip if endedRef is already set — handleEndCall already navigated away.
   useEffect(() => {
-    if (!activeCall) {
+    if (!activeCall && !endedRef.current) {
       const timer = setTimeout(() => {
-        if (navigation.canGoBack()) navigation.goBack();
-      }, 500);
+        dismissScreen();
+      }, 350);
       return () => clearTimeout(timer);
     }
-  }, [activeCall, navigation]);
+  }, [activeCall, dismissScreen]);
 
   if (!activeCall) {
     return (
@@ -181,11 +192,19 @@ function DirectCallContent({
   const callingState = useCallCallingState();
   const participants = useParticipants();
   const { optimisticIsMute: isMuted, microphone } = useMicrophoneState();
-  const { optimisticIsMute: isCameraOff, camera } = useCameraState();
+  const {
+    optimisticIsMute: isCameraOff,
+    camera,
+    direction: cameraDirection,
+  } = useCameraState();
   const isVideo = mode === "video";
   const call = useCall();
   const isJoined = callingState === CallingState.JOINED;
   const isInPiPMode = useIsInPiPMode();
+  const shouldMirrorLocalVideo =
+    cameraDirection === "front"
+      ? callSettingsService.getSettingsSync().mirrorFrontCamera
+      : false;
 
   // Speaker toggle state — tracked locally (SDK doesn't provide useSpeakerState on RN)
   const [isSpeakerOn, setIsSpeakerOn] = useState(isVideo); // Default speaker ON for video
@@ -244,14 +263,20 @@ function DirectCallContent({
     };
   }, []);
 
-  // Initialize speaker state for video calls
   useEffect(() => {
-    if (isVideo && callManager?.speaker?.setForceSpeakerphoneOn) {
+    return () => {
+      ringtoneService?.stopRingtone();
+    };
+  }, []);
+
+  // Initialize speaker state for video calls — only after fully joined
+  useEffect(() => {
+    if (isVideo && isJoined && callManager?.speaker?.setForceSpeakerphoneOn) {
       callManager.speaker.setForceSpeakerphoneOn(true);
       setIsSpeakerOn(true);
       setCurrentAudioRoute("speaker");
     }
-  }, [isVideo]);
+  }, [isVideo, isJoined]);
 
   useEffect(() => {
     if (isInPiPMode && audioRoutePickerVisible) {
@@ -355,6 +380,8 @@ function DirectCallContent({
 
   const displayName = remoteParticipant?.name || recipientName || "Calling...";
   const avatarUrl = remoteParticipant?.image;
+  const remoteConnectionQuality =
+    remoteParticipant?.participant?.connectionQuality;
 
   // Duration timer
   const [duration, setDuration] = useState(0);
@@ -463,7 +490,6 @@ function DirectCallContent({
               objectFit="cover"
               ParticipantLabel={null as any}
               ParticipantReaction={null as any}
-              ParticipantNetworkQualityIndicator={null as any}
               ParticipantVideoFallback={() => (
                 <View style={styles.videoFallback}>
                   <ProfilePicture
@@ -501,8 +527,7 @@ function DirectCallContent({
                   objectFit="cover"
                   ParticipantLabel={null as any}
                   ParticipantReaction={null as any}
-                  ParticipantNetworkQualityIndicator={null as any}
-                  mirror
+                  mirror={shouldMirrorLocalVideo}
                 />
               </View>
             )}
@@ -523,7 +548,13 @@ function DirectCallContent({
                 color="#fff"
               />
             </Pressable>
-            <Text style={styles.videoStatusText}>{statusText}</Text>
+            <View style={styles.videoHeaderCenter}>
+              <Text style={styles.videoStatusText}>{statusText}</Text>
+              <CallConnectionBadge
+                callingState={callingState}
+                connectionQuality={remoteConnectionQuality}
+              />
+            </View>
             <Pressable
               onPress={() => setAudioRoutePickerVisible(true)}
               style={styles.videoBackButton}
@@ -630,6 +661,12 @@ function DirectCallContent({
         <Text style={[styles.statusText, { color: colors.textSecondary }]}>
           {statusText}
         </Text>
+        <View style={styles.connectionBadgeRow}>
+          <CallConnectionBadge
+            callingState={callingState}
+            connectionQuality={remoteConnectionQuality}
+          />
+        </View>
       </View>
 
       {/* Spacer */}
@@ -711,8 +748,12 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  videoStatusText: {
+  videoHeaderCenter: {
     flex: 1,
+    alignItems: "center",
+    gap: 6,
+  },
+  videoStatusText: {
     textAlign: "center",
     color: "#fff",
     fontSize: 14,
@@ -777,5 +818,10 @@ const styles = StyleSheet.create({
   statusText: {
     fontSize: 15,
     fontWeight: "500",
+  },
+  connectionBadgeRow: {
+    minHeight: 28,
+    justifyContent: "center",
+    marginTop: 10,
   },
 });

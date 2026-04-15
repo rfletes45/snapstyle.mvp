@@ -176,6 +176,9 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
   const [memberSearchQuery, setMemberSearchQuery] = useState("");
   const browser = useGroupContentBrowser(groupId);
 
+  // ─── ScrollView ref for programmatic scroll ───────────────────────────
+  const scrollViewRef = useRef<ScrollView>(null);
+
   // ─── Permissions (reactive) ───────────────────────────────────────────
   const {
     can,
@@ -267,6 +270,25 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
   const stickyThreshold = stickyMeasured
     ? heroSpacerHeight + contentSectionOffsetY - TOTAL_HEADER_HEIGHT
     : 99999;
+
+  // ─── Auto-scroll to content top when user starts searching ────────────
+  // When the user types into the search bar, scroll so the content section
+  // is right below the sticky header — results are immediately visible.
+  // Does NOT trigger on tab switches or initial mount.
+  const scrollToContentTop = useCallback(() => {
+    if (stickyMeasured && scrollViewRef.current) {
+      scrollViewRef.current.scrollTo({ y: stickyThreshold, animated: true });
+    }
+  }, [stickyMeasured, stickyThreshold]);
+
+  const hasSearchedRef = useRef(false);
+  useEffect(() => {
+    const hasQuery = !!(memberSearchQuery.trim() || browser.searchQuery.trim());
+    if (hasQuery) {
+      hasSearchedRef.current = true;
+      scrollToContentTop();
+    }
+  }, [memberSearchQuery, browser.searchQuery, scrollToContentTop]);
 
   const searchStickyTranslateY = scrollY.interpolate({
     inputRange: [stickyThreshold, stickyThreshold + 1],
@@ -555,7 +577,11 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
     const pickerOpts: ImagePicker.ImagePickerOptions = {
       mediaTypes: ["images"],
       allowsEditing: true,
-      aspect: [9, 16], // Portrait aspect for chat background
+      // Match the actual device screen aspect ratio so the crop preview
+      // accurately represents what the full-screen chat background will
+      // look like. The background renders with contentFit="cover" on the
+      // full screen, so the picker should frame the same proportions.
+      aspect: [SCREEN_WIDTH, windowHeight] as [number, number],
       quality: 0.8,
     };
 
@@ -1099,9 +1125,25 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
             </View>
           ) : null}
         </View>
+        <Text
+          style={{
+            position: "absolute",
+            top: heroBgHeight + 40,
+            alignSelf: "center",
+            width: "100%",
+            textAlign: "center",
+            fontSize: 20,
+            color: "#000000",
+            fontFamily: "Comic Sans MS",
+          }}
+          pointerEvents="none"
+        >
+          You shouldn't see this 🗿
+        </Text>
 
         {/* ── ScrollView — top visual layer ── */}
         <Animated.ScrollView
+          ref={scrollViewRef as any}
           style={styles.scrollContent}
           contentContainerStyle={[
             styles.scrollContainer,
@@ -1459,7 +1501,9 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
                         { color: colors.textMuted },
                       ]}
                     >
-                      No one is in the voice room right now
+                      {voiceRoom.error
+                        ? voiceRoom.errorMessage || "Live room status unavailable right now"
+                        : "No one is in the voice room right now"}
                     </Text>
                     <TouchableOpacity
                       style={[

@@ -14,20 +14,32 @@ interface TokenResponse {
 }
 
 let cachedApiKey: string | null = null;
+let inflightTokenPromise: Promise<TokenResponse> | null = null;
 
 /**
  * Fetch a Stream Video token from the backend.
  * Also caches the API key for Stream client initialization.
+ * Uses an in-flight promise lock to prevent concurrent duplicate requests.
  */
 export async function fetchStreamToken(): Promise<TokenResponse> {
-  const functions = getFunctionsInstance();
-  const callable = httpsCallable<void, TokenResponse>(
-    functions,
-    "getStreamVideoToken",
-  );
-  const result = await callable();
-  cachedApiKey = result.data.apiKey;
-  return result.data;
+  if (inflightTokenPromise) return inflightTokenPromise;
+
+  inflightTokenPromise = (async () => {
+    const functions = getFunctionsInstance();
+    const callable = httpsCallable<void, TokenResponse>(
+      functions,
+      "getStreamVideoToken",
+    );
+    const result = await callable();
+    cachedApiKey = result.data.apiKey;
+    return result.data;
+  })();
+
+  try {
+    return await inflightTokenPromise;
+  } finally {
+    inflightTokenPromise = null;
+  }
 }
 
 /**
@@ -51,4 +63,5 @@ export function getCachedApiKey(): string | null {
  */
 export function clearTokenCache(): void {
   cachedApiKey = null;
+  inflightTokenPromise = null;
 }

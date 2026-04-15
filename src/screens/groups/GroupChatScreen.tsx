@@ -2243,11 +2243,13 @@ export default function GroupChatScreen({ route, navigation }: Props) {
             onPress={handleJoinVoiceChannel}
             style={styles.callButton}
             accessibilityLabel={
-              isCurrentUserInThisVoiceRoom
-                ? "Return to voice room"
-                : voiceRoom.isActive
-                  ? "Join voice room"
-                  : "Start voice room"
+              voiceRoom.error && !voiceRoom.isActive
+                ? "Voice room status unavailable. Tap to try joining."
+                : isCurrentUserInThisVoiceRoom
+                  ? "Return to voice room"
+                  : voiceRoom.isActive
+                    ? "Join voice room"
+                    : "Start voice room"
             }
             accessibilityRole="button"
           >
@@ -2257,6 +2259,8 @@ export default function GroupChatScreen({ route, navigation }: Props) {
               color={
                 isCurrentUserInThisVoiceRoom
                   ? "#43A047"
+                  : voiceRoom.error && !voiceRoom.isActive
+                    ? colors.warning
                   : voiceRoom.isActive
                     ? colors.primary
                     : colors.textMuted
@@ -2273,10 +2277,12 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     [
       colors.primary,
       colors.textMuted,
+      colors.warning,
       groupId,
       handleJoinVoiceChannel,
       isCurrentUserInThisVoiceRoom,
       navigation,
+      voiceRoom.error,
       voiceRoom.isActive,
       voiceRoom.occupants,
     ],

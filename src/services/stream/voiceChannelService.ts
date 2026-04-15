@@ -12,6 +12,11 @@ import {
   startCallAudioSession,
   stopCallAudioSession,
 } from "./callSessionManager";
+import {
+  applyCallMediaPreferences,
+  applyCallReconnectPolicy,
+  joinCallWithRetry,
+} from "./callRuntime";
 import { getStreamClient } from "./streamClient";
 import { ensureStreamUsersExist } from "./streamUserProvisioning";
 import { getVoiceChannelId } from "./voiceChannelIds";
@@ -38,7 +43,15 @@ export async function joinVoiceChannel(
     }
   }
 
-  await requestCallPermissions({ microphone: true });
+  try {
+    await requestCallPermissions({ microphone: true });
+  } catch (err) {
+    console.warn(
+      "[VoiceChannelService] Permission request failed before room join:",
+      err,
+    );
+    throw err;
+  }
 
   const call = client.call(VOICE_CHANNEL_TYPE, channelId);
 
@@ -58,6 +71,8 @@ export async function joinVoiceChannel(
     );
   }
 
+  applyCallReconnectPolicy(call, `voice channel ${channelId}`);
+
   try {
     await startCallAudioSession("speaker");
   } catch (err) {
@@ -65,18 +80,25 @@ export async function joinVoiceChannel(
   }
 
   try {
-    await call.join({ create: false });
+    await joinCallWithRetry(
+      call,
+      { create: false },
+      `voice channel ${channelId}`,
+    );
     try {
       await call.microphone.enable();
     } catch (err) {
       console.warn("[VoiceChannelService] microphone.enable failed:", err);
     }
+    applyCallMediaPreferences(call, `voice channel ${channelId}`);
   } catch (err: any) {
     await stopCallAudioSession();
     console.error("[VoiceChannelService] join failed:", err);
-    throw new Error(
-      `Unable to join voice channel: ${err?.message ?? "unknown error"}`,
-    );
+    const message = err?.message ?? "unknown error";
+    if (message.includes("Microphone permission is required")) {
+      throw new Error(message);
+    }
+    throw new Error(`Unable to join voice channel: ${message}`);
   }
 
   return call;
@@ -105,6 +127,20 @@ export async function leaveVoiceChannel(call: Call): Promise<void> {
   }
 }
 
+export type VoiceChannelQueryResult =
+  | {
+      status: "active";
+      state: {
+        participants: {
+          userId: string;
+          name?: string;
+          image?: string;
+        }[];
+      };
+    }
+  | { status: "no_room" }
+  | { status: "error"; message: string };
+
 /**
  * Query participant/occupancy info for a voice channel without joining.
  *
@@ -113,15 +149,9 @@ export async function leaveVoiceChannel(call: Call): Promise<void> {
  * occupancy we intentionally hit the same `/calls` endpoint through the low-level
  * client to avoid touching camera/microphone state on iOS.
  */
-export async function queryVoiceChannel(groupId: string): Promise<{
-  state: {
-    participants: {
-      userId: string;
-      name?: string;
-      image?: string;
-    }[];
-  };
-} | null> {
+export async function queryVoiceChannel(
+  groupId: string,
+): Promise<VoiceChannelQueryResult> {
   const client = getStreamClient();
   const channelId = getVoiceChannelId(groupId);
 
@@ -146,7 +176,7 @@ export async function queryVoiceChannel(groupId: string): Promise<{
     });
 
     if (!response.calls || response.calls.length === 0) {
-      return null;
+      return { status: "no_room" };
     }
 
     const participants =
@@ -157,23 +187,23 @@ export async function queryVoiceChannel(groupId: string): Promise<{
       })) ?? [];
 
     if (participants.length === 0) {
-      return null;
+      return { status: "no_room" };
     }
 
-    return { state: { participants } };
+    return { status: "active", state: { participants } };
   } catch (err: any) {
     if (
       err?.message?.includes("not found") ||
       err?.status === 404 ||
       err?.message?.includes("was not found")
     ) {
-      return null;
+      return { status: "no_room" };
     }
 
     console.warn(
       "[VoiceChannelService] queryVoiceChannel failed:",
       err?.message,
     );
-    return null;
+    return { status: "error", message: err?.message ?? "Unknown error" };
   }
 }

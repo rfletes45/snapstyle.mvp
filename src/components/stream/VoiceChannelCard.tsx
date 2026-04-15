@@ -5,31 +5,22 @@
  * Shows:
  * - Current occupancy (who's in the channel)
  * - A join button
- * - Active speaker indicators
- *
- * This component does NOT require the user to be in the channel.
- * It queries the channel state from Stream for occupancy info.
+ * - Live status and refresh errors
  */
 
 import { ProfilePicture } from "@/components/profile/ProfilePicture/ProfilePicture";
 import { useStreamCall } from "@/contexts/StreamCallContext";
+import { useVoiceRoomOccupancy } from "@/hooks/useVoiceRoomOccupancy";
 import { getVoiceChannelId } from "@/services/stream/voiceChannelIds";
 import { useAppTheme } from "@/store/ThemeContext";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 interface VoiceChannelCardProps {
   groupId: string;
   groupName: string;
-  /** Callback when user wants to join — parent should navigate to VoiceChannel screen */
   onJoin: (channelId: string, channelName: string, groupId: string) => void;
-}
-
-interface ChannelOccupant {
-  userId: string;
-  name: string;
-  image?: string;
 }
 
 export default function VoiceChannelCard({
@@ -39,58 +30,24 @@ export default function VoiceChannelCard({
 }: VoiceChannelCardProps) {
   const { isBusy, activeSession } = useStreamCall();
   const { colors } = useAppTheme();
-  const [occupants, setOccupants] = useState<ChannelOccupant[]>([]);
+  const {
+    occupants,
+    isActive,
+    loading,
+    error,
+    errorMessage,
+  } = useVoiceRoomOccupancy(groupId);
 
   const channelId = getVoiceChannelId(groupId);
   const channelName = `${groupName} Voice`;
 
-  // Is the current user already in this channel?
   const isInThisChannel =
     activeSession?.type === "voice_channel" &&
     activeSession.channelId === channelId;
 
-  // Poll occupancy (lightweight — uses queryCalls, no camera hardware)
-  useEffect(() => {
-    let cancelled = false;
-
-    async function fetchOccupancy() {
-      try {
-        const { queryVoiceChannel } =
-          require("@/services/stream/voiceChannelService") as typeof import("@/services/stream/voiceChannelService");
-        const result = await queryVoiceChannel(groupId);
-        if (cancelled) return;
-
-        if (result) {
-          const participants = result.state.participants ?? [];
-          setOccupants(
-            participants.map((p) => ({
-              userId: p.userId,
-              name: p.name || p.userId,
-              image: p.image || undefined,
-            })),
-          );
-        } else {
-          setOccupants([]);
-        }
-      } catch {
-        if (!cancelled) setOccupants([]);
-      }
-    }
-
-    fetchOccupancy();
-    const interval = setInterval(fetchOccupancy, 10_000); // refresh every 10s
-
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-  }, [groupId]);
-
   const handleJoin = useCallback(() => {
     onJoin(channelId, channelName, groupId);
   }, [channelId, channelName, groupId, onJoin]);
-
-  const isActive = occupants.length > 0;
 
   return (
     <View
@@ -124,14 +81,13 @@ export default function VoiceChannelCard({
         )}
       </View>
 
-      {/* Occupancy */}
       {isActive && (
         <View style={styles.occupants}>
-          {occupants.slice(0, 5).map((o) => (
-            <View key={o.userId} style={styles.occupantRow}>
+          {occupants.slice(0, 5).map((occupant) => (
+            <View key={occupant.userId} style={styles.occupantRow}>
               <ProfilePicture
-                url={o.image ?? null}
-                name={o.name}
+                url={occupant.image ?? null}
+                name={occupant.name}
                 size={20}
                 showLoading={false}
               />
@@ -139,7 +95,7 @@ export default function VoiceChannelCard({
                 style={[styles.occupantName, { color: colors.textSecondary }]}
                 numberOfLines={1}
               >
-                {o.name}
+                {occupant.name}
               </Text>
             </View>
           ))}
@@ -151,7 +107,32 @@ export default function VoiceChannelCard({
         </View>
       )}
 
-      {/* Join / In Channel Button */}
+      {!isActive && loading && (
+        <View style={styles.statusRow}>
+          <MaterialCommunityIcons
+            name="progress-clock"
+            size={15}
+            color={colors.textSecondary}
+          />
+          <Text style={[styles.statusText, { color: colors.textSecondary }]}>
+            Checking live room status...
+          </Text>
+        </View>
+      )}
+
+      {!isActive && error && (
+        <View style={styles.statusRow}>
+          <MaterialCommunityIcons
+            name="alert-circle-outline"
+            size={15}
+            color={colors.warning}
+          />
+          <Text style={[styles.statusText, { color: colors.textSecondary }]}>
+            {errorMessage || "Live status unavailable right now"}
+          </Text>
+        </View>
+      )}
+
       {isInThisChannel ? (
         <View style={[styles.joinButton, styles.inChannelButton]}>
           <MaterialCommunityIcons name="headphones" size={18} color="#43A047" />
@@ -229,6 +210,16 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginLeft: 40,
     marginTop: 2,
+  },
+  statusRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 10,
+  },
+  statusText: {
+    fontSize: 12,
+    flex: 1,
   },
   joinButton: {
     flexDirection: "row",

@@ -66,6 +66,9 @@ export default function CallsScreen() {
   const {
     rooms,
     loading: roomsLoading,
+    error: roomsError,
+    errorMessage: roomsErrorMessage,
+    hasPartialFailures: roomsHavePartialFailures,
     refresh: refreshRooms,
   } = useActiveVoiceRooms();
   const {
@@ -130,7 +133,9 @@ export default function CallsScreen() {
 
   // Active rooms section header + cards
   const activeRoomsSection = useMemo(() => {
-    if (!callsEnabled || (rooms.length === 0 && !roomsLoading)) return null;
+    if (!callsEnabled || (rooms.length === 0 && !roomsLoading && !roomsError)) {
+      return null;
+    }
 
     return (
       <View>
@@ -138,26 +143,66 @@ export default function CallsScreen() {
           <Text style={[styles.sectionTitle, { color: colors.text }]}>
             Active Rooms
           </Text>
-          {roomsLoading && rooms.length === 0 && (
+          {roomsLoading && rooms.length === 0 && !roomsError && (
             <ActivityIndicator size="small" color={colors.primary} />
           )}
         </View>
 
-        {rooms.length === 0 && roomsLoading ? (
+        {rooms.length === 0 && roomsLoading && !roomsError ? (
           <View style={styles.loadingRow}>
             <ActivityIndicator size="small" color={colors.primary} />
             <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
               Checking voice rooms…
             </Text>
           </View>
-        ) : (
-          rooms.map((room) => (
-            <ActiveRoomCard
-              key={room.groupId}
-              room={room}
-              onJoin={handleJoinRoom}
+        ) : roomsError && rooms.length === 0 ? (
+          <View style={styles.inlineState}>
+            <MaterialCommunityIcons
+              name="alert-circle-outline"
+              size={18}
+              color={colors.warning}
             />
-          ))
+            <Text style={[styles.inlineStateText, { color: colors.textSecondary }]}>
+              {roomsErrorMessage || "Active rooms are temporarily unavailable."}
+            </Text>
+            <TouchableOpacity onPress={() => void refreshRooms()}>
+              <Text style={[styles.inlineStateAction, { color: colors.primary }]}>
+                Retry
+              </Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <>
+            {roomsHavePartialFailures && (
+              <View style={styles.inlineState}>
+                <MaterialCommunityIcons
+                  name="alert-circle-outline"
+                  size={18}
+                  color={colors.warning}
+                />
+                <Text
+                  style={[styles.inlineStateText, { color: colors.textSecondary }]}
+                >
+                  {roomsErrorMessage ||
+                    "Some active room statuses could not be refreshed."}
+                </Text>
+                <TouchableOpacity onPress={() => void refreshRooms()}>
+                  <Text
+                    style={[styles.inlineStateAction, { color: colors.primary }]}
+                  >
+                    Retry
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
+            {rooms.map((room) => (
+              <ActiveRoomCard
+                key={room.groupId}
+                room={room}
+                onJoin={handleJoinRoom}
+              />
+            ))}
+          </>
         )}
 
         {/* Separator */}
@@ -166,7 +211,17 @@ export default function CallsScreen() {
         />
       </View>
     );
-  }, [callsEnabled, rooms, roomsLoading, colors, handleJoinRoom]);
+  }, [
+    callsEnabled,
+    rooms,
+    roomsLoading,
+    roomsError,
+    roomsErrorMessage,
+    roomsHavePartialFailures,
+    colors,
+    handleJoinRoom,
+    refreshRooms,
+  ]);
 
   // ---------------------------------------------------------------------------
   // Render
@@ -357,6 +412,22 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     fontSize: 13,
+  },
+  inlineState: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    gap: 8,
+  },
+  inlineStateText: {
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  inlineStateAction: {
+    fontSize: 12,
+    fontWeight: "700",
   },
   emptyContainer: {
     alignItems: "center",

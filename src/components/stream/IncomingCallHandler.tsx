@@ -107,10 +107,15 @@ function IncomingCallHandlerInner({
   const acceptingRef = useRef(false);
 
   // ── Native accept adoption ───────────────────────────────────────────
-  // Stream processes native accept actions itself when the user answers via
-  // CallKit / notification UI. When the app returns to foreground we must
-  // adopt that JOINING/JOINED call into our context and navigate straight to
-  // the active call screen, without showing a second in-app accept sheet.
+  // When the user answers a call via CallKit (iOS) or notification action
+  // (Android), the Stream SDK processes the accept natively. By the time the
+  // React tree renders, the call is already in JOINING or JOINED state.
+  // We detect this and adopt the call into our context, then navigate to
+  // the active call screen — without showing a second in-app accept sheet.
+  //
+  // On iOS terminated state: VoIP push wakes the app → CallKit shows the
+  // native call UI → user taps Accept → SDK joins the call → the JS bridge
+  // initializes → this effect picks up the JOINED call and adopts it.
   useEffect(() => {
     const acceptedDirectCalls = allCalls.filter(
       (c) =>
@@ -140,12 +145,18 @@ function IncomingCallHandlerInner({
       const callToAdopt = alreadyAcceptedCall;
       const mode =
         (callToAdopt.state.custom?.mode as "audio" | "video") ?? "audio";
+      console.info(
+        `[IncomingCallHandler] Adopting natively-accepted call ${callToAdopt.id} (${mode}, state=${callToAdopt.state.callingState})`,
+      );
       acceptingRef.current = true;
       setPendingCall(null);
       setCallAllowed(null);
 
       acceptCall(callToAdopt)
         .then(() => {
+          console.info(
+            `[IncomingCallHandler] Native-accept adoption complete — navigating to call ${callToAdopt.id}`,
+          );
           onNavigateToCall?.(callToAdopt.id, mode);
         })
         .catch((err) => {
@@ -256,6 +267,14 @@ function IncomingCallHandlerInner({
       onNavigateToCall?.(callToAccept.id, mode);
     } catch (err) {
       console.error("[IncomingCallHandler] Accept failed:", err);
+      // Restore the pending call so the user can retry or decline.
+      // Only restore if the call is still ringing — if it moved to another
+      // state (e.g. the caller hung up), Stream's useCalls() will handle it.
+      if (callToAccept.state.callingState === CallingState.RINGING) {
+        setPendingCall(callToAccept);
+        setCallAllowed(true);
+        checkedCallIdRef.current = callToAccept.id;
+      }
     } finally {
       acceptingRef.current = false;
     }

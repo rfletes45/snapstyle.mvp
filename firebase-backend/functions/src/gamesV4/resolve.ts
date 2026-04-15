@@ -21,7 +21,7 @@
  */
 
 import * as admin from "firebase-admin";
-import { evaluateAchievementsV4 } from "./achievements";
+import { evaluateAchievementsV4, getAllAchievementDefs } from "./achievements";
 import {
   computeOutcome,
   extractPerformanceMetrics,
@@ -363,12 +363,19 @@ export async function resolveSessionV4Internal(
       unlocksByUid.set(unlock.uid, list);
     }
 
+    // Build a type→name lookup so notification bodies use human-readable names
+    const achNameMap = new Map(
+      getAllAchievementDefs().map((d) => [d.type, d.name]),
+    );
+
     const achievementNotifPromises = Array.from(unlocksByUid.entries()).map(
       ([uid, unlocks]) =>
         notifyAchievementUnlocked({
           uid,
           achievementIds: unlocks.map((u) => u.achievementType),
-          achievementTitles: unlocks.map((u) => u.achievementType), // titles resolved client-side from defs
+          achievementTitles: unlocks.map(
+            (u) => achNameMap.get(u.achievementType) ?? u.achievementType,
+          ),
           sectionId: undefined, // multiple sections possible
           gameId: session.gameId,
           sessionId: session.sessionId,

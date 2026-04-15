@@ -11,6 +11,7 @@
  */
 
 import { getDatabase } from "@/services/database";
+import { parseDateQuery, type DateRange } from "@/utils/dateSearchParser";
 import { createLogger } from "@/utils/log";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -134,8 +135,18 @@ export function useGroupContentBrowser(groupId: string) {
         const offset = reset ? 0 : items.length;
         const trimmedQuery = searchQuery.trim();
 
+        // Parse date query for date-based filtering
+        const dateRange = trimmedQuery ? parseDateQuery(trimmedQuery) : null;
+
         if (activeTab === "media") {
-          const rows = queryMedia(db, groupId, trimmedQuery, offset, PAGE_SIZE);
+          const rows = queryMedia(
+            db,
+            groupId,
+            trimmedQuery,
+            dateRange,
+            offset,
+            PAGE_SIZE,
+          );
           if (!mountedRef.current) return;
           const mapped = rows.map(mapMediaRow);
           setMediaItems(reset ? mapped : [...mediaItems, ...mapped]);
@@ -145,6 +156,7 @@ export function useGroupContentBrowser(groupId: string) {
             db,
             groupId,
             trimmedQuery,
+            dateRange,
             offset,
             PAGE_SIZE,
           );
@@ -153,7 +165,14 @@ export function useGroupContentBrowser(groupId: string) {
           setMessageItems(reset ? mapped : [...messageItems, ...mapped]);
           setHasMore(rows.length >= PAGE_SIZE);
         } else {
-          const rows = queryLinks(db, groupId, trimmedQuery, offset, PAGE_SIZE);
+          const rows = queryLinks(
+            db,
+            groupId,
+            trimmedQuery,
+            dateRange,
+            offset,
+            PAGE_SIZE,
+          );
           if (!mountedRef.current) return;
           const mapped: LinkItem[] = rows
             .map(mapLinkRow)
@@ -283,15 +302,24 @@ function queryMedia(
   db: ReturnType<typeof getDatabase>,
   groupId: string,
   search: string,
+  dateRange: DateRange | null,
   offset: number,
   limit: number,
 ): RawMediaRow[] {
   const params: (string | number)[] = [groupId];
   let searchClause = "";
-  if (search) {
+  let dateClause = "";
+
+  if (dateRange) {
+    // Date-based search: filter by timestamp range
+    dateClause =
+      "AND COALESCE(m.server_received_at, m.created_at) >= ? AND COALESCE(m.server_received_at, m.created_at) < ?";
+    params.push(dateRange.startMs, dateRange.endMs);
+  } else if (search) {
     searchClause = "AND (a.caption LIKE ? OR m.sender_name LIKE ?)";
     params.push(`%${search}%`, `%${search}%`);
   }
+
   params.push(limit, offset);
   return db.getAllSync<RawMediaRow>(
     `SELECT a.id AS attachment_id, a.message_id, a.kind, a.remote_url, a.thumb_remote_url,
@@ -302,6 +330,7 @@ function queryMedia(
      JOIN messages m ON m.id = a.message_id
      WHERE m.conversation_id = ? AND m.scope = 'group' AND m.deleted_for_all = 0
      AND a.kind IN ('image', 'video')
+     ${dateClause}
      ${searchClause}
      ORDER BY timestamp DESC
      LIMIT ? OFFSET ?`,
@@ -313,6 +342,7 @@ function queryMessages(
   db: ReturnType<typeof getDatabase>,
   groupId: string,
   search: string,
+  dateRange: DateRange | null,
   offset: number,
   limit: number,
 ): RawMessageRow[] {
@@ -320,8 +350,14 @@ function queryMessages(
   let ftsJoin = "";
   let orderBy = "ORDER BY timestamp DESC";
   let whereExtra = "";
+  let dateClause = "";
 
-  if (search) {
+  if (dateRange) {
+    // Date-based search: filter by timestamp range
+    dateClause =
+      "AND COALESCE(m.server_received_at, m.created_at) >= ? AND COALESCE(m.server_received_at, m.created_at) < ?";
+    // dateRange params are added after groupId below
+  } else if (search) {
     try {
       const ftsQuery = sanitizeFtsQuery(search);
       ftsJoin =
@@ -335,7 +371,13 @@ function queryMessages(
     }
   }
 
-  params.push(groupId, limit, offset);
+  params.push(groupId);
+
+  if (dateRange) {
+    params.push(dateRange.startMs, dateRange.endMs);
+  }
+
+  params.push(limit, offset);
 
   return db.getAllSync<RawMessageRow>(
     `SELECT m.id, m.sender_id, m.sender_name, m.text, m.kind,
@@ -345,6 +387,7 @@ function queryMessages(
      ${ftsJoin}
      WHERE m.conversation_id = ? AND m.scope = 'group' AND m.deleted_for_all = 0
      AND m.text IS NOT NULL AND m.text != ''
+     ${dateClause}
      ${whereExtra}
      ${orderBy}
      LIMIT ? OFFSET ?`,
@@ -356,15 +399,23 @@ function queryLinks(
   db: ReturnType<typeof getDatabase>,
   groupId: string,
   search: string,
+  dateRange: DateRange | null,
   offset: number,
   limit: number,
 ): RawLinkRow[] {
   const params: (string | number)[] = [groupId];
   let searchClause = "";
-  if (search) {
+  let dateClause = "";
+
+  if (dateRange) {
+    dateClause =
+      "AND COALESCE(m.server_received_at, m.created_at) >= ? AND COALESCE(m.server_received_at, m.created_at) < ?";
+    params.push(dateRange.startMs, dateRange.endMs);
+  } else if (search) {
     searchClause = "AND m.text LIKE ?";
     params.push(`%${search}%`);
   }
+
   params.push(limit, offset);
 
   return db.getAllSync<RawLinkRow>(
@@ -373,6 +424,7 @@ function queryLinks(
      FROM messages m
      WHERE m.conversation_id = ? AND m.scope = 'group' AND m.deleted_for_all = 0
      AND (m.text LIKE '%http://%' OR m.text LIKE '%https://%')
+     ${dateClause}
      ${searchClause}
      ORDER BY timestamp DESC
      LIMIT ? OFFSET ?`,

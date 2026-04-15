@@ -27,6 +27,16 @@ interface UseVoiceRoomOccupancyResult {
   isActive: boolean;
   /** Whether the current user is in this voice room */
   isCurrentUserInRoom: boolean;
+  /** Whether the first occupancy load is still running */
+  loading: boolean;
+  /** Whether the most recent refresh failed */
+  error: boolean;
+  /** Human-readable refresh error */
+  errorMessage: string | null;
+  /** Occupancy state for UI rendering */
+  status: "loading" | "active" | "idle" | "error";
+  /** Timestamp of the last successful refresh */
+  lastUpdatedAt: number | null;
   /** Manual refresh trigger */
   refresh: () => void;
 }
@@ -45,11 +55,26 @@ export function useVoiceRoomOccupancy(
   const uid = currentFirebaseUser?.uid;
 
   const [occupants, setOccupants] = useState<VoiceRoomOccupant[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
   const mountedRef = useRef(true);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const fetchingRef = useRef(false);
 
   const fetchOccupancy = useCallback(async () => {
-    if (!groupId || !CALL_FEATURES.CALLS_ENABLED) return;
+    if (!groupId || !CALL_FEATURES.CALLS_ENABLED) {
+      if (mountedRef.current) {
+        setOccupants([]);
+        setErrorMessage(null);
+        setLastUpdatedAt(null);
+        setLoading(false);
+      }
+      return;
+    }
+
+    if (fetchingRef.current) return;
+    fetchingRef.current = true;
 
     try {
       const { queryVoiceChannel } =
@@ -57,7 +82,7 @@ export function useVoiceRoomOccupancy(
       const result = await queryVoiceChannel(groupId);
       if (!mountedRef.current) return;
 
-      if (result) {
+      if (result.status === "active") {
         const participants = result.state.participants ?? [];
         // Sort by userId for stable ordering
         const sorted = [...participants].sort((a, b) =>
@@ -71,12 +96,32 @@ export function useVoiceRoomOccupancy(
             image: p.image,
           })),
         );
+        setErrorMessage(null);
+        setLastUpdatedAt(Date.now());
+      } else if (result.status === "error") {
+        console.warn(
+          `[useVoiceRoomOccupancy] Failed to refresh occupancy for ${groupId}:`,
+          result.message,
+        );
+        setErrorMessage(result.message || "Voice room status unavailable.");
       } else {
         setOccupants([]);
+        setErrorMessage(null);
+        setLastUpdatedAt(Date.now());
       }
-    } catch {
-      // Swallow errors — voice room may not exist yet
-      if (mountedRef.current) setOccupants([]);
+    } catch (err) {
+      console.warn(
+        `[useVoiceRoomOccupancy] Unexpected occupancy error for ${groupId}:`,
+        err,
+      );
+      if (mountedRef.current) {
+        setErrorMessage("Voice room status unavailable.");
+      }
+    } finally {
+      fetchingRef.current = false;
+      if (mountedRef.current) {
+        setLoading(false);
+      }
     }
   }, [groupId]);
 
@@ -89,15 +134,17 @@ export function useVoiceRoomOccupancy(
     // Initial fetch
     fetchOccupancy();
 
-    // Start interval
-    intervalRef.current = setInterval(fetchOccupancy, interval);
+    // Start interval with jitter (±20%) to prevent synchronized polling storms
+    const jitter = interval * (0.8 + Math.random() * 0.4);
+    intervalRef.current = setInterval(fetchOccupancy, jitter);
 
     // Pause/resume on app state changes
     const subscription = AppState.addEventListener("change", (state) => {
       if (state === "active") {
         fetchOccupancy();
         if (!intervalRef.current) {
-          intervalRef.current = setInterval(fetchOccupancy, interval);
+          const resumeJitter = interval * (0.8 + Math.random() * 0.4);
+          intervalRef.current = setInterval(fetchOccupancy, resumeJitter);
         }
       } else {
         if (intervalRef.current) {
@@ -121,6 +168,23 @@ export function useVoiceRoomOccupancy(
   const isCurrentUserInRoom = uid
     ? occupants.some((o) => o.userId === uid)
     : false;
+  const status = loading
+    ? "loading"
+    : errorMessage
+      ? "error"
+      : isActive
+        ? "active"
+        : "idle";
 
-  return { occupants, isActive, isCurrentUserInRoom, refresh: fetchOccupancy };
+  return {
+    occupants,
+    isActive,
+    isCurrentUserInRoom,
+    loading,
+    error: errorMessage !== null,
+    errorMessage,
+    status,
+    lastUpdatedAt,
+    refresh: fetchOccupancy,
+  };
 }

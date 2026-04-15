@@ -16,18 +16,20 @@
 import { ProfilePicture } from "@/components/profile/ProfilePicture/ProfilePicture";
 import type { AudioRoute } from "@/components/stream/AudioRoutePicker";
 import {
-  AudioRoutePicker,
   applyAudioRoute,
+  AudioRoutePicker,
   getAudioRouteFromStatus,
 } from "@/components/stream/AudioRoutePicker";
+import { CallConnectionBadge } from "@/components/stream/CallConnectionBadge";
 import { CallControlBar } from "@/components/stream/CallControlBar";
 import { useStreamCall } from "@/contexts/StreamCallContext";
+import { callSettingsService } from "@/services/calls";
 import { useAppTheme } from "@/store/ThemeContext";
 import type { MainStackParamList } from "@/types/navigation/root";
 import { requestCameraPermission } from "@/utils/permissions";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { hasAudio, hasVideo } from "@stream-io/video-client";
+import { hasAudio, hasVideo, SfuModels } from "@stream-io/video-client";
 import {
   CallingState,
   ParticipantView,
@@ -89,8 +91,16 @@ export default function VoiceChannelScreen({ route, navigation }: Props) {
   const { colors } = useAppTheme();
   const [joinError, setJoinError] = useState<string | null>(null);
   const joinAttemptedRef = useRef(false);
+  const joinAttemptIdRef = useRef(0);
   const mountedRef = useRef(true);
   const hasSeenActiveCallRef = useRef(false);
+  const dismissedRef = useRef(false);
+
+  const dismissScreen = useCallback(() => {
+    if (dismissedRef.current) return;
+    dismissedRef.current = true;
+    if (navigation.canGoBack()) navigation.goBack();
+  }, [navigation]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -108,11 +118,11 @@ export default function VoiceChannelScreen({ route, navigation }: Props) {
     if (!hasSeenActiveCallRef.current) return;
 
     const timeout = setTimeout(() => {
-      if (navigation.canGoBack()) navigation.goBack();
+      dismissScreen();
     }, 250);
 
     return () => clearTimeout(timeout);
-  }, [activeCall, navigation]);
+  }, [activeCall, dismissScreen]);
 
   const isAlreadyInChannel =
     activeSession?.type === "voice_channel" &&
@@ -136,9 +146,12 @@ export default function VoiceChannelScreen({ route, navigation }: Props) {
     }
 
     joinAttemptedRef.current = true;
+    const attemptId = ++joinAttemptIdRef.current;
 
     joinChannel(groupId, channelName).catch((err: any) => {
+      if (attemptId !== joinAttemptIdRef.current) return;
       console.error("[VoiceChannelScreen] joinChannel error:", err);
+      joinAttemptedRef.current = false; // Allow retry on next mount/navigation
       if (mountedRef.current) {
         setJoinError(err?.message || "Failed to join voice channel");
       }
@@ -164,9 +177,9 @@ export default function VoiceChannelScreen({ route, navigation }: Props) {
     } catch (err) {
       console.error("[VoiceChannelScreen] leaveChannel error:", err);
     } finally {
-      if (navigation.canGoBack()) navigation.goBack();
+      dismissScreen();
     }
-  }, [leaveChannel, navigation]);
+  }, [dismissScreen, leaveChannel]);
 
   const handleMinimize = useCallback(() => {
     if (navigation.canGoBack()) navigation.goBack();
@@ -199,10 +212,25 @@ export default function VoiceChannelScreen({ route, navigation }: Props) {
           <TouchableOpacity
             style={[styles.retryButton, { backgroundColor: colors.primary }]}
             onPress={() => {
+              setJoinError(null);
+              joinAttemptIdRef.current += 1;
+              joinAttemptedRef.current = false;
+            }}
+          >
+            <Text style={styles.retryButtonText}>Retry</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.retryButton,
+              { backgroundColor: colors.surface, marginTop: 10 },
+            ]}
+            onPress={() => {
               if (navigation.canGoBack()) navigation.goBack();
             }}
           >
-            <Text style={styles.retryButtonText}>Go Back</Text>
+            <Text style={[styles.retryButtonText, { color: colors.text }]}>
+              Go Back
+            </Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -254,12 +282,26 @@ function VoiceChannelContent({
   const callingState = useCallCallingState();
   const participants = useParticipants();
   const { optimisticIsMute: isMuted, microphone } = useMicrophoneState();
-  const { optimisticIsMute: isCameraOff, camera } = useCameraState();
+  const {
+    optimisticIsMute: isCameraOff,
+    camera,
+    direction: cameraDirection,
+  } = useCameraState();
   const isJoined = callingState === CallingState.JOINED;
   const [isSpeakerOn, setIsSpeakerOn] = useState(true); // Voice rooms default to speaker
   const [audioRoutePickerVisible, setAudioRoutePickerVisible] = useState(false);
   const [currentAudioRoute, setCurrentAudioRoute] =
     useState<AudioRoute>("speaker");
+  const shouldMirrorLocalVideo =
+    cameraDirection === "front"
+      ? callSettingsService.getSettingsSync().mirrorFrontCamera
+      : false;
+  const roomConnectionQuality = participants.some(
+    (participant) =>
+      participant.connectionQuality === SfuModels.ConnectionQuality.POOR,
+  )
+    ? SfuModels.ConnectionQuality.POOR
+    : undefined;
 
   useEffect(() => {
     if (
@@ -309,17 +351,49 @@ function VoiceChannelContent({
   }, []);
 
   const prevCountRef = useRef<number | null>(null);
+  const hasSettledRef = useRef(false);
+  const wasJoinedRef = useRef(false);
+  // Track previous calling state to distinguish a genuine join transition
+  // from a screen remount while already JOINED (e.g. minimize and return).
+  const prevCallingStateRef = useRef(callingState);
+
+  // Track the local user's join transition to know when initial
+  // participant population is complete (state-based, not time-based)
+  useEffect(() => {
+    const wasJoinedBefore = prevCallingStateRef.current === CallingState.JOINED;
+    prevCallingStateRef.current = callingState;
+
+    if (isJoined && !wasJoinedRef.current) {
+      wasJoinedRef.current = true;
+      hasSettledRef.current = false;
+      prevCountRef.current = null;
+
+      // Play the local join sound only for a genuine state transition into
+      // JOINED (not when the screen remounts while already JOINED).
+      if (!wasJoinedBefore) {
+        setTimeout(() => {
+          ringtoneService?.playSoundEffect("room_join");
+        }, 300);
+      }
+    } else if (!isJoined) {
+      wasJoinedRef.current = false;
+      hasSettledRef.current = false;
+      prevCountRef.current = null;
+    }
+  }, [isJoined, callingState]);
+
   useEffect(() => {
     if (!isJoined) return;
     const count = participants.length;
     if (prevCountRef.current === null) {
+      // First participant snapshot after join — this is the initial population.
+      // Record it but don't play any sound (local join sound handled above).
       prevCountRef.current = count;
+      hasSettledRef.current = true;
       return;
     }
-    if (count > prevCountRef.current) {
-      // Small delay lets the audio session from callManager.start() settle.
-      // expo-audio playback can fail if fired immediately after the session
-      // switches to .playAndRecord mode.
+    // Only play the sound for genuine remote joins after initial population
+    if (count > prevCountRef.current && hasSettledRef.current) {
       setTimeout(() => {
         ringtoneService?.playSoundEffect("room_join");
       }, 300);
@@ -368,13 +442,13 @@ function VoiceChannelContent({
   }, []);
 
   const handleFlipCamera = useCallback(async () => {
-    if (callingState !== CallingState.JOINED) return;
+    if (callingState !== CallingState.JOINED || isCameraOff) return;
     try {
       await camera.flip();
     } catch (err) {
       console.warn("[VoiceChannelScreen] camera flip failed:", err);
     }
-  }, [callingState, camera]);
+  }, [callingState, camera, isCameraOff]);
 
   const [elapsed, setElapsed] = useState(0);
   useEffect(() => {
@@ -437,7 +511,7 @@ function VoiceChannelContent({
               objectFit="cover"
               ParticipantLabel={null as any}
               ParticipantReaction={null as any}
-              ParticipantNetworkQualityIndicator={null as any}
+              mirror={item.isLocalParticipant && shouldMirrorLocalVideo}
               ParticipantVideoFallback={() => (
                 <View style={styles.tileAvatarContainer}>
                   <ProfilePicture
@@ -520,6 +594,10 @@ function VoiceChannelContent({
           <Text style={[styles.statusText, { color: colors.textSecondary }]}>
             {statusText}
           </Text>
+          <CallConnectionBadge
+            callingState={callingState}
+            connectionQuality={roomConnectionQuality}
+          />
         </View>
 
         <View style={styles.headerSpacer}>
@@ -563,9 +641,6 @@ function VoiceChannelContent({
         }
       />
 
-      {/* Screen share is intentionally hidden here. This app build does not
-          have Stream's native screenshare setup wired end-to-end, and the
-          installed SDK version only exposes the older broadcast flow. */}
       <CallControlBar
         isMuted={isMuted}
         onToggleMic={handleToggleMic}
@@ -632,6 +707,7 @@ const styles = StyleSheet.create({
   headerCenter: {
     flex: 1,
     alignItems: "center",
+    gap: 6,
   },
   statusText: {
     fontSize: 13,

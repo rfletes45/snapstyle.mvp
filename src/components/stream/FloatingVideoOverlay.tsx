@@ -105,6 +105,7 @@ function FloatingAudioBanner({
   activeSession: NonNullable<ReturnType<typeof useStreamCall>["activeSession"]>;
 }) {
   const { colors } = useAppTheme();
+  const { endCall } = useStreamCall();
 
   const handleRestoreCall = useCallback(() => {
     navigate("DirectCall", {
@@ -178,6 +179,14 @@ function FloatingAudioBanner({
       >
         <MaterialCommunityIcons name="phone" size={20} color="#fff" />
         <Text style={styles.minimizedText}>Return to call</Text>
+      </Pressable>
+      <Pressable
+        onPress={endCall}
+        hitSlop={8}
+        style={styles.minimizedEndButton}
+        accessibilityLabel="End call"
+      >
+        <MaterialCommunityIcons name="phone-hangup" size={18} color="#fff" />
       </Pressable>
     </Animated.View>
   );
@@ -297,7 +306,6 @@ function FloatingVideoContent({ activeCall }: { activeCall: any }) {
           objectFit="cover"
           ParticipantLabel={null}
           ParticipantReaction={null}
-          ParticipantNetworkQualityIndicator={null}
         />
       </Pressable>
 
@@ -378,6 +386,8 @@ const styles = StyleSheet.create({
   },
   minimizedPill: {
     position: "absolute",
+    flexDirection: "row",
+    alignItems: "center",
     borderRadius: 20,
     paddingHorizontal: 14,
     paddingVertical: 8,
@@ -388,6 +398,15 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
+  },
+  minimizedEndButton: {
+    marginLeft: 10,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#E53935",
+    justifyContent: "center",
+    alignItems: "center",
   },
   minimizedText: {
     color: "#fff",

@@ -102,6 +102,13 @@ function StreamCallInnerProvider({
     busyRef.current = activeSession !== null;
   }, [activeSession]);
 
+  const clearActiveState = useCallback(() => {
+    activeCallRef.current = null;
+    busyRef.current = false;
+    setActiveCall(null);
+    setActiveSession(null);
+  }, []);
+
   useEffect(() => {
     const call = activeCallRef.current;
     if (!call) return;
@@ -117,15 +124,22 @@ function StreamCallInnerProvider({
 
       if (activeCallRef.current !== call) return;
 
-      activeCallRef.current = null;
-      busyRef.current = false;
-      setActiveCall(null);
-      setActiveSession(null);
+      if (state === CallingState.RECONNECTING_FAILED) {
+        console.error(
+          "[StreamCallContext] Reconnection failed, clearing active session:",
+          {
+            callId: call.id,
+            sessionType: activeSession?.type ?? "unknown",
+          },
+        );
+      }
+
+      clearActiveState();
       stopCallAudioSession?.();
     });
 
     return () => subscription.unsubscribe();
-  }, [activeCall]);
+  }, [activeCall, activeSession?.type, clearActiveState]);
 
   const isBusy = activeSession !== null;
 
@@ -192,27 +206,30 @@ function StreamCallInnerProvider({
     [],
   );
 
+  const endingRef = useRef(false);
+
   const endCallAction = useCallback(async () => {
+    if (endingRef.current) return;
+    endingRef.current = true;
+
     const call = activeCallRef.current;
     if (!call) {
-      busyRef.current = false;
-      setActiveCall(null);
-      setActiveSession(null);
+      clearActiveState();
       stopCallAudioSession?.();
+      endingRef.current = false;
       return;
     }
 
-    activeCallRef.current = null;
-    busyRef.current = false;
-    setActiveCall(null);
-    setActiveSession(null);
+    clearActiveState();
 
     try {
       await endDirectCall(call);
     } catch {
       // Best effort - the remote may have already ended the call.
+    } finally {
+      endingRef.current = false;
     }
-  }, []);
+  }, [clearActiveState]);
 
   const joinChannelAction = useCallback(
     async (groupId: string, groupName: string) => {
@@ -245,9 +262,7 @@ function StreamCallInnerProvider({
   const leaveChannelAction = useCallback(async () => {
     const call = activeCallRef.current;
     if (!call) {
-      busyRef.current = false;
-      setActiveCall(null);
-      setActiveSession(null);
+      clearActiveState();
       stopCallAudioSession?.();
       return;
     }
@@ -264,11 +279,8 @@ function StreamCallInnerProvider({
       // Best effort - the room may already be gone locally.
     }
 
-    activeCallRef.current = null;
-    busyRef.current = false;
-    setActiveCall(null);
-    setActiveSession(null);
-  }, []);
+    clearActiveState();
+  }, [clearActiveState]);
 
   const wasChannelDeliberatelyLeft = useCallback((channelId: string) => {
     return deliberatelyLeftChannelsRef.current.has(channelId);

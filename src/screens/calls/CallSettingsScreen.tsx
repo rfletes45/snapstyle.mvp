@@ -4,11 +4,15 @@
  */
 
 import { Ionicons } from "@expo/vector-icons";
+import DateTimePicker, {
+  type DateTimePickerEvent,
+} from "@react-native-community/datetimepicker";
 import { useNavigation } from "@react-navigation/native";
 import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Platform,
   ScrollView,
   StyleSheet,
   Switch,
@@ -46,11 +50,10 @@ const AUDIO_OUTPUT_OPTIONS: PickerOption<AudioOutput>[] = [
   { label: "Wired Headset", value: "wired", icon: "headset" },
 ];
 
-const RINGTONE_OPTIONS: PickerOption<RingtoneOption>[] = [
+const RINGTONE_OPTIONS: PickerOption<Exclude<RingtoneOption, "custom">>[] = [
   { label: "Default", value: "default", icon: "musical-notes" },
   { label: "Vibrate Only", value: "vibrate_only", icon: "phone-portrait" },
   { label: "Silent", value: "silent", icon: "volume-mute" },
-  { label: "Custom", value: "custom", icon: "musical-note" },
 ];
 
 const ALLOW_CALLS_OPTIONS: PickerOption<CallsAllowedFrom>[] = [
@@ -77,16 +80,19 @@ export function CallSettingsScreen() {
   // State
   const [settings, setSettings] = useState<CallSettings>(DEFAULT_CALL_SETTINGS);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
   // Load settings
   useEffect(() => {
     const loadSettings = async () => {
       try {
+        setLoadError(false);
         const loaded = await callSettingsService.getSettings();
         setSettings(loaded);
       } catch (error) {
         logger.error("Error loading settings:", error);
+        setLoadError(true);
       } finally {
         setIsLoading(false);
       }
@@ -250,6 +256,60 @@ export function CallSettingsScreen() {
     );
   };
 
+  const renderInfoRow = (label: string, description: string, icon?: string) => (
+    <View style={[styles.settingRow, { borderBottomColor: colors.border }]}>
+      {icon && (
+        <View style={styles.settingIcon}>
+          <Ionicons
+            name={icon as keyof typeof Ionicons.glyphMap}
+            size={22}
+            color={colors.primary}
+          />
+        </View>
+      )}
+      <View style={styles.settingContent}>
+        <Text style={[styles.settingLabel, { color: colors.text }]}>
+          {label}
+        </Text>
+        <Text
+          style={[styles.settingDescription, { color: colors.textSecondary }]}
+        >
+          {description}
+        </Text>
+      </View>
+    </View>
+  );
+
+  // DND time picker state
+  const [showStartTimePicker, setShowStartTimePicker] = useState(false);
+  const [showEndTimePicker, setShowEndTimePicker] = useState(false);
+
+  const handleStartTimeChange = useCallback(
+    (event: DateTimePickerEvent, selectedDate?: Date) => {
+      setShowStartTimePicker(Platform.OS === "ios"); // iOS keeps picker open
+      if (event.type === "dismissed" || !selectedDate) return;
+      updateSetting("dndSchedule", {
+        ...settings.dndSchedule,
+        startHour: selectedDate.getHours(),
+        startMinute: selectedDate.getMinutes(),
+      });
+    },
+    [settings.dndSchedule, updateSetting],
+  );
+
+  const handleEndTimeChange = useCallback(
+    (event: DateTimePickerEvent, selectedDate?: Date) => {
+      setShowEndTimePicker(Platform.OS === "ios");
+      if (event.type === "dismissed" || !selectedDate) return;
+      updateSetting("dndSchedule", {
+        ...settings.dndSchedule,
+        endHour: selectedDate.getHours(),
+        endMinute: selectedDate.getMinutes(),
+      });
+    },
+    [settings.dndSchedule, updateSetting],
+  );
+
   // Render DND schedule
   const renderDNDSchedule = () => {
     const { dndSchedule } = settings;
@@ -286,13 +346,7 @@ export function CallSettingsScreen() {
                   styles.timeButton,
                   { backgroundColor: colors.background },
                 ]}
-                onPress={() => {
-                  // In production, use a time picker
-                  Alert.alert(
-                    "Select Start Time",
-                    "Time picker would appear here",
-                  );
-                }}
+                onPress={() => setShowStartTimePicker(true)}
               >
                 <Text
                   style={[styles.timeLabel, { color: colors.textSecondary }]}
@@ -315,12 +369,7 @@ export function CallSettingsScreen() {
                   styles.timeButton,
                   { backgroundColor: colors.background },
                 ]}
-                onPress={() => {
-                  Alert.alert(
-                    "Select End Time",
-                    "Time picker would appear here",
-                  );
-                }}
+                onPress={() => setShowEndTimePicker(true)}
               >
                 <Text
                   style={[styles.timeLabel, { color: colors.textSecondary }]}
@@ -332,6 +381,39 @@ export function CallSettingsScreen() {
                 </Text>
               </TouchableOpacity>
             </View>
+
+            {showStartTimePicker && (
+              <DateTimePicker
+                value={(() => {
+                  const d = new Date();
+                  d.setHours(
+                    dndSchedule.startHour,
+                    dndSchedule.startMinute,
+                    0,
+                    0,
+                  );
+                  return d;
+                })()}
+                mode="time"
+                is24Hour={false}
+                display={Platform.OS === "ios" ? "spinner" : "default"}
+                onChange={handleStartTimeChange}
+              />
+            )}
+
+            {showEndTimePicker && (
+              <DateTimePicker
+                value={(() => {
+                  const d = new Date();
+                  d.setHours(dndSchedule.endHour, dndSchedule.endMinute, 0, 0);
+                  return d;
+                })()}
+                mode="time"
+                is24Hour={false}
+                display={Platform.OS === "ios" ? "spinner" : "default"}
+                onChange={handleEndTimeChange}
+              />
+            )}
 
             {/* Days of week */}
             <View style={styles.daysContainer}>
@@ -384,6 +466,47 @@ export function CallSettingsScreen() {
       </View>
     );
   };
+
+  // Error state
+  if (loadError && !isLoading) {
+    return (
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <ScreenHeader title="Call Settings" />
+        <View style={styles.loadingContainer}>
+          <Text
+            style={[
+              styles.sectionTitle,
+              { color: colors.text, marginBottom: 8 },
+            ]}
+          >
+            Unable to load settings
+          </Text>
+          <Text
+            style={[
+              styles.sectionSubtitle,
+              { color: colors.textSecondary, marginBottom: 16 },
+            ]}
+          >
+            Using default values. Tap to retry.
+          </Text>
+          <TouchableOpacity
+            onPress={() => {
+              setIsLoading(true);
+              setLoadError(false);
+              callSettingsService
+                .getSettings()
+                .then(setSettings)
+                .catch(() => setLoadError(true))
+                .finally(() => setIsLoading(false));
+            }}
+            style={[styles.retryButton, { backgroundColor: colors.primary }]}
+          >
+            <Text style={{ color: "#fff", fontWeight: "600" }}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
 
   // Loading state
   if (isLoading) {
@@ -443,7 +566,10 @@ export function CallSettingsScreen() {
         </View>
 
         {/* Audio Settings */}
-        {renderSectionHeader("Audio", "Sound and microphone settings")}
+        {renderSectionHeader(
+          "Audio",
+          "Sound routing with device-managed voice processing",
+        )}
         <View
           style={[
             styles.section,
@@ -457,24 +583,32 @@ export function CallSettingsScreen() {
             (value) => updateSetting("defaultAudioOutput", value),
             "volume-medium",
           )}
-          {renderToggle(
-            "Noise Suppression",
-            "Reduce background noise",
-            settings.noiseSuppression,
-            (value) => updateSetting("noiseSuppression", value),
+          {renderInfoRow(
+            "Audio Processing",
+            "Noise suppression, echo control, and gain handling follow the device and Stream defaults in this build.",
+            "information-circle-outline",
           )}
-          {renderToggle(
-            "Echo Cancellation",
-            "Prevent audio feedback",
-            settings.echoCancellation,
-            (value) => updateSetting("echoCancellation", value),
-          )}
-          {renderToggle(
-            "Auto Gain Control",
-            "Automatically adjust volume",
-            settings.autoGainControl,
-            (value) => updateSetting("autoGainControl", value),
-          )}
+          {false &&
+            renderToggle(
+              "Noise Suppression",
+              "Handled by device hardware — saved for future use",
+              settings.noiseSuppression,
+              (value) => updateSetting("noiseSuppression", value),
+            )}
+          {false &&
+            renderToggle(
+              "Echo Cancellation",
+              "Handled by device hardware — saved for future use",
+              settings.echoCancellation,
+              (value) => updateSetting("echoCancellation", value),
+            )}
+          {false &&
+            renderToggle(
+              "Auto Gain Control",
+              "Handled by device hardware — saved for future use",
+              settings.autoGainControl,
+              (value) => updateSetting("autoGainControl", value),
+            )}
         </View>
 
         {/* Ringtone Settings */}
@@ -488,7 +622,7 @@ export function CallSettingsScreen() {
           {renderPicker(
             "Ringtone",
             RINGTONE_OPTIONS,
-            settings.ringtone,
+            settings.ringtone === "custom" ? "default" : settings.ringtone,
             (value) => updateSetting("ringtone", value),
             "musical-notes",
           )}
@@ -527,22 +661,32 @@ export function CallSettingsScreen() {
             (value) => updateSetting("allowCallsFrom", value),
             "shield-checkmark",
           )}
-          {renderToggle(
-            "Show Caller Preview",
-            "Show caller info on lock screen",
-            settings.showCallPreview,
-            (value) => updateSetting("showCallPreview", value),
+          {renderInfoRow(
+            "Caller Presentation",
+            "Incoming caller preview and spoken-name announcements use the platform defaults in this build.",
+            "information-circle-outline",
           )}
-          {renderToggle(
-            "Announce Caller Name",
-            "Read caller name aloud",
-            settings.announceCallerName,
-            (value) => updateSetting("announceCallerName", value),
-          )}
+          {false &&
+            renderToggle(
+              "Show Caller Preview",
+              "Saved for future use — not yet enforced",
+              settings.showCallPreview,
+              (value) => updateSetting("showCallPreview", value),
+            )}
+          {false &&
+            renderToggle(
+              "Announce Caller Name",
+              "Saved for future use — not yet enforced",
+              settings.announceCallerName,
+              (value) => updateSetting("announceCallerName", value),
+            )}
         </View>
 
         {/* Quality Settings */}
-        {renderSectionHeader("Quality & Data", "Video quality and data usage")}
+        {renderSectionHeader(
+          "Quality & Data",
+          "Incoming video preferences for future calls",
+        )}
         <View
           style={[
             styles.section,
@@ -558,49 +702,66 @@ export function CallSettingsScreen() {
           )}
           {renderToggle(
             "Data Saver Mode",
-            "Reduce bandwidth usage",
+            "Reduce incoming video resolution on future calls",
             settings.dataSaverMode,
             (value) => updateSetting("dataSaverMode", value),
             "cellular",
           )}
-          {renderToggle(
+          {renderInfoRow(
             "Wi-Fi Only Video",
-            "Disable video on cellular",
-            settings.wifiOnlyVideo,
-            (value) => updateSetting("wifiOnlyVideo", value),
+            "Not available in this build.",
             "wifi",
           )}
+          {false &&
+            renderToggle(
+              "Wi-Fi Only Video",
+              "Saved for future use — not yet enforced",
+              settings.wifiOnlyVideo,
+              (value) => updateSetting("wifiOnlyVideo", value),
+              "wifi",
+            )}
         </View>
 
         {/* Accessibility */}
-        {renderSectionHeader("Accessibility", "Visual and haptic feedback")}
+        {renderSectionHeader(
+          "Accessibility",
+          "System defaults for visual and haptic feedback",
+        )}
         <View
           style={[
             styles.section,
             { backgroundColor: colors.surface, borderColor: colors.border },
           ]}
         >
-          {renderToggle(
-            "Flash on Ring",
-            "Flash screen for incoming calls",
-            settings.flashOnRing,
-            (value) => updateSetting("flashOnRing", value),
-            "flashlight",
+          {renderInfoRow(
+            "Accessibility Controls",
+            "Flash, haptics, and large in-call controls are not configurable in this build.",
+            "information-circle-outline",
           )}
-          {renderToggle(
-            "Haptic Feedback",
-            "Vibrate on button presses",
-            settings.hapticFeedback,
-            (value) => updateSetting("hapticFeedback", value),
-            "hand-left",
-          )}
-          {renderToggle(
-            "Large Call Controls",
-            "Bigger buttons during calls",
-            settings.largeCallControls,
-            (value) => updateSetting("largeCallControls", value),
-            "resize",
-          )}
+          {false &&
+            renderToggle(
+              "Flash on Ring",
+              "Saved for future use — not yet enforced",
+              settings.flashOnRing,
+              (value) => updateSetting("flashOnRing", value),
+              "flashlight",
+            )}
+          {false &&
+            renderToggle(
+              "Haptic Feedback",
+              "Saved for future use — not yet enforced",
+              settings.hapticFeedback,
+              (value) => updateSetting("hapticFeedback", value),
+              "hand-left",
+            )}
+          {false &&
+            renderToggle(
+              "Large Call Controls",
+              "Saved for future use — not yet enforced",
+              settings.largeCallControls,
+              (value) => updateSetting("largeCallControls", value),
+              "resize",
+            )}
         </View>
 
         {/* Reset button */}
@@ -632,6 +793,11 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
+  },
+  retryButton: {
+    paddingHorizontal: 24,
+    paddingVertical: 10,
+    borderRadius: 8,
   },
 
   // Scroll
