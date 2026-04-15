@@ -44,10 +44,17 @@ import type { MainStackParamList } from "@/types/navigation/root";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   ActivityIndicator,
   Alert,
+  ImageBackground,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -55,7 +62,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { ProgressBar } from "react-native-paper";
+import { ProgressBar, Searchbar } from "react-native-paper";
 
 // =============================================================================
 // Types
@@ -68,6 +75,15 @@ interface GameSection {
   emoji: string;
   data: GameMetadata[];
 }
+
+type FilterKey = "all" | "solo" | "turnBased" | "realtime";
+
+const FILTER_PILLS: { key: FilterKey; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "solo", label: "Solo" },
+  { key: "turnBased", label: "Turn-Based" },
+  { key: "realtime", label: "Realtime" },
+];
 
 // =============================================================================
 // Component
@@ -93,6 +109,16 @@ export default function GamesHubScreenV4() {
   const [masteredGameIds, setMasteredGameIds] = useState<Set<string>>(
     new Set(),
   );
+  /** Tracks which game sections are collapsed. */
+  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(
+    new Set(),
+  );
+  const [searchQuery, setSearchQuery] = useState("");
+  const [activeFilter, setActiveFilter] = useState<FilterKey>("all");
+  const scrollViewRef = useRef<ScrollView>(null);
+  /** Y offset of the sticky section inside the ScrollView (child 0 height). */
+  const [child0Height, setChild0Height] = useState(0);
+  const hasAutoScrolledRef = useRef(false);
 
   // ── Level/XP data ──────────────────────────────────────────────────────
   const { levelInfo: profileLevel } = useProfileData(uid);
@@ -187,14 +213,35 @@ export default function GamesHubScreenV4() {
     const realtime = all.filter((g) => g.runtimeType === "realtime");
 
     const result: GameSection[] = [];
+    if (solo.length > 0)
+      result.push({ title: "Solo", emoji: "🎯", data: solo });
     if (turnBased.length > 0)
       result.push({ title: "Turn-Based", emoji: "♟️", data: turnBased });
     if (realtime.length > 0)
       result.push({ title: "Realtime", emoji: "⚡", data: realtime });
-    if (solo.length > 0)
-      result.push({ title: "Solo", emoji: "🎯", data: solo });
     return result;
   }, []);
+
+  // ── Filtered sections ──────────────────────────────────────────────────
+  const filteredSections = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    return sections
+      .filter((s) => {
+        if (activeFilter === "all") return true;
+        if (activeFilter === "solo") return s.title === "Solo";
+        if (activeFilter === "turnBased") return s.title === "Turn-Based";
+        if (activeFilter === "realtime") return s.title === "Realtime";
+        return true;
+      })
+      .map((s) => {
+        if (!query) return s;
+        const filtered = s.data.filter((g) =>
+          g.displayName.toLowerCase().includes(query),
+        );
+        return { ...s, data: filtered };
+      })
+      .filter((s) => s.data.length > 0);
+  }, [sections, searchQuery, activeFilter]);
 
   // ── Handlers ───────────────────────────────────────────────────────────
   const handleInviteTap = useCallback(
@@ -338,17 +385,50 @@ export default function GamesHubScreenV4() {
     navigation.navigate("AchievementsHub");
   }, [navigation]);
 
+  const toggleSectionCollapse = useCallback((title: string) => {
+    setCollapsedSections((prev) => {
+      const next = new Set(prev);
+      if (next.has(title)) {
+        next.delete(title);
+      } else {
+        next.add(title);
+      }
+      return next;
+    });
+  }, []);
+
   const handleLevelRewards = useCallback(() => {
     navigation.navigate("LevelRewards");
   }, [navigation]);
 
   const handleRefresh = useCallback(() => {
     setRefreshing(true);
-    // Subscriptions are live (onSnapshot), so there's nothing to re-fetch.
-    // Clear the indicator after a short delay to avoid it getting stuck
-    // when Firestore data hasn't changed and the callback never fires.
     setTimeout(() => setRefreshing(false), 1200);
   }, []);
+
+  // ── Auto-scroll to sticky section when user starts typing ─────────────
+  /** scrollContent paddingTop must be accounted for so the sticky bar is flush. */
+  const SCROLL_CONTENT_PAD_TOP = 12;
+  const stickyScrollTarget = child0Height + SCROLL_CONTENT_PAD_TOP;
+
+  const handleSearchChange = useCallback(
+    (text: string) => {
+      setSearchQuery(text);
+      if (text.trim().length > 0 && child0Height > 0 && scrollViewRef.current) {
+        scrollViewRef.current.scrollTo({
+          y: stickyScrollTarget,
+          animated: true,
+        });
+      }
+    },
+    [child0Height, stickyScrollTarget],
+  );
+
+  const handleSearchFocus = useCallback(() => {
+    if (child0Height > 0 && scrollViewRef.current) {
+      scrollViewRef.current.scrollTo({ y: stickyScrollTarget, animated: true });
+    }
+  }, [child0Height, stickyScrollTarget]);
 
   // ── Colors ─────────────────────────────────────────────────────────────
   const bgColor = theme.isDark ? "#000" : theme.colors.background;
@@ -392,382 +472,446 @@ export default function GamesHubScreenV4() {
       <ScreenHeader
         title="Games"
         renderRight={() => (
-          <TouchableOpacity
-            onPress={handleMyStats}
-            style={[styles.headerButton, { backgroundColor: accentBg }]}
-            activeOpacity={0.7}
-          >
-            <MaterialCommunityIcons
-              name="chart-bar"
-              size={18}
-              color={theme.colors.primary}
-            />
-            <Text
-              style={[styles.headerButtonText, { color: theme.colors.primary }]}
+          <View style={styles.headerRightRow}>
+            <TouchableOpacity
+              onPress={handleAchievements}
+              style={[styles.headerCircleButton, { backgroundColor: accentBg }]}
+              activeOpacity={0.7}
             >
-              My Stats
-            </Text>
-          </TouchableOpacity>
+              <MaterialCommunityIcons
+                name="trophy-outline"
+                size={20}
+                color={theme.colors.primary}
+              />
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={handleMyStats}
+              style={[styles.headerButton, { backgroundColor: accentBg }]}
+              activeOpacity={0.7}
+            >
+              <MaterialCommunityIcons
+                name="chart-bar"
+                size={18}
+                color={theme.colors.primary}
+              />
+              <Text
+                style={[
+                  styles.headerButtonText,
+                  { color: theme.colors.primary },
+                ]}
+              >
+                My Stats
+              </Text>
+            </TouchableOpacity>
+          </View>
         )}
       />
 
       <ScrollView
+        ref={scrollViewRef}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        stickyHeaderIndices={[1]}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
         }
       >
-        {/* ── Level & Rewards Card ───────────────────────────────── */}
-        <TouchableOpacity
-          style={[
-            styles.levelRewardsCard,
-            {
-              backgroundColor: cardBg,
-              borderColor,
-            },
-          ]}
-          onPress={handleLevelRewards}
-          activeOpacity={0.7}
-        >
-          {/* Top row: Level badge + XP numbers */}
-          <View style={styles.lrTopRow}>
-            <View
-              style={[
-                styles.lrLevelBadge,
-                { backgroundColor: theme.colors.primary },
-              ]}
-            >
-              <Text style={styles.lrLevelBadgeText}>{currentLevel}</Text>
-            </View>
-            <View style={styles.lrXpInfo}>
-              <Text style={[styles.lrLevelLabel, { color: textColor }]}>
-                Level {currentLevel}
-                {isMaxLevel ? " (MAX)" : ""}
-              </Text>
-              <Text style={[styles.lrXpText, { color: subtextColor }]}>
-                {isMaxLevel
-                  ? "MAX LEVEL"
-                  : `${xpCurrent.toLocaleString()}/${xpNeeded.toLocaleString()} XP`}
-              </Text>
-            </View>
-            {unclaimedRewards > 0 && (
-              <View style={styles.lrUnclaimedPill}>
-                <MaterialCommunityIcons name="gift" size={14} color="#FFF" />
-                <Text style={styles.lrUnclaimedText}>{unclaimedRewards}</Text>
-              </View>
-            )}
-            <MaterialCommunityIcons
-              name="chevron-right"
-              size={22}
-              color={subtextColor}
-            />
-          </View>
-
-          {/* XP progress bar */}
-          <View style={styles.lrBarRow}>
-            <ProgressBar
-              progress={xpProgress}
-              color={theme.colors.primary}
-              style={[styles.lrBar, { backgroundColor: accentBg }]}
-            />
-          </View>
-
-          {/* Bottom label */}
-          <Text style={[styles.lrBottomHint, { color: subtextColor }]}>
-            {unclaimedRewards > 0
-              ? `${unclaimedRewards} reward${unclaimedRewards !== 1 ? "s" : ""} ready to claim!`
-              : isMaxLevel
-                ? "All tiers unlocked — claim your rewards!"
-                : `${Math.max(0, xpNeeded - xpCurrent).toLocaleString()} XP to next level`}
-          </Text>
-        </TouchableOpacity>
-
-        {/* ── Your Progress Card (Achievements entry) ─────────────── */}
-        <TouchableOpacity
-          style={[
-            styles.progressCard,
-            {
-              backgroundColor: theme.colors.primary + "12",
-              borderColor: theme.colors.primary + "30",
-            },
-          ]}
-          onPress={handleAchievements}
-          activeOpacity={0.7}
-        >
-          <View style={styles.progressCardLeft}>
-            <MaterialCommunityIcons
-              name="trophy-outline"
-              size={28}
-              color={theme.colors.primary}
-            />
-          </View>
-          <View style={styles.progressCardCenter}>
-            <Text style={[styles.progressCardTitle, { color: textColor }]}>
-              Achievements & Progress
-            </Text>
-            <Text style={[styles.progressCardSub, { color: subtextColor }]}>
-              Track your milestones, earn badges
-            </Text>
-          </View>
-          <MaterialCommunityIcons
-            name="chevron-right"
-            size={22}
-            color={subtextColor}
-          />
-        </TouchableOpacity>
-
-        {/* ── Active Games Section ─────────────────────────────────── */}
-        {invitesLoading ? (
-          <View style={styles.loadingRow}>
-            <ActivityIndicator size="small" color={theme.colors.primary} />
-            <Text style={[styles.loadingText, { color: subtextColor }]}>
-              Loading your games…
-            </Text>
-          </View>
-        ) : invites.length > 0 ? (
-          <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: subtextColor }]}>
-              🎮 ACTIVE GAMES
-            </Text>
-            {invites.map((invite) => {
-              const meta = GAME_METADATA[invite.gameId];
-              return (
-                <TouchableOpacity
-                  key={invite.inviteId}
-                  style={[
-                    styles.inviteCard,
-                    { backgroundColor: cardBg, borderColor },
-                  ]}
-                  onPress={() => handleInviteTap(invite)}
-                  activeOpacity={0.7}
-                >
-                  <View
-                    style={[styles.inviteIcon, { backgroundColor: accentBg }]}
-                  >
-                    <MaterialCommunityIcons
-                      name={
-                        (meta?.icon ??
-                          "gamepad-variant") as keyof typeof MaterialCommunityIcons.glyphMap
-                      }
-                      size={24}
-                      color={theme.colors.primary}
-                    />
-                  </View>
-                  <View style={styles.inviteInfo}>
-                    <Text style={[styles.inviteName, { color: textColor }]}>
-                      {meta?.displayName ?? invite.gameId}
-                    </Text>
-                    <Text
-                      style={[styles.invitePlayers, { color: subtextColor }]}
-                    >
-                      {invite.participantIds.length} player
-                      {invite.participantIds.length !== 1 ? "s" : ""}
-                    </Text>
-                  </View>
-                  <View
-                    style={[
-                      styles.statusBadge,
-                      {
-                        backgroundColor:
-                          inviteStatusColor(invite.status) + "20",
-                      },
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.statusText,
-                        { color: inviteStatusColor(invite.status) },
-                      ]}
-                    >
-                      {inviteStatusLabel(invite.status)}
-                    </Text>
-                  </View>
-                  <MaterialCommunityIcons
-                    name="chevron-right"
-                    size={20}
-                    color={subtextColor}
-                  />
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        ) : (
-          <View
+        {/* ── Child 0: Level & Active Games (scrolls normally) ── */}
+        <View onLayout={(e) => setChild0Height(e.nativeEvent.layout.height)}>
+          {/* ── Level & Rewards Card ───────────────────────────────── */}
+          <TouchableOpacity
             style={[
-              styles.emptyActiveCard,
-              { backgroundColor: cardBg, borderColor },
+              styles.levelRewardsCard,
+              {
+                backgroundColor: cardBg,
+                borderColor,
+              },
             ]}
+            onPress={handleLevelRewards}
+            activeOpacity={0.7}
           >
-            <MaterialCommunityIcons
-              name="gamepad-variant-outline"
-              size={32}
-              color={subtextColor}
-            />
-            <Text style={[styles.emptyActiveText, { color: subtextColor }]}>
-              No active games right now
-            </Text>
-            <Text style={[styles.emptyActiveHint, { color: subtextColor }]}>
-              Start a game from any chat conversation!
-            </Text>
-          </View>
-        )}
-
-        {/* ── How to Play Banner ───────────────────────────────────── */}
-        <View
-          style={[
-            styles.tipCard,
-            { backgroundColor: theme.colors.primary + "15" },
-          ]}
-        >
-          <MaterialCommunityIcons
-            name="lightbulb-on-outline"
-            size={20}
-            color={theme.colors.primary}
-          />
-          <Text style={[styles.tipText, { color: textColor }]}>
-            Tap the{" "}
-            <MaterialCommunityIcons
-              name="gamepad-variant"
-              size={14}
-              color={theme.colors.primary}
-            />{" "}
-            icon in any chat to challenge a friend!
-          </Text>
-        </View>
-
-        {/* ── Game Catalog ─────────────────────────────────────────── */}
-        {sections.map((section) => (
-          <View key={section.title} style={styles.section}>
-            <View style={styles.sectionTitleRow}>
-              <Text style={[styles.sectionTitle, { color: subtextColor }]}>
-                {section.emoji} {section.title.toUpperCase()}
-              </Text>
-              {section.title === "Solo" && (
-                <TouchableOpacity
-                  onPress={() =>
-                    Alert.alert(
-                      "Solo Games",
-                      "Tap to play instantly. Long-press for details, achievements, and leaderboards.",
-                    )
-                  }
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                >
-                  <MaterialCommunityIcons
-                    name="information-outline"
-                    size={16}
-                    color={subtextColor}
-                  />
-                </TouchableOpacity>
+            {/* Top row: Level badge + XP numbers */}
+            <View style={styles.lrTopRow}>
+              <View
+                style={[
+                  styles.lrLevelBadge,
+                  { backgroundColor: theme.colors.primary },
+                ]}
+              >
+                <Text style={styles.lrLevelBadgeText}>{currentLevel}</Text>
+              </View>
+              <View style={styles.lrXpInfo}>
+                <Text style={[styles.lrLevelLabel, { color: textColor }]}>
+                  Level {currentLevel}
+                  {isMaxLevel ? " (MAX)" : ""}
+                </Text>
+                <Text style={[styles.lrXpText, { color: subtextColor }]}>
+                  {isMaxLevel
+                    ? "MAX LEVEL"
+                    : `${xpCurrent.toLocaleString()}/${xpNeeded.toLocaleString()} XP`}
+                </Text>
+              </View>
+              {unclaimedRewards > 0 && (
+                <View style={styles.lrUnclaimedPill}>
+                  <MaterialCommunityIcons name="gift" size={14} color="#FFF" />
+                  <Text style={styles.lrUnclaimedText}>{unclaimedRewards}</Text>
+                </View>
               )}
+              <MaterialCommunityIcons
+                name="chevron-right"
+                size={22}
+                color={subtextColor}
+              />
             </View>
-            <View style={[styles.catalogGrid]}>
-              {section.data.map((game) => {
-                const isImplemented = IMPLEMENTED_GAME_IDS.has(game.gameId);
-                const isLaunching = launchingSolo === game.gameId;
-                const isSolo = game.runtimeType === "solo";
-                const hasActiveSession = !!activeSoloSessions[game.gameId];
-                const isPersistent = isPersistentSoloGame(game.gameId);
-                const isMastered = masteredGameIds.has(game.gameId);
+
+            {/* XP progress bar */}
+            <View style={styles.lrBarRow}>
+              <ProgressBar
+                progress={xpProgress}
+                color={theme.colors.primary}
+                style={[styles.lrBar, { backgroundColor: accentBg }]}
+              />
+            </View>
+
+            {/* Bottom label */}
+            <Text style={[styles.lrBottomHint, { color: subtextColor }]}>
+              {unclaimedRewards > 0
+                ? `${unclaimedRewards} reward${unclaimedRewards !== 1 ? "s" : ""} ready to claim!`
+                : isMaxLevel
+                  ? "All tiers unlocked — claim your rewards!"
+                  : `${Math.max(0, xpNeeded - xpCurrent).toLocaleString()} XP to next level`}
+            </Text>
+          </TouchableOpacity>
+
+          {/* ── Active Games Section ─────────────────────────────────── */}
+          {!invitesLoading && invites.length > 0 && (
+            <View style={styles.section}>
+              <Text style={[styles.sectionTitle, { color: subtextColor }]}>
+                🎮 ACTIVE GAMES
+              </Text>
+              {invites.map((invite) => {
+                const meta = GAME_METADATA[invite.gameId];
                 return (
                   <TouchableOpacity
-                    key={game.gameId}
+                    key={invite.inviteId}
                     style={[
-                      styles.catalogCard,
+                      styles.inviteCard,
                       { backgroundColor: cardBg, borderColor },
-                      !isImplemented && { opacity: 0.5 },
-                      isMastered && {
-                        borderColor: "#DAA520",
-                        borderWidth: 2,
-                      },
                     ]}
-                    onPress={() => handleGameTap(game.gameId)}
-                    onLongPress={
-                      isSolo && isImplemented
-                        ? () => handleSoloLongPress(game.gameId)
-                        : undefined
-                    }
-                    activeOpacity={isImplemented ? 0.7 : 1}
-                    disabled={isLaunching}
+                    onPress={() => handleInviteTap(invite)}
+                    activeOpacity={0.7}
                   >
-                    {isLaunching ? (
-                      <View
-                        style={[
-                          styles.catalogIcon,
-                          { backgroundColor: accentBg },
-                        ]}
-                      >
-                        <ActivityIndicator
-                          size="small"
-                          color={theme.colors.primary}
-                        />
-                      </View>
-                    ) : (
-                      <View
-                        style={[
-                          styles.catalogIcon,
-                          { backgroundColor: accentBg },
-                        ]}
-                      >
-                        <MaterialCommunityIcons
-                          name={
-                            game.icon as keyof typeof MaterialCommunityIcons.glyphMap
-                          }
-                          size={28}
-                          color={
-                            isImplemented ? theme.colors.primary : subtextColor
-                          }
-                        />
-                      </View>
-                    )}
-                    <Text
-                      style={[styles.catalogName, { color: textColor }]}
-                      numberOfLines={1}
+                    <View
+                      style={[styles.inviteIcon, { backgroundColor: accentBg }]}
                     >
-                      {game.displayName}
-                    </Text>
-                    {isImplemented ? (
-                      isSolo ? (
-                        <Text
-                          style={[
-                            styles.playNowBadge,
-                            { color: theme.colors.primary },
-                          ]}
-                        >
-                          {isLaunching
-                            ? "Starting…"
-                            : hasActiveSession && isPersistent
-                              ? "Resume"
-                              : "Play Now"}
-                        </Text>
-                      ) : (
-                        <Text
-                          style={[
-                            styles.catalogPlayers,
-                            { color: subtextColor },
-                          ]}
-                        >
-                          {game.minPlayers === game.maxPlayers
-                            ? `${game.minPlayers}P`
-                            : `${game.minPlayers}–${game.maxPlayers}P`}
-                        </Text>
-                      )
-                    ) : (
+                      <MaterialCommunityIcons
+                        name={
+                          (meta?.icon ??
+                            "gamepad-variant") as keyof typeof MaterialCommunityIcons.glyphMap
+                        }
+                        size={24}
+                        color={theme.colors.primary}
+                      />
+                    </View>
+                    <View style={styles.inviteInfo}>
+                      <Text style={[styles.inviteName, { color: textColor }]}>
+                        {meta?.displayName ?? invite.gameId}
+                      </Text>
+                      <Text
+                        style={[styles.invitePlayers, { color: subtextColor }]}
+                      >
+                        {invite.participantIds.length} player
+                        {invite.participantIds.length !== 1 ? "s" : ""}
+                      </Text>
+                    </View>
+                    <View
+                      style={[
+                        styles.statusBadge,
+                        {
+                          backgroundColor:
+                            inviteStatusColor(invite.status) + "20",
+                        },
+                      ]}
+                    >
                       <Text
                         style={[
-                          styles.comingSoonBadge,
-                          { color: subtextColor },
+                          styles.statusText,
+                          { color: inviteStatusColor(invite.status) },
                         ]}
                       >
-                        Coming Soon
+                        {inviteStatusLabel(invite.status)}
                       </Text>
-                    )}
+                    </View>
+                    <MaterialCommunityIcons
+                      name="chevron-right"
+                      size={20}
+                      color={subtextColor}
+                    />
                   </TouchableOpacity>
                 );
               })}
             </View>
+          )}
+        </View>
+
+        {/* ── Child 1: Search + Tab Bar (sticky) ─────────────────── */}
+        <View
+          style={[styles.stickySearchContainer, { backgroundColor: bgColor }]}
+        >
+          {/* Search bar */}
+          <View style={styles.searchContainer}>
+            <Searchbar
+              placeholder="Search games\u2026"
+              onChangeText={handleSearchChange}
+              onFocus={handleSearchFocus}
+              value={searchQuery}
+              style={[
+                styles.searchBar,
+                { backgroundColor: theme.colors.background },
+              ]}
+              inputStyle={[styles.searchInput, { color: textColor }]}
+              iconColor={subtextColor}
+              placeholderTextColor={subtextColor}
+              elevation={0}
+            />
           </View>
-        ))}
+
+          {/* Filter tab bar */}
+          <View
+            style={[styles.filterTabBar, { borderBottomColor: borderColor }]}
+          >
+            {FILTER_PILLS.map((pill) => {
+              const isActive = activeFilter === pill.key;
+              return (
+                <TouchableOpacity
+                  key={pill.key}
+                  style={[
+                    styles.filterTab,
+                    isActive && {
+                      borderBottomColor: theme.colors.primary,
+                      borderBottomWidth: 2,
+                    },
+                  ]}
+                  onPress={() => setActiveFilter(pill.key)}
+                  activeOpacity={0.7}
+                >
+                  <Text
+                    style={[
+                      styles.filterTabLabel,
+                      {
+                        color: isActive ? theme.colors.primary : subtextColor,
+                        fontWeight: isActive ? "600" : "400",
+                      },
+                    ]}
+                  >
+                    {pill.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {/* Divider */}
+          <View
+            style={[styles.searchDivider, { backgroundColor: borderColor }]}
+          />
+        </View>
+
+        {/* ── Game Catalog ─────────────────────────────────────────── */}
+        {filteredSections.map((section) => {
+          const isCollapsed = collapsedSections.has(section.title);
+          return (
+            <View key={section.title} style={styles.section}>
+              <TouchableOpacity
+                style={styles.sectionTitleRow}
+                onPress={() => toggleSectionCollapse(section.title)}
+                activeOpacity={0.7}
+              >
+                <Text
+                  style={[
+                    styles.sectionTitle,
+                    { color: subtextColor, marginBottom: 0 },
+                  ]}
+                >
+                  {section.emoji} {section.title.toUpperCase()}
+                </Text>
+                <MaterialCommunityIcons
+                  name={isCollapsed ? "chevron-down" : "chevron-up"}
+                  size={20}
+                  color={subtextColor}
+                />
+              </TouchableOpacity>
+              {!isCollapsed && (
+                <View style={[styles.catalogGrid, { marginTop: 10 }]}>
+                  {section.data.map((game) => {
+                    const isImplemented = IMPLEMENTED_GAME_IDS.has(game.gameId);
+                    const isLaunching = launchingSolo === game.gameId;
+                    const isSolo = game.runtimeType === "solo";
+                    const hasActiveSession = !!activeSoloSessions[game.gameId];
+                    const isPersistent = isPersistentSoloGame(game.gameId);
+                    const isMastered = masteredGameIds.has(game.gameId);
+                    const hasThumbnail = !!game.thumbnail;
+
+                    // ── Solo game with full-bleed thumbnail ──────────
+                    if (hasThumbnail && isSolo) {
+                      return (
+                        <TouchableOpacity
+                          key={game.gameId}
+                          style={[
+                            styles.thumbnailCard,
+                            !isImplemented && { opacity: 0.5 },
+                            isMastered && {
+                              borderColor: "#DAA520",
+                              borderWidth: 2,
+                            },
+                          ]}
+                          onPress={() => handleGameTap(game.gameId)}
+                          onLongPress={
+                            isImplemented
+                              ? () => handleSoloLongPress(game.gameId)
+                              : undefined
+                          }
+                          activeOpacity={isImplemented ? 0.7 : 1}
+                          disabled={isLaunching}
+                        >
+                          <ImageBackground
+                            source={game.thumbnail}
+                            style={styles.thumbnailBg}
+                            imageStyle={styles.thumbnailImage}
+                            resizeMode="cover"
+                          >
+                            {isLaunching && (
+                              <View style={styles.thumbnailLoadingOverlay}>
+                                <ActivityIndicator size="small" color="#FFF" />
+                              </View>
+                            )}
+                            {/* Bottom frosted banner */}
+                            <View style={styles.thumbnailBanner}>
+                              <Text
+                                style={styles.thumbnailBannerTitle}
+                                numberOfLines={1}
+                              >
+                                {game.displayName}
+                              </Text>
+                              <Text style={styles.thumbnailBannerCta}>
+                                {isLaunching
+                                  ? "Starting…"
+                                  : !isImplemented
+                                    ? "Coming Soon"
+                                    : hasActiveSession && isPersistent
+                                      ? "Resume"
+                                      : "Play Now"}
+                              </Text>
+                            </View>
+                          </ImageBackground>
+                        </TouchableOpacity>
+                      );
+                    }
+
+                    // ── Default card (multiplayer / no thumbnail) ────
+                    return (
+                      <TouchableOpacity
+                        key={game.gameId}
+                        style={[
+                          styles.catalogCard,
+                          { backgroundColor: cardBg, borderColor },
+                          !isImplemented && { opacity: 0.5 },
+                          isMastered && {
+                            borderColor: "#DAA520",
+                            borderWidth: 2,
+                          },
+                        ]}
+                        onPress={() => handleGameTap(game.gameId)}
+                        onLongPress={
+                          isSolo && isImplemented
+                            ? () => handleSoloLongPress(game.gameId)
+                            : undefined
+                        }
+                        activeOpacity={isImplemented ? 0.7 : 1}
+                        disabled={isLaunching}
+                      >
+                        {isLaunching ? (
+                          <View
+                            style={[
+                              styles.catalogIcon,
+                              { backgroundColor: accentBg },
+                            ]}
+                          >
+                            <ActivityIndicator
+                              size="small"
+                              color={theme.colors.primary}
+                            />
+                          </View>
+                        ) : (
+                          <View
+                            style={[
+                              styles.catalogIcon,
+                              { backgroundColor: accentBg },
+                            ]}
+                          >
+                            <MaterialCommunityIcons
+                              name={
+                                game.icon as keyof typeof MaterialCommunityIcons.glyphMap
+                              }
+                              size={28}
+                              color={
+                                isImplemented
+                                  ? theme.colors.primary
+                                  : subtextColor
+                              }
+                            />
+                          </View>
+                        )}
+                        <Text
+                          style={[styles.catalogName, { color: textColor }]}
+                          numberOfLines={1}
+                        >
+                          {game.displayName}
+                        </Text>
+                        {isImplemented ? (
+                          isSolo ? (
+                            <Text
+                              style={[
+                                styles.playNowBadge,
+                                { color: theme.colors.primary },
+                              ]}
+                            >
+                              {isLaunching
+                                ? "Starting…"
+                                : hasActiveSession && isPersistent
+                                  ? "Resume"
+                                  : "Play Now"}
+                            </Text>
+                          ) : (
+                            <Text
+                              style={[
+                                styles.catalogPlayers,
+                                { color: subtextColor },
+                              ]}
+                            >
+                              {game.minPlayers === game.maxPlayers
+                                ? `${game.minPlayers}P`
+                                : `${game.minPlayers}–${game.maxPlayers}P`}
+                            </Text>
+                          )
+                        ) : (
+                          <Text
+                            style={[
+                              styles.comingSoonBadge,
+                              { color: subtextColor },
+                            ]}
+                          >
+                            Coming Soon
+                          </Text>
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              )}
+            </View>
+          );
+        })}
 
         {/* Bottom spacer */}
         <View style={{ height: 32 }} />
@@ -783,6 +927,18 @@ export default function GamesHubScreenV4() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  headerRightRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  headerCircleButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: "center",
+    alignItems: "center",
   },
   headerButton: {
     flexDirection: "row",
@@ -801,21 +957,23 @@ const styles = StyleSheet.create({
     paddingTop: 12,
   },
 
-  // Loading
-  loadingRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 20,
-    gap: 8,
-  },
-  loadingText: {
-    fontSize: 14,
+  // Sticky search + filters
+  stickySearchContainer: {
+    marginHorizontal: -16,
+    paddingTop: 0,
+    paddingBottom: 0,
+    zIndex: 3,
+    elevation: 3,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
   },
 
   // Section
   section: {
     marginBottom: 20,
+    marginTop: 16,
   },
   sectionTitle: {
     fontSize: 13,
@@ -827,6 +985,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    marginBottom: 10,
   },
 
   // Active invite cards
@@ -868,66 +1027,36 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
 
-  // Empty state
-  emptyActiveCard: {
+  // Search & Filters (GroupInfo-style)
+  filterTabBar: {
+    flexDirection: "row",
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  filterTab: {
+    flex: 1,
     alignItems: "center",
-    padding: 24,
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    marginBottom: 16,
-    gap: 6,
+    justifyContent: "center",
+    paddingVertical: 12,
+    borderBottomWidth: 2,
+    borderBottomColor: "transparent",
   },
-  emptyActiveText: {
-    fontSize: 16,
-    fontWeight: "600",
-    marginTop: 4,
-  },
-  emptyActiveHint: {
+  filterTabLabel: {
     fontSize: 13,
   },
-
-  // Tip card
-  tipCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 12,
+  searchContainer: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  searchBar: {
     borderRadius: 12,
-    marginBottom: 20,
-    gap: 8,
+    height: 36,
   },
-  tipText: {
-    fontSize: 14,
-    flex: 1,
-    lineHeight: 20,
+  searchInput: {
+    fontSize: 13,
+    minHeight: 0,
   },
-
-  // Progress card (achievements entry)
-  progressCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-    marginBottom: 16,
-    gap: 12,
-  },
-  progressCardLeft: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  progressCardCenter: {
-    flex: 1,
-  },
-  progressCardTitle: {
-    fontSize: 15,
-    fontWeight: "700",
-  },
-  progressCardSub: {
-    fontSize: 12,
-    marginTop: 2,
+  searchDivider: {
+    height: StyleSheet.hairlineWidth,
   },
 
   // Catalog grid
@@ -971,6 +1100,48 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "700",
     marginTop: 3,
+  },
+
+  // Thumbnail-backed solo game cards
+  thumbnailCard: {
+    width: "31%",
+    aspectRatio: 1,
+    borderRadius: 12,
+    overflow: "hidden",
+  },
+  thumbnailBg: {
+    flex: 1,
+    justifyContent: "flex-end",
+  },
+  thumbnailImage: {
+    borderRadius: 12,
+  },
+  thumbnailLoadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.3)",
+    justifyContent: "center",
+    alignItems: "center",
+    borderRadius: 12,
+  },
+  thumbnailBanner: {
+    backgroundColor: "rgba(255,255,255,0.55)",
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  thumbnailBannerTitle: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#000",
+    textAlign: "center",
+  },
+  thumbnailBannerCta: {
+    fontSize: 10,
+    fontWeight: "600",
+    color: "#000",
+    textAlign: "center",
+    marginTop: 1,
   },
 
   // Level Rewards card

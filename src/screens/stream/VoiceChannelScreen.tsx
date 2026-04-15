@@ -50,14 +50,6 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-let ringtoneService: typeof import("@/services/calls/ringtoneService") | null =
-  null;
-try {
-  ringtoneService = require("@/services/calls/ringtoneService");
-} catch {
-  // Not available
-}
-
 let callManager: any = null;
 try {
   callManager = require("@stream-io/video-react-native-sdk").callManager;
@@ -87,6 +79,7 @@ export default function VoiceChannelScreen({ route, navigation }: Props) {
     isBusy,
     wasChannelDeliberatelyLeft,
     clearDeliberateLeave,
+    voiceRoomJoinState,
   } = useStreamCall();
   const { colors } = useAppTheme();
   const [joinError, setJoinError] = useState<string | null>(null);
@@ -131,6 +124,12 @@ export default function VoiceChannelScreen({ route, navigation }: Props) {
   useEffect(() => {
     if (!groupId || isAlreadyInChannel || joinAttemptedRef.current) return;
 
+    // If an inline join (from the group chat screen) is already in progress
+    // or has completed, don't start a duplicate join from this screen.
+    if (voiceRoomJoinState === "joining" || voiceRoomJoinState === "joined") {
+      return;
+    }
+
     // Guard: don't attempt to join if user is already in another call.
     // The context's joinChannel() would throw, but checking here avoids
     // a subtle race where isBusy becomes true between render and effect.
@@ -164,6 +163,7 @@ export default function VoiceChannelScreen({ route, navigation }: Props) {
     isBusy,
     isAlreadyInChannel,
     joinChannel,
+    voiceRoomJoinState,
     wasChannelDeliberatelyLeft,
   ]);
 
@@ -350,56 +350,9 @@ function VoiceChannelContent({
     };
   }, []);
 
-  const prevCountRef = useRef<number | null>(null);
-  const hasSettledRef = useRef(false);
-  const wasJoinedRef = useRef(false);
-  // Track previous calling state to distinguish a genuine join transition
-  // from a screen remount while already JOINED (e.g. minimize and return).
-  const prevCallingStateRef = useRef(callingState);
-
-  // Track the local user's join transition to know when initial
-  // participant population is complete (state-based, not time-based)
-  useEffect(() => {
-    const wasJoinedBefore = prevCallingStateRef.current === CallingState.JOINED;
-    prevCallingStateRef.current = callingState;
-
-    if (isJoined && !wasJoinedRef.current) {
-      wasJoinedRef.current = true;
-      hasSettledRef.current = false;
-      prevCountRef.current = null;
-
-      // Play the local join sound only for a genuine state transition into
-      // JOINED (not when the screen remounts while already JOINED).
-      if (!wasJoinedBefore) {
-        setTimeout(() => {
-          ringtoneService?.playSoundEffect("room_join");
-        }, 300);
-      }
-    } else if (!isJoined) {
-      wasJoinedRef.current = false;
-      hasSettledRef.current = false;
-      prevCountRef.current = null;
-    }
-  }, [isJoined, callingState]);
-
-  useEffect(() => {
-    if (!isJoined) return;
-    const count = participants.length;
-    if (prevCountRef.current === null) {
-      // First participant snapshot after join — this is the initial population.
-      // Record it but don't play any sound (local join sound handled above).
-      prevCountRef.current = count;
-      hasSettledRef.current = true;
-      return;
-    }
-    // Only play the sound for genuine remote joins after initial population
-    if (count > prevCountRef.current && hasSettledRef.current) {
-      setTimeout(() => {
-        ringtoneService?.playSoundEffect("room_join");
-      }, 300);
-    }
-    prevCountRef.current = count;
-  }, [isJoined, participants.length]);
+  // Join sounds (both local and remote participant) are now owned by
+  // StreamCallContext at the provider level, so they play globally
+  // regardless of which screen is mounted.
 
   const handleToggleMic = useCallback(async () => {
     if (callingState !== CallingState.JOINED) return;

@@ -159,7 +159,7 @@ export const OverviewCard = memo(function OverviewCard({
       style={[
         styles.card,
         {
-          backgroundColor: colors.surface,
+          backgroundColor: colors.background,
           borderColor: colors.surfaceVariant + "30",
         },
         accentColor && {

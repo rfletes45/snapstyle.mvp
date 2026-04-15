@@ -853,11 +853,14 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
           </Dialog>
         </Portal>
 
-        {/* Delete Account Confirmation Modal — Overhauled */}
+        {/* ═══════════════════════════════════════════════════════════════
+            Delete Account Confirmation Modal — Full Overhaul
+            ═══════════════════════════════════════════════════════════════ */}
         <Modal
           visible={showDeleteDialog}
           transparent
           animationType="fade"
+          statusBarTranslucent
           onRequestClose={
             deleteStep === "deleting" ? undefined : resetDeleteDialog
           }
@@ -870,10 +873,18 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
               style={[dStyles.card, { backgroundColor: theme.colors.surface }]}
               onPress={() => {}}
             >
-              {/* ── Step: Confirm ── */}
+              {/* ── Step: Confirm ───────────────────────────────────── */}
               {deleteStep === "confirm" && (
                 <>
-                  {/* Danger icon */}
+                  {/* Danger stripe at top */}
+                  <View
+                    style={[
+                      dStyles.dangerStripe,
+                      { backgroundColor: theme.colors.error },
+                    ]}
+                  />
+
+                  {/* Icon badge */}
                   <View
                     style={[
                       dStyles.iconCircle,
@@ -881,20 +892,20 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
                     ]}
                   >
                     <MaterialCommunityIcons
-                      name="alert-octagon"
-                      size={36}
+                      name="account-remove"
+                      size={32}
                       color={theme.colors.error}
                     />
                   </View>
 
                   <Text
-                    variant="headlineSmall"
+                    variant="titleLarge"
                     style={[
                       dStyles.title,
-                      { color: theme.colors.error, fontWeight: "700" },
+                      { color: theme.colors.onSurface },
                     ]}
                   >
-                    Delete Your Account?
+                    Delete your account?
                   </Text>
 
                   <Text
@@ -904,36 +915,49 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
                       { color: theme.colors.onSurfaceVariant },
                     ]}
                   >
-                    This is permanent and cannot be undone. All of the following
-                    will be permanently removed:
+                    This action is permanent and cannot be undone. Everything
+                    associated with your account will be removed.
                   </Text>
 
+                  {/* What gets deleted */}
                   <View
                     style={[
                       dStyles.infoBox,
                       {
                         backgroundColor: theme.colors.errorContainer,
-                        borderColor: theme.colors.error,
+                        borderColor: `${theme.colors.error}40`,
                       },
                     ]}
                   >
+                    <Text
+                      variant="labelMedium"
+                      style={[
+                        dStyles.infoBoxHeader,
+                        { color: theme.colors.error },
+                      ]}
+                    >
+                      What will be deleted
+                    </Text>
                     {[
-                      "Your profile, avatar & settings",
-                      "All messages, photos & stories",
-                      "Friends, game history & achievements",
-                      "Wallet balance & purchased items",
-                      "Badges, streaks & leaderboard entries",
+                      "Profile, avatar, and all settings",
+                      "Messages, photos, and stories",
+                      "Friends, game history, and achievements",
+                      "Wallet balance and purchased items",
+                      "Badges, streaks, and leaderboard data",
                     ].map((line) => (
                       <View key={line} style={dStyles.bulletRow}>
-                        <MaterialCommunityIcons
-                          name="close-circle"
-                          size={16}
-                          color={theme.colors.error}
-                          style={dStyles.bulletIcon}
+                        <View
+                          style={[
+                            dStyles.bulletDot,
+                            { backgroundColor: theme.colors.error },
+                          ]}
                         />
                         <Text
                           variant="bodySmall"
-                          style={{ color: theme.colors.onErrorContainer }}
+                          style={[
+                            dStyles.bulletText,
+                            { color: theme.colors.onErrorContainer },
+                          ]}
                         >
                           {line}
                         </Text>
@@ -941,68 +965,141 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
                     ))}
                   </View>
 
-                  <Text
-                    variant="bodySmall"
-                    style={[
-                      dStyles.note,
-                      { color: theme.colors.onSurfaceVariant },
-                    ]}
-                  >
-                    Your username will become available for others.{"\n"}
-                    You may use the same email to create a new account later.
-                  </Text>
-
-                  <Text
-                    variant="labelLarge"
-                    style={[
-                      dStyles.confirmLabel,
-                      { color: theme.colors.onSurface },
-                    ]}
-                  >
-                    Type DELETE to confirm
-                  </Text>
-                  <TextInput
-                    value={deleteConfirmText}
-                    onChangeText={setDeleteConfirmText}
-                    mode="outlined"
-                    placeholder="DELETE"
-                    autoCapitalize="characters"
-                    style={dStyles.input}
-                    outlineColor={
-                      deleteConfirmText === "DELETE"
-                        ? theme.colors.error
-                        : undefined
-                    }
-                    activeOutlineColor={theme.colors.error}
-                  />
-
-                  <View style={dStyles.actions}>
-                    <Button
-                      mode="outlined"
-                      onPress={resetDeleteDialog}
-                      style={dStyles.cancelBtn}
+                  {/* Additional info */}
+                  <View style={dStyles.noteRow}>
+                    <MaterialCommunityIcons
+                      name="information-outline"
+                      size={16}
+                      color={theme.colors.onSurfaceVariant}
+                      style={dStyles.noteIcon}
+                    />
+                    <Text
+                      variant="bodySmall"
+                      style={[
+                        dStyles.noteText,
+                        { color: theme.colors.onSurfaceVariant },
+                      ]}
                     >
-                      Cancel
-                    </Button>
-                    <Button
-                      mode="contained"
+                      Your username will become available for others. You may
+                      use the same email to create a new account.
+                    </Text>
+                  </View>
+
+                  {/* Confirmation input */}
+                  <View style={dStyles.confirmSection}>
+                    <Text
+                      variant="labelMedium"
+                      style={[
+                        dStyles.confirmLabel,
+                        { color: theme.colors.onSurface },
+                      ]}
+                    >
+                      Type{" "}
+                      <Text
+                        style={{
+                          color: theme.colors.error,
+                          fontWeight: "800",
+                          letterSpacing: 1,
+                        }}
+                      >
+                        DELETE
+                      </Text>{" "}
+                      to confirm
+                    </Text>
+                    <TextInput
+                      value={deleteConfirmText}
+                      onChangeText={setDeleteConfirmText}
+                      mode="outlined"
+                      placeholder="DELETE"
+                      autoCapitalize="characters"
+                      style={dStyles.input}
+                      dense
+                      outlineColor={
+                        deleteConfirmText === "DELETE"
+                          ? theme.colors.error
+                          : theme.colors.outlineVariant
+                      }
+                      activeOutlineColor={theme.colors.error}
+                      outlineStyle={dStyles.inputOutline}
+                    />
+                  </View>
+
+                  {/* Actions */}
+                  <View style={dStyles.actions}>
+                    <Pressable
+                      onPress={resetDeleteDialog}
+                      style={[
+                        dStyles.cancelBtn,
+                        {
+                          borderColor: theme.colors.outlineVariant,
+                        },
+                      ]}
+                    >
+                      <Text
+                        variant="labelLarge"
+                        style={[
+                          dStyles.cancelBtnText,
+                          { color: theme.colors.onSurface },
+                        ]}
+                      >
+                        Cancel
+                      </Text>
+                    </Pressable>
+                    <Pressable
                       onPress={handleDeleteAccount}
                       disabled={deleteConfirmText !== "DELETE"}
-                      buttonColor={theme.colors.error}
-                      textColor={theme.colors.onError}
-                      icon="delete-forever"
-                      style={dStyles.deleteBtn}
-                      contentStyle={dStyles.deleteBtnContent}
+                      style={[
+                        dStyles.deleteBtn,
+                        {
+                          backgroundColor:
+                            deleteConfirmText === "DELETE"
+                              ? theme.colors.error
+                              : theme.colors.surfaceDisabled ||
+                                theme.colors.surfaceVariant,
+                        },
+                      ]}
                     >
-                      Delete My Account
-                    </Button>
+                      <MaterialCommunityIcons
+                        name="delete-forever"
+                        size={18}
+                        color={
+                          deleteConfirmText === "DELETE"
+                            ? theme.colors.onError
+                            : theme.colors.onSurfaceDisabled ||
+                              theme.colors.onSurfaceVariant
+                        }
+                        style={dStyles.deleteBtnIcon}
+                      />
+                      <Text
+                        variant="labelLarge"
+                        style={[
+                          dStyles.deleteBtnText,
+                          {
+                            color:
+                              deleteConfirmText === "DELETE"
+                                ? theme.colors.onError
+                                : theme.colors.onSurfaceDisabled ||
+                                  theme.colors.onSurfaceVariant,
+                          },
+                        ]}
+                      >
+                        Delete my account
+                      </Text>
+                    </Pressable>
                   </View>
                 </>
               )}
 
-              {/* ── Step: Re-authentication ── */}
+              {/* ── Step: Re-authentication ─────────────────────────── */}
               {deleteStep === "reauth" && (
                 <>
+                  <View
+                    style={[
+                      dStyles.dangerStripe,
+                      { backgroundColor: theme.colors.primary },
+                    ]}
+                  />
+
                   <View
                     style={[
                       dStyles.iconCircle,
@@ -1011,19 +1108,19 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
                   >
                     <MaterialCommunityIcons
                       name="shield-lock"
-                      size={36}
+                      size={32}
                       color={theme.colors.primary}
                     />
                   </View>
 
                   <Text
-                    variant="headlineSmall"
+                    variant="titleLarge"
                     style={[
                       dStyles.title,
-                      { color: theme.colors.onSurface, fontWeight: "700" },
+                      { color: theme.colors.onSurface },
                     ]}
                   >
-                    Verify Your Identity
+                    Verify your identity
                   </Text>
 
                   <Text
@@ -1033,89 +1130,178 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
                       { color: theme.colors.onSurfaceVariant },
                     ]}
                   >
-                    For security, please enter your password to continue with
-                    account deletion.
+                    For security, please re-enter your password to continue
+                    with account deletion.
                   </Text>
 
-                  <TextInput
-                    label="Password"
-                    value={reauthPassword}
-                    onChangeText={setReauthPassword}
-                    mode="outlined"
-                    secureTextEntry
-                    autoFocus
-                    style={dStyles.input}
-                    activeOutlineColor={theme.colors.error}
-                  />
+                  <View style={dStyles.confirmSection}>
+                    <TextInput
+                      label="Password"
+                      value={reauthPassword}
+                      onChangeText={setReauthPassword}
+                      mode="outlined"
+                      secureTextEntry
+                      autoFocus
+                      style={dStyles.input}
+                      dense
+                      activeOutlineColor={theme.colors.error}
+                      outlineStyle={dStyles.inputOutline}
+                    />
+                  </View>
 
                   <View style={dStyles.actions}>
-                    <Button
-                      mode="outlined"
+                    <Pressable
                       onPress={resetDeleteDialog}
-                      style={dStyles.cancelBtn}
+                      style={[
+                        dStyles.cancelBtn,
+                        { borderColor: theme.colors.outlineVariant },
+                      ]}
                     >
-                      Cancel
-                    </Button>
-                    <Button
-                      mode="contained"
+                      <Text
+                        variant="labelLarge"
+                        style={[
+                          dStyles.cancelBtnText,
+                          { color: theme.colors.onSurface },
+                        ]}
+                      >
+                        Cancel
+                      </Text>
+                    </Pressable>
+                    <Pressable
                       onPress={handleReauthAndDelete}
                       disabled={!reauthPassword || reauthLoading}
-                      loading={reauthLoading}
-                      buttonColor={theme.colors.error}
-                      textColor={theme.colors.onError}
-                      style={dStyles.deleteBtn}
+                      style={[
+                        dStyles.deleteBtn,
+                        {
+                          backgroundColor:
+                            reauthPassword && !reauthLoading
+                              ? theme.colors.error
+                              : theme.colors.surfaceDisabled ||
+                                theme.colors.surfaceVariant,
+                        },
+                      ]}
                     >
-                      Verify & Delete
-                    </Button>
+                      {reauthLoading ? (
+                        <ActivityIndicator
+                          size={18}
+                          color={theme.colors.onError}
+                          style={dStyles.deleteBtnIcon}
+                        />
+                      ) : (
+                        <MaterialCommunityIcons
+                          name="shield-check"
+                          size={18}
+                          color={
+                            reauthPassword
+                              ? theme.colors.onError
+                              : theme.colors.onSurfaceDisabled ||
+                                theme.colors.onSurfaceVariant
+                          }
+                          style={dStyles.deleteBtnIcon}
+                        />
+                      )}
+                      <Text
+                        variant="labelLarge"
+                        style={[
+                          dStyles.deleteBtnText,
+                          {
+                            color:
+                              reauthPassword && !reauthLoading
+                                ? theme.colors.onError
+                                : theme.colors.onSurfaceDisabled ||
+                                  theme.colors.onSurfaceVariant,
+                          },
+                        ]}
+                      >
+                        Verify & delete
+                      </Text>
+                    </Pressable>
                   </View>
                 </>
               )}
 
-              {/* ── Step: Deleting (in progress) ── */}
+              {/* ── Step: Deleting (in progress) ───────────────────── */}
               {deleteStep === "deleting" && (
-                <>
-                  <View style={dStyles.progressSection}>
+                <View style={dStyles.progressSection}>
+                  <View
+                    style={[
+                      dStyles.dangerStripe,
+                      { backgroundColor: theme.colors.error },
+                    ]}
+                  />
+
+                  <View
+                    style={[
+                      dStyles.progressRing,
+                      { borderColor: `${theme.colors.error}20` },
+                    ]}
+                  >
                     <ActivityIndicator
-                      size="large"
+                      size={40}
                       color={theme.colors.error}
-                      style={{ marginBottom: 20 }}
+                    />
+                  </View>
+
+                  <Text
+                    variant="titleLarge"
+                    style={[
+                      dStyles.title,
+                      { color: theme.colors.onSurface },
+                    ]}
+                  >
+                    Deleting your account
+                  </Text>
+
+                  <Text
+                    variant="bodyMedium"
+                    style={[
+                      dStyles.subtitle,
+                      { color: theme.colors.onSurfaceVariant },
+                    ]}
+                  >
+                    Permanently removing all data associated with your account.
+                    This may take a moment.
+                  </Text>
+
+                  <View
+                    style={[
+                      dStyles.warningBanner,
+                      {
+                        backgroundColor: theme.colors.errorContainer,
+                        borderColor: `${theme.colors.error}30`,
+                      },
+                    ]}
+                  >
+                    <MaterialCommunityIcons
+                      name="cellphone-lock"
+                      size={20}
+                      color={theme.colors.error}
+                      style={{ marginRight: 10 }}
                     />
                     <Text
-                      variant="titleMedium"
-                      style={[
-                        dStyles.title,
-                        { color: theme.colors.onSurface, fontWeight: "600" },
-                      ]}
-                    >
-                      Deleting Your Account
-                    </Text>
-                    <Text
-                      variant="bodyMedium"
-                      style={[
-                        dStyles.subtitle,
-                        { color: theme.colors.onSurfaceVariant },
-                      ]}
-                    >
-                      Permanently removing your account and all associated data.
-                      This may take a moment.
-                    </Text>
-                    <Text
-                      variant="labelSmall"
+                      variant="labelMedium"
                       style={{
                         color: theme.colors.error,
                         fontWeight: "700",
-                        marginTop: 12,
+                        flex: 1,
                       }}
                     >
-                      Do not close the app
+                      Please do not close the app
                     </Text>
                   </View>
-                </>
+                </View>
               )}
 
-              {/* ── Step: Error ── */}
+              {/* ── Step: Error ─────────────────────────────────────── */}
               {deleteStep === "error" && (
                 <>
+                  <View
+                    style={[
+                      dStyles.dangerStripe,
+                      { backgroundColor: theme.colors.error },
+                    ]}
+                  />
+
                   <View
                     style={[
                       dStyles.iconCircle,
@@ -1123,20 +1309,20 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
                     ]}
                   >
                     <MaterialCommunityIcons
-                      name="alert-circle"
-                      size={36}
+                      name="close-circle"
+                      size={32}
                       color={theme.colors.error}
                     />
                   </View>
 
                   <Text
-                    variant="headlineSmall"
+                    variant="titleLarge"
                     style={[
                       dStyles.title,
-                      { color: theme.colors.error, fontWeight: "700" },
+                      { color: theme.colors.onSurface },
                     ]}
                   >
-                    Deletion Failed
+                    Deletion failed
                   </Text>
 
                   <Text
@@ -1147,7 +1333,7 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
                     ]}
                   >
                     {deleteError ||
-                      "Something went wrong during account deletion."}
+                      "Something went wrong while deleting your account."}
                   </Text>
 
                   <View
@@ -1159,36 +1345,72 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
                       },
                     ]}
                   >
-                    <Text
-                      variant="bodySmall"
-                      style={{ color: theme.colors.onSurfaceVariant }}
-                    >
-                      Your deletion request has been recorded. You can retry now
-                      or contact support for assistance.
-                    </Text>
+                    <View style={dStyles.bulletRow}>
+                      <MaterialCommunityIcons
+                        name="information-outline"
+                        size={16}
+                        color={theme.colors.onSurfaceVariant}
+                        style={{ marginRight: 8 }}
+                      />
+                      <Text
+                        variant="bodySmall"
+                        style={{
+                          color: theme.colors.onSurfaceVariant,
+                          flex: 1,
+                          lineHeight: 18,
+                        }}
+                      >
+                        Your deletion request has been recorded. You can retry
+                        now or contact support for help.
+                      </Text>
+                    </View>
                   </View>
 
                   <View style={dStyles.actions}>
-                    <Button
-                      mode="outlined"
+                    <Pressable
                       onPress={resetDeleteDialog}
-                      style={dStyles.cancelBtn}
+                      style={[
+                        dStyles.cancelBtn,
+                        { borderColor: theme.colors.outlineVariant },
+                      ]}
                     >
-                      Close
-                    </Button>
-                    <Button
-                      mode="contained"
+                      <Text
+                        variant="labelLarge"
+                        style={[
+                          dStyles.cancelBtnText,
+                          { color: theme.colors.onSurface },
+                        ]}
+                      >
+                        Close
+                      </Text>
+                    </Pressable>
+                    <Pressable
                       onPress={() => {
                         setDeleteStep("confirm");
                         setDeleteConfirmText("");
                         setDeleteError(null);
                       }}
-                      buttonColor={theme.colors.error}
-                      textColor={theme.colors.onError}
-                      style={dStyles.deleteBtn}
+                      style={[
+                        dStyles.deleteBtn,
+                        { backgroundColor: theme.colors.error },
+                      ]}
                     >
-                      Retry
-                    </Button>
+                      <MaterialCommunityIcons
+                        name="refresh"
+                        size={18}
+                        color={theme.colors.onError}
+                        style={dStyles.deleteBtnIcon}
+                      />
+                      <Text
+                        variant="labelLarge"
+                        style={[
+                          dStyles.deleteBtnText,
+                          { color: theme.colors.onError },
+                        ]}
+                      >
+                        Try again
+                      </Text>
+                    </Pressable>
                   </View>
                 </>
               )}
@@ -1271,91 +1493,165 @@ const styles = StyleSheet.create({
 const dStyles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.6)",
+    backgroundColor: "rgba(0,0,0,0.65)",
     justifyContent: "center",
     alignItems: "center",
-    padding: 24,
+    padding: 20,
   },
   card: {
     width: "100%",
-    maxWidth: 400,
-    borderRadius: 20,
-    padding: 28,
+    maxWidth: 380,
+    borderRadius: 24,
+    paddingTop: 0,
+    paddingHorizontal: 24,
+    paddingBottom: 24,
     alignItems: "center",
+    overflow: "hidden",
     ...Platform.select({
       ios: {
         shadowColor: "#000",
-        shadowOffset: { width: 0, height: 8 },
-        shadowOpacity: 0.25,
-        shadowRadius: 24,
+        shadowOffset: { width: 0, height: 12 },
+        shadowOpacity: 0.3,
+        shadowRadius: 28,
       },
-      android: { elevation: 12 },
+      android: { elevation: 16 },
     }),
   },
+  dangerStripe: {
+    width: "100%",
+    height: 4,
+    marginBottom: 24,
+  },
   iconCircle: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 16,
   },
   title: {
     textAlign: "center",
+    fontWeight: "700",
     marginBottom: 8,
+    letterSpacing: -0.3,
   },
   subtitle: {
     textAlign: "center",
-    lineHeight: 20,
-    marginBottom: 16,
+    lineHeight: 21,
+    marginBottom: 20,
+    paddingHorizontal: 4,
   },
   infoBox: {
     width: "100%",
-    borderRadius: 12,
+    borderRadius: 14,
     borderWidth: 1,
-    padding: 14,
+    padding: 16,
     marginBottom: 16,
-    gap: 6,
+    gap: 10,
+  },
+  infoBoxHeader: {
+    fontWeight: "700",
+    marginBottom: 2,
+    letterSpacing: 0.3,
+    textTransform: "uppercase",
+    fontSize: 11,
   },
   bulletRow: {
     flexDirection: "row",
     alignItems: "center",
   },
-  bulletIcon: {
-    marginRight: 8,
+  bulletDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    marginRight: 10,
   },
-  note: {
-    textAlign: "center",
+  bulletText: {
+    flex: 1,
     lineHeight: 18,
-    marginBottom: 16,
-    fontStyle: "italic",
-    opacity: 0.7,
+  },
+  noteRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    width: "100%",
+    marginBottom: 20,
+    paddingHorizontal: 2,
+  },
+  noteIcon: {
+    marginRight: 8,
+    marginTop: 1,
+  },
+  noteText: {
+    flex: 1,
+    lineHeight: 18,
+  },
+  confirmSection: {
+    width: "100%",
+    marginBottom: 20,
   },
   confirmLabel: {
     marginBottom: 8,
     fontWeight: "600",
-    alignSelf: "flex-start",
   },
   input: {
     width: "100%",
-    marginBottom: 20,
+    fontSize: 15,
+  },
+  inputOutline: {
+    borderRadius: 12,
   },
   actions: {
     flexDirection: "row",
     width: "100%",
-    gap: 12,
+    gap: 10,
   },
   cancelBtn: {
     flex: 1,
+    height: 48,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  cancelBtnText: {
+    fontWeight: "600",
   },
   deleteBtn: {
-    flex: 1,
+    flex: 1.4,
+    height: 48,
+    borderRadius: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
   },
-  deleteBtnContent: {
-    paddingVertical: 2,
+  deleteBtnIcon: {
+    marginRight: 6,
+  },
+  deleteBtnText: {
+    fontWeight: "700",
   },
   progressSection: {
     alignItems: "center",
-    paddingVertical: 16,
+    width: "100%",
+  },
+  progressRing: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    borderWidth: 3,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 20,
+  },
+  warningBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    width: "100%",
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    marginTop: 4,
   },
 });

@@ -48,6 +48,14 @@ const streamSvc = CALL_FEATURES.CALLS_ENABLED
 const CallingState = streamSDK?.CallingState;
 const StreamVideo = streamSDK?.StreamVideo;
 
+let ringtoneService: typeof import("@/services/calls/ringtoneService") | null =
+  null;
+try {
+  ringtoneService = require("@/services/calls/ringtoneService");
+} catch {
+  // Not available
+}
+
 const startDirectCall = streamSvc?.startDirectCall;
 const acceptDirectCall = streamSvc?.acceptDirectCall;
 const rejectDirectCall = streamSvc?.rejectDirectCall;
@@ -75,10 +83,21 @@ interface StreamCallContextType {
   ) => Promise<void>;
   endCall: () => Promise<void>;
   joinChannel: (groupId: string, groupName: string) => Promise<void>;
+  /** Start joining a voice channel without throwing — updates voiceRoomJoinState.
+   *  Designed for the inline group-chat join flow. */
+  joinChannelInline: (groupId: string, groupName: string) => void;
   leaveChannel: () => Promise<void>;
   wasChannelDeliberatelyLeft: (channelId: string) => boolean;
   clearDeliberateLeave: (channelId: string) => void;
   activeCall: Call | null;
+  /** Current state of an inline voice-room join attempt */
+  voiceRoomJoinState: "idle" | "joining" | "joined" | "error";
+  /** Error message when voiceRoomJoinState === "error" */
+  voiceRoomJoinError: string | null;
+  /** The groupId of the voice room being joined inline */
+  voiceRoomJoinGroupId: string | null;
+  /** Clear the voice room join error and reset to idle */
+  clearVoiceRoomJoinError: () => void;
 }
 
 const StreamCallContext = createContext<StreamCallContextType | undefined>(
@@ -98,6 +117,23 @@ function StreamCallInnerProvider({
   const busyRef = useRef(false);
   const deliberatelyLeftChannelsRef = useRef<Set<string>>(new Set());
 
+  // Inline voice-room join state (for the group-chat join flow)
+  const [voiceRoomJoinState, setVoiceRoomJoinState] = useState<
+    "idle" | "joining" | "joined" | "error"
+  >("idle");
+  const [voiceRoomJoinError, setVoiceRoomJoinError] = useState<string | null>(
+    null,
+  );
+  const [voiceRoomJoinGroupId, setVoiceRoomJoinGroupId] = useState<
+    string | null
+  >(null);
+
+  const clearVoiceRoomJoinError = useCallback(() => {
+    setVoiceRoomJoinState("idle");
+    setVoiceRoomJoinError(null);
+    setVoiceRoomJoinGroupId(null);
+  }, []);
+
   useEffect(() => {
     busyRef.current = activeSession !== null;
   }, [activeSession]);
@@ -107,6 +143,10 @@ function StreamCallInnerProvider({
     busyRef.current = false;
     setActiveCall(null);
     setActiveSession(null);
+    // Reset inline join state when the session ends
+    setVoiceRoomJoinState("idle");
+    setVoiceRoomJoinError(null);
+    setVoiceRoomJoinGroupId(null);
   }, []);
 
   useEffect(() => {
@@ -251,12 +291,41 @@ function StreamCallInnerProvider({
           channelName: groupName,
           groupId,
         });
+        // Mark inline join as successful
+        setVoiceRoomJoinState("joined");
       } catch (err) {
         busyRef.current = false;
         throw err;
       }
     },
     [userId],
+  );
+
+  const joinChannelInlineAction = useCallback(
+    (groupId: string, groupName: string) => {
+      // Pre-flight: already busy?
+      if (busyRef.current) {
+        setVoiceRoomJoinState("error");
+        setVoiceRoomJoinError(
+          "You're already in a call. Leave it first to join this voice channel.",
+        );
+        setVoiceRoomJoinGroupId(groupId);
+        return;
+      }
+
+      // Set joining state immediately so UI can react
+      setVoiceRoomJoinState("joining");
+      setVoiceRoomJoinError(null);
+      setVoiceRoomJoinGroupId(groupId);
+
+      // Delegate to the existing joinChannel which handles busyRef,
+      // deliberatelyLeftChannels, SDK join, and activeSession setup.
+      joinChannelAction(groupId, groupName).catch((err: any) => {
+        setVoiceRoomJoinState("error");
+        setVoiceRoomJoinError(err?.message || "Failed to join voice channel");
+      });
+    },
+    [joinChannelAction],
   );
 
   const leaveChannelAction = useCallback(async () => {
@@ -290,6 +359,59 @@ function StreamCallInnerProvider({
     deliberatelyLeftChannelsRef.current.delete(channelId);
   }, []);
 
+  // Play the local join sound when join succeeds.
+  // Fires on both the inline flow ("joining" → "joined") and the direct
+  // VoiceChannelScreen flow ("idle" → "joined").
+  const prevJoinStateRef = useRef(voiceRoomJoinState);
+  useEffect(() => {
+    const prev = prevJoinStateRef.current;
+    prevJoinStateRef.current = voiceRoomJoinState;
+    if (
+      voiceRoomJoinState === "joined" &&
+      (prev === "joining" || prev === "idle")
+    ) {
+      setTimeout(() => {
+        ringtoneService?.playSoundEffect("room_join");
+      }, 300);
+    }
+  }, [voiceRoomJoinState]);
+
+  // Remote participant join sound — plays globally while in a voice channel,
+  // regardless of which screen is mounted. Subscribes to the Stream SDK's
+  // participants$ observable on the active call.
+  useEffect(() => {
+    const call = activeCallRef.current;
+    if (!call || activeSession?.type !== "voice_channel") return;
+
+    let prevCount: number | null = null;
+    let settled = false;
+
+    const subscription = call.state.participants$.subscribe(
+      (participants: any[]) => {
+        const count = participants?.length ?? 0;
+
+        if (prevCount === null) {
+          // First snapshot — baseline from initial room hydration.
+          // Record it but don't play any sound.
+          prevCount = count;
+          settled = true;
+          return;
+        }
+
+        // Only play sound for genuine remote joins after the baseline
+        if (count > prevCount && settled) {
+          setTimeout(() => {
+            ringtoneService?.playSoundEffect("room_join");
+          }, 300);
+        }
+
+        prevCount = count;
+      },
+    );
+
+    return () => subscription.unsubscribe();
+  }, [activeCall, activeSession?.type]);
+
   const value = useMemo<StreamCallContextType>(
     () => ({
       isReady: true,
@@ -300,10 +422,15 @@ function StreamCallInnerProvider({
       rejectCall: rejectCallAction,
       endCall: endCallAction,
       joinChannel: joinChannelAction,
+      joinChannelInline: joinChannelInlineAction,
       leaveChannel: leaveChannelAction,
       wasChannelDeliberatelyLeft,
       clearDeliberateLeave,
       activeCall,
+      voiceRoomJoinState,
+      voiceRoomJoinError,
+      voiceRoomJoinGroupId,
+      clearVoiceRoomJoinError,
     }),
     [
       activeSession,
@@ -313,10 +440,15 @@ function StreamCallInnerProvider({
       rejectCallAction,
       endCallAction,
       joinChannelAction,
+      joinChannelInlineAction,
       leaveChannelAction,
       wasChannelDeliberatelyLeft,
       clearDeliberateLeave,
       activeCall,
+      voiceRoomJoinState,
+      voiceRoomJoinError,
+      voiceRoomJoinGroupId,
+      clearVoiceRoomJoinError,
     ],
   );
 
@@ -394,10 +526,15 @@ export function StreamCallProvider({
       joinChannel: async () => {
         throw new Error("Calls not available");
       },
+      joinChannelInline: () => {},
       leaveChannel: async () => {},
       wasChannelDeliberatelyLeft: () => false,
       clearDeliberateLeave: () => {},
       activeCall: null,
+      voiceRoomJoinState: "idle",
+      voiceRoomJoinError: null,
+      voiceRoomJoinGroupId: null,
+      clearVoiceRoomJoinError: () => {},
     };
 
     return (

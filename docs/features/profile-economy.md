@@ -109,7 +109,7 @@ Current behavior:
 - owner mode validates, migrates, and persists layouts
 - read-only viewer mode subscribes to the target user’s board but does not persist defaults or edits
 
-See [PROFILE_SYSTEM_OVERVIEW.md](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/docs/profile/PROFILE_SYSTEM_OVERVIEW.md) and [WIDGET_BOARD_ARCHITECTURE.md](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/docs/profile/WIDGET_BOARD_ARCHITECTURE.md) for details.
+See [PROFILE_WIDGET_SYSTEM_MASTER.md](/c:/Users/rflet/OneDrive/Desktop/snapstyle-mvp/docs/profile/PROFILE_WIDGET_SYSTEM_MASTER.md) for details.
 
 ## Appearance and Personalization
 

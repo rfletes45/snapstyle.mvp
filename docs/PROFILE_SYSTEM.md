@@ -11,7 +11,7 @@ This document covers the cosmetic and ownership layer of the profile system:
 - profile/chat appearance writes
 - rendering contracts that depend on equipped profile or chat cosmetics
 
-It does not try to be the board-layout source of truth. For board mechanics and widget behavior, start at [docs/profile/PROFILE_SYSTEM_OVERVIEW.md](profile/PROFILE_SYSTEM_OVERVIEW.md).
+It does not try to be the board-layout source of truth. For board mechanics and widget behavior, see [PROFILE_WIDGET_SYSTEM_MASTER.md](profile/PROFILE_WIDGET_SYSTEM_MASTER.md).
 
 ## Current Status
 
@@ -145,11 +145,9 @@ Important current-state truth:
 - owner profile and viewed profile are both board-driven now
 - this document does not describe those screens as fixed card stacks
 
-Use these docs for the board system:
+Use the master reference for the board system:
 
-- [PROFILE_SYSTEM_OVERVIEW.md](profile/PROFILE_SYSTEM_OVERVIEW.md)
-- [WIDGET_BOARD_ARCHITECTURE.md](profile/WIDGET_BOARD_ARCHITECTURE.md)
-- [PROFILE_WIDGETS_REFERENCE.md](profile/PROFILE_WIDGETS_REFERENCE.md)
+- [PROFILE_WIDGET_SYSTEM_MASTER.md](profile/PROFILE_WIDGET_SYSTEM_MASTER.md)
 
 ## Known Rough Edges
 

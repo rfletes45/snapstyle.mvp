@@ -460,14 +460,18 @@ export default function OwnProfileScreen({
   // Loading state
   if (!baseProfile || profileDataLoading || !board.loaded) {
     return (
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <View
+        style={[styles.container, { backgroundColor: colors.surfaceVariant }]}
+      >
         <LoadingState message="Loading profile..." />
       </View>
     );
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <View
+      style={[styles.container, { backgroundColor: colors.surfaceVariant }]}
+    >
       {/* Profile header — matches Calls screen header pattern */}
       <ScreenHeader
         title="Profile"

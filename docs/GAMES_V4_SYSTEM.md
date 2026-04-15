@@ -1170,6 +1170,37 @@ It currently:
 - routes multiplayer games to detail screens
 - exposes long-press actions for solo games, including archive for future persistent-solo usage
 
+#### 11.3.1 Solo Game Thumbnail Cards
+
+Solo games that declare a `thumbnail` in `GAME_METADATA` render as full-bleed
+thumbnail-backed cards instead of the default icon-based card style.
+
+Current games with thumbnails (as of 2026-04-15):
+
+- `play_2048` — `assets/images/games/2048_Thumbnail.png`
+- `brick_breaker` — `assets/images/games/Brick_Breaker_Thumbnail.png`
+- `minesweeper` — `assets/images/games/Minesweeper_Thumbnail.png`
+- `solitaire_klondike` — `assets/images/games/Solitaire_Thumbnail.png`
+
+Thumbnail card design:
+
+- Card is square (`aspectRatio: 1`) with `borderRadius: 12` and `overflow: hidden`
+- `ImageBackground` with `resizeMode="cover"` fills the entire card
+- The old icon box (`catalogIcon`) and separate `catalogName`/`playNowBadge` text
+  are removed; replaced by a bottom overlay banner
+- Bottom banner: white at 25% opacity (`rgba(255,255,255,0.25)`), centered text
+  with game title (bold) and CTA ("Play Now" / "Resume" / "Starting…")
+- Text uses white color with subtle text shadow for readability over artwork
+
+Adding a new thumbnail:
+
+1. Place a 1200×1200 px PNG in `assets/images/games/<Game>_Thumbnail.png`
+2. Add `thumbnail: require("../../assets/images/games/<Game>_Thumbnail.png")`
+   to the game's `GAME_METADATA` entry in `src/gamesV4/constants.ts`
+3. The hub will automatically render the thumbnail card style
+
+Games without a `thumbnail` field continue to use the default icon-based card.
+
 ### 11.4 Game Detail responsibilities
 
 Primary file:

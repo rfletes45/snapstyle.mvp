@@ -147,7 +147,8 @@ const styles = StyleSheet.create({
   container: {
     flexShrink: 1,
     justifyContent: "center",
-    paddingHorizontal: 4,
+    paddingLeft: 4,
+    paddingRight: 2,
   },
   avatarRow: {
     flexDirection: "row",

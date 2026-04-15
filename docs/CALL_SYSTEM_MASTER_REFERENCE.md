@@ -2,7 +2,7 @@
 
 > **Version**: 1.6 — April 14, 2026
 > **Authority**: This is the single source of truth for the call system. When this document conflicts with any other call-related documentation, this document wins. Previous docs (`calls-and-audio.md`, `CALL_SYSTEM_AUDIT_REFERENCE.md`, `QA_CALL_SYSTEM_AUDIT.md`, `QA_CALLING_AUDIT.md`, `QA_STREAM_CALL_SYSTEM.md`, `STREAM_SETUP_GUIDE.md`) are historical references only.
-> **Verification**: Every claim in this document was verified against the live codebase on April 14, 2026. v1.6 is the iOS background/terminated incoming call delivery pass: corrects stale claims about iOS push architecture (the repo IS using VoIP push + CallKit via the Stream SDK — not FCM for iOS calls), adds diagnostic logging to setPushConfig and IncomingCallHandler native-accept adoption, enriches code comments to document the actual iOS/Android push separation, and documents the remaining manual Apple/Stream dashboard steps.
+> **Verification**: Every claim in this document was verified against the live codebase on April 14, 2026. v1.7 is the inline voice-room join refactor: voice channel join now starts inline from GroupChatScreen via `joinChannelInline()` with header spinner and bottom error banner, VoiceChannelScreen becomes a viewer/controller, join sound ownership moved to StreamCallContext. Prior: v1.6 was the iOS background/terminated incoming call delivery pass.
 
 ---
 
@@ -78,7 +78,7 @@ Stream Video:
 
 ### Current maturity level
 
-**Functional with stabilization fixes applied (v1.6)**:
+**Functional with stabilization fixes applied (v1.7)**:
 
 - Core calling flows work end-to-end for direct audio, direct video, and voice channels
 - UI is complete for audio calls, video calls, and voice rooms
@@ -93,6 +93,7 @@ Stream Video:
 - Voice room occupancy polling protected by fetch guard against concurrent request races (v1.5)
 - Incoming call accept failure now restores the pending call overlay so user can retry (v1.5)
 - Settings sync timestamps written only after Firestore write succeeds, preventing sync divergence (v1.5)
+- Voice channel join starts inline from GroupChatScreen with header spinner and bottom error banner; VoiceChannelScreen is now a viewer/controller; all join sounds (local and remote participant) centralized in StreamCallContext via `participants$` subscription (v1.7)
 - No deep linking to calls
 - Dead screen-share props removed from CallControlBar (v1.4)
 
@@ -241,6 +242,7 @@ Stream Video:
 | `VoiceChannelCard.tsx` (~110 lines)     | Voice channel entry point in group | Uses `useVoiceRoomOccupancy()` hook for occupancy data (single source of truth — no self-polling). Shows occupant list (max 5). Loading and error states. "Join Voice" / "Connected" / "In another call" button. Green border when active.                                                                                                                                                                                      |
 | `CallHistoryRow.tsx` (~140 lines)       | History list row                   | Status, duration, timestamp display. Tap to navigate to relevant chat.                                                                                                                                                                                                                                                                                                                                                          |
 | `VoiceRoomAvatarStack.tsx` (~90 lines)  | Compact avatar stack               | Overlapping circles with configurable max visible.                                                                                                                                                                                                                                                                                                                                                                              |
+| `VoiceRoomJoinBanner.tsx` (~100 lines)  | Inline join error banner           | Bottom-anchored banner shown in GroupChatScreen when `voiceRoomJoinState === "error"`. Shows alert icon, error message, optional Retry button, dismiss (X) button. Theme-aware using `errorContainer`/`onErrorContainer` colors.                                                                                                                                                                                                |
 
 ### Hooks (`src/hooks/`)
 
@@ -398,35 +400,52 @@ Stream Video:
 
 ### 4.4 Joining a voice channel
 
-**Entry points**: `VoiceChannelCard` (in group info), `ActiveRoomCard` (in CallsScreen), navigation from group chat
+**Entry points** (two paths):
 
-**Step-by-step**:
+- **Inline join (primary)**: headset icon / avatar stack in `GroupChatScreen` header → `joinChannelInline()`
+- **Direct join (secondary)**: `VoiceChannelCard` (in group info), `ActiveRoomCard` (in CallsScreen) → navigate straight to `VoiceChannelScreen`
 
-1. User taps "Join Voice" button
+#### 4.4.1 Inline join flow (from GroupChatScreen)
+
+1. User taps headset icon (or avatar stack tap when room not yet joined) in `GroupChatScreen` header
+2. `handleJoinVoiceChannel()` checks whether the user is already in or joining this room:
+   - **Already in/joining**: navigates to `VoiceChannelScreen` (viewer mode)
+   - **Not yet joined**: calls `joinChannelInline(groupId, groupName)` — **no navigation**
+3. **StreamCallContext.joinChannelInlineAction**:
+   - Pre-flight: if `busyRef.current` → sets `voiceRoomJoinState("error")`, `voiceRoomJoinError`, returns
+   - Sets `voiceRoomJoinState("joining")`, `voiceRoomJoinGroupId(groupId)`, clears error
+   - Delegates to `joinChannelAction(groupId, groupName).catch(…)` — on failure sets `voiceRoomJoinState("error")`
+4. **GroupChatScreen header reacts** to `voiceRoomJoinState`:
+   - `"joining"`: headset icon replaced with `ActivityIndicator` spinner; avatar stack visible (greyed); tap disabled
+   - `"joined"`: normal active-room header (avatar stack + headset icon tap navigates to VoiceChannelScreen)
+   - `"error"`: `VoiceRoomJoinBanner` slides up at bottom with error message, Retry button, and dismiss (X)
+5. **joinChannelAction** (unchanged):
+   - Sets `busyRef`, clears `deliberatelyLeftChannelsRef`
+   - Calls `joinVoiceChannel(groupId, groupName, userId)` via voiceChannelService
+   - Stores call, sets `activeSession`, marks `voiceRoomJoinState("joined")`
+6. **Join sound**: `StreamCallContext` has a `useEffect` that watches `voiceRoomJoinState`. When it transitions from `"joining"` (or `"idle"`) to `"joined"`, plays `ringtoneService.playSoundEffect("room_join")` with 300ms delay. This fires regardless of which screen is visible.
+7. User can then tap the header to open `VoiceChannelScreen` as a viewer/controller of the already-active session.
+
+#### 4.4.2 Direct join flow (from group info / calls screen)
+
+1. User taps "Join Voice" on `VoiceChannelCard` or `ActiveRoomCard`
 2. Parent navigates to `VoiceChannelScreen` with `channelId`, `channelName`, `groupId`
 3. `VoiceChannelScreen` mounts, shows "Joining voice channel…" spinner
 4. Join effect fires (dependency: mount + props):
+   - **Guard**: if `voiceRoomJoinState === "joining" || "joined"` → skip (inline join already in progress)
    - Guards: already in channel, already attempted, busy
    - If `wasChannelDeliberatelyLeft(channelId)`: clears the flag
    - Sets `joinAttemptedRef.current = true`
    - Calls `joinChannel(groupId, groupName)` from context
-5. **StreamCallContext.joinChannelAction**:
-   - Checks `busyRef.current` — throws if busy
-   - Sets `busyRef.current = true`
-   - Clears `deliberatelyLeftChannelsRef` for this channel
-   - Calls `joinVoiceChannel(groupId, groupName, userId)`
-6. **voiceChannelService.joinVoiceChannel**:
-   - Gets `channelId = getVoiceChannelId(groupId)` = `voice_channel_{groupId}`
-   - Best-effort provisions user in Stream
-   - Requests microphone permission
-   - Creates/gets call with `getOrCreate({ data: { custom: { groupId, groupName } } })`
-   - Starts audio session with `"speaker"` device
-   - Calls `call.join({ create: false })`
-   - Enables microphone after join
-   - Returns `Call` object
-7. Context stores call, sets `activeSession = { type: "voice_channel", channelId, channelName, groupId }`
-8. `VoiceChannelScreen` shows participant grid with controls
-9. Room join sound uses state-based detection: the local user's own transition into JOINED triggers one `room_join` sound (with a 300ms playback delay). The first participant snapshot is then recorded as a baseline (no additional sound). Subsequent participant count increases trigger the sound for remote joins. Remounting the screen while already JOINED (e.g. minimize and return) does not replay the local join sound.
+5. Steps 5–7 same as inline join (joinChannelAction → voiceChannelService → activeSession)
+6. `VoiceChannelScreen` shows participant grid with controls
+7. Join sound: same `StreamCallContext` effect fires ("idle" → "joined" transition)
+
+#### 4.4.3 Participant join sounds
+
+- **Local join sound**: Owned by `StreamCallContext`. Plays once when `voiceRoomJoinState` transitions to `"joined"` (from `"joining"` or `"idle"`). Works regardless of which screen is active.
+- **Remote participant join sound**: Owned by `StreamCallContext`. Subscribes to `call.state.participants$` on the active voice channel call. First emission is recorded as baseline (no sound). Subsequent participant count increases play `room_join`. Works globally — fires regardless of which screen is mounted, as long as the user is in an active voice channel session.
+- **No duplicate sounds**: Both local and remote join sounds are owned by the provider. `VoiceChannelScreen` has no sound logic. Remounting any screen does not replay sounds. Initial room hydration is always treated as baseline. Participant count decreases (leaves) are ignored.
 
 ### 4.5 Leaving a voice channel
 
@@ -514,12 +533,18 @@ No custom reconnection UI beyond status text. The service layer does provide joi
 - `activeCall: Call | null` — Stream SDK Call object (provides real-time state like `callingState`, `participants`, etc.)
 - `isBusy: boolean` — derived from `activeSession !== null`
 - `isReady: boolean` — true when StreamVideoClient is initialized and user is authenticated
+- `voiceRoomJoinState: "idle" | "joining" | "joined" | "error"` — state machine for inline voice-room join (v1.7). Reset to `"idle"` on `clearActiveState()`
+- `voiceRoomJoinError: string | null` — error message when state is `"error"`
+- `voiceRoomJoinGroupId: string | null` — groupId of the voice room being joined inline
+- `joinChannelInline(groupId, groupName): void` — non-throwing wrapper around `joinChannelAction` for inline join flow. Sets `voiceRoomJoinState` and delegates asynchronously
+- `clearVoiceRoomJoinError(): void` — resets `voiceRoomJoinState` to `"idle"` and clears error
 
 **Refs (not exposed, internal to provider)**:
 
 - `busyRef` — synchronous gate (set before async work to prevent double-starts)
 - `activeCallRef` — synchronous copy of activeCall for subscription callbacks
 - `deliberatelyLeftChannelsRef` — Set of channel IDs the user explicitly left
+- `prevJoinStateRef` — tracks previous `voiceRoomJoinState` for join sound detection
 
 ### 5.3 Persisted backend state
 
@@ -541,16 +566,17 @@ No custom reconnection UI beyond status text. The service layer does provide joi
 
 ### 5.5 Derived state
 
-| State                 | Derived from                            | Used by                                |
-| --------------------- | --------------------------------------- | -------------------------------------- |
-| `isBusy`              | `activeSession !== null`                | Context consumers, IncomingCallHandler |
-| `isJoined`            | `callingState === CallingState.JOINED`  | Call screens, controls                 |
-| `isRinging`           | `callingState === CallingState.RINGING` | DirectCallScreen ringtone              |
-| `isMuted`             | `call.microphone.state.status`          | CallControlBar                         |
-| `isCameraOff`         | `call.camera.state.status`              | CallControlBar                         |
-| `isInPiPMode`         | `useIsInPiPMode()` SDK hook             | FloatingVideoOverlay, DirectCallScreen |
-| `isCurrentUserInRoom` | `occupants.includes(uid)`               | VoiceRoomOccupancy                     |
-| `isActive`            | `occupants.length > 0`                  | VoiceChannelCard                       |
+| State                    | Derived from                                                           | Used by                                |
+| ------------------------ | ---------------------------------------------------------------------- | -------------------------------------- |
+| `isBusy`                 | `activeSession !== null`                                               | Context consumers, IncomingCallHandler |
+| `isJoined`               | `callingState === CallingState.JOINED`                                 | Call screens, controls                 |
+| `isRinging`              | `callingState === CallingState.RINGING`                                | DirectCallScreen ringtone              |
+| `isMuted`                | `call.microphone.state.status`                                         | CallControlBar                         |
+| `isCameraOff`            | `call.camera.state.status`                                             | CallControlBar                         |
+| `isInPiPMode`            | `useIsInPiPMode()` SDK hook                                            | FloatingVideoOverlay, DirectCallScreen |
+| `isCurrentUserInRoom`    | `occupants.includes(uid)`                                              | VoiceRoomOccupancy                     |
+| `isActive`               | `occupants.length > 0`                                                 | VoiceChannelCard                       |
+| `isJoiningThisVoiceRoom` | `voiceRoomJoinState === "joining" && voiceRoomJoinGroupId === groupId` | GroupChatScreen header                 |
 
 ### 5.6 Where state becomes stale
 
@@ -799,9 +825,12 @@ Screens are lazy-loaded via `require()` when `CALL_FEATURES.CALLS_ENABLED` is tr
 
 **VoiceChannelScreen entry**:
 
-1. From `VoiceChannelCard` in group info/chat
-2. From `ActiveRoomCard` on CallsScreen
-3. Navigation with `channelId`, `channelName`, `groupId` params
+1. From `GroupChatScreen` header tap (after inline join succeeds — viewer/controller mode, join already complete)
+2. From `VoiceChannelCard` in group info (direct join — VoiceChannelScreen initiates join)
+3. From `ActiveRoomCard` on CallsScreen (direct join)
+4. Navigation with `channelId`, `channelName`, `groupId` params
+
+**VoiceChannelScreen role change (v1.7)**: Previously the join owner. Now acts as viewer/controller when opened after an inline join from GroupChatScreen. Join effect skips if `voiceRoomJoinState === "joining" || "joined"`. Still handles direct join when entered from group info or calls screen.
 
 **VoiceChannelScreen exit**:
 
@@ -809,6 +838,10 @@ Screens are lazy-loaded via `require()` when `CALL_FEATURES.CALLS_ENABLED` is tr
 2. Call ends externally → `activeCall` becomes null → auto-leave after 250ms
 3. User taps minimize/back → `goBack()` (stays in channel)
 4. Join failure → error screen with Retry and Go Back (v1.3)
+
+**GroupChatScreen inline join error handling (v1.7)**:
+
+- Join failures during inline join are shown via `VoiceRoomJoinBanner` — a bottom-anchored error banner with message, Retry button, and dismiss (X). Does not block navigation or require a full-screen error state.
 
 ### 7.3 Call UI layering
 
@@ -926,15 +959,16 @@ Screens are lazy-loaded via `require()` when `CALL_FEATURES.CALLS_ENABLED` is tr
 
 **General strategy**: Try-catch with console.warn/error, continue execution. Most errors are logged but not surfaced to users.
 
-| Layer                             | Pattern                                                     | User feedback                                |
-| --------------------------------- | ----------------------------------------------------------- | -------------------------------------------- |
-| Service layer (directCallService) | `classifyCallError()` maps errors to user-friendly messages | Yes — thrown and caught by context/component |
-| Context layer                     | Catches service errors, re-throws to caller                 | Depends on caller                            |
-| Screen layer                      | Catches context errors, shows `Alert.alert()`               | Yes — for starting calls                     |
-| IncomingCallHandler               | Catches accept/reject failures, logs                        | No user feedback                             |
-| Voice channel join                | Sets `joinError` state, shows error screen                  | Yes — error + retry                          |
-| Audio session                     | Logs warnings, never throws                                 | No                                           |
-| Settings                          | Catches and shows Alert                                     | Yes                                          |
+| Layer                             | Pattern                                                                    | User feedback                                |
+| --------------------------------- | -------------------------------------------------------------------------- | -------------------------------------------- |
+| Service layer (directCallService) | `classifyCallError()` maps errors to user-friendly messages                | Yes — thrown and caught by context/component |
+| Context layer                     | Catches service errors, re-throws to caller                                | Depends on caller                            |
+| Screen layer                      | Catches context errors, shows `Alert.alert()`                              | Yes — for starting calls                     |
+| IncomingCallHandler               | Catches accept/reject failures, logs                                       | No user feedback                             |
+| Voice channel join (direct)       | Sets `joinError` state, shows error screen                                 | Yes — error + retry                          |
+| Voice channel join (inline)       | Sets `voiceRoomJoinState("error")` in context, shows `VoiceRoomJoinBanner` | Yes — bottom banner + retry                  |
+| Audio session                     | Logs warnings, never throws                                                | No                                           |
+| Settings                          | Catches and shows Alert                                                    | Yes                                          |
 
 ### 9.2 Known bugs and fragile areas
 
@@ -1080,6 +1114,8 @@ Screens are lazy-loaded via `require()` when `CALL_FEATURES.CALLS_ENABLED` is tr
 8. ~~**DirectCallScreen auto-dismiss race**~~ — ✅ **FIXED v1.1**: Auto-dismiss effect now respects `endedRef` to prevent double `goBack()`.
 
 9. ~~**Settings descriptions dishonest**~~ — ✅ **FIXED v1.1**: Unwired settings now show "Saved for future use — not yet enforced" instead of implying they work.
+
+10. ~~**Voice channel join requires full-screen navigation**~~ — ✅ **FIXED v1.7**: Inline voice-room join from `GroupChatScreen` via `joinChannelInline()`. Join lifecycle owned by `StreamCallContext`. Header shows spinner during join, avatar stack when joined. Errors shown via `VoiceRoomJoinBanner` (bottom-anchored, non-blocking). `VoiceChannelScreen` now a viewer/controller when opened after inline join. Join sound moved to context level (fires regardless of screen). See §4.4.
 
 ### 11.5 Resilience improvements
 

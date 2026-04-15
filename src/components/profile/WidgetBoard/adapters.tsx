@@ -81,7 +81,9 @@ const ProfileHeaderWide = memo(function ProfileHeaderWide({
   const colors = useColors();
 
   return (
-    <View style={[headerStyles.wideRoot, { backgroundColor: colors.surface }]}>
+    <View
+      style={[headerStyles.wideRoot, { backgroundColor: colors.background }]}
+    >
       <ProfilePictureWithDecoration
         pictureUrl={data.pictureUrl}
         name={data.displayName}
@@ -188,7 +190,9 @@ const ProfileHeaderLarge = memo(function ProfileHeaderLarge({
     : {};
 
   return (
-    <View style={[headerStyles.largeRoot, { backgroundColor: colors.surface }]}>
+    <View
+      style={[headerStyles.largeRoot, { backgroundColor: colors.background }]}
+    >
       {backgroundSource && (
         <CosmeticImage
           source={backgroundSource}
@@ -438,7 +442,9 @@ const ProfileHeaderHero = memo(function ProfileHeaderHero({
     : {};
 
   return (
-    <View style={[headerStyles.heroRoot, { backgroundColor: colors.surface }]}>
+    <View
+      style={[headerStyles.heroRoot, { backgroundColor: colors.background }]}
+    >
       {backgroundSource && (
         <CosmeticImage
           source={backgroundSource}
@@ -750,7 +756,9 @@ const ProfileHeaderMega = memo(function ProfileHeaderMega({
     : {};
 
   return (
-    <View style={[headerStyles.megaRoot, { backgroundColor: colors.surface }]}>
+    <View
+      style={[headerStyles.megaRoot, { backgroundColor: colors.background }]}
+    >
       {backgroundSource && (
         <CosmeticImage
           source={backgroundSource}
@@ -1089,7 +1097,7 @@ export const SocialProofAdapter = memo(function SocialProofAdapter({
   // ── Loading state ─────────────────────────────────────────────────
   if (isLoading) {
     return (
-      <View style={[spStyles.root, { backgroundColor: colors.surface }]}>
+      <View style={[spStyles.root, { backgroundColor: colors.background }]}>
         <View style={spStyles.centered}>
           <ActivityIndicator size="small" color={colors.primary} />
         </View>
@@ -1100,7 +1108,7 @@ export const SocialProofAdapter = memo(function SocialProofAdapter({
   // ── Error state ───────────────────────────────────────────────────
   if (hasError) {
     return (
-      <View style={[spStyles.root, { backgroundColor: colors.surface }]}>
+      <View style={[spStyles.root, { backgroundColor: colors.background }]}>
         <View style={spStyles.centered}>
           <MaterialCommunityIcons
             name="alert-circle-outline"
@@ -1120,7 +1128,7 @@ export const SocialProofAdapter = memo(function SocialProofAdapter({
     if (!topStreak) {
       return (
         <TouchableOpacity
-          style={[spStyles.root, { backgroundColor: colors.surface }]}
+          style={[spStyles.root, { backgroundColor: colors.background }]}
           onPress={onPress}
           activeOpacity={0.7}
           disabled={!onPress}
@@ -1159,7 +1167,7 @@ export const SocialProofAdapter = memo(function SocialProofAdapter({
 
     return (
       <TouchableOpacity
-        style={[spStyles.root, { backgroundColor: colors.surface }]}
+        style={[spStyles.root, { backgroundColor: colors.background }]}
         onPress={onPress}
         activeOpacity={0.7}
         disabled={!onPress}
@@ -1254,7 +1262,7 @@ export const SocialProofAdapter = memo(function SocialProofAdapter({
     if (!topStreak) {
       return (
         <TouchableOpacity
-          style={[spStyles.root, { backgroundColor: colors.surface }]}
+          style={[spStyles.root, { backgroundColor: colors.background }]}
           onPress={onPress}
           activeOpacity={0.7}
           disabled={!onPress}
@@ -1282,7 +1290,7 @@ export const SocialProofAdapter = memo(function SocialProofAdapter({
 
     return (
       <TouchableOpacity
-        style={[spStyles.root, { backgroundColor: colors.surface }]}
+        style={[spStyles.root, { backgroundColor: colors.background }]}
         onPress={onPress}
         activeOpacity={0.7}
         disabled={!onPress}
@@ -1515,7 +1523,9 @@ export const MutualFriendsAdapter = memo(function MutualFriendsAdapter({
   const count = data.mutualCount ?? mutuals.length;
 
   return (
-    <View style={[adapterStyles.fillPad, { backgroundColor: colors.surface }]}>
+    <View
+      style={[adapterStyles.fillPad, { backgroundColor: colors.background }]}
+    >
       <View style={adapterStyles.adapterHeader}>
         <MaterialCommunityIcons
           name="account-multiple-check"
@@ -1587,7 +1597,7 @@ export const FavoriteGameAdapter = memo(function FavoriteGameAdapter({
   // ── small (2×1, 88px): icon + name + mini stats row ──────────────
   if (size === "small") {
     return (
-      <View style={[favStyles.root, { backgroundColor: colors.surface }]}>
+      <View style={[favStyles.root, { backgroundColor: colors.background }]}>
         <View style={favStyles.smallTop}>
           <MaterialCommunityIcons
             name="gamepad-variant"
@@ -1649,7 +1659,7 @@ export const FavoriteGameAdapter = memo(function FavoriteGameAdapter({
   // ── wide (4×1, 88px): horizontal — icon, name, spacer, stat pills ─
   if (size === "wide") {
     return (
-      <View style={[favStyles.root, { backgroundColor: colors.surface }]}>
+      <View style={[favStyles.root, { backgroundColor: colors.background }]}>
         <View style={favStyles.wideHeader}>
           <MaterialCommunityIcons
             name="gamepad-variant"
@@ -1716,7 +1726,7 @@ export const FavoriteGameAdapter = memo(function FavoriteGameAdapter({
 
   // ── medium (2×2, 176px): centered vertical card ──────────────────
   return (
-    <View style={[favStyles.root, { backgroundColor: colors.surface }]}>
+    <View style={[favStyles.root, { backgroundColor: colors.background }]}>
       <View style={favStyles.medHeader}>
         <MaterialCommunityIcons
           name="gamepad-variant"
@@ -1822,7 +1832,7 @@ export const ProfileStatsAdapter = memo(function ProfileStatsAdapter({
   if (isWide) {
     // Wide (4×1, 88px): compact horizontal cells
     return (
-      <View style={[statsStyles.root, { backgroundColor: colors.surface }]}>
+      <View style={[statsStyles.root, { backgroundColor: colors.background }]}>
         <View style={statsStyles.header}>
           <MaterialCommunityIcons
             name="chart-bar"
@@ -1866,7 +1876,7 @@ export const ProfileStatsAdapter = memo(function ProfileStatsAdapter({
 
   // Medium (2×2, 176px): generous vertical cells
   return (
-    <View style={[statsStyles.root, { backgroundColor: colors.surface }]}>
+    <View style={[statsStyles.root, { backgroundColor: colors.background }]}>
       <View style={statsStyles.header}>
         <MaterialCommunityIcons
           name="chart-bar"
@@ -1924,7 +1934,9 @@ export const RecentActivityAdapter = memo(function RecentActivityAdapter({
   const maxItems = size === "large" ? 4 : 2;
 
   return (
-    <View style={[adapterStyles.fillPad, { backgroundColor: colors.surface }]}>
+    <View
+      style={[adapterStyles.fillPad, { backgroundColor: colors.background }]}
+    >
       <View style={adapterStyles.adapterHeader}>
         <MaterialCommunityIcons
           name="history"
@@ -1993,7 +2005,7 @@ export const ViewerActionsAdapter = memo(function ViewerActionsAdapter({
     <View
       style={[
         viewerActionsStyles.container,
-        { backgroundColor: colors.surface },
+        { backgroundColor: colors.background },
       ]}
     >
       {/* Muted badge */}
@@ -2163,7 +2175,7 @@ export const TasksOverviewAdapter = memo(function TasksOverviewAdapter({
   if (size === "wide") {
     return (
       <TouchableOpacity
-        style={[taskStyles.wideRoot, { backgroundColor: colors.surface }]}
+        style={[taskStyles.wideRoot, { backgroundColor: colors.background }]}
         onPress={handlePress}
         activeOpacity={isInteractive ? 0.7 : 1}
         disabled={!isInteractive}
@@ -2218,7 +2230,7 @@ export const TasksOverviewAdapter = memo(function TasksOverviewAdapter({
   // large (4×2)
   return (
     <TouchableOpacity
-      style={[taskStyles.largeRoot, { backgroundColor: colors.surface }]}
+      style={[taskStyles.largeRoot, { backgroundColor: colors.background }]}
       onPress={handlePress}
       activeOpacity={isInteractive ? 0.7 : 1}
       disabled={!isInteractive}
@@ -2375,7 +2387,7 @@ export const WalletBalanceAdapter = memo(function WalletBalanceAdapter({
   if (size === "small") {
     return (
       <TouchableOpacity
-        style={[walletStyles.smallRoot, { backgroundColor: colors.surface }]}
+        style={[walletStyles.smallRoot, { backgroundColor: colors.background }]}
         onPress={handlePress}
         activeOpacity={isInteractive ? 0.7 : 1}
         disabled={!isInteractive}
@@ -2402,7 +2414,7 @@ export const WalletBalanceAdapter = memo(function WalletBalanceAdapter({
   if (size === "medium") {
     return (
       <TouchableOpacity
-        style={[walletStyles.medRoot, { backgroundColor: colors.surface }]}
+        style={[walletStyles.medRoot, { backgroundColor: colors.background }]}
         onPress={handlePress}
         activeOpacity={isInteractive ? 0.7 : 1}
         disabled={!isInteractive}
@@ -2439,7 +2451,7 @@ export const WalletBalanceAdapter = memo(function WalletBalanceAdapter({
   // wide (4×1)
   return (
     <TouchableOpacity
-      style={[walletStyles.wideRoot, { backgroundColor: colors.surface }]}
+      style={[walletStyles.wideRoot, { backgroundColor: colors.background }]}
       onPress={handlePress}
       activeOpacity={isInteractive ? 0.7 : 1}
       disabled={!isInteractive}
@@ -2570,7 +2582,7 @@ export const ThemeModeAdapter = memo(function ThemeModeAdapter({
       style={[
         themeStyles.root,
         isSmall && themeStyles.rootCompact,
-        { backgroundColor: colors.surface },
+        { backgroundColor: colors.background },
       ]}
     >
       <View style={themeStyles.headerRow}>
@@ -2732,7 +2744,7 @@ export const ChatLayoutModeAdapter = memo(function ChatLayoutModeAdapter({
       style={[
         chatLayoutStyles.root,
         isSmall && chatLayoutStyles.rootCompact,
-        { backgroundColor: colors.surface },
+        { backgroundColor: colors.background },
       ]}
     >
       <View style={chatLayoutStyles.headerRow}>

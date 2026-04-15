@@ -30,7 +30,6 @@ import {
   View,
 } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
-import { scheduleOnRN } from "react-native-worklets";
 import Animated, {
   ReduceMotion,
   useAnimatedStyle,
@@ -39,6 +38,7 @@ import Animated, {
   withTiming,
   type WithSpringConfig,
 } from "react-native-reanimated";
+import { scheduleOnRN } from "react-native-worklets";
 
 import { BorderRadius, Spacing } from "@/constants/theme";
 import { useColors } from "@/store/ThemeContext";
@@ -595,7 +595,7 @@ function WidgetWrapperBase({
           style={[
             styles.content,
             {
-              backgroundColor: colors.surface,
+              backgroundColor: colors.background,
               borderColor: isCustomizing
                 ? colors.primary + "40"
                 : colors.outline + "30",

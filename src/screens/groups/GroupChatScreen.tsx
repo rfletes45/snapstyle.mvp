@@ -198,6 +198,7 @@ import { useConversationDisplayMode } from "@/store/ConversationDisplayModeConte
 
 // Voice channels (Stream-powered)
 import { VoiceRoomAvatarStack } from "@/components/stream/VoiceRoomAvatarStack";
+import { VoiceRoomJoinBanner } from "@/components/stream/VoiceRoomJoinBanner";
 import { useStreamCall } from "@/contexts/StreamCallContext";
 import { useVoiceRoomOccupancy } from "@/hooks/useVoiceRoomOccupancy";
 import { getVoiceChannelId } from "@/services/stream/voiceChannelIds";
@@ -334,11 +335,21 @@ export default function GroupChatScreen({ route, navigation }: Props) {
 
   // Voice room occupancy (Stream-powered)
   const voiceRoom = useVoiceRoomOccupancy(groupId);
-  const { isBusy, activeSession } = useStreamCall();
+  const {
+    isBusy,
+    activeSession,
+    joinChannelInline,
+    voiceRoomJoinState,
+    voiceRoomJoinError,
+    voiceRoomJoinGroupId,
+    clearVoiceRoomJoinError,
+  } = useStreamCall();
   const voiceChannelId = groupId ? getVoiceChannelId(groupId) : "";
   const isCurrentUserInThisVoiceRoom =
     activeSession?.type === "voice_channel" &&
     activeSession.channelId === voiceChannelId;
+  const isJoiningThisVoiceRoom =
+    voiceRoomJoinState === "joining" && voiceRoomJoinGroupId === groupId;
 
   // Resolve outgoing chat cosmetics (bubble color, text color, font)
   const chatStyle = useMemo(
@@ -1245,17 +1256,33 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   // ==========================================================================
 
   // Voice Channel Handler (Stream-powered)
+  // Inline join: starts joining from group chat, no navigation.
+  // If already joined/joining, navigates to the full call screen instead.
   const handleJoinVoiceChannel = useCallback(() => {
     if (!CALL_FEATURES.CALLS_ENABLED) return;
     if (!group || !groupId) return;
 
-    const channelId = getVoiceChannelId(groupId);
-    navigation.navigate("VoiceChannel" as any, {
-      channelId,
-      channelName: group.name || "Voice Channel",
-      groupId,
-    });
-  }, [group, groupId, navigation]);
+    // Already in this room → navigate to the call screen
+    if (isCurrentUserInThisVoiceRoom || isJoiningThisVoiceRoom) {
+      const channelId = getVoiceChannelId(groupId);
+      navigation.navigate("VoiceChannel" as any, {
+        channelId,
+        channelName: group.name || "Voice Channel",
+        groupId,
+      });
+      return;
+    }
+
+    // Start inline join (no navigation)
+    joinChannelInline(groupId, group.name || "Voice Channel");
+  }, [
+    group,
+    groupId,
+    isCurrentUserInThisVoiceRoom,
+    isJoiningThisVoiceRoom,
+    joinChannelInline,
+    navigation,
+  ]);
 
   // Games V4: handle game selection from picker
   const handleGameSelected = useCallback(
@@ -2232,40 +2259,48 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   const renderHeaderRight = useCallback(
     () => (
       <View style={styles.headerRightRow}>
-        {CALL_FEATURES.CALLS_ENABLED && voiceRoom.isActive && (
-          <VoiceRoomAvatarStack
-            occupants={voiceRoom.occupants}
-            onPress={handleJoinVoiceChannel}
-          />
-        )}
+        {CALL_FEATURES.CALLS_ENABLED &&
+          (voiceRoom.isActive || isJoiningThisVoiceRoom) && (
+            <VoiceRoomAvatarStack
+              occupants={voiceRoom.occupants}
+              onPress={handleJoinVoiceChannel}
+            />
+          )}
         {CALL_FEATURES.CALLS_ENABLED && (
           <TouchableOpacity
             onPress={handleJoinVoiceChannel}
             style={styles.callButton}
+            disabled={isJoiningThisVoiceRoom}
             accessibilityLabel={
-              voiceRoom.error && !voiceRoom.isActive
-                ? "Voice room status unavailable. Tap to try joining."
-                : isCurrentUserInThisVoiceRoom
-                  ? "Return to voice room"
-                  : voiceRoom.isActive
-                    ? "Join voice room"
-                    : "Start voice room"
+              isJoiningThisVoiceRoom
+                ? "Joining voice room..."
+                : voiceRoom.error && !voiceRoom.isActive
+                  ? "Voice room status unavailable. Tap to try joining."
+                  : isCurrentUserInThisVoiceRoom
+                    ? "Return to voice room"
+                    : voiceRoom.isActive
+                      ? "Join voice room"
+                      : "Start voice room"
             }
             accessibilityRole="button"
           >
-            <Ionicons
-              name="headset"
-              size={22}
-              color={
-                isCurrentUserInThisVoiceRoom
-                  ? "#43A047"
-                  : voiceRoom.error && !voiceRoom.isActive
-                    ? colors.warning
-                  : voiceRoom.isActive
-                    ? colors.primary
-                    : colors.textMuted
-              }
-            />
+            {isJoiningThisVoiceRoom ? (
+              <ActivityIndicator size={18} color={colors.primary} />
+            ) : (
+              <Ionicons
+                name="headset"
+                size={22}
+                color={
+                  isCurrentUserInThisVoiceRoom
+                    ? "#43A047"
+                    : voiceRoom.error && !voiceRoom.isActive
+                      ? colors.warning
+                      : voiceRoom.isActive
+                        ? colors.primary
+                        : colors.textMuted
+                }
+              />
+            )}
           </TouchableOpacity>
         )}
         <IconButton
@@ -2281,6 +2316,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
       groupId,
       handleJoinVoiceChannel,
       isCurrentUserInThisVoiceRoom,
+      isJoiningThisVoiceRoom,
       navigation,
       voiceRoom.error,
       voiceRoom.isActive,
@@ -2587,6 +2623,21 @@ export default function GroupChatScreen({ route, navigation }: Props) {
         />
       )}
 
+      {voiceRoomJoinState === "error" &&
+        voiceRoomJoinGroupId === groupId &&
+        voiceRoomJoinError && (
+          <VoiceRoomJoinBanner
+            message={voiceRoomJoinError}
+            onRetry={() => {
+              clearVoiceRoomJoinError();
+              if (group && groupId) {
+                joinChannelInline(groupId, group.name || "Voice Channel");
+              }
+            }}
+            onDismiss={clearVoiceRoomJoinError}
+          />
+        )}
+
       <Snackbar
         visible={snackbar.visible}
         onDismiss={() => setSnackbar({ visible: false, message: "" })}
@@ -2639,7 +2690,7 @@ const styles = StyleSheet.create({
   },
   callButton: {
     padding: 8,
-    marginRight: 4,
+    marginRight: -2,
   },
   messageContainer: { marginBottom: 14, width: "100%" },
   groupedMessageContainer: {}, // Visual grouping (hides some elements) — no spacing change

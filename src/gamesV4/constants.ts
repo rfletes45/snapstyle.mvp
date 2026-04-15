@@ -126,6 +126,10 @@ export interface GameMetadata {
   supportsOfflineProgression?: boolean;
   /** Whether this game uses long-lived sessions (exempt from inactivity auto-resolve). */
   longLivedSession?: boolean;
+
+  // ── Visual / Hub display fields ─────────────────────────────────────
+  /** Optional full-bleed thumbnail image for the game hub card (require() asset). */
+  thumbnail?: number;
 }
 
 /**
@@ -151,6 +155,7 @@ export const GAME_METADATA: Record<GameId, GameMetadata> = {
     maxPlayers: 1,
     supportsSpectate: false,
     icon: "numeric",
+    thumbnail: require("../../assets/images/games/2048_Thumbnail.png"),
   },
   brick_breaker: {
     gameId: "brick_breaker",
@@ -160,6 +165,7 @@ export const GAME_METADATA: Record<GameId, GameMetadata> = {
     maxPlayers: 1,
     supportsSpectate: false,
     icon: "grid-large",
+    thumbnail: require("../../assets/images/games/Brick_Breaker_Thumbnail.png"),
   },
   word_master: {
     gameId: "word_master",
@@ -178,6 +184,7 @@ export const GAME_METADATA: Record<GameId, GameMetadata> = {
     maxPlayers: 1,
     supportsSpectate: false,
     icon: "bomb",
+    thumbnail: require("../../assets/images/games/Minesweeper_Thumbnail.png"),
   },
   lights_out: {
     gameId: "lights_out",
@@ -344,6 +351,7 @@ export const GAME_METADATA: Record<GameId, GameMetadata> = {
     maxPlayers: 1,
     supportsSpectate: false,
     icon: "cards-playing-spade-multiple",
+    thumbnail: require("../../assets/images/games/Solitaire_Thumbnail.png"),
   },
   hex: {
     gameId: "hex",
