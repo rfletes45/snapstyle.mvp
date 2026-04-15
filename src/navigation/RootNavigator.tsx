@@ -62,6 +62,7 @@ import OwnProfileScreen from "@/screens/profile/OwnProfileScreen";
 import SetStatusScreen from "@/screens/profile/SetStatusScreen";
 import UserProfileScreen from "@/screens/profile/UserProfileScreen";
 import BlockedUsersScreen from "@/screens/settings/BlockedUsersScreen";
+import NotificationSettingsScreen from "@/screens/settings/NotificationSettingsScreen";
 import PrivacySettingsScreen from "@/screens/settings/PrivacySettingsScreen";
 import SettingsScreen from "@/screens/settings/SettingsScreen";
 import ShopHubScreen from "@/screens/shop/ShopHubScreen";
@@ -256,12 +257,17 @@ function ProfileStack() {
       <ProfileStack_Nav.Screen
         name="BlockedUsers"
         component={BlockedUsersScreen}
-        options={{ title: "Blocked" }}
+        options={{ headerShown: false }}
       />
       <ProfileStack_Nav.Screen
         name="PrivacySettings"
         component={PrivacySettingsScreen}
         options={{ title: "Privacy Settings" }}
+      />
+      <ProfileStack_Nav.Screen
+        name="NotificationSettings"
+        component={NotificationSettingsScreen}
+        options={{ headerShown: false }}
       />
       <ProfileStack_Nav.Screen
         name="BadgeCollection"
@@ -495,6 +501,11 @@ function MainStack() {
       <MainStack_Nav.Screen
         name="InboxSettings"
         component={InboxSettingsScreen}
+        options={{ headerShown: false }}
+      />
+      <MainStack_Nav.Screen
+        name="BlockedUsers"
+        component={BlockedUsersScreen}
         options={{ headerShown: false }}
       />
       <MainStack_Nav.Screen

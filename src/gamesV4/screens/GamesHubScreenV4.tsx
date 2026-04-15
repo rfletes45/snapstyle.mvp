@@ -116,9 +116,6 @@ export default function GamesHubScreenV4() {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState<FilterKey>("all");
   const scrollViewRef = useRef<ScrollView>(null);
-  /** Y offset of the sticky section inside the ScrollView (child 0 height). */
-  const [child0Height, setChild0Height] = useState(0);
-  const hasAutoScrolledRef = useRef(false);
 
   // ── Level/XP data ──────────────────────────────────────────────────────
   const { levelInfo: profileLevel } = useProfileData(uid);
@@ -242,6 +239,13 @@ export default function GamesHubScreenV4() {
       })
       .filter((s) => s.data.length > 0);
   }, [sections, searchQuery, activeFilter]);
+
+  // Index of each section header as a direct ScrollView child:
+  // child 0 = level+active block, then per-section: header at 1+i*2, grid at 2+i*2
+  const stickyHeaderIndices = useMemo(
+    () => filteredSections.map((_, i) => 1 + i * 2),
+    [filteredSections],
+  );
 
   // ── Handlers ───────────────────────────────────────────────────────────
   const handleInviteTap = useCallback(
@@ -406,29 +410,10 @@ export default function GamesHubScreenV4() {
     setTimeout(() => setRefreshing(false), 1200);
   }, []);
 
-  // ── Auto-scroll to sticky section when user starts typing ─────────────
-  /** scrollContent paddingTop must be accounted for so the sticky bar is flush. */
-  const SCROLL_CONTENT_PAD_TOP = 12;
-  const stickyScrollTarget = child0Height + SCROLL_CONTENT_PAD_TOP;
-
-  const handleSearchChange = useCallback(
-    (text: string) => {
-      setSearchQuery(text);
-      if (text.trim().length > 0 && child0Height > 0 && scrollViewRef.current) {
-        scrollViewRef.current.scrollTo({
-          y: stickyScrollTarget,
-          animated: true,
-        });
-      }
-    },
-    [child0Height, stickyScrollTarget],
-  );
-
-  const handleSearchFocus = useCallback(() => {
-    if (child0Height > 0 && scrollViewRef.current) {
-      scrollViewRef.current.scrollTo({ y: stickyScrollTarget, animated: true });
-    }
-  }, [child0Height, stickyScrollTarget]);
+  // ── Search handler ──────────────────────────────────────────────────────
+  const handleSearchChange = useCallback((text: string) => {
+    setSearchQuery(text);
+  }, []);
 
   // ── Colors ─────────────────────────────────────────────────────────────
   const bgColor = theme.isDark ? "#000" : theme.colors.background;
@@ -437,6 +422,7 @@ export default function GamesHubScreenV4() {
   const subtextColor = theme.isDark ? "#AAA" : "#666";
   const borderColor = theme.isDark ? "#333" : "#E0E0E0";
   const accentBg = theme.isDark ? "#2C2C2E" : "#F2F2F7";
+  const sectionBarBg = theme.isDark ? "#1C1C1E" : "#FFF";
 
   // ── Invite status label ────────────────────────────────────────────────
   const inviteStatusLabel = (status: string): string => {
@@ -474,17 +460,6 @@ export default function GamesHubScreenV4() {
         renderRight={() => (
           <View style={styles.headerRightRow}>
             <TouchableOpacity
-              onPress={handleAchievements}
-              style={[styles.headerCircleButton, { backgroundColor: accentBg }]}
-              activeOpacity={0.7}
-            >
-              <MaterialCommunityIcons
-                name="trophy-outline"
-                size={20}
-                color={theme.colors.primary}
-              />
-            </TouchableOpacity>
-            <TouchableOpacity
               onPress={handleMyStats}
               style={[styles.headerButton, { backgroundColor: accentBg }]}
               activeOpacity={0.7}
@@ -503,21 +478,87 @@ export default function GamesHubScreenV4() {
                 My Stats
               </Text>
             </TouchableOpacity>
+            <TouchableOpacity
+              onPress={handleAchievements}
+              style={[styles.headerCircleButton, { backgroundColor: accentBg }]}
+              activeOpacity={0.7}
+            >
+              <MaterialCommunityIcons
+                name="trophy-outline"
+                size={20}
+                color={theme.colors.primary}
+              />
+            </TouchableOpacity>
           </View>
         )}
       />
 
+      {/* ── Filters + Search (fixed below header) ─────────────── */}
+      <View
+        style={[styles.stickySearchContainer, { backgroundColor: bgColor }]}
+      >
+        <View style={[styles.filterTabBar, { borderBottomColor: borderColor }]}>
+          {FILTER_PILLS.map((pill) => {
+            const isActive = activeFilter === pill.key;
+            return (
+              <TouchableOpacity
+                key={pill.key}
+                style={[
+                  styles.filterTab,
+                  isActive && {
+                    borderBottomColor: theme.colors.primary,
+                    borderBottomWidth: 2,
+                  },
+                ]}
+                onPress={() => setActiveFilter(pill.key)}
+                activeOpacity={0.7}
+              >
+                <Text
+                  style={[
+                    styles.filterTabLabel,
+                    {
+                      color: isActive ? theme.colors.primary : subtextColor,
+                      fontWeight: isActive ? "600" : "400",
+                    },
+                  ]}
+                >
+                  {pill.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+        <View style={styles.searchContainer}>
+          <Searchbar
+            placeholder="Search games…"
+            onChangeText={handleSearchChange}
+            value={searchQuery}
+            style={[
+              styles.searchBar,
+              { backgroundColor: theme.colors.background },
+            ]}
+            inputStyle={[styles.searchInput, { color: textColor }]}
+            iconColor={subtextColor}
+            placeholderTextColor={subtextColor}
+            elevation={0}
+          />
+        </View>
+        <View
+          style={[styles.searchDivider, { backgroundColor: borderColor }]}
+        />
+      </View>
+
       <ScrollView
         ref={scrollViewRef}
+        stickyHeaderIndices={stickyHeaderIndices}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
-        stickyHeaderIndices={[1]}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
         }
       >
-        {/* ── Child 0: Level & Active Games (scrolls normally) ── */}
-        <View onLayout={(e) => setChild0Height(e.nativeEvent.layout.height)}>
+        {/* ── Level & Active Games ── */}
+        <View>
           {/* ── Level & Rewards Card ───────────────────────────────── */}
           <TouchableOpacity
             style={[
@@ -654,83 +695,30 @@ export default function GamesHubScreenV4() {
           )}
         </View>
 
-        {/* ── Child 1: Search + Tab Bar (sticky) ─────────────────── */}
-        <View
-          style={[styles.stickySearchContainer, { backgroundColor: bgColor }]}
-        >
-          {/* Search bar */}
-          <View style={styles.searchContainer}>
-            <Searchbar
-              placeholder="Search games\u2026"
-              onChangeText={handleSearchChange}
-              onFocus={handleSearchFocus}
-              value={searchQuery}
-              style={[
-                styles.searchBar,
-                { backgroundColor: theme.colors.background },
-              ]}
-              inputStyle={[styles.searchInput, { color: textColor }]}
-              iconColor={subtextColor}
-              placeholderTextColor={subtextColor}
-              elevation={0}
-            />
-          </View>
-
-          {/* Filter tab bar */}
-          <View
-            style={[styles.filterTabBar, { borderBottomColor: borderColor }]}
-          >
-            {FILTER_PILLS.map((pill) => {
-              const isActive = activeFilter === pill.key;
-              return (
-                <TouchableOpacity
-                  key={pill.key}
-                  style={[
-                    styles.filterTab,
-                    isActive && {
-                      borderBottomColor: theme.colors.primary,
-                      borderBottomWidth: 2,
-                    },
-                  ]}
-                  onPress={() => setActiveFilter(pill.key)}
-                  activeOpacity={0.7}
-                >
-                  <Text
-                    style={[
-                      styles.filterTabLabel,
-                      {
-                        color: isActive ? theme.colors.primary : subtextColor,
-                        fontWeight: isActive ? "600" : "400",
-                      },
-                    ]}
-                  >
-                    {pill.label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
-          {/* Divider */}
-          <View
-            style={[styles.searchDivider, { backgroundColor: borderColor }]}
-          />
-        </View>
-
         {/* ── Game Catalog ─────────────────────────────────────────── */}
-        {filteredSections.map((section) => {
+        {filteredSections.flatMap((section) => {
           const isCollapsed = collapsedSections.has(section.title);
-          return (
-            <View key={section.title} style={styles.section}>
+          return [
+            /* ── Section header (sticky direct child) ─────────────── */
+            <View
+              key={`header-${section.title}`}
+              style={[
+                styles.sectionHeaderWrapper,
+                { backgroundColor: sectionBarBg },
+              ]}
+            >
               <TouchableOpacity
-                style={styles.sectionTitleRow}
+                style={[
+                  styles.sectionHeaderBar,
+                  { backgroundColor: sectionBarBg },
+                ]}
                 onPress={() => toggleSectionCollapse(section.title)}
                 activeOpacity={0.7}
               >
                 <Text
                   style={[
                     styles.sectionTitle,
-                    { color: subtextColor, marginBottom: 0 },
+                    { color: textColor, marginBottom: 0 },
                   ]}
                 >
                   {section.emoji} {section.title.toUpperCase()}
@@ -741,8 +729,16 @@ export default function GamesHubScreenV4() {
                   color={subtextColor}
                 />
               </TouchableOpacity>
+            </View>,
+            /* ── Section grid (non-sticky direct child) ────────────── */
+            <View key={`grid-${section.title}`}>
               {!isCollapsed && (
-                <View style={[styles.catalogGrid, { marginTop: 10 }]}>
+                <View
+                  style={[
+                    styles.catalogGrid,
+                    { marginTop: 12, marginBottom: 12, paddingHorizontal: 16 },
+                  ]}
+                >
                   {section.data.map((game) => {
                     const isImplemented = IMPLEMENTED_GAME_IDS.has(game.gameId);
                     const isLaunching = launchingSolo === game.gameId;
@@ -814,7 +810,7 @@ export default function GamesHubScreenV4() {
                         key={game.gameId}
                         style={[
                           styles.catalogCard,
-                          { backgroundColor: cardBg, borderColor },
+                          { backgroundColor: cardBg },
                           !isImplemented && { opacity: 0.5 },
                           isMastered && {
                             borderColor: "#DAA520",
@@ -909,8 +905,8 @@ export default function GamesHubScreenV4() {
                   })}
                 </View>
               )}
-            </View>
-          );
+            </View>,
+          ];
         })}
 
         {/* Bottom spacer */}
@@ -954,12 +950,11 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: 16,
-    paddingTop: 12,
+    paddingTop: 4,
   },
 
   // Sticky search + filters
   stickySearchContainer: {
-    marginHorizontal: -16,
     paddingTop: 0,
     paddingBottom: 0,
     zIndex: 3,
@@ -972,14 +967,26 @@ const styles = StyleSheet.create({
 
   // Section
   section: {
-    marginBottom: 20,
-    marginTop: 16,
+    marginBottom: 0,
+    marginTop: 0,
   },
   sectionTitle: {
     fontSize: 13,
     fontWeight: "700",
     letterSpacing: 0.8,
     marginBottom: 10,
+  },
+  // Full-width section header bar
+  sectionHeaderWrapper: {
+    marginHorizontal: -16,
+    overflow: "visible",
+  },
+  sectionHeaderBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 14,
   },
   sectionTitleRow: {
     flexDirection: "row",
@@ -1071,7 +1078,8 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     paddingHorizontal: 6,
     borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
+    borderWidth: 1,
+    borderColor: "#D1D5DB",
   },
   catalogIcon: {
     width: 52,
@@ -1108,13 +1116,15 @@ const styles = StyleSheet.create({
     aspectRatio: 1,
     borderRadius: 12,
     overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "#D1D5DB",
   },
   thumbnailBg: {
     flex: 1,
     justifyContent: "flex-end",
   },
   thumbnailImage: {
-    borderRadius: 12,
+    // borderRadius handled by parent overflow:hidden
   },
   thumbnailLoadingOverlay: {
     ...StyleSheet.absoluteFillObject,
@@ -1124,7 +1134,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   thumbnailBanner: {
-    backgroundColor: "rgba(255,255,255,0.55)",
+    backgroundColor: "rgba(255,255,255,0.82)",
     paddingVertical: 6,
     paddingHorizontal: 8,
     alignItems: "center",
@@ -1149,7 +1159,8 @@ const styles = StyleSheet.create({
     padding: 14,
     borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,
-    marginBottom: 16,
+    marginBottom: 8,
+    marginTop: 8,
     gap: 8,
   },
   lrTopRow: {

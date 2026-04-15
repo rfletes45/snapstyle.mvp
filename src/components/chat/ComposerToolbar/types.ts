@@ -86,6 +86,12 @@ export interface ComposerToolbarLayout {
 /** Categories for grouping items in the picker. */
 export type ToolbarItemCategory = "core" | "actions" | "media" | "extras";
 
+/** Per-item interaction overrides for toolbar gestures. */
+export interface ToolbarItemInteractionConfig {
+  /** Long-press duration before the toolbar enters edit mode for this item. */
+  editModeLongPressDurationMs?: number;
+}
+
 /**
  * Static metadata for a toolbar item type.
  * Defines its display properties and behavior constraints.
@@ -111,6 +117,8 @@ export interface ToolbarItemDefinition {
   defaultPosition: number;
   /** Whether this item is available (false = coming soon). */
   available: boolean;
+  /** Optional interaction overrides for special-case items. */
+  interaction?: ToolbarItemInteractionConfig;
 }
 
 // =============================================================================
@@ -134,6 +142,9 @@ export const TOOLBAR_BUTTON_SIZE = 40;
 
 /** Duration in ms for long-press to enter edit mode. */
 export const EDIT_MODE_LONG_PRESS_DURATION = 500;
+
+/** Additional edit-mode delay applied only to the camera toolbar item. */
+export const CAMERA_EDIT_MODE_EXTRA_DELAY_MS = 500;
 
 // =============================================================================
 // Default Layout

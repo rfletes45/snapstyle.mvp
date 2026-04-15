@@ -159,25 +159,26 @@ This means:
 
 ### Components
 
-| File                                                  | Purpose                                                  |
-| ----------------------------------------------------- | -------------------------------------------------------- |
-| `src/components/chat/ChatHeader.tsx`                  | Shared header scaffold                                   |
-| `src/components/chat/ChatMessageList.tsx`             | Inverted FlatList wrapper                                |
-| `src/components/chat/ChatComposer.tsx`                | Composer UI (text input, toolbar, attachments)           |
-| `src/components/chat/ChatMessageRenderer.tsx`         | DM entry point — delegates to Stacked or Bubble renderer |
-| `src/components/chat/MessageActionsSheet.tsx`         | Long-press action sheet with quick reactions             |
-| `src/components/chat/SystemMessageChip.tsx`           | System message presentation                              |
-| `src/components/DMMessageItem.tsx`                    | DM bubble-mode message renderer                          |
-| `src/components/chat/StackedMessageRenderer.tsx`      | DM stacked-mode message renderer with card containers    |
-| `src/components/chat/GroupStackedMessageRenderer.tsx` | Group stacked-mode message renderer with card containers |
-| `src/components/chat/ReactionBar.tsx`                 | ReactionPills + QuickReactionBar                         |
-| `src/components/chat/ReactionDetailSheet.tsx`         | Modal showing who reacted per emoji                      |
-| `src/components/chat/ThreadIndicator.tsx`             | "View thread (N replies)" link                           |
-| `src/components/chat/DateDivider.tsx`                 | Day separator                                            |
-| `src/components/chat/ChatKeyboardScrollView.tsx`      | KCSV adapter + ChatFooterWrapper + isKCSVAvailable       |
-| `src/components/chat/PickerLoadingFallback.tsx`       | Suspense fallback for lazy-loaded picker buttons         |
-| `src/components/chat/lazyChatComponents.tsx`          | React.lazy wrappers for modals (emoji, schedule, block)  |
-| `src/components/chat/pickerPreload.ts`                | Eager preload registry for toolbar picker sheet bundles  |
+| File                                                  | Purpose                                                   |
+| ----------------------------------------------------- | --------------------------------------------------------- |
+| `src/components/chat/ChatHeader.tsx`                  | Shared header scaffold                                    |
+| `src/components/chat/ChatMessageList.tsx`             | Inverted FlatList wrapper                                 |
+| `src/components/chat/ChatComposer.tsx`                | Composer UI (text input, toolbar, attachments)            |
+| `src/components/chat/CameraLongPressButton.tsx`       | Dual-action camera button: tap camera, hold to arm photos |
+| `src/components/chat/ChatMessageRenderer.tsx`         | DM entry point — delegates to Stacked or Bubble renderer  |
+| `src/components/chat/MessageActionsSheet.tsx`         | Long-press action sheet with quick reactions              |
+| `src/components/chat/SystemMessageChip.tsx`           | System message presentation                               |
+| `src/components/DMMessageItem.tsx`                    | DM bubble-mode message renderer                           |
+| `src/components/chat/StackedMessageRenderer.tsx`      | DM stacked-mode message renderer with card containers     |
+| `src/components/chat/GroupStackedMessageRenderer.tsx` | Group stacked-mode message renderer with card containers  |
+| `src/components/chat/ReactionBar.tsx`                 | ReactionPills + QuickReactionBar                          |
+| `src/components/chat/ReactionDetailSheet.tsx`         | Modal showing who reacted per emoji                       |
+| `src/components/chat/ThreadIndicator.tsx`             | "View thread (N replies)" link                            |
+| `src/components/chat/DateDivider.tsx`                 | Day separator                                             |
+| `src/components/chat/ChatKeyboardScrollView.tsx`      | KCSV adapter + ChatFooterWrapper + isKCSVAvailable        |
+| `src/components/chat/PickerLoadingFallback.tsx`       | Suspense fallback for lazy-loaded picker buttons          |
+| `src/components/chat/lazyChatComponents.tsx`          | React.lazy wrappers for modals (emoji, schedule, block)   |
+| `src/components/chat/pickerPreload.ts`                | Eager preload registry for toolbar picker sheet bundles   |
 
 ### Hooks & Services
 
@@ -1184,6 +1185,39 @@ Stored at `Users/{uid}.composerToolbar` in Firestore.
 | `gif-sticker`  | GIFs & Stickers | media    | Yes                     |
 | `image-picker` | Photos          | media    | Yes                     |
 
+#### Camera Button Interaction Contract
+
+The `camera` toolbar item is a **single dual-behavior item** backed by `CameraLongPressButton.tsx`. It does **not** proxy through the separate `image-picker` toolbar item; the dedicated `image-picker` item remains an independent toolbar button that always opens the library directly.
+
+Camera behavior:
+
+- **Quick tap** → opens the normal camera (`handleCaptureFromCamera()`)
+- **Hold** → arms image-picker mode after `425 ms`
+- **Release after arming** → opens the photo library (`handleAddAttachment()`)
+
+When the hold crosses the image-picker threshold, the camera button updates **before** the picker opens:
+
+- icon swaps from `camera` to `image-multiple`
+- circular button background turns purple (`#8B5CF6`)
+- one light haptic fires
+
+The armed image-picker state stays visible until the gesture resolves or is cancelled. If toolbar edit mode takes over, the camera button clears the armed state and suppresses the gallery launch.
+
+#### Toolbar Gesture Ownership
+
+Toolbar edit mode is owned by `ComposerToolbarItem.tsx` via a slot-level long-press gesture, while the camera tap-vs-hold behavior is owned by `CameraLongPressButton.tsx` inside the camera slot.
+
+Default edit-mode long press:
+
+- `500 ms` for all standard toolbar items
+
+Camera-only timing exception:
+
+- image-picker arming threshold: `425 ms`
+- edit-mode threshold: `1000 ms` (`500 ms` base + `500 ms` camera-only delay)
+
+This camera-only delay prevents the slot-level edit-mode gesture from stealing the same press that is intended to switch the camera into image-picker mode. Other toolbar items keep the original edit-mode timing.
+
 #### Persistence (Dual-Write)
 
 1. `AsyncStorage` — immediate read on next app launch (no network dependency)
@@ -1205,6 +1239,8 @@ Read priority: Firestore snapshot > AsyncStorage fallback > hardcoded default.
 2. **Editing** — items show remove buttons, overflow items visible
 3. **Dragging** — active gesture, swap detection running
 4. **Confirming** — save pending (dual-write in progress)
+
+`ComposerToolbarRegistry.ts` now carries per-item interaction metadata. `ComposerToolbarItem.tsx` reads the slot's configured edit-mode delay, which lets the camera item opt into the longer `1000 ms` edit-mode threshold without slowing down the rest of the toolbar.
 
 ### Picker Sheet Eager Preloading
 
@@ -2091,8 +2127,10 @@ Key invariant: `warmRemoteImage()` always calls `Image.loadAsync()` — it does 
 12. Both display modes (bubbles/stacked) render correctly
 13. Grouped cards snap correctly and corner rounding adapts
 14. Composer toolbar drag-and-drop works
-15. GIF picker loads and sends GIF messages
-16. Custom font color applies in both display modes
+15. Quick tap on camera button opens the camera without entering toolbar edit mode
+16. Hold on camera button flips to the photo icon, turns purple, triggers one light haptic, and opens the photo library before edit mode can steal the gesture
+17. GIF picker loads and sends GIF messages
+18. Custom font color applies in both display modes
 
 ---
 

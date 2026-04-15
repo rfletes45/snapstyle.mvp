@@ -18,6 +18,7 @@ import {
   getWidgetRect,
   gridToPixel,
   hideWidget,
+  inferCollisionDisplacementHint,
   moveWidget,
   pixelToGrid,
   resizeWidget,
@@ -28,6 +29,10 @@ import {
   stableCompact,
   stableRepack,
 } from "@/components/profile/WidgetBoard/BoardLayoutEngine";
+import {
+  isSameDragHoverTarget,
+  resolveCommittedPreviewLayout,
+} from "@/components/profile/WidgetBoard/previewCommitUtils";
 import type { WidgetInstance } from "@/components/profile/WidgetBoard/types";
 import {
   GRID_COLUMNS,
@@ -743,6 +748,162 @@ describe("Stable Reflow Engine", () => {
         }),
       ];
       expect(stableRepack(widgets, "UNKNOWN", 0, 0)).toBeNull();
+    });
+
+    it("moves the primary obstructed widget upward when bottom-half hover requests it and supported space exists above", () => {
+      const widgets = [
+        makeWidget({
+          instanceId: "A",
+          widgetType: "friends",
+          size: "medium",
+          x: 2,
+          y: 2,
+        }),
+        makeWidget({
+          instanceId: "B",
+          widgetType: "badges",
+          size: "medium",
+          x: 0,
+          y: 2,
+        }),
+        makeWidget({
+          instanceId: "C",
+          widgetType: "social-proof",
+          size: "wide",
+          x: 0,
+          y: 4,
+        }),
+      ];
+
+      const hint = inferCollisionDisplacementHint(widgets, "A", 0, 2, {
+        col: 1,
+        row: 3.6,
+      });
+
+      expect(hint).toEqual({ obstructedId: "B", direction: "up" });
+
+      const result = stableRepack(widgets, "A", 0, 2, undefined, hint);
+      expect(result).not.toBeNull();
+      assertNoOverlaps(result!);
+      assertBoundsLegal(result!);
+
+      const movedB = result!.find((widget) => widget.instanceId === "B")!;
+      const unaffectedC = result!.find((widget) => widget.instanceId === "C")!;
+
+      expect(movedB.x).toBe(0);
+      expect(movedB.y).toBe(0);
+      expect(unaffectedC.x).toBe(0);
+      expect(unaffectedC.y).toBe(4);
+    });
+
+    it("keeps downward displacement when hovering the top half of the obstructed widget", () => {
+      const widgets = [
+        makeWidget({
+          instanceId: "A",
+          widgetType: "friends",
+          size: "medium",
+          x: 2,
+          y: 2,
+        }),
+        makeWidget({
+          instanceId: "B",
+          widgetType: "badges",
+          size: "medium",
+          x: 0,
+          y: 2,
+        }),
+      ];
+
+      const hint = inferCollisionDisplacementHint(widgets, "A", 0, 2, {
+        col: 1,
+        row: 2.4,
+      });
+
+      expect(hint).toEqual({ obstructedId: "B", direction: "down" });
+
+      const result = stableRepack(widgets, "A", 0, 2, undefined, hint);
+      expect(result).not.toBeNull();
+      assertNoOverlaps(result!);
+      assertBoundsLegal(result!);
+
+      const movedB = result!.find((widget) => widget.instanceId === "B")!;
+      expect(movedB.x).toBe(0);
+      expect(movedB.y).toBe(4);
+    });
+
+    it("falls back to downward displacement when upward intent has no valid room above", () => {
+      const widgets = [
+        makeWidget({
+          instanceId: "D",
+          widgetType: "friends",
+          size: "medium",
+          x: 0,
+          y: 0,
+        }),
+        makeWidget({
+          instanceId: "A",
+          widgetType: "badges",
+          size: "medium",
+          x: 2,
+          y: 2,
+        }),
+        makeWidget({
+          instanceId: "B",
+          widgetType: "achievements",
+          size: "medium",
+          x: 0,
+          y: 2,
+        }),
+      ];
+
+      const hint = inferCollisionDisplacementHint(widgets, "A", 0, 2, {
+        col: 1,
+        row: 3.6,
+      });
+
+      expect(hint).toEqual({ obstructedId: "B", direction: "up" });
+
+      const result = stableRepack(widgets, "A", 0, 2, undefined, hint);
+      expect(result).not.toBeNull();
+      assertNoOverlaps(result!);
+      assertBoundsLegal(result!);
+
+      const movedB = result!.find((widget) => widget.instanceId === "B")!;
+      expect(movedB.x).toBe(0);
+      expect(movedB.y).toBe(4);
+    });
+
+    it("prefers the collided widget under the hover probe when multiple widgets overlap", () => {
+      const widgets = [
+        makeWidget({
+          instanceId: "A",
+          widgetType: "social-proof",
+          size: "wide",
+          x: 0,
+          y: 0,
+        }),
+        makeWidget({
+          instanceId: "B",
+          widgetType: "friends",
+          size: "medium",
+          x: 0,
+          y: 2,
+        }),
+        makeWidget({
+          instanceId: "C",
+          widgetType: "badges",
+          size: "medium",
+          x: 2,
+          y: 2,
+        }),
+      ];
+
+      const hint = inferCollisionDisplacementHint(widgets, "A", 0, 2, {
+        col: 3,
+        row: 3.6,
+      });
+
+      expect(hint).toEqual({ obstructedId: "C", direction: "up" });
     });
   });
 
@@ -1586,8 +1747,8 @@ describe("Stable Reflow Engine", () => {
   // ── Coupled Post-Drop Settlement (settleBoardAfterDrop) ─────────────
 
   describe("settleBoardAfterDrop — coupled settlement", () => {
-    it("settles active + suffix upward together (no dead gap)", () => {
-      // A at row 0, B at row 2 — drop C at row 6
+    it("keeps the active widget at the final drop target", () => {
+      // A at row 0, B at row 0 — drop C at row 6
       const widgets = [
         makeWidget({
           instanceId: "A",
@@ -1618,11 +1779,11 @@ describe("Stable Reflow Engine", () => {
       assertBoundsLegal(result!);
 
       const c = result!.find((w) => w.instanceId === "C")!;
-      // C should settle up to row 2 (directly below A/B)
-      expect(c.y).toBe(2);
+      // C should stay exactly where the user dropped it.
+      expect(c.y).toBe(6);
     });
 
-    it("drop too low settles active AND widgets beneath it upward", () => {
+    it("keeps a low drop stable without moving unrelated widgets", () => {
       // Simulate: A(0,0 medium), B(2,0 medium), then C dropped at row 5
       // with D already below C at row 7 after stableRepack
       const widgets = [
@@ -1661,21 +1822,20 @@ describe("Stable Reflow Engine", () => {
       expect(result).not.toBeNull();
       assertNoOverlaps(result!);
 
-      // D should settle upward
+      // D should remain at the final user-selected slot.
       const d = result!.find((w) => w.instanceId === "D")!;
-      expect(d.y).toBe(3); // tightly packed below C (wide at row 2, height 1)
+      expect(d.y).toBe(8);
 
-      // All widgets should be tightly packed
-      const maxBottom = result!
-        .filter((w) => w.visible)
-        .reduce((max, w) => {
-          const span = SIZE_PRESETS[w.size];
-          return Math.max(max, w.y + span.h);
-        }, 0);
-      expect(maxBottom).toBeLessThanOrEqual(4);
+      // The earlier widgets remain untouched.
+      const a = result!.find((w) => w.instanceId === "A")!;
+      const b = result!.find((w) => w.instanceId === "B")!;
+      const c = result!.find((w) => w.instanceId === "C")!;
+      expect(a.y).toBe(0);
+      expect(b.y).toBe(0);
+      expect(c.y).toBe(2);
     });
 
-    it("hero dragged from top: vacancy heals AND hero settles upward on drop", () => {
+    it("hero dragged from top: vacancy heals while hero stays at drop target", () => {
       const widgets = [
         makeWidget({
           instanceId: "H",
@@ -1717,19 +1877,9 @@ describe("Stable Reflow Engine", () => {
       const w = result!.find((w) => w.instanceId === "W")!;
       expect(w.y).toBe(0); // healed to top
 
-      // H should settle upward (not stay at row 10)
+      // H should stay exactly where it was dropped.
       const h = result!.find((w) => w.instanceId === "H")!;
-      expect(h.y).toBeLessThan(10);
-
-      // Board should be tightly packed with no vertical gaps
-      const maxBottom = result!
-        .filter((w) => w.visible)
-        .reduce((max, w) => {
-          const span = SIZE_PRESETS[w.size];
-          return Math.max(max, w.y + span.h);
-        }, 0);
-      // W(row 0, h=1) + F/B(row 1, h=2) + H(4×4) = should be ≤ 7
-      expect(maxBottom).toBeLessThanOrEqual(7);
+      expect(h.y).toBe(10);
     });
 
     it("preserves stable visual order through settlement", () => {
@@ -1907,7 +2057,7 @@ describe("Stable Reflow Engine", () => {
       expect(r1).toEqual(r2);
     });
 
-    it("save path preserves exact settled result", () => {
+    it("save path must not compact the exact settled result", () => {
       const widgets = [
         makeWidget({
           instanceId: "A",
@@ -1935,13 +2085,15 @@ describe("Stable Reflow Engine", () => {
       const settled = settleBoardAfterDrop(widgets, "C", 0, 6);
       expect(settled).not.toBeNull();
 
-      // stableCompact on an already-settled layout should be a no-op
+      // stableCompact would rewrite the intentional low drop, which is why
+      // the save path must persist the settled layout as-is.
       const recompacted = stableCompact(settled!);
-      for (const w of settled!.filter((w) => w.visible)) {
-        const match = recompacted.find((m) => m.instanceId === w.instanceId)!;
-        expect(match.x).toBe(w.x);
-        expect(match.y).toBe(w.y);
-      }
+      expect(recompacted).not.toEqual(settled);
+
+      const settledC = settled!.find((w) => w.instanceId === "C")!;
+      const compactedC = recompacted.find((w) => w.instanceId === "C")!;
+      expect(settledC.y).toBe(6);
+      expect(compactedC.y).toBe(2);
     });
 
     it("resize shrink allows upward compaction of suffix", () => {
@@ -1980,5 +2132,156 @@ describe("Stable Reflow Engine", () => {
       const a = result!.find((w) => w.instanceId === "A")!;
       expect(a.size).toBe("small");
     });
+
+    it("heals widgets that only lose support after earlier widgets settle", () => {
+      const widgets = [
+        makeWidget({
+          instanceId: "H",
+          widgetType: "profile-header",
+          size: "hero",
+          x: 0,
+          y: 0,
+        }),
+        makeWidget({
+          instanceId: "W",
+          widgetType: "social-proof",
+          size: "wide",
+          x: 0,
+          y: 4,
+        }),
+        makeWidget({
+          instanceId: "F",
+          widgetType: "friends",
+          size: "medium",
+          x: 0,
+          y: 5,
+        }),
+        makeWidget({
+          instanceId: "B",
+          widgetType: "badges",
+          size: "medium",
+          x: 2,
+          y: 5,
+        }),
+        makeWidget({
+          instanceId: "A",
+          widgetType: "achievements",
+          size: "wide",
+          x: 0,
+          y: 7,
+        }),
+      ];
+
+      const result = settleBoardAfterDrop(widgets, "H", 0, 10);
+      expect(result).not.toBeNull();
+
+      const w = result!.find((widget) => widget.instanceId === "W")!;
+      const f = result!.find((widget) => widget.instanceId === "F")!;
+      const b = result!.find((widget) => widget.instanceId === "B")!;
+      const a = result!.find((widget) => widget.instanceId === "A")!;
+
+      expect(w.y).toBe(0);
+      expect(f.y).toBe(1);
+      expect(b.y).toBe(1);
+      expect(a.y).toBe(3);
+    });
+  });
+});
+
+describe("Widget board preview commit helpers", () => {
+  it("treats matching hover targets as equal", () => {
+    expect(
+      isSameDragHoverTarget(
+        {
+          id: "A",
+          x: 0,
+          y: 2,
+          collisionHint: { obstructedId: "B", direction: "up" },
+        },
+        {
+          id: "A",
+          x: 0,
+          y: 2,
+          collisionHint: { obstructedId: "B", direction: "up" },
+        },
+      ),
+    ).toBe(true);
+    expect(
+      isSameDragHoverTarget(
+        {
+          id: "A",
+          x: 0,
+          y: 2,
+          collisionHint: { obstructedId: "B", direction: "up" },
+        },
+        {
+          id: "A",
+          x: 0,
+          y: 2,
+          collisionHint: { obstructedId: "B", direction: "down" },
+        },
+      ),
+    ).toBe(false);
+    expect(
+      isSameDragHoverTarget({ id: "A", x: 0, y: 2 }, { id: "A", x: 2, y: 2 }),
+    ).toBe(false);
+  });
+
+  it("recomputes drag commit from the final hover target instead of an older preview branch, even when only directional intent changed", () => {
+    const widgets = [
+      makeWidget({
+        instanceId: "A",
+        widgetType: "friends",
+        size: "medium",
+        x: 2,
+        y: 2,
+      }),
+      makeWidget({
+        instanceId: "B",
+        widgetType: "badges",
+        size: "medium",
+        x: 0,
+        y: 2,
+      }),
+      makeWidget({
+        instanceId: "C",
+        widgetType: "social-proof",
+        size: "wide",
+        x: 0,
+        y: 4,
+      }),
+    ];
+
+    const stalePreview = stableRepack(widgets, "A", 0, 2, undefined, {
+      obstructedId: "B",
+      direction: "down",
+    });
+    const committed = resolveCommittedPreviewLayout(
+      widgets,
+      {
+        kind: "drag",
+        target: {
+          id: "A",
+          x: 0,
+          y: 2,
+          collisionHint: { obstructedId: "B", direction: "down" },
+        },
+      },
+      stalePreview,
+      {
+        id: "A",
+        x: 0,
+        y: 2,
+        collisionHint: { obstructedId: "B", direction: "up" },
+      },
+    );
+
+    const expected = settleBoardAfterDrop(widgets, "A", 0, 2, undefined, {
+      obstructedId: "B",
+      direction: "up",
+    });
+
+    expect(committed).toEqual(expected);
+    expect(committed).not.toEqual(stalePreview);
   });
 });

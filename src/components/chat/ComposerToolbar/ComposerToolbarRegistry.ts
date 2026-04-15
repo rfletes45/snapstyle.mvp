@@ -9,7 +9,12 @@
  * @module components/chat/ComposerToolbar/ComposerToolbarRegistry
  */
 
-import type { ComposerToolbarItemId, ToolbarItemDefinition } from "./types";
+import {
+  CAMERA_EDIT_MODE_EXTRA_DELAY_MS,
+  EDIT_MODE_LONG_PRESS_DURATION,
+  type ComposerToolbarItemId,
+  type ToolbarItemDefinition,
+} from "./types";
 
 // =============================================================================
 // Item Definitions
@@ -39,6 +44,11 @@ const TOOLBAR_ITEM_DEFINITIONS: ToolbarItemDefinition[] = [
     maxInstances: 1,
     defaultPosition: 0,
     available: true,
+    interaction: {
+      // Camera owns its own hold-to-gallery gesture, so edit mode waits longer.
+      editModeLongPressDurationMs:
+        EDIT_MODE_LONG_PRESS_DURATION + CAMERA_EDIT_MODE_EXTRA_DELAY_MS,
+    },
   },
   {
     itemId: "game",
@@ -174,6 +184,16 @@ export function getToolbarItemDefinition(
   itemId: ComposerToolbarItemId,
 ): ToolbarItemDefinition | undefined {
   return DEFINITION_MAP.get(itemId);
+}
+
+/** Get the long-press duration that arms toolbar edit mode for a given item. */
+export function getToolbarItemEditModeLongPressDuration(
+  itemId: ComposerToolbarItemId,
+): number {
+  return (
+    DEFINITION_MAP.get(itemId)?.interaction?.editModeLongPressDurationMs ??
+    EDIT_MODE_LONG_PRESS_DURATION
+  );
 }
 
 /** Category display metadata for the picker. */

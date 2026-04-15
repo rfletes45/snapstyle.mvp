@@ -59,7 +59,6 @@ import React, {
 } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
-import { scheduleOnRN } from "react-native-worklets";
 import Animated, {
   ReduceMotion,
   useAnimatedStyle,
@@ -67,11 +66,12 @@ import Animated, {
   withSpring,
   type WithSpringConfig,
 } from "react-native-reanimated";
+import { scheduleOnRN } from "react-native-worklets";
 
 import { useColors } from "@/store/ThemeContext";
 
 import type { ComposerToolbarItemId } from "./types";
-import { TOOLBAR_BUTTON_SIZE } from "./types";
+import { EDIT_MODE_LONG_PRESS_DURATION, TOOLBAR_BUTTON_SIZE } from "./types";
 
 // =============================================================================
 // Constants
@@ -138,6 +138,8 @@ export interface ComposerToolbarItemProps {
   onRemove?: (itemId: ComposerToolbarItemId) => void;
   /** Called on long-press in non-edit mode (enters edit mode). */
   onLongPress?: () => void;
+  /** Item-specific long-press duration before edit mode activates. */
+  editModeLongPressDuration?: number;
   /** The actual content to render inside the slot. */
   children: React.ReactNode;
 }
@@ -161,6 +163,7 @@ function ComposerToolbarItemBase({
   onDragEnd,
   onRemove,
   onLongPress,
+  editModeLongPressDuration,
   children,
 }: ComposerToolbarItemProps) {
   const colors = useColors();
@@ -262,7 +265,7 @@ function ComposerToolbarItemBase({
   // ── Long press gesture for entering edit mode ─────────────────────────
   const longPressGesture = Gesture.LongPress()
     .enabled(!isEditing)
-    .minDuration(500)
+    .minDuration(editModeLongPressDuration ?? EDIT_MODE_LONG_PRESS_DURATION)
     .onStart(() => {
       "worklet";
       if (onLongPress) {

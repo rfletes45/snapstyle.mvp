@@ -21,8 +21,14 @@ export const LAYOUT_SCHEMA_VERSION = 1;
 /** Number of columns in the widget grid (phone portrait). */
 export const GRID_COLUMNS = 4;
 
-/** Gutter size between widgets in pixels. */
-export const GRID_GUTTER = 8;
+/**
+ * Gutter size between widgets in pixels.
+ *
+ * Set to 0 for a tightly packed dashboard look. Visual separation is
+ * provided by hairline seam lines rendered as overlays at grid
+ * boundaries in WidgetBoardContainer.
+ */
+export const GRID_GUTTER = 0;
 
 /** Base cell height in pixels. Widgets' pixel height = rows × CELL_HEIGHT. */
 export const CELL_HEIGHT = 88;
@@ -183,6 +189,24 @@ export interface PlacementResult {
   rect: GridRect;
   /** IDs of widgets that need to shift to make room. */
   displaced: string[];
+}
+
+/** Continuous drag hover probe in grid-space units (not rounded to slots). */
+export interface DragHoverProbe {
+  col: number;
+  row: number;
+}
+
+/** Preferred displacement direction for the primary obstructed widget. */
+export type CollisionDisplacementDirection = "up" | "down";
+
+/**
+ * Local directional hint for the widget directly under the active drag pressure.
+ * This is transient interaction metadata; it is never persisted.
+ */
+export interface CollisionDisplacementHint {
+  obstructedId: string;
+  direction: CollisionDisplacementDirection;
 }
 
 /** Drag gesture transient state. */

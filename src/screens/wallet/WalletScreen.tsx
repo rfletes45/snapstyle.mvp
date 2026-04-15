@@ -1,6 +1,12 @@
 /**
  * WalletScreen — Premium Token Wallet & Reward Command Center
  *
+ * Redesign 2026-04-15:
+ * - Calls-inspired ScreenHeader for consistent header language
+ * - Clean surface-variant hero card (no purple primaryContainer)
+ * - Theme-driven accent colors (no hardcoded orange/amber)
+ * - FilterChips shared component for tab consistency
+ *
  * Features:
  * - Premium hero balance display with lifetime stats
  * - Always-visible pending rewards section with source breakdown
@@ -12,10 +18,11 @@
  * @module screens/wallet/WalletScreen
  */
 
+import { type FilterChipOption } from "@/components/shared/FilterChips";
+import { ScreenHeader } from "@/components/shared/ScreenHeader";
 import { EmptyState, ErrorState } from "@/components/ui";
 import {
   BorderRadius,
-  Elevation,
   FontSizes,
   FontWeights,
   Spacing,
@@ -29,9 +36,10 @@ import {
   getTransactionIcon,
   getTransactionReasonDisplay,
 } from "@/services/economy";
+import { useAppTheme } from "@/store/ThemeContext";
 import type { Transaction } from "@/types/models";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import {
   FlatList,
   RefreshControl,
@@ -39,24 +47,21 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import {
-  Appbar,
-  Badge,
-  Chip,
-  Divider,
-  Text,
-  useTheme,
-} from "react-native-paper";
+import { Badge, Divider, Text } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 type FilterType = "all" | "earn" | "spend";
 
 // ─── Design Tokens ─────────────────────────────────────────────────────────
-const PENDING_AMBER = "#F59E0B";
-const PENDING_AMBER_BG = "rgba(245, 158, 11, 0.12)";
-const PENDING_AMBER_BORDER = "rgba(245, 158, 11, 0.35)";
 const SUCCESS_GREEN = "#22C55E";
 const SUCCESS_GREEN_BG = "rgba(34, 197, 94, 0.12)";
+
+// ─── Filter Options (matching Calls screen pattern) ───────────────────────
+const FILTER_OPTIONS: FilterChipOption<FilterType>[] = [
+  { key: "all", label: "All" },
+  { key: "earn", label: "Earned" },
+  { key: "spend", label: "Spent" },
+];
 
 // ─── Skeleton Placeholder ──────────────────────────────────────────────────
 function SkeletonBlock({
@@ -88,10 +93,9 @@ function SkeletonBlock({
   );
 }
 
-function WalletSkeleton({ theme }: { theme: any }) {
-  const c = theme.colors.surfaceVariant;
+function WalletSkeleton({ skeletonColor }: { skeletonColor: string }) {
   return (
-    <View style={{ paddingHorizontal: Spacing.lg, paddingTop: Spacing.sm }}>
+    <View style={{ paddingHorizontal: Spacing.lg, paddingTop: Spacing.md }}>
       {/* Hero skeleton */}
       <View
         style={{
@@ -100,53 +104,55 @@ function WalletSkeleton({ theme }: { theme: any }) {
           paddingVertical: Spacing.xl,
           paddingHorizontal: Spacing.lg,
           marginBottom: Spacing.lg,
-          backgroundColor: theme.colors.primaryContainer,
         }}
       >
         <SkeletonBlock
-          width={90}
+          width={110}
           height={12}
-          color={c}
+          color={skeletonColor}
           borderRadius={BorderRadius.sm}
         />
-        <SkeletonBlock
-          width={36}
-          height={36}
-          color={c}
-          borderRadius={BorderRadius.full}
-          style={{ marginTop: Spacing.md }}
-        />
-        <SkeletonBlock
-          width={100}
-          height={28}
-          color={c}
-          style={{ marginTop: Spacing.sm }}
-        />
+        <View
+          style={{
+            flexDirection: "row" as const,
+            alignItems: "center" as const,
+            marginTop: Spacing.lg,
+            gap: Spacing.sm,
+          }}
+        >
+          <SkeletonBlock
+            width={32}
+            height={32}
+            color={skeletonColor}
+            borderRadius={BorderRadius.full}
+          />
+          <SkeletonBlock width={120} height={40} color={skeletonColor} />
+        </View>
         <SkeletonBlock
           width={60}
           height={12}
-          color={c}
-          style={{ marginTop: Spacing.xs }}
+          color={skeletonColor}
+          style={{ marginTop: Spacing.sm }}
         />
         <View
           style={{
             flexDirection: "row" as const,
             justifyContent: "space-between" as const,
             width: "100%",
-            marginTop: Spacing.lg,
+            marginTop: Spacing.xl,
             gap: Spacing.sm,
           }}
         >
           <SkeletonBlock
             width="46%"
-            height={48}
-            color={c}
+            height={52}
+            color={skeletonColor}
             borderRadius={BorderRadius.lg}
           />
           <SkeletonBlock
             width="46%"
-            height={48}
-            color={c}
+            height={52}
+            color={skeletonColor}
             borderRadius={BorderRadius.lg}
           />
         </View>
@@ -158,14 +164,13 @@ function WalletSkeleton({ theme }: { theme: any }) {
           borderRadius: BorderRadius.lg,
           padding: Spacing.lg,
           marginBottom: Spacing.lg,
-          backgroundColor: theme.colors.surfaceVariant,
         }}
       >
-        <SkeletonBlock width="55%" height={14} color={c} />
+        <SkeletonBlock width="55%" height={14} color={skeletonColor} />
         <SkeletonBlock
           width="35%"
           height={11}
-          color={c}
+          color={skeletonColor}
           style={{ marginTop: Spacing.sm }}
         />
       </View>
@@ -176,6 +181,7 @@ function WalletSkeleton({ theme }: { theme: any }) {
           flexDirection: "row" as const,
           justifyContent: "space-between" as const,
           marginBottom: Spacing.xl,
+          gap: Spacing.sm,
         }}
       >
         {[1, 2, 3].map((i) => (
@@ -183,7 +189,7 @@ function WalletSkeleton({ theme }: { theme: any }) {
             key={i}
             width="31%"
             height={94}
-            color={c}
+            color={skeletonColor}
             borderRadius={BorderRadius.lg}
           />
         ))}
@@ -202,19 +208,19 @@ function WalletSkeleton({ theme }: { theme: any }) {
           <SkeletonBlock
             width={38}
             height={38}
-            color={c}
+            color={skeletonColor}
             borderRadius={BorderRadius.full}
           />
           <View style={{ flex: 1, marginLeft: Spacing.md }}>
-            <SkeletonBlock width="55%" height={13} color={c} />
+            <SkeletonBlock width="55%" height={13} color={skeletonColor} />
             <SkeletonBlock
               width="28%"
               height={10}
-              color={c}
+              color={skeletonColor}
               style={{ marginTop: Spacing.xs }}
             />
           </View>
-          <SkeletonBlock width={48} height={15} color={c} />
+          <SkeletonBlock width={48} height={15} color={skeletonColor} />
         </View>
       ))}
     </View>
@@ -226,7 +232,7 @@ function WalletSkeleton({ theme }: { theme: any }) {
 // ═══════════════════════════════════════════════════════════════════════════
 
 export default function WalletScreen({ navigation }: any) {
-  const theme = useTheme();
+  const { colors, isDark } = useAppTheme();
   const { wallet, transactions, loading, error } = useWallet(true);
   const pending = usePendingRewards();
 
@@ -240,10 +246,14 @@ export default function WalletScreen({ navigation }: any) {
   }, []);
 
   // Filter transactions
-  const filteredTransactions = transactions.filter((tx) => {
-    if (filter === "all") return true;
-    return tx.type === filter;
-  });
+  const filteredTransactions = useMemo(
+    () =>
+      transactions.filter((tx) => {
+        if (filter === "all") return true;
+        return tx.type === filter;
+      }),
+    [transactions, filter],
+  );
 
   // Format timestamp with relative time for recent entries
   const formatTime = (timestamp: number): string => {
@@ -290,7 +300,7 @@ export default function WalletScreen({ navigation }: any) {
         <View style={styles.txContent}>
           <View style={styles.txTopRow}>
             <Text
-              style={[styles.txReason, { color: theme.colors.onSurface }]}
+              style={[styles.txReason, { color: colors.text }]}
               numberOfLines={1}
             >
               {reasonDisplay}
@@ -299,16 +309,13 @@ export default function WalletScreen({ navigation }: any) {
           </View>
           {item.description ? (
             <Text
-              style={[
-                styles.txDescription,
-                { color: theme.colors.onSurfaceVariant },
-              ]}
+              style={[styles.txDescription, { color: colors.textSecondary }]}
               numberOfLines={1}
             >
               {item.description}
             </Text>
           ) : null}
-          <Text style={[styles.txTime, { color: theme.colors.outline }]}>
+          <Text style={[styles.txTime, { color: colors.outline }]}>
             {formatTime(item.createdAt)}
           </Text>
         </View>
@@ -332,7 +339,7 @@ export default function WalletScreen({ navigation }: any) {
         styles.pendingSourceRow,
         !isLast && {
           borderBottomWidth: StyleSheet.hairlineWidth,
-          borderBottomColor: theme.colors.outlineVariant,
+          borderBottomColor: colors.divider,
         },
       ]}
       onPress={onPress}
@@ -351,23 +358,24 @@ export default function WalletScreen({ navigation }: any) {
         />
       </View>
       <View style={styles.pendingSourceInfo}>
-        <Text
-          style={[styles.pendingSourceLabel, { color: theme.colors.onSurface }]}
-        >
+        <Text style={[styles.pendingSourceLabel, { color: colors.text }]}>
           {label}
         </Text>
         <Text
-          style={[
-            styles.pendingSourceMeta,
-            { color: theme.colors.onSurfaceVariant },
-          ]}
+          style={[styles.pendingSourceMeta, { color: colors.textSecondary }]}
         >
           {count} unclaimed · +{formatTokenAmount(tokens)} tokens
         </Text>
       </View>
-      <View style={[styles.claimPill, { backgroundColor: PENDING_AMBER }]}>
-        <Text style={styles.claimPillText}>Claim</Text>
-        <MaterialCommunityIcons name="chevron-right" size={14} color="#FFF" />
+      <View style={[styles.claimPill, { backgroundColor: colors.primary }]}>
+        <Text style={[styles.claimPillText, { color: colors.textOnPrimary }]}>
+          Claim
+        </Text>
+        <MaterialCommunityIcons
+          name="chevron-right"
+          size={14}
+          color={colors.textOnPrimary}
+        />
       </View>
     </TouchableOpacity>
   );
@@ -383,54 +391,26 @@ export default function WalletScreen({ navigation }: any) {
           style={[
             styles.heroCard,
             {
-              backgroundColor: theme.colors.primaryContainer,
-              ...Elevation.lg,
+              backgroundColor: colors.surfaceVariant,
+              borderColor: colors.border,
             },
           ]}
         >
-          <Text
-            style={[
-              styles.heroLabel,
-              { color: theme.colors.onPrimaryContainer, opacity: 0.65 },
-            ]}
-          >
-            YOUR BALANCE
+          <Text style={[styles.heroLabel, { color: colors.textSecondary }]}>
+            AVAILABLE BALANCE
           </Text>
 
-          <View style={styles.heroTokenIcon}>
+          <View style={styles.heroBalanceRow}>
             <MaterialCommunityIcons
               name="circle-multiple"
-              size={32}
-              color={theme.colors.primary}
+              size={30}
+              color={colors.primary}
+              style={{ marginRight: Spacing.sm }}
             />
+            <Text style={[styles.heroAmount, { color: colors.text }]}>
+              {wallet ? formatTokenAmount(wallet.tokensBalance) : "0"}
+            </Text>
           </View>
-
-          <Text
-            style={[
-              styles.heroAmount,
-              { color: theme.colors.onPrimaryContainer },
-            ]}
-          >
-            {wallet ? formatTokenAmount(wallet.tokensBalance) : "0"}
-          </Text>
-
-          <Text
-            style={[
-              styles.heroUnit,
-              { color: theme.colors.onPrimaryContainer, opacity: 0.6 },
-            ]}
-          >
-            tokens
-          </Text>
-
-          <Text
-            style={[
-              styles.heroSubtext,
-              { color: theme.colors.onPrimaryContainer, opacity: 0.45 },
-            ]}
-          >
-            Available to spend
-          </Text>
 
           {/* Lifetime Stats */}
           {wallet && (
@@ -438,16 +418,19 @@ export default function WalletScreen({ navigation }: any) {
               <View
                 style={[
                   styles.heroStatPill,
-                  { backgroundColor: theme.colors.surface + "90" },
+                  {
+                    backgroundColor: colors.surface,
+                    borderColor: colors.border,
+                  },
                 ]}
               >
                 <Text
                   style={[
                     styles.heroStatLabel,
-                    { color: theme.colors.onSurfaceVariant },
+                    { color: colors.textSecondary },
                   ]}
                 >
-                  Lifetime Earned
+                  Total Earned
                 </Text>
                 <Text style={[styles.heroStatValue, { color: SUCCESS_GREEN }]}>
                   +{formatTokenAmount(wallet.totalEarned || 0)}
@@ -456,20 +439,21 @@ export default function WalletScreen({ navigation }: any) {
               <View
                 style={[
                   styles.heroStatPill,
-                  { backgroundColor: theme.colors.surface + "90" },
+                  {
+                    backgroundColor: colors.surface,
+                    borderColor: colors.border,
+                  },
                 ]}
               >
                 <Text
                   style={[
                     styles.heroStatLabel,
-                    { color: theme.colors.onSurfaceVariant },
+                    { color: colors.textSecondary },
                   ]}
                 >
-                  Lifetime Spent
+                  Total Spent
                 </Text>
-                <Text
-                  style={[styles.heroStatValue, { color: theme.colors.error }]}
-                >
+                <Text style={[styles.heroStatValue, { color: colors.error }]}>
                   -{formatTokenAmount(wallet.totalSpent || 0)}
                 </Text>
               </View>
@@ -483,9 +467,9 @@ export default function WalletScreen({ navigation }: any) {
             style={[
               styles.pendingCard,
               {
-                backgroundColor: theme.colors.surfaceVariant,
-                borderColor: PENDING_AMBER_BORDER,
-                borderLeftColor: PENDING_AMBER,
+                backgroundColor: colors.surfaceVariant,
+                borderColor: colors.primary + "35",
+                borderLeftColor: colors.primary,
               },
             ]}
           >
@@ -494,28 +478,23 @@ export default function WalletScreen({ navigation }: any) {
               <View
                 style={[
                   styles.pendingHeaderIcon,
-                  { backgroundColor: PENDING_AMBER_BG },
+                  { backgroundColor: colors.primary + "18" },
                 ]}
               >
                 <MaterialCommunityIcons
                   name="gift-outline"
                   size={18}
-                  color={PENDING_AMBER}
+                  color={colors.primary}
                 />
               </View>
               <View style={styles.pendingHeaderText}>
-                <Text
-                  style={[
-                    styles.pendingTitle,
-                    { color: theme.colors.onSurface },
-                  ]}
-                >
+                <Text style={[styles.pendingTitle, { color: colors.text }]}>
                   Rewards Ready to Claim
                 </Text>
                 <Text
                   style={[
                     styles.pendingSubtitle,
-                    { color: theme.colors.onSurfaceVariant },
+                    { color: colors.textSecondary },
                   ]}
                 >
                   {pending.totalPendingCount} reward
@@ -525,19 +504,19 @@ export default function WalletScreen({ navigation }: any) {
               <View
                 style={[
                   styles.pendingTokenBadge,
-                  { backgroundColor: PENDING_AMBER_BG },
+                  { backgroundColor: colors.primary + "18" },
                 ]}
               >
                 <MaterialCommunityIcons
                   name="circle-multiple"
                   size={12}
-                  color={PENDING_AMBER}
+                  color={colors.primary}
                   style={{ marginRight: 3 }}
                 />
                 <Text
                   style={[
                     styles.pendingTokenBadgeText,
-                    { color: PENDING_AMBER },
+                    { color: colors.primary },
                   ]}
                 >
                   +{formatTokenAmount(pending.totalPendingTokens)}
@@ -550,7 +529,7 @@ export default function WalletScreen({ navigation }: any) {
               {pending.unclaimedAchievementCount > 0 &&
                 renderPendingSourceRow(
                   "trophy",
-                  "#FF9500",
+                  colors.warning,
                   "Achievement Rewards",
                   pending.unclaimedAchievementCount,
                   pending.unclaimedAchievementTokens,
@@ -560,7 +539,7 @@ export default function WalletScreen({ navigation }: any) {
               {pending.unclaimedLevelRewardCount > 0 &&
                 renderPendingSourceRow(
                   "arrow-up-bold-circle",
-                  "#34C759",
+                  SUCCESS_GREEN,
                   "Level Rewards",
                   pending.unclaimedLevelRewardCount,
                   pending.unclaimedLevelRewardTokens,
@@ -574,7 +553,7 @@ export default function WalletScreen({ navigation }: any) {
             style={[
               styles.pendingCardEmpty,
               {
-                backgroundColor: theme.colors.surfaceVariant,
+                backgroundColor: colors.surfaceVariant,
                 borderColor: SUCCESS_GREEN + "30",
               },
             ]}
@@ -592,18 +571,13 @@ export default function WalletScreen({ navigation }: any) {
               />
             </View>
             <View style={styles.pendingEmptyText}>
-              <Text
-                style={[
-                  styles.pendingEmptyTitle,
-                  { color: theme.colors.onSurface },
-                ]}
-              >
+              <Text style={[styles.pendingEmptyTitle, { color: colors.text }]}>
                 All Caught Up!
               </Text>
               <Text
                 style={[
                   styles.pendingEmptySubtitle,
-                  { color: theme.colors.onSurfaceVariant },
+                  { color: colors.textSecondary },
                 ]}
               >
                 Play games to unlock new rewards
@@ -617,7 +591,7 @@ export default function WalletScreen({ navigation }: any) {
           {[
             {
               icon: "trophy" as const,
-              iconColor: theme.colors.tertiary,
+              iconColor: colors.warning,
               title: "Achievements",
               subtitle: "Claim earned rewards",
               badge: pending.unclaimedAchievementCount,
@@ -633,7 +607,7 @@ export default function WalletScreen({ navigation }: any) {
             },
             {
               icon: "shopping" as const,
-              iconColor: theme.colors.secondary,
+              iconColor: colors.secondary,
               title: "Shop",
               subtitle: "Spend your tokens",
               badge: 0,
@@ -645,8 +619,8 @@ export default function WalletScreen({ navigation }: any) {
               style={[
                 styles.actionCard,
                 {
-                  backgroundColor: theme.colors.surfaceVariant,
-                  ...Elevation.sm,
+                  backgroundColor: colors.surfaceVariant,
+                  borderColor: colors.border,
                 },
               ]}
               onPress={action.onPress}
@@ -666,22 +640,25 @@ export default function WalletScreen({ navigation }: any) {
                   />
                 </View>
                 {action.badge > 0 && (
-                  <Badge style={styles.actionBadge} size={18}>
+                  <Badge
+                    style={[
+                      styles.actionBadge,
+                      { backgroundColor: colors.error },
+                    ]}
+                    size={18}
+                  >
                     {action.badge}
                   </Badge>
                 )}
               </View>
               <Text
-                style={[styles.actionTitle, { color: theme.colors.onSurface }]}
+                style={[styles.actionTitle, { color: colors.text }]}
                 numberOfLines={1}
               >
                 {action.title}
               </Text>
               <Text
-                style={[
-                  styles.actionSubtitle,
-                  { color: theme.colors.onSurfaceVariant },
-                ]}
+                style={[styles.actionSubtitle, { color: colors.textSecondary }]}
                 numberOfLines={2}
               >
                 {action.subtitle}
@@ -690,45 +667,51 @@ export default function WalletScreen({ navigation }: any) {
           ))}
         </View>
 
-        {/* ═══ Activity Feed Header ════════════════════════════════════ */}
+        {/* ═══ Activity Feed Section Title + Inline Filters ════════════ */}
         <View style={styles.activityHeader}>
-          <View style={styles.activityTitleRow}>
-            <MaterialCommunityIcons
-              name="history"
-              size={20}
-              color={theme.colors.onSurface}
-              style={{ marginRight: Spacing.xs }}
-            />
-            <Text
-              style={[styles.activityTitle, { color: theme.colors.onSurface }]}
-            >
-              Recent Activity
-            </Text>
-          </View>
-          <View style={styles.filterChips}>
-            {(["all", "earn", "spend"] as FilterType[]).map((f) => {
-              const isSelected = filter === f;
+          <MaterialCommunityIcons
+            name="history"
+            size={20}
+            color={colors.text}
+            style={{ marginRight: Spacing.xs }}
+          />
+          <Text style={[styles.activityTitle, { color: colors.text }]}>
+            Recent Activity
+          </Text>
+          <View style={styles.activityFilters}>
+            {FILTER_OPTIONS.map((opt) => {
+              const isActive = filter === opt.key;
               return (
-                <Chip
-                  key={f}
-                  selected={isSelected}
-                  showSelectedCheck={false}
-                  onPress={() => setFilter(f)}
+                <TouchableOpacity
+                  key={opt.key}
+                  onPress={() => setFilter(opt.key)}
                   style={[
-                    styles.filterChip,
-                    isSelected
-                      ? { backgroundColor: theme.colors.primary }
-                      : { backgroundColor: theme.colors.surface },
+                    styles.inlineChip,
+                    {
+                      backgroundColor: isActive
+                        ? colors.primary + "18"
+                        : isDark
+                          ? "rgba(255,255,255,0.08)"
+                          : "rgba(0,0,0,0.05)",
+                      borderColor: isActive
+                        ? colors.primary + "40"
+                        : "transparent",
+                    },
                   ]}
-                  textStyle={[
-                    styles.filterChipText,
-                    isSelected
-                      ? { color: theme.colors.onPrimary }
-                      : { color: theme.colors.onSurfaceVariant },
-                  ]}
+                  activeOpacity={0.7}
                 >
-                  {f === "all" ? "All" : f === "earn" ? "Earned" : "Spent"}
-                </Chip>
+                  <Text
+                    style={[
+                      styles.inlineChipText,
+                      {
+                        color: isActive ? colors.primary : colors.textSecondary,
+                        fontWeight: isActive ? "600" : "500",
+                      },
+                    ]}
+                  >
+                    {opt.label}
+                  </Text>
+                </TouchableOpacity>
               );
             })}
           </View>
@@ -776,23 +759,15 @@ export default function WalletScreen({ navigation }: any) {
   if (loading) {
     return (
       <SafeAreaView
-        style={[styles.container, { backgroundColor: theme.colors.background }]}
+        style={[styles.container, { backgroundColor: colors.background }]}
         edges={["top"]}
       >
-        <Appbar.Header
-          statusBarHeight={0}
-          style={[styles.appbar, { backgroundColor: theme.colors.background }]}
-        >
-          <Appbar.BackAction onPress={() => navigation.goBack()} />
-          <Appbar.Content
-            title="Wallet"
-            titleStyle={[
-              styles.appbarTitle,
-              { color: theme.colors.onBackground },
-            ]}
-          />
-        </Appbar.Header>
-        <WalletSkeleton theme={theme} />
+        <ScreenHeader
+          title="Wallet"
+          onBack={() => navigation.goBack()}
+          style={{ paddingTop: 4 }}
+        />
+        <WalletSkeleton skeletonColor={colors.surfaceVariant} />
       </SafeAreaView>
     );
   }
@@ -801,22 +776,14 @@ export default function WalletScreen({ navigation }: any) {
   if (error) {
     return (
       <SafeAreaView
-        style={[styles.container, { backgroundColor: theme.colors.background }]}
+        style={[styles.container, { backgroundColor: colors.background }]}
         edges={["top"]}
       >
-        <Appbar.Header
-          statusBarHeight={0}
-          style={[styles.appbar, { backgroundColor: theme.colors.background }]}
-        >
-          <Appbar.BackAction onPress={() => navigation.goBack()} />
-          <Appbar.Content
-            title="Wallet"
-            titleStyle={[
-              styles.appbarTitle,
-              { color: theme.colors.onBackground },
-            ]}
-          />
-        </Appbar.Header>
+        <ScreenHeader
+          title="Wallet"
+          onBack={() => navigation.goBack()}
+          style={{ paddingTop: 4 }}
+        />
         <ErrorState
           message="Unable to load your wallet. Please check your connection and try again."
           onRetry={() => {
@@ -830,22 +797,21 @@ export default function WalletScreen({ navigation }: any) {
   // ─── Main Render ─────────────────────────────────────────────────────
   return (
     <SafeAreaView
-      style={[styles.container, { backgroundColor: theme.colors.background }]}
+      style={[styles.container, { backgroundColor: colors.background }]}
       edges={["top"]}
     >
-      <Appbar.Header
-        statusBarHeight={0}
-        style={[styles.appbar, { backgroundColor: theme.colors.background }]}
-      >
-        <Appbar.BackAction onPress={() => navigation.goBack()} />
-        <Appbar.Content
-          title="Wallet"
-          titleStyle={[
-            styles.appbarTitle,
-            { color: theme.colors.onBackground },
-          ]}
-        />
-      </Appbar.Header>
+      <ScreenHeader
+        title="Wallet"
+        onBack={() => navigation.goBack()}
+        style={{ paddingTop: 4 }}
+        renderRight={() => (
+          <MaterialCommunityIcons
+            name="circle-multiple-outline"
+            size={22}
+            color={colors.textSecondary}
+          />
+        )}
+      />
 
       <FlatList
         data={filteredTransactions}
@@ -857,10 +823,7 @@ export default function WalletScreen({ navigation }: any) {
         ItemSeparatorComponent={() => (
           <View style={styles.txSeparator}>
             <Divider
-              style={[
-                styles.txDivider,
-                { backgroundColor: theme.colors.outlineVariant },
-              ]}
+              style={[styles.txDivider, { backgroundColor: colors.divider }]}
             />
           </View>
         )}
@@ -868,8 +831,8 @@ export default function WalletScreen({ navigation }: any) {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={handleRefresh}
-            tintColor={theme.colors.primary}
-            colors={[theme.colors.primary]}
+            tintColor={colors.primary}
+            colors={[colors.primary]}
           />
         }
         showsVerticalScrollIndicator={false}
@@ -886,13 +849,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  appbar: {
-    elevation: 0,
-  },
-  appbarTitle: {
-    fontSize: FontSizes.xl,
-    fontWeight: FontWeights.bold,
-  },
+
   listContent: {
     paddingBottom: Spacing.xxxl,
   },
@@ -908,6 +865,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     alignItems: "center",
     marginBottom: Spacing.lg,
+    borderWidth: StyleSheet.hairlineWidth,
   },
   heroLabel: {
     fontSize: FontSizes.xs,
@@ -916,24 +874,17 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     marginBottom: Spacing.md,
   },
-  heroTokenIcon: {
-    marginBottom: Spacing.xs,
+  heroBalanceRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
   },
   heroAmount: {
     fontSize: 44,
     fontWeight: FontWeights.bold,
     lineHeight: 52,
   },
-  heroUnit: {
-    fontSize: FontSizes.md,
-    fontWeight: FontWeights.medium,
-    marginTop: 2,
-  },
-  heroSubtext: {
-    fontSize: FontSizes.sm,
-    marginTop: Spacing.xs,
-    marginBottom: Spacing.lg,
-  },
+
   heroStatsRow: {
     flexDirection: "row",
     gap: Spacing.sm,
@@ -945,6 +896,7 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.sm,
     paddingHorizontal: Spacing.sm,
     borderRadius: BorderRadius.lg,
+    borderWidth: StyleSheet.hairlineWidth,
   },
   heroStatLabel: {
     fontSize: FontSizes.xs,
@@ -1039,7 +991,6 @@ const styles = StyleSheet.create({
   claimPillText: {
     fontSize: FontSizes.xs,
     fontWeight: FontWeights.bold,
-    color: "#FFF",
     marginRight: 2,
   },
 
@@ -1085,6 +1036,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingVertical: Spacing.md,
     paddingHorizontal: Spacing.sm,
+    borderWidth: StyleSheet.hairlineWidth,
   },
   actionIconWrap: {
     width: 40,
@@ -1097,7 +1049,6 @@ const styles = StyleSheet.create({
     position: "absolute",
     top: -2,
     right: -6,
-    backgroundColor: PENDING_AMBER,
     fontSize: 10,
   },
   actionTitle: {
@@ -1116,30 +1067,30 @@ const styles = StyleSheet.create({
   activityHeader: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
     marginBottom: Spacing.md,
+    flexWrap: "wrap",
+    gap: Spacing.xs,
   },
-  activityTitleRow: {
+  activityFilters: {
     flexDirection: "row",
     alignItems: "center",
+    gap: Spacing.xs,
+    marginLeft: "auto",
+  },
+  inlineChip: {
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 4,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1,
+  },
+  inlineChipText: {
+    fontSize: FontSizes.xs,
+    letterSpacing: 0.1,
   },
   activityTitle: {
     fontSize: FontSizes.lg,
     fontWeight: FontWeights.bold,
   },
-  filterChips: {
-    flexDirection: "row",
-    gap: Spacing.xs,
-  },
-  filterChip: {
-    height: 30,
-    borderRadius: BorderRadius.full,
-  },
-  filterChipText: {
-    fontSize: FontSizes.xs,
-    fontWeight: FontWeights.medium,
-  },
-
   // ─── Transaction Rows ──────────────────────────────────────────────
   txRow: {
     flexDirection: "row",

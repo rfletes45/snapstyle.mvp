@@ -25,11 +25,12 @@ import { WidgetWrapper } from "./WidgetWrapper";
 import { WIDGET_ADAPTERS, type WidgetAdapterProps } from "./adapters";
 import type {
   BoardMode,
+  DragHoverProbe,
   WidgetInstance,
   WidgetSizeKey,
   WidgetTypeId,
 } from "./types";
-import { CELL_HEIGHT, GRID_GUTTER } from "./types";
+import { CELL_HEIGHT, GRID_COLUMNS, GRID_GUTTER, SIZE_PRESETS } from "./types";
 
 // =============================================================================
 // Types
@@ -70,7 +71,12 @@ export interface WidgetBoardContainerProps {
   onHideWidget: (instanceId: string) => boolean;
   onRestoreWidget: (instanceId: string) => boolean;
   onAddWidget: (widgetType: WidgetTypeId, size?: WidgetSizeKey) => boolean;
-  onDragPreview: (instanceId: string, x: number, y: number) => void;
+  onDragPreview: (
+    instanceId: string,
+    x: number,
+    y: number,
+    hoverProbe: DragHoverProbe,
+  ) => void;
   onResizePreview: (instanceId: string, newSize: WidgetSizeKey) => void;
   onCommitPreview: () => void;
   onClearPreview: () => void;
@@ -78,6 +84,126 @@ export interface WidgetBoardContainerProps {
   onEnterCustomize: () => void;
   onDone: () => void;
   onCancel: () => void;
+}
+
+// =============================================================================
+// Seam Lines
+// =============================================================================
+
+/**
+ * Thickness of seam lines between adjacent widgets.
+ *
+ * Uses the thinnest reliably renderable line on each platform:
+ *   iOS 3x → ~0.33px    iOS 2x → 0.5px    Android → ~1px
+ *
+ * This produces crisp, architectural divider lines that read as true
+ * edge seams rather than drawn borders.
+ */
+const SEAM_THICKNESS = StyleSheet.hairlineWidth;
+
+interface SeamLine {
+  key: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * Build edge-aligned seam lines at every shared grid boundary.
+ *
+ * With GRID_GUTTER = 0 the widgets sit flush against each other.
+ * Seam lines are rendered as thin overlays at the exact pixel boundary
+ * where two widgets meet.
+ *
+ * Because all coordinates derive from the same grid math, seam endpoints
+ * automatically align at corners and intersections:
+ *   - Adjacent horizontal segments on the same row share endpoints → one
+ *     visually continuous line.
+ *   - Adjacent vertical segments on the same column share endpoints → one
+ *     visually continuous line.
+ *   - Crossing horizontal and vertical seams overlap at the junction
+ *     pixel → clean T / + intersections.
+ *
+ * Only truly adjacent widget pairs (shared column or row boundary with
+ * overlapping extent) produce seam lines. Diagonal neighbors do not.
+ */
+function computeSeamLines(
+  widgets: WidgetInstance[],
+  boardWidth: number,
+): SeamLine[] {
+  if (boardWidth === 0 || widgets.length < 2) return [];
+
+  // With GRID_GUTTER = 0: cellWidth = boardWidth / GRID_COLUMNS
+  const cellWidth =
+    (boardWidth - (GRID_COLUMNS - 1) * GRID_GUTTER) / GRID_COLUMNS;
+  const colStep = cellWidth + GRID_GUTTER; // cellWidth when GRID_GUTTER=0
+  const rowStep = CELL_HEIGHT + GRID_GUTTER; // CELL_HEIGHT when GRID_GUTTER=0
+  const lines: SeamLine[] = [];
+
+  for (let i = 0; i < widgets.length; i++) {
+    const a = widgets[i];
+    const spanA = SIZE_PRESETS[a.size];
+
+    for (let j = i + 1; j < widgets.length; j++) {
+      const b = widgets[j];
+      const spanB = SIZE_PRESETS[b.size];
+
+      // ── Horizontal seam (stacked adjacency) ──────────────────
+      // Widget top bottom-row touches widget bot top-row.
+      const topWidget =
+        a.y + spanA.h === b.y
+          ? { top: a, topSpan: spanA, bot: b, botSpan: spanB }
+          : b.y + spanB.h === a.y
+            ? { top: b, topSpan: spanB, bot: a, botSpan: spanA }
+            : null;
+
+      if (topWidget) {
+        const { top, topSpan, bot, botSpan } = topWidget;
+        const oLeft = Math.max(top.x, bot.x);
+        const oRight = Math.min(top.x + topSpan.w, bot.x + botSpan.w);
+        if (oRight > oLeft) {
+          // Seam sits at the exact pixel boundary between the two widgets.
+          // y = boundary pixel, width = full shared column extent.
+          lines.push({
+            key: `h-${top.instanceId}-${bot.instanceId}`,
+            x: oLeft * colStep,
+            y: bot.y * rowStep,
+            width: (oRight - oLeft) * colStep,
+            height: SEAM_THICKNESS,
+          });
+        }
+      }
+
+      // ── Vertical seam (side-by-side adjacency) ───────────────
+      // Widget left right-col touches widget right left-col.
+      const leftWidget =
+        a.x + spanA.w === b.x
+          ? { left: a, leftSpan: spanA, right: b, rightSpan: spanB }
+          : b.x + spanB.w === a.x
+            ? { left: b, leftSpan: spanB, right: a, rightSpan: spanA }
+            : null;
+
+      if (leftWidget) {
+        const { left, leftSpan, right, rightSpan } = leftWidget;
+        const oTop = Math.max(left.y, right.y);
+        const oBot = Math.min(left.y + leftSpan.h, right.y + rightSpan.h);
+        if (oBot > oTop) {
+          // Seam sits at the exact pixel boundary between the two widgets.
+          // x = boundary pixel, height = full shared row extent.
+          lines.push({
+            key: `v-${left.instanceId}-${right.instanceId}`,
+            x: right.x * colStep,
+            y: oTop * rowStep,
+            width: SEAM_THICKNESS,
+            height: (oBot - oTop) * rowStep,
+          });
+        }
+      }
+    }
+  }
+
+  return lines;
 }
 
 // =============================================================================
@@ -160,8 +286,13 @@ function WidgetBoardContainerBase({
   }, []);
 
   const handleDragUpdate = useCallback(
-    (instanceId: string, gridX: number, gridY: number) => {
-      onDragPreview(instanceId, gridX, gridY);
+    (
+      instanceId: string,
+      gridX: number,
+      gridY: number,
+      hoverProbe: DragHoverProbe,
+    ) => {
+      onDragPreview(instanceId, gridX, gridY, hoverProbe);
     },
     [onDragPreview],
   );
@@ -293,6 +424,24 @@ function WidgetBoardContainerBase({
     readOnly,
   ]);
 
+  // ── Divider Lines ─────────────────────────────────────────────────────
+
+  // Exclude the actively-dragged widget from divider computation so
+  // dividers don't appear at the preview grid position while the widget
+  // is visually mid-gesture at an offset position.
+  const seamWidgets = useMemo(
+    () =>
+      dragActiveId
+        ? visibleWidgets.filter((w) => w.instanceId !== dragActiveId)
+        : visibleWidgets,
+    [visibleWidgets, dragActiveId],
+  );
+
+  const seamLines = useMemo(
+    () => computeSeamLines(seamWidgets, boardWidth),
+    [seamWidgets, boardWidth],
+  );
+
   // ── Render ────────────────────────────────────────────────────────────
 
   return (
@@ -309,6 +458,24 @@ function WidgetBoardContainerBase({
         onLayout={handleLayout}
       >
         {renderedWidgets}
+        {/* Seam lines — thin overlays at grid boundaries where widgets touch.
+            zIndex 2 keeps them above normal widgets (zIndex 1) but below
+            the actively-dragged widget (zIndex 100). */}
+        {seamLines.map((line) => (
+          <View
+            key={line.key}
+            pointerEvents="none"
+            style={{
+              position: "absolute",
+              left: line.x,
+              top: line.y,
+              width: line.width,
+              height: line.height,
+              backgroundColor: "#000",
+              zIndex: 2,
+            }}
+          />
+        ))}
       </View>
 
       {/* Widget Size Selector — suppressed in readOnly / viewer mode */}

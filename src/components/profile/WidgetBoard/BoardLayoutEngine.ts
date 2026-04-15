@@ -15,6 +15,9 @@ import {
   GRID_COLUMNS,
   GRID_GUTTER,
   SIZE_PRESETS,
+  type CollisionDisplacementDirection,
+  type CollisionDisplacementHint,
+  type DragHoverProbe,
   type GridRect,
   type OccupancyCell,
   type WidgetInstance,
@@ -162,14 +165,19 @@ export function findNearestSlot(
  * Return visible widgets in deterministic visual order:
  * primary: y ascending, secondary: x ascending, tertiary: instanceId.
  */
+function compareWidgetsInVisualOrder(
+  left: WidgetInstance,
+  right: WidgetInstance,
+): number {
+  if (left.y !== right.y) return left.y - right.y;
+  if (left.x !== right.x) return left.x - right.x;
+  return left.instanceId.localeCompare(right.instanceId);
+}
+
 export function getVisualOrder(widgets: WidgetInstance[]): WidgetInstance[] {
   return [...widgets]
     .filter((w) => w.visible)
-    .sort((a, b) => {
-      if (a.y !== b.y) return a.y - b.y;
-      if (a.x !== b.x) return a.x - b.x;
-      return a.instanceId.localeCompare(b.instanceId);
-    });
+    .sort(compareWidgetsInVisualOrder);
 }
 
 /** Get the grid rectangle for a widget (position + span). */
@@ -185,6 +193,34 @@ function rectsOverlap(a: GridRect, b: GridRect): boolean {
   );
 }
 
+/** Check whether a fractional grid-space point lies inside a grid rect. */
+function rectContainsPoint(rect: GridRect, col: number, row: number): boolean {
+  return (
+    col >= rect.x &&
+    col < rect.x + rect.w &&
+    row >= rect.y &&
+    row < rect.y + rect.h
+  );
+}
+
+/** Compute the overlap area between two rects in grid cells. */
+function getOverlapArea(left: GridRect, right: GridRect): number {
+  const overlapWidth =
+    Math.min(left.x + left.w, right.x + right.w) - Math.max(left.x, right.x);
+  const overlapHeight =
+    Math.min(left.y + left.h, right.y + right.h) - Math.max(left.y, right.y);
+
+  if (overlapWidth <= 0 || overlapHeight <= 0) return 0;
+  return overlapWidth * overlapHeight;
+}
+
+/** Compute the vertical midpoint of the overlapping region between two rects. */
+function getOverlapMidRow(left: GridRect, right: GridRect): number {
+  const overlapTop = Math.max(left.y, right.y);
+  const overlapBottom = Math.min(left.y + left.h, right.y + right.h);
+  return overlapTop + (overlapBottom - overlapTop) / 2;
+}
+
 /** Get the bottom edge (max row) of placed visible widgets. */
 function getMaxPlacedRow(placed: WidgetInstance[]): number {
   let max = 0;
@@ -198,13 +234,108 @@ function getMaxPlacedRow(placed: WidgetInstance[]): number {
 }
 
 /**
+ * Infer which obstructed widget is under the user's drag pressure and whether
+ * the hover is expressing an upward or downward displacement request.
+ *
+ * The probe is continuous grid-space metadata captured during drag, so the
+ * board can distinguish top-half vs bottom-half hover even when the snapped
+ * target slot stays the same.
+ */
+export function inferCollisionDisplacementHint(
+  widgets: WidgetInstance[],
+  draggedId: string,
+  targetX: number,
+  targetY: number,
+  hoverProbe: DragHoverProbe,
+  targetSize?: WidgetSizeKey,
+): CollisionDisplacementHint | null {
+  const visible = widgets.filter((widget) => widget.visible);
+  const dragged = visible.find((widget) => widget.instanceId === draggedId);
+  if (!dragged) return null;
+
+  const newSize = targetSize ?? dragged.size;
+  const newSpan = SIZE_PRESETS[newSize];
+  const pinnedRect: GridRect = {
+    x: Math.max(0, Math.min(targetX, GRID_COLUMNS - newSpan.w)),
+    y: Math.max(0, targetY),
+    w: newSpan.w,
+    h: newSpan.h,
+  };
+
+  const fallbackProbeCol = pinnedRect.x + pinnedRect.w / 2;
+  const fallbackProbeRow = pinnedRect.y + pinnedRect.h / 2;
+  const probeCol = Number.isFinite(hoverProbe.col)
+    ? hoverProbe.col
+    : fallbackProbeCol;
+  const probeRow = Number.isFinite(hoverProbe.row)
+    ? hoverProbe.row
+    : fallbackProbeRow;
+
+  const collisions = visible
+    .filter((widget) => widget.instanceId !== draggedId)
+    .map((widget) => {
+      const rect = getWidgetRect(widget);
+      return {
+        widget,
+        rect,
+        overlapArea: getOverlapArea(pinnedRect, rect),
+        containsProbe: rectContainsPoint(rect, probeCol, probeRow),
+      };
+    })
+    .filter((candidate) => candidate.overlapArea > 0)
+    .sort((left, right) => {
+      if (left.containsProbe !== right.containsProbe) {
+        return left.containsProbe ? -1 : 1;
+      }
+      if (left.overlapArea !== right.overlapArea) {
+        return right.overlapArea - left.overlapArea;
+      }
+      return compareWidgetsInVisualOrder(left.widget, right.widget);
+    });
+
+  const primaryCollision = collisions[0];
+  if (!primaryCollision) return null;
+
+  const obstructedSpan = SIZE_PRESETS[primaryCollision.widget.size];
+  const obstructedMidRow = primaryCollision.widget.y + obstructedSpan.h / 2;
+  const referenceRow = primaryCollision.containsProbe
+    ? probeRow
+    : getOverlapMidRow(pinnedRect, primaryCollision.rect);
+
+  return {
+    obstructedId: primaryCollision.widget.instanceId,
+    direction: referenceRow > obstructedMidRow ? "up" : "down",
+  };
+}
+
+function findSupportedUpwardPosition(
+  grid: OccupancyCell[],
+  preferredX: number,
+  currentY: number,
+  span: WidgetSpan,
+): { x: number; y: number } | null {
+  for (let row = currentY - 1; row >= 0; row--) {
+    if (!canPlace(grid, { x: preferredX, y: row, w: span.w, h: span.h })) {
+      continue;
+    }
+    if (row === 0 || isWidgetSupported(row, preferredX, span.w, grid)) {
+      return { x: preferredX, y: row };
+    }
+  }
+
+  return null;
+}
+
+/**
  * Find the best deterministic position for a widget.
  *
  * Search policy (in order):
  * 1. Current position — if y >= searchStart and slot is free
- * 2. Preferred column — scan rows from searchStart downward
- * 3. Row-major scan — scan (row, col) from searchStart downward
- * 4. Absolute fallback — bottom of the grid
+ * 2. When upward pressure is requested, try the nearest supported slot above
+ *    in the widget's current column
+ * 3. Preferred column — scan rows from searchStart downward
+ * 4. Row-major scan — scan (row, col) from searchStart downward
+ * 5. Absolute fallback — bottom of the grid
  *
  * Never uses spiral/radius search or Euclidean distance.
  */
@@ -214,6 +345,7 @@ function findStablePosition(
   searchStart: number,
   span: WidgetSpan,
   currentY?: number,
+  preferredDirection?: CollisionDisplacementDirection | null,
 ): { x: number; y: number } {
   const grid = buildOccupancyMap(placed);
   const maxRow = getMaxPlacedRow(placed) + 20;
@@ -225,14 +357,29 @@ function findStablePosition(
     }
   }
 
-  // Strategy 2: preferred column, scan rows from searchStart
+  // Strategy 2: if the user is pressing into the lower half of the obstructed
+  // widget, first try a supported same-column escape above it. This keeps the
+  // bias local and avoids reintroducing remote-gap compaction behavior.
+  if (preferredDirection === "up" && currentY !== undefined) {
+    const upwardPos = findSupportedUpwardPosition(
+      grid,
+      preferredX,
+      currentY,
+      span,
+    );
+    if (upwardPos) {
+      return upwardPos;
+    }
+  }
+
+  // Strategy 3: preferred column, scan rows from searchStart downward
   for (let row = searchStart; row <= maxRow; row++) {
     if (canPlace(grid, { x: preferredX, y: row, w: span.w, h: span.h })) {
       return { x: preferredX, y: row };
     }
   }
 
-  // Strategy 3: deterministic row-major scan from searchStart
+  // Strategy 4: deterministic row-major scan from searchStart
   for (let row = searchStart; row <= maxRow; row++) {
     for (let col = 0; col <= GRID_COLUMNS - span.w; col++) {
       if (canPlace(grid, { x: col, y: row, w: span.w, h: span.h })) {
@@ -241,20 +388,115 @@ function findStablePosition(
     }
   }
 
-  // Absolute fallback — place at the grid bottom
+  // Strategy 5: absolute fallback — place at the grid bottom
   return { x: 0, y: getMaxPlacedRow(placed) };
+}
+
+/**
+ * Check whether a widget at the given position has direct support above
+ * its top edge. A widget is considered supported when:
+ *   - it is at row 0 (top of board), OR
+ *   - at least one cell in the row directly above its top edge (within its
+ *     horizontal span) is occupied by another widget.
+ *
+ * This implements a "contact above" rule — any partial support counts.
+ * Full-width support is not required.
+ */
+function isWidgetSupported(
+  y: number,
+  x: number,
+  w: number,
+  grid: OccupancyCell[],
+): boolean {
+  if (y === 0) return true;
+  const checkRow = y - 1;
+  const totalRows = getGridRows(grid);
+  if (checkRow >= totalRows) return false;
+  for (let col = x; col < x + w; col++) {
+    const idx = checkRow * GRID_COLUMNS + col;
+    if (idx >= 0 && idx < grid.length && grid[idx]?.instanceId !== null) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Restore support integrity after collision resolution.
+ *
+ * This is intentionally narrower than global compaction:
+ * - every visible widget is inspected in top-to-bottom order
+ * - a widget only moves if it has no direct contact above
+ * - movement is vertical-only within the widget's current columns
+ * - there is no cross-column search and no remote gap filling
+ *
+ * Scanning the full visible set is necessary because a widget that starts
+ * out supported can become unsupported after a higher widget settles upward.
+ */
+function settleUnsupportedWidgetsUpward(
+  placed: WidgetInstance[],
+  fixedIds: ReadonlySet<string> = new Set(),
+): WidgetInstance[] {
+  const settleOrder = getVisualOrder(placed).map((widget) => widget.instanceId);
+
+  for (const instanceId of settleOrder) {
+    if (fixedIds.has(instanceId)) continue;
+
+    const idx = placed.findIndex((widget) => widget.instanceId === instanceId);
+    if (idx === -1) continue;
+
+    const span = SIZE_PRESETS[placed[idx].size];
+    const othersForSettle = placed.filter(
+      (widget) => widget.instanceId !== instanceId,
+    );
+    const grid = buildOccupancyMap(othersForSettle);
+
+    let currentY = placed[idx].y;
+    while (currentY > 0) {
+      if (isWidgetSupported(currentY, placed[idx].x, span.w, grid)) break;
+
+      const newY = currentY - 1;
+      if (
+        !canPlace(grid, {
+          x: placed[idx].x,
+          y: newY,
+          w: span.w,
+          h: span.h,
+        })
+      ) {
+        break;
+      }
+
+      currentY = newY;
+      placed[idx] = { ...placed[idx], y: currentY };
+    }
+  }
+
+  return placed;
 }
 
 /**
  * Stable repack with a pinned (active) widget.
  *
  * Used for drag preview, drag commit, resize preview, and resize commit.
- * The pinned widget is placed at its target rect first. All other visible
- * widgets are then repacked in their original visual order:
- *   - Widgets whose bottom edge is above the affected region AND that
- *     don't overlap the pinned rect are frozen in place (fixed prefix).
- *   - Remaining widgets are packed deterministically (affected suffix),
- *     preserving their relative visual order.
+ *
+ * Phase 1 — Collision-only resolution:
+ *   The pinned widget is placed at its target position first. All other
+ *   visible widgets are checked in visual order: if a widget's current
+ *   position is still valid (no overlap with already-placed widgets), it
+ *   stays exactly in place. Only widgets with actual collisions are
+ *   relocated to a nearby valid position. This avoids the previous
+ *   broad affected-region partition that could unnecessarily shift
+ *   higher widgets downward.
+ *
+ * Phase 2 — Support-seeking upward settle:
+ *   The post-collision layout then runs a support-integrity pass from
+ *   top-to-bottom. Any non-pinned widget that has lost direct contact above
+ *   may climb upward one row at a time until it reaches row 0, regains
+ *   support, or is blocked. The pinned widget stays at the user-selected
+ *   target so preview and final commit remain predictable. This heals
+ *   temporary vacancy/floating artifacts without doing full-board gravity
+ *   compaction or cross-column gap filling.
  *
  * Deterministic: same input always produces the same output.
  */
@@ -264,6 +506,7 @@ export function stableRepack(
   targetX: number,
   targetY: number,
   targetSize?: WidgetSizeKey,
+  collisionHint?: CollisionDisplacementHint | null,
 ): WidgetInstance[] | null {
   const visible = widgets.filter((w) => w.visible);
   const hidden = widgets.filter((w) => !w.visible);
@@ -281,7 +524,6 @@ export function stableRepack(
   const newSpan = SIZE_PRESETS[newSize];
   const cx = Math.max(0, Math.min(targetX, GRID_COLUMNS - newSpan.w));
   const cy = Math.max(0, targetY);
-  const pinnedRect: GridRect = { x: cx, y: cy, w: newSpan.w, h: newSpan.h };
   const pinnedPlaced: WidgetInstance = {
     ...pinned,
     x: cx,
@@ -289,49 +531,60 @@ export function stableRepack(
     size: newSize,
   };
 
-  // Determine affected start row (min of old and new top edge)
-  const oldRect = getWidgetRect(pinned);
-  const affectedStartRow = Math.min(oldRect.y, cy);
+  // ── Phase 1: Collision-only resolution ──────────────────────────────
+  // Place pinned widget first. For each remaining widget in visual order,
+  // check if its current position is still valid against already-placed
+  // widgets. Keep it exactly in place if valid; otherwise relocate to the
+  // nearest valid position near its current location.
+  const placed: WidgetInstance[] = [pinnedPlaced];
 
-  // Partition: widgets above the affected zone that don't overlap the
-  // pinned rect are frozen; everything else gets repacked.
-  const fixed: WidgetInstance[] = [];
-  const affected: WidgetInstance[] = [];
-
-  for (const w of others) {
-    const wRect = getWidgetRect(w);
-    const wBottom = wRect.y + wRect.h;
-    if (wBottom <= affectedStartRow && !rectsOverlap(wRect, pinnedRect)) {
-      fixed.push(w);
-    } else {
-      affected.push(w); // keeps visual order from `others`
-    }
-  }
-
-  // Lock fixed prefix + pinned widget
-  const placed: WidgetInstance[] = [...fixed, pinnedPlaced];
-
-  // Pack affected suffix in visual order, using minRow to prevent
-  // a later widget from leapfrogging an earlier one.
-  let minRow = 0;
-  for (const widget of affected) {
+  for (const widget of others) {
     const span = SIZE_PRESETS[widget.size];
-    let preferredX = widget.x;
-    if (preferredX + span.w > GRID_COLUMNS) {
-      preferredX = Math.max(0, GRID_COLUMNS - span.w);
+    const currentRect: GridRect = {
+      x: widget.x,
+      y: widget.y,
+      w: span.w,
+      h: span.h,
+    };
+    const grid = buildOccupancyMap(placed);
+
+    if (canPlace(grid, currentRect)) {
+      // No collision — keep widget exactly where it is
+      placed.push(widget);
+    } else {
+      // Actual collision — find nearest valid position near current spot
+      // Only the primary obstructed widget gets the drag-direction bias.
+      // Cascading collisions still use the normal local downward search.
+      let preferredX = widget.x;
+      if (preferredX + span.w > GRID_COLUMNS) {
+        preferredX = Math.max(0, GRID_COLUMNS - span.w);
+      }
+      const preferredDirection =
+        collisionHint?.obstructedId === widget.instanceId
+          ? collisionHint.direction
+          : null;
+      // Search from the widget's current row to keep it nearby.
+      // The settle-upward pass (phase 2) will reclaim any excess
+      // downward displacement afterward.
+      const pos = findStablePosition(
+        placed,
+        preferredX,
+        widget.y,
+        span,
+        widget.y,
+        preferredDirection,
+      );
+      placed.push({ ...widget, x: pos.x, y: pos.y });
     }
-
-    const searchStart = Math.max(affectedStartRow, minRow);
-    // Do NOT pass widget.y (strategy 1) here. Affected widgets must
-    // repack from the top of the affected region so that vacancies
-    // left by the dragged widget are healed upward.
-    const pos = findStablePosition(placed, preferredX, searchStart, span);
-
-    placed.push({ ...widget, x: pos.x, y: pos.y });
-    minRow = pos.y; // next widget must be at this row or later
   }
 
-  return [...placed, ...hidden];
+  // ── Phase 2: Support-seeking upward settle ──────────────────────────
+  // This pass always recomputes from the collision-only layout. That lets
+  // widgets that were merely supported by a transient preview branch settle
+  // back into place when the active widget moves elsewhere.
+  const settled = settleUnsupportedWidgetsUpward(placed, new Set([pinnedId]));
+
+  return [...settled, ...hidden];
 }
 
 /**
@@ -386,18 +639,13 @@ export function compactWidgets(widgets: WidgetInstance[]): WidgetInstance[] {
 /**
  * Settle the board after a drag-drop or resize commit.
  *
- * Runs stableCompact on the resolved layout to:
- * 1. Compact the dropped widget upward to the highest valid row
- * 2. Compact all suffix widgets beneath it upward together
- * 3. Heal any remaining vertical gaps in the affected region
+ * Delegates to stableRepack which:
+ *   1. Resolves actual collisions (only truly overlapping widgets move)
+ *   2. Applies support-seeking upward settle (pinned + displaced widgets
+ *      climb upward until supported by contact above, or at row 0)
  *
- * This is the "coupled settlement" — the active widget and the suffix
- * beneath it settle upward as one coherent ordered system. No widget
- * is allowed to move upward independently while others are left behind.
- *
- * Vacancy healing during preview is handled by stableRepack (which
- * repacks the affected suffix from the top of the affected zone).
- * This function provides the final upward tightening pass on drop.
+ * Does NOT run global compaction. Unaffected widgets stay exactly in
+ * place. No remote gap filling.
  *
  * Deterministic: same input always produces the same output.
  */
@@ -407,19 +655,16 @@ export function settleBoardAfterDrop(
   targetX: number,
   targetY: number,
   targetSize?: WidgetSizeKey,
+  collisionHint?: CollisionDisplacementHint | null,
 ): WidgetInstance[] | null {
-  // Phases 1-4: resolve conflicts with vacancy healing
-  const resolved = stableRepack(
+  return stableRepack(
     widgets,
     droppedId,
     targetX,
     targetY,
     targetSize,
+    collisionHint,
   );
-  if (!resolved) return null;
-
-  // Phase 5: coupled upward settlement of active + affected suffix
-  return stableCompact(resolved);
 }
 
 // =============================================================================
@@ -594,8 +839,16 @@ export function resolveConflicts(
   draggedId: string,
   targetX: number,
   targetY: number,
+  collisionHint?: CollisionDisplacementHint | null,
 ): WidgetInstance[] | null {
-  return stableRepack(widgets, draggedId, targetX, targetY);
+  return stableRepack(
+    widgets,
+    draggedId,
+    targetX,
+    targetY,
+    undefined,
+    collisionHint,
+  );
 }
 
 /**

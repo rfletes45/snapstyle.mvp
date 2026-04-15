@@ -2,6 +2,7 @@
  * Blocked Users Screen
  */
 
+import { ScreenHeader } from "@/components/shared/ScreenHeader";
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui";
 import { getBlockedUsersWithProfiles, unblockUser } from "@/services/blocking";
 import { useAuth } from "@/store/AuthContext";
@@ -11,7 +12,6 @@ import { useFocusEffect } from "@react-navigation/native";
 import React, { useCallback, useState } from "react";
 import { Alert, FlatList, StyleSheet, View } from "react-native";
 import { Button, Card, Text, useTheme } from "react-native-paper";
-
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("screens/settings/BlockedUsersScreen");
@@ -117,16 +117,28 @@ export default function BlockedUsersScreen({ navigation }: any) {
   );
 
   if (loading) {
-    return <LoadingState message="Loading blocked users..." />;
+    return (
+      <View
+        style={[styles.container, { backgroundColor: theme.colors.background }]}
+      >
+        <ScreenHeader title="Blocked Users" />
+        <LoadingState message="Loading blocked users..." />
+      </View>
+    );
   }
 
   if (error) {
     return (
-      <ErrorState
-        title="Something went wrong"
-        message={error}
-        onRetry={loadBlockedUsers}
-      />
+      <View
+        style={[styles.container, { backgroundColor: theme.colors.background }]}
+      >
+        <ScreenHeader title="Blocked Users" />
+        <ErrorState
+          title="Something went wrong"
+          message={error}
+          onRetry={loadBlockedUsers}
+        />
+      </View>
     );
   }
 
@@ -134,6 +146,7 @@ export default function BlockedUsersScreen({ navigation }: any) {
     <View
       style={[styles.container, { backgroundColor: theme.colors.background }]}
     >
+      <ScreenHeader title="Blocked Users" />
       {blockedUsers.length === 0 ? (
         <EmptyState
           icon="account-check-outline"

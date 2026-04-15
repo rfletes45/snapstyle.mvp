@@ -3033,7 +3033,7 @@ const headerStyles = StyleSheet.create({
   // -- large (4×2) --
   largeRoot: {
     flex: 1,
-    borderRadius: BorderRadius.lg,
+    borderRadius: 0,
     overflow: "hidden",
   },
   bgImage: {
@@ -3164,7 +3164,7 @@ const headerStyles = StyleSheet.create({
   // -- hero (4×4) --
   heroRoot: {
     flex: 1,
-    borderRadius: BorderRadius.lg,
+    borderRadius: 0,
     overflow: "hidden",
   },
   heroForeground: {
@@ -3307,7 +3307,7 @@ const headerStyles = StyleSheet.create({
   // -- mega (4×6) --
   megaRoot: {
     flex: 1,
-    borderRadius: BorderRadius.lg,
+    borderRadius: 0,
     overflow: "hidden",
   },
   megaForeground: {

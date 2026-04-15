@@ -1,37 +1,35 @@
 /**
  * SettingsScreen - User settings hub
  *
- * Features:
- * - Notification toggles (local state, ready for persistence)
- * - Privacy settings entry
- * - Blocked users navigation
- * - Display name editing
- * - Account management section
+ * Organized as a clean directory of settings categories:
+ * - Account identity (display name, email, username)
+ * - Appearance (theme selection)
+ * - Navigation rows to sub-screens (Notifications, Chats, Calls, Privacy, etc.)
+ * - Account actions (sign out, delete)
+ *
+ * Notification toggles live in NotificationSettingsScreen.
+ * Chat/messaging preferences live in InboxSettingsScreen.
  */
 
 import { ScreenHeader } from "@/components/shared/ScreenHeader";
+import { CALL_FEATURES } from "@/constants/featureFlags";
 import {
   DeleteAccountError,
   executeAccountDeletion,
   reauthenticateUser,
 } from "@/services/accountDeletion";
 import { logout } from "@/services/auth";
-import {
-  subscribeToInboxSettings,
-  updateInboxSettings,
-} from "@/services/inboxSettings";
 import { equipTheme, updateDisplayName } from "@/services/profileService";
 import { useAuth } from "@/store/AuthContext";
 import { useConversationDisplayMode } from "@/store/ConversationDisplayModeContext";
 import { useSnackbar } from "@/store/SnackbarContext";
 import { useAppTheme } from "@/store/ThemeContext";
 import { useUser } from "@/store/UserContext";
-import type { InboxSettings } from "@/types/messaging";
 import { isValidDisplayName } from "@/utils/validators";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import Constants from "expo-constants";
 import * as Haptics from "expo-haptics";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -49,7 +47,6 @@ import {
   Divider,
   List,
   Portal,
-  Switch,
   Text,
   TextInput,
   useTheme,
@@ -77,8 +74,6 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
   const { showSuccess, showError, showInfo } = useSnackbar();
   const { setTheme, isDark, useSystemTheme, setUseSystemTheme } = useAppTheme();
   const { displayMode, setDisplayMode } = useConversationDisplayMode();
-  const [notificationSettings, setNotificationSettings] =
-    useState<InboxSettings | null>(null);
 
   // Edit display name state
   const [showEditName, setShowEditName] = useState(false);
@@ -101,39 +96,6 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
   // =============================================================================
   // Handlers
   // =============================================================================
-
-  useEffect(() => {
-    if (!currentFirebaseUser?.uid) return;
-    return subscribeToInboxSettings(
-      currentFirebaseUser.uid,
-      setNotificationSettings,
-    );
-  }, [currentFirebaseUser?.uid]);
-
-  const toggleNotificationSetting = useCallback(
-    async (key: keyof InboxSettings, label: string, value: boolean) => {
-      if (!currentFirebaseUser?.uid) return;
-
-      Haptics.selectionAsync().catch(() => {});
-      setNotificationSettings((prev) =>
-        prev ? { ...prev, [key]: value } : prev,
-      );
-
-      try {
-        await updateInboxSettings(currentFirebaseUser.uid, {
-          [key]: value,
-        });
-        showSuccess(`${label} ${value ? "enabled" : "disabled"}`);
-      } catch (error) {
-        logger.error(`Failed to update ${String(key)}:`, error);
-        setNotificationSettings((prev) =>
-          prev ? { ...prev, [key]: !value } : prev,
-        );
-        showError(`Couldn't update ${label.toLowerCase()}`);
-      }
-    },
-    [currentFirebaseUser?.uid, showError, showSuccess],
-  );
 
   const handleSaveDisplayName = useCallback(async () => {
     if (!editDisplayName.trim()) {
@@ -350,7 +312,7 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
       <ScrollView
         style={[styles.container, { backgroundColor: theme.colors.background }]}
       >
-        {/* Account Section */}
+        {/* ─── Account ─────────────────────────────────────────────── */}
         <List.Section>
           <List.Subheader style={styles.sectionHeader}>Account</List.Subheader>
 
@@ -380,7 +342,7 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
 
         <Divider />
 
-        {/* Appearance Section */}
+        {/* ─── Appearance ──────────────────────────────────────────── */}
         <List.Section>
           <List.Subheader style={styles.sectionHeader}>
             Appearance
@@ -423,7 +385,6 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
               mode={useSystemTheme ? "contained" : "outlined"}
               onPress={() => {
                 setUseSystemTheme(true);
-                // Sync the resolved system theme to Firestore
                 const resolved = isDark
                   ? "catppuccin-mocha"
                   : "catppuccin-latte";
@@ -438,23 +399,13 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
             </Button>
           </View>
 
-          {/* Conversation Style */}
           <Text
             style={[
-              styles.conversationStyleLabel,
-              { color: theme.colors.onSurface },
-            ]}
-          >
-            Conversation Style
-          </Text>
-          <Text
-            style={[
-              styles.conversationStyleDescription,
+              styles.styleLabel,
               { color: theme.colors.onSurfaceVariant },
             ]}
           >
-            Choose how messages appear on your screen. This only affects your
-            view.
+            Conversation Style
           </Text>
           <View style={styles.themeButtonsContainer}>
             <Button
@@ -484,248 +435,50 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
 
         <Divider />
 
-        {/* Notifications Section */}
+        {/* ─── Settings Categories ─────────────────────────────────── */}
         <List.Section>
           <List.Subheader style={styles.sectionHeader}>
-            Notifications
+            Preferences
           </List.Subheader>
 
-          <Text
-            style={[
-              styles.notificationDisclaimer,
-              { color: theme.colors.onSurfaceVariant },
-            ]}
-          >
-            These controls back the server-side notification rules. Foreground
-            banners use the in-app channel, while background and offline
-            delivery uses push.
-          </Text>
-
           <List.Item
-            title="All Notifications"
-            description="Master switch for alerts and notification feed writes"
-            left={(props) => <List.Icon {...props} icon="bell-ring" />}
-            right={() => (
-              <Switch
-                value={notificationSettings?.notificationsEnabled !== false}
-                onValueChange={(value) =>
-                  toggleNotificationSetting(
-                    "notificationsEnabled",
-                    "Notifications",
-                    value,
-                  )
-                }
-                color={theme.colors.primary}
-              />
-            )}
+            title="Notifications"
+            description="Messages, social, games, and alerts"
+            left={(props) => <List.Icon {...props} icon="bell-outline" />}
+            right={(props) => <List.Icon {...props} icon="chevron-right" />}
+            onPress={() => navigation.navigate("NotificationSettings")}
           />
 
           <List.Item
-            title="In-App Banners"
-            description="Foreground banners while you're actively using the app"
-            left={(props) => <List.Icon {...props} icon="bell-badge" />}
-            right={() => (
-              <Switch
-                value={
-                  notificationSettings?.inAppNotificationsEnabled !== false
-                }
-                onValueChange={(value) =>
-                  toggleNotificationSetting(
-                    "inAppNotificationsEnabled",
-                    "In-app banners",
-                    value,
-                  )
-                }
-                color={theme.colors.primary}
-              />
-            )}
+            title="Chats & Messaging"
+            description="Read receipts, typing indicators, blocked users"
+            left={(props) => <List.Icon {...props} icon="message-cog" />}
+            right={(props) => <List.Icon {...props} icon="chevron-right" />}
+            onPress={() => navigation.navigate("InboxSettings" as any)}
           />
 
-          <List.Item
-            title="Messages"
-            description="Direct messages, group messages, and message requests"
-            left={(props) => <List.Icon {...props} icon="message" />}
-            right={() => (
-              <Switch
-                value={
-                  notificationSettings?.messageNotificationsEnabled !== false
-                }
-                onValueChange={(value) =>
-                  toggleNotificationSetting(
-                    "messageNotificationsEnabled",
-                    "Message notifications",
-                    value,
-                  )
-                }
-                color={theme.colors.primary}
-              />
-            )}
-          />
-
-          <List.Item
-            title="Social"
-            description="Friend requests and accepted requests"
-            left={(props) => <List.Icon {...props} icon="account-plus" />}
-            right={() => (
-              <Switch
-                value={
-                  notificationSettings?.socialNotificationsEnabled !== false
-                }
-                onValueChange={(value) =>
-                  toggleNotificationSetting(
-                    "socialNotificationsEnabled",
-                    "Social notifications",
-                    value,
-                  )
-                }
-                color={theme.colors.primary}
-              />
-            )}
-          />
-
-          <List.Item
-            title="Games"
-            description="Invites, lobby ready events, turns, and results"
-            left={(props) => <List.Icon {...props} icon="gamepad-variant" />}
-            right={() => (
-              <Switch
-                value={notificationSettings?.gameNotificationsEnabled !== false}
-                onValueChange={(value) =>
-                  toggleNotificationSetting(
-                    "gameNotificationsEnabled",
-                    "Game notifications",
-                    value,
-                  )
-                }
-                color={theme.colors.primary}
-              />
-            )}
-          />
-
-          <List.Item
-            title="Achievements"
-            description="Achievement unlocks and progression milestones"
-            left={(props) => <List.Icon {...props} icon="trophy-outline" />}
-            right={() => (
-              <Switch
-                value={
-                  notificationSettings?.achievementNotificationsEnabled !==
-                  false
-                }
-                onValueChange={(value) =>
-                  toggleNotificationSetting(
-                    "achievementNotificationsEnabled",
-                    "Achievement notifications",
-                    value,
-                  )
-                }
-                color={theme.colors.primary}
-              />
-            )}
-          />
-
-          <List.Item
-            title="Gifts"
-            description="Gift received and gift opened events"
-            left={(props) => <List.Icon {...props} icon="gift-outline" />}
-            right={() => (
-              <Switch
-                value={notificationSettings?.giftNotificationsEnabled !== false}
-                onValueChange={(value) =>
-                  toggleNotificationSetting(
-                    "giftNotificationsEnabled",
-                    "Gift notifications",
-                    value,
-                  )
-                }
-                color={theme.colors.primary}
-              />
-            )}
-          />
-
-          <List.Item
-            title="Moments"
-            description="Story and moments alerts when enabled by the backend"
-            left={(props) => <List.Icon {...props} icon="image-multiple" />}
-            right={() => (
-              <Switch
-                value={
-                  notificationSettings?.storyNotificationsEnabled !== false
-                }
-                onValueChange={(value) =>
-                  toggleNotificationSetting(
-                    "storyNotificationsEnabled",
-                    "Moments notifications",
-                    value,
-                  )
-                }
-                color={theme.colors.primary}
-              />
-            )}
-          />
-
-          <List.Item
-            title="Ritual Reminders"
-            description="Get reminded about expiring rituals"
-            left={(props) => <List.Icon {...props} icon="fire" />}
-            right={() => (
-              <Switch
-                value={
-                  notificationSettings?.streakNotificationsEnabled !== false
-                }
-                onValueChange={(value) =>
-                  toggleNotificationSetting(
-                    "streakNotificationsEnabled",
-                    "Ritual reminders",
-                    value,
-                  )
-                }
-                color={theme.colors.primary}
-              />
-            )}
-          />
-
-          <List.Item
-            title="App Badge"
-            description="Show unread notification count on the app icon"
-            left={(props) => <List.Icon {...props} icon="numeric" />}
-            right={() => (
-              <Switch
-                value={notificationSettings?.badgeCountEnabled !== false}
-                onValueChange={(value) =>
-                  toggleNotificationSetting(
-                    "badgeCountEnabled",
-                    "Badge count",
-                    value,
-                  )
-                }
-                color={theme.colors.primary}
-              />
-            )}
-          />
+          {CALL_FEATURES.CALLS_ENABLED && (
+            <List.Item
+              title="Calls"
+              description="Camera, audio, ringtone, Do Not Disturb"
+              left={(props) => <List.Icon {...props} icon="phone-cog" />}
+              right={(props) => <List.Icon {...props} icon="chevron-right" />}
+              onPress={() => navigation.navigate("CallSettings" as any)}
+            />
+          )}
         </List.Section>
 
         <Divider />
 
-        {/* Privacy Section */}
+        {/* ─── Privacy & Safety ────────────────────────────────────── */}
         <List.Section>
           <List.Subheader style={styles.sectionHeader}>
             Privacy & Safety
           </List.Subheader>
 
           <List.Item
-            title="Chat Settings"
-            description="Read receipts, typing indicators, online status"
-            left={(props) => <List.Icon {...props} icon="message-cog" />}
-            right={(props) => <List.Icon {...props} icon="chevron-right" />}
-            onPress={() => {
-              navigation.navigate("InboxSettings" as any);
-            }}
-          />
-
-          <List.Item
             title="Privacy Settings"
-            description="Control who can see your profile and contact you"
+            description="Profile visibility, contact permissions"
             left={(props) => <List.Icon {...props} icon="shield-account" />}
             right={(props) => <List.Icon {...props} icon="chevron-right" />}
             onPress={() => navigation.navigate("PrivacySettings")}
@@ -738,23 +491,11 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
             right={(props) => <List.Icon {...props} icon="chevron-right" />}
             onPress={() => navigation.navigate("BlockedUsers")}
           />
-
-          <List.Item
-            title="Privacy Policy"
-            description="Read our privacy policy"
-            left={(props) => <List.Icon {...props} icon="shield-lock" />}
-            right={(props) => <List.Icon {...props} icon="chevron-right" />}
-            onPress={() => {
-              Linking.openURL("https://vibeapp.com/privacy").catch(() =>
-                showInfo("Could not open privacy policy"),
-              );
-            }}
-          />
         </List.Section>
 
         <Divider />
 
-        {/* Admin Section (Only shown to admins) */}
+        {/* ─── Admin Tools (conditional) ───────────────────────────── */}
         {customClaims?.admin === true && (
           <>
             <List.Section>
@@ -787,7 +528,34 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
           </>
         )}
 
-        {/* Account Actions */}
+        {/* ─── About ───────────────────────────────────────────────── */}
+        <List.Section>
+          <List.Subheader style={styles.sectionHeader}>About</List.Subheader>
+
+          <List.Item
+            title="Privacy Policy"
+            description="Read our privacy policy"
+            left={(props) => <List.Icon {...props} icon="shield-lock" />}
+            right={(props) => <List.Icon {...props} icon="open-in-new" />}
+            onPress={() => {
+              Linking.openURL("https://vibeapp.com/privacy").catch(() =>
+                showInfo("Could not open privacy policy"),
+              );
+            }}
+          />
+
+          <List.Item
+            title="Version"
+            description={`Vibe v${Constants.expoConfig?.version || "1.0.0"} (Build ${Constants.expoConfig?.ios?.buildNumber || Constants.expoConfig?.android?.versionCode || "dev"})`}
+            left={(props) => (
+              <List.Icon {...props} icon="information-outline" />
+            )}
+          />
+        </List.Section>
+
+        <Divider />
+
+        {/* ─── Account Actions ─────────────────────────────────────── */}
         <View style={styles.actionsSection}>
           <Button
             mode="outlined"
@@ -813,16 +581,7 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
           </Button>
         </View>
 
-        {/* App Version */}
-        <Text
-          style={[styles.versionText, { color: theme.colors.onSurfaceVariant }]}
-        >
-          Vibe v{Constants.expoConfig?.version || "1.0.0"} (Build{" "}
-          {Constants.expoConfig?.ios?.buildNumber ||
-            Constants.expoConfig?.android?.versionCode ||
-            "dev"}
-          )
-        </Text>
+        <View style={styles.bottomPadding} />
 
         {/* Edit Display Name Dialog */}
         <Portal>
@@ -900,10 +659,7 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
 
                   <Text
                     variant="titleLarge"
-                    style={[
-                      dStyles.title,
-                      { color: theme.colors.onSurface },
-                    ]}
+                    style={[dStyles.title, { color: theme.colors.onSurface }]}
                   >
                     Delete your account?
                   </Text>
@@ -1115,10 +871,7 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
 
                   <Text
                     variant="titleLarge"
-                    style={[
-                      dStyles.title,
-                      { color: theme.colors.onSurface },
-                    ]}
+                    style={[dStyles.title, { color: theme.colors.onSurface }]}
                   >
                     Verify your identity
                   </Text>
@@ -1130,8 +883,8 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
                       { color: theme.colors.onSurfaceVariant },
                     ]}
                   >
-                    For security, please re-enter your password to continue
-                    with account deletion.
+                    For security, please re-enter your password to continue with
+                    account deletion.
                   </Text>
 
                   <View style={dStyles.confirmSection}>
@@ -1236,18 +989,12 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
                       { borderColor: `${theme.colors.error}20` },
                     ]}
                   >
-                    <ActivityIndicator
-                      size={40}
-                      color={theme.colors.error}
-                    />
+                    <ActivityIndicator size={40} color={theme.colors.error} />
                   </View>
 
                   <Text
                     variant="titleLarge"
-                    style={[
-                      dStyles.title,
-                      { color: theme.colors.onSurface },
-                    ]}
+                    style={[dStyles.title, { color: theme.colors.onSurface }]}
                   >
                     Deleting your account
                   </Text>
@@ -1317,10 +1064,7 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
 
                   <Text
                     variant="titleLarge"
-                    style={[
-                      dStyles.title,
-                      { color: theme.colors.onSurface },
-                    ]}
+                    style={[dStyles.title, { color: theme.colors.onSurface }]}
                   >
                     Deletion failed
                   </Text>
@@ -1432,21 +1176,12 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
-    // backgroundColor applied inline via theme
   },
   sectionHeader: {
     fontWeight: "bold",
-    // Uses Paper default theme color
-  },
-  notificationDisclaimer: {
-    fontSize: 12,
-    paddingHorizontal: 16,
-    paddingBottom: 8,
-    lineHeight: 16,
   },
   sectionHeaderAdmin: {
     fontWeight: "bold",
-    // Uses Paper error color inline
   },
   themeButtonsContainer: {
     flexDirection: "row",
@@ -1458,17 +1193,11 @@ const styles = StyleSheet.create({
   themeButton: {
     flex: 1,
   },
-  conversationStyleLabel: {
-    fontSize: 14,
-    fontWeight: "600" as const,
+  styleLabel: {
+    fontSize: 13,
     paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 2,
-  },
-  conversationStyleDescription: {
-    fontSize: 12,
-    paddingHorizontal: 16,
-    paddingBottom: 8,
+    paddingTop: 12,
+    paddingBottom: 4,
   },
   actionsSection: {
     padding: 16,
@@ -1480,11 +1209,8 @@ const styles = StyleSheet.create({
   deleteButton: {
     // borderColor applied inline via theme.colors.error
   },
-  versionText: {
-    textAlign: "center",
-    fontSize: 12,
-    paddingVertical: 20,
-    // color applied inline via theme.colors.onSurfaceVariant
+  bottomPadding: {
+    height: 24,
   },
 });
 

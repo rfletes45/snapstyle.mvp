@@ -30,6 +30,7 @@ export type ProfileTabStackParamList = {
     | undefined;
   BlockedUsers: undefined;
   PrivacySettings: undefined;
+  NotificationSettings: undefined;
   BadgeCollection: { userId?: string } | undefined;
   Settings: undefined;
   Tasks: { tab?: "daily" | "monthly" } | undefined;
@@ -120,6 +121,7 @@ export type MainStackParamList = {
   Wallet: undefined;
   GamesHub: undefined;
   GroupPermissions: { groupId: string };
+  BlockedUsers: undefined;
 };
 
 export type ProfileSetupStackParamList = {

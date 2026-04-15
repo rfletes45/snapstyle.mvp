@@ -44,7 +44,10 @@ import { LayoutChangeEvent, StyleSheet, View } from "react-native";
 import { Spacing } from "@/constants/theme";
 
 import { ComposerToolbarItem } from "./ComposerToolbarItem";
-import { getToolbarItemDefinition } from "./ComposerToolbarRegistry";
+import {
+  getToolbarItemDefinition,
+  getToolbarItemEditModeLongPressDuration,
+} from "./ComposerToolbarRegistry";
 import type { ComposerToolbarItemId } from "./types";
 import { TOOLBAR_BUTTON_SIZE } from "./types";
 
@@ -433,6 +436,8 @@ function ComposerToolbarRowBase({
       {items.map((item) => {
         const definition = getToolbarItemDefinition(item.id);
         const canRemove = definition?.canRemove ?? true;
+        const editModeLongPressDuration =
+          getToolbarItemEditModeLongPressDuration(item.id);
         const isMessageBar = item.id === "message-bar";
 
         return (
@@ -453,6 +458,7 @@ function ComposerToolbarRowBase({
             onDragEnd={handleDragEnd}
             onRemove={canRemove ? handleRemove : undefined}
             onLongPress={handleLongPress}
+            editModeLongPressDuration={editModeLongPressDuration}
           >
             {renderItem(item.id)}
           </ComposerToolbarItem>

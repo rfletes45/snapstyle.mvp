@@ -2497,6 +2497,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
                 onShortPress={handleCaptureFromCamera}
                 onLongPress={handleAddAttachment}
                 disabled={screen.sending || attachmentPicker.isMaxReached}
+                interactionLocked={toolbar.isEditing}
                 size={40}
               />
             }

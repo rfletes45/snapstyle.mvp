@@ -50,8 +50,13 @@ import {
   pixelToGrid,
 } from "./BoardLayoutEngine";
 import { getWidgetDefinition } from "./WidgetRegistry";
-import type { BoardMode, WidgetInstance, WidgetSizeKey } from "./types";
-import { CELL_HEIGHT, GRID_GUTTER, SIZE_PRESETS } from "./types";
+import type {
+  BoardMode,
+  DragHoverProbe,
+  WidgetInstance,
+  WidgetSizeKey,
+} from "./types";
+import { CELL_HEIGHT, GRID_COLUMNS, GRID_GUTTER, SIZE_PRESETS } from "./types";
 
 // =============================================================================
 // Types
@@ -74,7 +79,12 @@ export interface WidgetWrapperProps {
   scrollOffsetRef?: React.RefObject<number>;
   children: React.ReactNode;
   onDragStart?: (instanceId: string) => void;
-  onDragUpdate?: (instanceId: string, gridX: number, gridY: number) => void;
+  onDragUpdate?: (
+    instanceId: string,
+    gridX: number,
+    gridY: number,
+    hoverProbe: DragHoverProbe,
+  ) => void;
   onDragEnd?: (instanceId: string) => void;
   onDragCancel?: (instanceId: string) => void;
   onResizeUpdate?: (instanceId: string, newSize: WidgetSizeKey) => void;
@@ -334,11 +344,29 @@ function WidgetWrapperBase({
       const hoverPixelX = pickupOriginRef.current.x + compensatedTranslationX;
       const hoverPixelY = pickupOriginRef.current.y + compensatedTranslationY;
       const slot = pixelToGrid(hoverPixelX, hoverPixelY, boardWidth);
-      onDragUpdate?.(widget.instanceId, slot.col, slot.row);
+      const colStep =
+        (boardWidth - (GRID_COLUMNS - 1) * GRID_GUTTER) / GRID_COLUMNS +
+        GRID_GUTTER;
+      const rowStep = CELL_HEIGHT + GRID_GUTTER;
+      // Use a continuous center probe so the board can distinguish whether
+      // the drag is pressing the top half or bottom half of the obstructed
+      // widget even while the snapped target slot stays the same.
+      const hoverProbe: DragHoverProbe = {
+        col: Math.max(0, (hoverPixelX + pixelSize.width / 2) / colStep),
+        row: Math.max(0, (hoverPixelY + pixelSize.height / 2) / rowStep),
+      };
+      onDragUpdate?.(widget.instanceId, slot.col, slot.row, hoverProbe);
       // Auto-scroll when near viewport edges
       updateAutoScroll(absoluteY);
     },
-    [onDragUpdate, widget.instanceId, boardWidth, updateAutoScroll],
+    [
+      onDragUpdate,
+      widget.instanceId,
+      boardWidth,
+      pixelSize.width,
+      pixelSize.height,
+      updateAutoScroll,
+    ],
   );
 
   const handleDragEnd = useCallback(() => {
@@ -590,26 +618,21 @@ function WidgetWrapperBase({
           animatedStyle,
         ]}
       >
-        {/* Widget Content — plain View; long-press handled by RNGH above */}
-        <View
-          style={[
-            styles.content,
-            {
-              backgroundColor: colors.background,
-              borderColor: isCustomizing
-                ? colors.primary + "40"
-                : colors.outline + "30",
-              borderWidth: isCustomizing ? 2 : 1.5,
-            },
-          ]}
-        >
+        {/* Widget Content — plain View; long-press handled by RNGH above.
+            No border in view mode — seam lines at the board level provide
+            visual separation. Edit affordance border lives on the editOverlay. */}
+        <View style={[styles.content, { backgroundColor: colors.background }]}>
           {children}
         </View>
 
         {/* Edit Controls Overlay */}
         {isCustomizing && (
           <Animated.View
-            style={[styles.editOverlay, editControlsStyle]}
+            style={[
+              styles.editOverlay,
+              { borderColor: colors.primary + "40", borderWidth: 1.5 },
+              editControlsStyle,
+            ]}
             pointerEvents={isCustomizing ? "box-none" : "none"}
           >
             {/* Remove Button */}
@@ -694,12 +717,12 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    borderRadius: BorderRadius.lg,
+    borderRadius: 0,
     overflow: "hidden",
   },
   editOverlay: {
     ...StyleSheet.absoluteFillObject,
-    borderRadius: BorderRadius.lg,
+    borderRadius: 0,
   },
   removeButton: {
     position: "absolute",
@@ -730,8 +753,8 @@ const styles = StyleSheet.create({
     right: 0,
     width: RESIZE_HANDLE_SIZE,
     height: RESIZE_HANDLE_SIZE,
-    borderTopLeftRadius: BorderRadius.md,
-    borderBottomRightRadius: BorderRadius.lg,
+    borderTopLeftRadius: BorderRadius.xs,
+    borderBottomRightRadius: 0,
     alignItems: "center",
     justifyContent: "center",
   },

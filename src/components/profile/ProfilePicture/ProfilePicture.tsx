@@ -9,7 +9,10 @@
 
 import { AppImage } from "@/components/AppImage";
 import { useColors } from "@/store/ThemeContext";
-import { buildRemoteImageSource, normalizeRemoteImageUrl } from "@/utils/remoteImageSource";
+import {
+  buildRemoteImageSource,
+  normalizeRemoteImageUrl,
+} from "@/utils/remoteImageSource";
 import React, { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, StyleSheet, View, ViewStyle } from "react-native";
 import { InitialsAvatar } from "./InitialsAvatar";
