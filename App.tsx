@@ -1,8 +1,8 @@
 import ErrorBoundary from "@/components/ErrorBoundary";
 import InAppToast from "@/components/InAppToast";
+import { FloatingVideoOverlay } from "@/components/stream/FloatingVideoOverlay";
 import IncomingCallHandler from "@/components/stream/IncomingCallHandler";
 import { NativePiPBridge } from "@/components/stream/NativePiPBridge";
-import { FloatingVideoOverlay } from "@/components/stream/FloatingVideoOverlay";
 import { StreamCallProvider } from "@/contexts/StreamCallContext";
 import { loadCustomFonts } from "@/fonts/fontLoader";
 import { useOutboxProcessor } from "@/hooks/useOutboxProcessor";
@@ -19,10 +19,16 @@ import { SnackbarProvider } from "@/store/SnackbarContext";
 import { ThemeProvider, useAppTheme } from "@/store/ThemeContext";
 import { UserProvider } from "@/store/UserContext";
 import { KeyboardProvider } from "@/utils/optionalKeyboardController";
+import {
+  logStartupError,
+  logStartupEvent,
+  logStartupMount,
+  logStartupUnmount,
+} from "@/utils/startupTrace";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar as ExpoStatusBar } from "expo-status-bar";
 import * as SystemUI from "expo-system-ui";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { PaperProvider } from "react-native-paper";
@@ -32,10 +38,15 @@ SplashScreen.preventAutoHideAsync().catch(() => {
   // Already hidden or not available — safe to ignore
 });
 
+logStartupEvent("App module evaluated");
+
 // Initialize Firebase synchronously before rendering
+logStartupEvent("Firebase initialization starting");
 try {
   initializeFirebase(firebaseConfig);
+  logStartupEvent("Firebase initialization completed");
 } catch (e) {
+  logStartupError("Firebase initialization failed", e);
   console.error("[BOOT] Firebase init failed:", e);
 }
 
@@ -44,6 +55,9 @@ try {
  * In production, this would send errors to a crash reporting service
  */
 function handleError(error: Error, errorInfo: React.ErrorInfo): void {
+  logStartupError("ErrorBoundary captured uncaught error", error, {
+    componentStack: errorInfo.componentStack,
+  });
   console.error("🚨 [App] Uncaught error:", error.message);
   console.error("🚨 [App] Component stack:", errorInfo.componentStack);
   // NOTE: Send to crash reporting service (Sentry, etc.)
@@ -54,19 +68,40 @@ function handleError(error: Error, errorInfo: React.ErrorInfo): void {
  */
 function AppContent() {
   const { theme, isDark, colors } = useAppTheme();
-  const [currentRouteName, setCurrentRouteName] = useState<string | undefined>();
+  const [currentRouteName, setCurrentRouteName] = useState<
+    string | undefined
+  >();
+  const currentRouteNameRef = useRef<string | undefined>();
 
   // ── Font loading gate ───────────────────────────────────────────────────
   const [fontsReady, setFontsReady] = useState(false);
   const [bootError, setBootError] = useState<string | null>(null);
 
   useEffect(() => {
+    currentRouteNameRef.current = currentRouteName;
+  }, [currentRouteName]);
+
+  useEffect(() => {
+    logStartupMount("AppContent");
+    return () => {
+      logStartupUnmount("AppContent", {
+        lastKnownRouteName: currentRouteNameRef.current ?? null,
+      });
+    };
+  }, []);
+
+  useEffect(() => {
     let mounted = true;
+
+    logStartupEvent("Font loading started");
 
     // Race font loading against a 5-second timeout so a corrupt/missing
     // font asset can never hang the app indefinitely.
     const fontTimeout = new Promise<boolean>((resolve) =>
       setTimeout(() => {
+        logStartupEvent("Font loading timeout reached", {
+          timeoutMs: 5_000,
+        });
         console.warn("[BOOT] Font loading timed out after 5s");
         resolve(false);
       }, 5_000),
@@ -75,6 +110,7 @@ function AppContent() {
     Promise.race([loadCustomFonts(), fontTimeout])
       .then((ok) => {
         if (mounted) setFontsReady(true);
+        logStartupEvent("Font loading resolved", { ok });
         if (!ok) {
           console.warn(
             "[App] Custom fonts failed to load — using system defaults",
@@ -82,6 +118,7 @@ function AppContent() {
         }
       })
       .catch((err) => {
+        logStartupError("Font loading failed", err);
         console.error("[BOOT] Font loading error:", err);
         if (mounted) {
           setFontsReady(true); // proceed anyway
@@ -90,6 +127,7 @@ function AppContent() {
       })
       .finally(() => {
         // Hide the native splash screen once fonts are resolved
+        logStartupEvent("Splash screen hide requested");
         SplashScreen.hideAsync().catch(() => {});
       });
 
@@ -105,6 +143,14 @@ function AppContent() {
   useEffect(() => {
     void lockToPortrait();
   }, []);
+
+  useEffect(() => {
+    if (bootError) {
+      logStartupEvent("Boot error fallback rendered", {
+        bootError,
+      });
+    }
+  }, [bootError]);
 
   // Sync Android system UI (navigation bar) background with theme
   useEffect(() => {
@@ -191,15 +237,12 @@ function AppContent() {
                       <InAppToast onNavigate={handleToastNavigate} />
                       <IncomingCallHandler
                         onNavigateToCall={(callId, mode) => {
-                          globalNavigate(
-                            "DirectCall" as any,
-                            {
-                              callId,
-                              recipientName: "",
-                              mode,
-                              isOutgoing: false,
-                            },
-                          );
+                          globalNavigate("DirectCall" as any, {
+                            callId,
+                            recipientName: "",
+                            mode,
+                            isOutgoing: false,
+                          });
                         }}
                       />
                       <NativePiPBridge />
@@ -249,6 +292,13 @@ function ThemedRootWrapper({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
+  useEffect(() => {
+    logStartupMount("AppRoot");
+    return () => {
+      logStartupUnmount("AppRoot");
+    };
+  }, []);
+
   return (
     <KeyboardProvider>
       <ErrorBoundary onError={handleError}>

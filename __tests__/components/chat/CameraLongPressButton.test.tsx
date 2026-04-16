@@ -30,13 +30,20 @@ import {
   CameraLongPressButton,
 } from "../../../src/components/chat/CameraLongPressButton";
 import { getToolbarItemEditModeLongPressDuration } from "../../../src/components/chat/ComposerToolbar/ComposerToolbarRegistry";
+import { ToolbarSlotInteractionContext } from "../../../src/components/chat/ComposerToolbar/ToolbarSlotInteractionContext";
 import {
+  ANIMAL_EDIT_MODE_EXTRA_DELAY_MS,
   CAMERA_EDIT_MODE_EXTRA_DELAY_MS,
   EDIT_MODE_LONG_PRESS_DURATION,
 } from "../../../src/components/chat/ComposerToolbar/types";
 
+type TestSlotInteractionValue = React.ContextType<
+  typeof ToolbarSlotInteractionContext
+>;
+
 function renderCameraButton(
   props: Partial<React.ComponentProps<typeof CameraLongPressButton>> = {},
+  slotInteractionValue: TestSlotInteractionValue = null,
 ) {
   const onShortPress = props.onShortPress ?? jest.fn();
   const onLongPress = props.onLongPress ?? jest.fn();
@@ -46,11 +53,13 @@ function renderCameraButton(
   act(() => {
     tree = renderer.create(
       <PaperProvider>
-        <CameraLongPressButton
-          onShortPress={onShortPress}
-          onLongPress={onLongPress}
-          {...props}
-        />
+        <ToolbarSlotInteractionContext.Provider value={slotInteractionValue}>
+          <CameraLongPressButton
+            onShortPress={onShortPress}
+            onLongPress={onLongPress}
+            {...props}
+          />
+        </ToolbarSlotInteractionContext.Provider>
       </PaperProvider>,
     );
   });
@@ -172,17 +181,96 @@ describe("CameraLongPressButton", () => {
     expect(onShortPress).not.toHaveBeenCalled();
     expect(onLongPress).not.toHaveBeenCalled();
   });
+
+  it("suppresses the camera action if the press is held past the edit-mode cutoff before release", () => {
+    const { getTouchable, getIcon, getContainer, onShortPress, onLongPress } =
+      renderCameraButton({
+        editModeActivationDurationMs:
+          EDIT_MODE_LONG_PRESS_DURATION + CAMERA_EDIT_MODE_EXTRA_DELAY_MS,
+      });
+
+    act(() => {
+      getTouchable().props.onPressIn();
+    });
+
+    act(() => {
+      jest.advanceTimersByTime(CAMERA_IMAGE_PICKER_HOLD_DURATION_MS);
+    });
+
+    expect(getIcon().props.name).toBe("image-multiple");
+
+    act(() => {
+      jest.advanceTimersByTime(
+        EDIT_MODE_LONG_PRESS_DURATION +
+          CAMERA_EDIT_MODE_EXTRA_DELAY_MS -
+          CAMERA_IMAGE_PICKER_HOLD_DURATION_MS,
+      );
+    });
+
+    expect(getIcon().props.name).toBe("camera");
+    expect(StyleSheet.flatten(getContainer().props.style).backgroundColor).toBe(
+      undefined,
+    );
+
+    act(() => {
+      getTouchable().props.onPressOut();
+    });
+
+    expect(onShortPress).not.toHaveBeenCalled();
+    expect(onLongPress).not.toHaveBeenCalled();
+  });
+
+  it("suppresses the camera action when the parent slot claims the press before edit mode enters", () => {
+    let cancelBeforeEditMode: (() => void) | null = null;
+    const slotInteractionValue: NonNullable<TestSlotInteractionValue> = {
+      editModeActivationSignal: { value: false } as any,
+      registerPreEditModeCancel: (callback) => {
+        cancelBeforeEditMode = callback;
+      },
+    };
+
+    const { getTouchable, getIcon, getContainer, onShortPress, onLongPress } =
+      renderCameraButton({}, slotInteractionValue);
+
+    act(() => {
+      getTouchable().props.onPressIn();
+    });
+
+    act(() => {
+      jest.advanceTimersByTime(CAMERA_IMAGE_PICKER_HOLD_DURATION_MS);
+    });
+
+    expect(getIcon().props.name).toBe("image-multiple");
+    expect(cancelBeforeEditMode).not.toBeNull();
+
+    act(() => {
+      slotInteractionValue.editModeActivationSignal.value = true;
+      cancelBeforeEditMode?.();
+    });
+
+    expect(getIcon().props.name).toBe("camera");
+    expect(StyleSheet.flatten(getContainer().props.style).backgroundColor).toBe(
+      undefined,
+    );
+
+    act(() => {
+      getTouchable().props.onPressOut();
+    });
+
+    expect(onShortPress).not.toHaveBeenCalled();
+    expect(onLongPress).not.toHaveBeenCalled();
+  });
 });
 
-describe("camera toolbar edit-mode timing", () => {
-  it("adds the extra edit-mode delay only to the camera item", () => {
+describe("dual-mode toolbar edit-mode timing", () => {
+  it("adds the extra edit-mode delay only to camera and animal", () => {
     expect(getToolbarItemEditModeLongPressDuration("camera")).toBe(
       EDIT_MODE_LONG_PRESS_DURATION + CAMERA_EDIT_MODE_EXTRA_DELAY_MS,
     );
-    expect(getToolbarItemEditModeLongPressDuration("game")).toBe(
-      EDIT_MODE_LONG_PRESS_DURATION,
-    );
     expect(getToolbarItemEditModeLongPressDuration("animal")).toBe(
+      EDIT_MODE_LONG_PRESS_DURATION + ANIMAL_EDIT_MODE_EXTRA_DELAY_MS,
+    );
+    expect(getToolbarItemEditModeLongPressDuration("game")).toBe(
       EDIT_MODE_LONG_PRESS_DURATION,
     );
   });

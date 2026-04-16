@@ -55,6 +55,7 @@ import React, {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
 } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
@@ -70,6 +71,7 @@ import { scheduleOnRN } from "react-native-worklets";
 
 import { useColors } from "@/store/ThemeContext";
 
+import { ToolbarSlotInteractionContext } from "./ToolbarSlotInteractionContext";
 import type { ComposerToolbarItemId } from "./types";
 import { EDIT_MODE_LONG_PRESS_DURATION, TOOLBAR_BUTTON_SIZE } from "./types";
 
@@ -174,9 +176,11 @@ function ComposerToolbarItemBase({
   const scale = useSharedValue(1);
   const zIndex = useSharedValue(0);
   const gestureEnded = useSharedValue(false);
+  const editModeActivationSignal = useSharedValue(false);
 
   // Track isDragging transitions for settle animation
   const wasDraggingRef = useRef(false);
+  const preEditModeCancelRef = useRef<(() => void) | null>(null);
 
   // ── Preview offset animation (non-dragged items) ──────────────────────
   // When the dragged item hovers over a new slot, the Row computes pixel
@@ -207,6 +211,12 @@ function ComposerToolbarItemBase({
     wasDraggingRef.current = isDragging;
   }, [isDragging, settleOffset, translateX, reflowOffset]);
 
+  useEffect(() => {
+    if (!isEditing) {
+      editModeActivationSignal.value = false;
+    }
+  }, [editModeActivationSignal, isEditing]);
+
   // ── Haptic triggers (must run on JS thread) ───────────────────────────
   const triggerDragStartHaptic = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -226,6 +236,18 @@ function ComposerToolbarItemBase({
     },
     [itemId, onDragEnd],
   );
+
+  const registerPreEditModeCancel = useCallback(
+    (callback: (() => void) | null) => {
+      preEditModeCancelRef.current = callback;
+    },
+    [],
+  );
+
+  const triggerEditModeEntry = useCallback(() => {
+    preEditModeCancelRef.current?.();
+    onLongPress?.();
+  }, [onLongPress]);
 
   // ── Pan gesture for dragging (edit mode only) ─────────────────────────
   const panGesture = Gesture.Pan()
@@ -269,7 +291,8 @@ function ComposerToolbarItemBase({
     .onStart(() => {
       "worklet";
       if (onLongPress) {
-        scheduleOnRN(onLongPress);
+        editModeActivationSignal.value = true;
+        scheduleOnRN(triggerEditModeEntry);
       }
     });
 
@@ -303,16 +326,26 @@ function ComposerToolbarItemBase({
     ? { flex: flexWeight ?? 1 }
     : { width: slotWidth };
 
+  const slotInteractionValue = useMemo(
+    () => ({
+      editModeActivationSignal,
+      registerPreEditModeCancel,
+    }),
+    [editModeActivationSignal, registerPreEditModeCancel],
+  );
+
   return (
     <GestureDetector gesture={composedGesture}>
       <Animated.View style={[styles.container, containerStyle, animatedStyle]}>
         {/* Content — disable interactions in edit mode */}
-        <View
-          pointerEvents={isEditing ? "none" : "auto"}
-          style={styles.childrenWrapper}
-        >
-          {children}
-        </View>
+        <ToolbarSlotInteractionContext.Provider value={slotInteractionValue}>
+          <View
+            pointerEvents={isEditing ? "none" : "auto"}
+            style={styles.childrenWrapper}
+          >
+            {children}
+          </View>
+        </ToolbarSlotInteractionContext.Provider>
 
         {/* Edit mode overlay: delete badge */}
         {isEditing && canRemove && (

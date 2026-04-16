@@ -33,16 +33,16 @@ import {
   StyleSheet,
   TextInput,
   TextInputProps,
-  TouchableOpacity,
   View,
   ViewStyle,
 } from "react-native";
 import { IconButton, Text, useTheme } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { AnimalIcon } from "./AnimalIcon";
+import { AnimalLongPressButton } from "./AnimalLongPressButton";
 import { AnimalPickerBubble } from "./AnimalPickerBubble";
 import { ComposerCustomizeToolbar } from "./ComposerToolbar/ComposerCustomizeToolbar";
 import { ComposerItemPicker } from "./ComposerToolbar/ComposerItemPicker";
+import { getToolbarItemEditModeLongPressDuration } from "./ComposerToolbar/ComposerToolbarRegistry";
 import { ComposerToolbarRow } from "./ComposerToolbar/ComposerToolbarRow";
 import type { ComposerToolbarItemId } from "./ComposerToolbar/types";
 import { DEFAULT_TOOLBAR_ITEMS } from "./ComposerToolbar/types";
@@ -111,16 +111,16 @@ export interface ChatComposerProps {
   onVoiceCancelled?: () => void;
   /** Maximum voice recording duration in ms (default: 60000 = 60s) */
   maxVoiceDuration?: number;
-  /** Animal button handler (sends an animal bubble based on equipped theme) */
+  /** Opens the lightweight anchored animal picker bubble. */
   onAnimalPress?: () => void;
+  /** Opens the alternate animal picker surface (full catalog/customization). */
+  onAnimalAlternatePress?: () => void;
   /** The equipped animal theme ID (e.g. "animal_duck", "animal_bear") */
   animalThemeId?: string | null;
-  /** Whether the user can send the equipped animal (entitlement gated) */
-  animalLocked?: boolean;
+  /** Whether the animal button is temporarily disabled. */
+  animalDisabled?: boolean;
   /** Whether the animal picker bubble is open */
   animalPickerVisible?: boolean;
-  /** Called on long press of the animal button (opens picker) */
-  onAnimalLongPress?: () => void;
   /** Called to close the animal picker */
   onAnimalPickerClose?: () => void;
   /** Current user ID (for animal picker ownership) */
@@ -225,10 +225,10 @@ export function ChatComposer({
   onVoiceCancelled,
   maxVoiceDuration = 60000,
   onAnimalPress,
+  onAnimalAlternatePress,
   animalThemeId,
-  animalLocked = false,
+  animalDisabled = false,
   animalPickerVisible = false,
-  onAnimalLongPress,
   onAnimalPickerClose,
   currentUserId,
   onAnimalEquipped,
@@ -341,12 +341,11 @@ export function ChatComposer({
     };
   }, [animalPickerVisible, measureAnimalButton]);
 
-  // Long press handler for animal button
-  const handleAnimalLongPress = useCallback(() => {
-    if (animalLocked || !onAnimalLongPress) return;
+  const handleAnimalPickerPress = useCallback(() => {
+    if (animalDisabled || !onAnimalPress) return;
     measureAnimalButton();
-    onAnimalLongPress();
-  }, [animalLocked, onAnimalLongPress, measureAnimalButton]);
+    onAnimalPress();
+  }, [animalDisabled, onAnimalPress, measureAnimalButton]);
 
   // Wrapper for onSend that refocuses the TextInput after sending.
   // Keeps the keyboard open after sending a message.
@@ -553,23 +552,18 @@ export function ChatComposer({
                   />
                 </Pressable>
               ) : (
-                <TouchableOpacity
-                  onPress={animalLocked ? undefined : onAnimalPress}
-                  onLongPress={handleAnimalLongPress}
-                  delayLongPress={500}
-                  activeOpacity={animalLocked ? 1 : 0.7}
-                  style={[
-                    styles.animalButton,
-                    animalLocked && { opacity: 0.35 },
-                  ]}
-                  accessibilityLabel={
-                    animalLocked ? "Animal locked" : "Send animal"
+                <AnimalLongPressButton
+                  animalId={animalThemeId}
+                  onShortPress={handleAnimalPickerPress}
+                  onLongPress={
+                    onAnimalAlternatePress ?? handleAnimalPickerPress
                   }
-                  accessibilityRole="button"
-                  disabled={animalLocked}
-                >
-                  <AnimalIcon animalId={animalThemeId} size={25} wide />
-                </TouchableOpacity>
+                  disabled={animalDisabled}
+                  interactionLocked={toolbarEditing}
+                  editModeActivationDurationMs={getToolbarItemEditModeLongPressDuration(
+                    "animal",
+                  )}
+                />
               )}
             </View>
           ) : null;
@@ -657,10 +651,11 @@ export function ChatComposer({
       onGamePress,
       onGameSelected,
       onAnimalPress,
+      onAnimalAlternatePress,
       animalPickerVisible,
       onAnimalPickerClose,
-      animalLocked,
-      handleAnimalLongPress,
+      animalDisabled,
+      handleAnimalPickerPress,
       animalThemeId,
       onEmojiSelected,
       onGifSelected,
@@ -824,13 +819,6 @@ const styles = StyleSheet.create({
     margin: 0,
     width: 40,
     height: 40,
-  },
-  animalButton: {
-    margin: 0,
-    width: 36,
-    height: 40,
-    justifyContent: "center",
-    alignItems: "center",
   },
   animalCloseButton: {
     margin: 0,

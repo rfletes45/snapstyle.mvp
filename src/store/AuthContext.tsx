@@ -3,6 +3,7 @@ import { navigate as globalNavigate } from "@/services/navigationRef";
 import {
   addNotificationReceivedListener,
   addNotificationResponseListener,
+  clearLastNotificationResponse,
   getLastNotificationResponse,
   registerForPushNotifications,
   removePushToken,
@@ -31,6 +32,12 @@ import React, {
 import { AppState, AppStateStatus, Platform } from "react-native";
 
 import { createLogger } from "@/utils/log";
+import {
+  getStartupSessionId,
+  logStartupEvent,
+  logStartupMount,
+  logStartupUnmount,
+} from "@/utils/startupTrace";
 const logger = createLogger("store/AuthContext");
 export interface AuthContextType {
   currentFirebaseUser: FirebaseUser | null;
@@ -52,54 +59,146 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
   const [loading, setLoading] = useState(true);
   const [isHydrated, setIsHydrated] = useState(false);
-  const notificationListenerRef = useRef<Notifications.EventSubscription | null>(
-    null,
-  );
+  const notificationListenerRef =
+    useRef<Notifications.EventSubscription | null>(null);
   const responseListenerRef = useRef<Notifications.EventSubscription | null>(
     null,
   );
   const previousUserIdRef = useRef<string | null>(null);
   const recentTapKeysRef = useRef<Map<string, number>>(new Map());
+  const currentUserIdRef = useRef<string | null>(null);
+  const currentUserId = currentFirebaseUser?.uid ?? null;
+
+  useEffect(() => {
+    logStartupMount("AuthProvider");
+    return () => {
+      logStartupUnmount("AuthProvider");
+    };
+  }, []);
+
+  useEffect(() => {
+    currentUserIdRef.current = currentUserId;
+  }, [currentUserId]);
 
   // Set up notification listeners
   useEffect(() => {
     const handleNotificationResponse = async (
       response: Notifications.NotificationResponse | null,
+      source: "initial" | "listener",
     ) => {
       if (!response) return;
 
-      logger.info(
-        "📱 Notification tapped:",
-        response.notification.request.content,
-      );
+      logStartupEvent("Notification response received", {
+        source,
+        actionIdentifier: response.actionIdentifier,
+        notificationRequestId: response.notification.request.identifier,
+        content: response.notification.request.content,
+      });
 
-      const data = response.notification.request.content.data;
-      const normalized = normalizeNotificationPayload(data);
-      if (!normalized) return;
+      try {
+        const data = response.notification.request.content.data;
+        const normalized = normalizeNotificationPayload(data);
+        if (!normalized) {
+          logStartupEvent("Notification response ignored", {
+            source,
+            reason: "unrecognized_payload",
+            rawData: data,
+          });
+          logger.warn(
+            "[AuthContext] Ignoring unrecognized notification response",
+            {
+              data: {
+                source,
+                startupSessionId: getStartupSessionId(),
+                rawData: data,
+              },
+            },
+          );
+          return;
+        }
 
-      if (
-        !shouldHandleNotificationByDedupeKey(
-          recentTapKeysRef.current,
-          normalized.dedupeKey,
-        )
-      ) {
-        return;
-      }
+        if (
+          !shouldHandleNotificationByDedupeKey(
+            recentTapKeysRef.current,
+            normalized.dedupeKey,
+          )
+        ) {
+          logStartupEvent("Notification response deduped", {
+            source,
+            dedupeKey: normalized.dedupeKey,
+          });
+          logger.info(
+            "[AuthContext] Skipping duplicate notification response",
+            {
+              data: {
+                source,
+                startupSessionId: getStartupSessionId(),
+                dedupeKey: normalized.dedupeKey,
+              },
+            },
+          );
+          return;
+        }
 
-      if (currentFirebaseUser?.uid && normalized.notificationId) {
-        markUserNotificationRead(
-          currentFirebaseUser.uid,
-          normalized.notificationId,
-        ).catch((error) => {
-          logger.warn("[AuthContext] Failed to mark notification read:", error);
+        const activeUserId = currentUserIdRef.current;
+        if (activeUserId && normalized.notificationId) {
+          markUserNotificationRead(
+            activeUserId,
+            normalized.notificationId,
+          ).catch((error) => {
+            logger.warn(
+              "[AuthContext] Failed to mark notification read:",
+              error,
+            );
+          });
+        }
+
+        logStartupEvent("Notification response navigating", {
+          source,
+          dedupeKey: normalized.dedupeKey,
+          screen: normalized.route.screen,
+          params: normalized.route.params,
+          activeUserId,
         });
-      }
+        logger.info("[AuthContext] Navigating from notification response", {
+          data: {
+            source,
+            startupSessionId: getStartupSessionId(),
+            dedupeKey: normalized.dedupeKey,
+            screen: normalized.route.screen,
+            params: normalized.route.params,
+          },
+        });
 
-      globalNavigate(
-        normalized.route.screen as any,
-        normalized.route.params as any,
-      );
+        globalNavigate(
+          normalized.route.screen as any,
+          normalized.route.params as any,
+        );
+      } finally {
+        try {
+          await clearLastNotificationResponse();
+          logStartupEvent("Cleared cached last notification response", {
+            source,
+          });
+          logger.info(
+            "[AuthContext] Cleared cached last notification response",
+            {
+              data: {
+                source,
+                startupSessionId: getStartupSessionId(),
+              },
+            },
+          );
+        } catch (error) {
+          logger.warn(
+            "[AuthContext] Failed to clear cached last notification response:",
+            error,
+          );
+        }
+      }
     };
+
+    logStartupEvent("AuthContext notification listeners registering");
 
     // Listener for notifications received while app is foregrounded
     notificationListenerRef.current = addNotificationReceivedListener(
@@ -110,11 +209,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     // Listener for notification taps
     responseListenerRef.current = addNotificationResponseListener(
-      (response) => void handleNotificationResponse(response),
+      (response) => void handleNotificationResponse(response, "listener"),
     );
 
     try {
-      void handleNotificationResponse(getLastNotificationResponse());
+      const initialResponse = getLastNotificationResponse();
+      logStartupEvent("Checked cached last notification response", {
+        hasResponse: !!initialResponse,
+      });
+      logger.info("[AuthContext] Checked cached last notification response", {
+        data: {
+          startupSessionId: getStartupSessionId(),
+          hasResponse: !!initialResponse,
+        },
+      });
+      void handleNotificationResponse(initialResponse, "initial");
     } catch (error) {
       logger.warn(
         "[AuthContext] Failed to read last notification response:",
@@ -129,28 +238,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (responseListenerRef.current) {
         responseListenerRef.current.remove();
       }
+      logStartupEvent("AuthContext notification listeners removed");
     };
-  }, [currentFirebaseUser]);
+  }, []);
 
   // Register for push notifications when user logs in
   useEffect(() => {
     const registerPushToken = async () => {
-      if (
-        currentFirebaseUser &&
-        currentFirebaseUser.uid !== previousUserIdRef.current
-      ) {
+      if (currentUserId && currentUserId !== previousUserIdRef.current) {
         try {
           const token = await registerForPushNotifications();
           if (token) {
-            await savePushToken(currentFirebaseUser.uid, token);
+            await savePushToken(currentUserId, token);
           } else {
-            await removePushToken(currentFirebaseUser.uid);
+            await removePushToken(currentUserId);
           }
-          previousUserIdRef.current = currentFirebaseUser.uid;
+          previousUserIdRef.current = currentUserId;
         } catch (error) {
           logger.error("[AuthContext] Error registering push token:", error);
         }
-      } else if (!currentFirebaseUser && previousUserIdRef.current) {
+      } else if (!currentUserId && previousUserIdRef.current) {
         // User logged out - token was already removed before signOut
         // (see logout() in auth.ts). Just clear the ref.
         previousUserIdRef.current = null;
@@ -159,9 +266,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     // Only register on native platforms (not web)
     if (Platform.OS !== "web") {
-      registerPushToken();
+      void registerPushToken();
     }
-  }, [currentFirebaseUser]);
+  }, [currentUserId]);
 
   // ── Periodic push-token refresh ───────────────────────────────────────
   // Expo push tokens can expire / rotate.  Re-register every 7 days when
@@ -176,18 +283,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       "change",
       async (state: AppStateStatus) => {
         if (state !== "active") return;
-        if (!currentFirebaseUser) return;
+        if (!currentUserId) return;
         const elapsed = Date.now() - lastTokenRefreshRef.current;
         if (elapsed < TOKEN_REFRESH_INTERVAL) return;
 
         try {
           const token = await registerForPushNotifications();
           if (token) {
-            await savePushToken(currentFirebaseUser.uid, token);
+            await savePushToken(currentUserId, token);
             lastTokenRefreshRef.current = Date.now();
             logger.info("[AuthContext] Push token refreshed");
           } else {
-            await removePushToken(currentFirebaseUser.uid);
+            await removePushToken(currentUserId);
           }
         } catch (err) {
           logger.warn("[AuthContext] Push token refresh failed:", err);
@@ -196,7 +303,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     );
 
     return () => sub.remove();
-  }, [currentFirebaseUser]);
+  }, [currentUserId]);
 
   // ── AppState-driven presence updates ────────────────────────────────
   // When the app goes to background, mark offline immediately.
@@ -204,7 +311,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // This supplements the RTDB onDisconnect handler for cases where the
   // RTDB connection stays alive but the user has backgrounded the app.
   useEffect(() => {
-    if (!currentFirebaseUser) return;
+    if (!currentUserId) return;
 
     const handleAppStateChange = (nextState: AppStateStatus) => {
       if (nextState === "active") {
@@ -216,21 +323,58 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const sub = AppState.addEventListener("change", handleAppStateChange);
     return () => sub.remove();
-  }, [currentFirebaseUser]);
+  }, [currentUserId]);
 
   useEffect(() => {
     try {
       const auth = getAuthInstance();
+      if (typeof auth.onIdTokenChanged !== "function") {
+        return () => {};
+      }
+
+      const unsubscribe = auth.onIdTokenChanged((user: any) => {
+        logStartupEvent("Auth id-token changed", {
+          uid: user?.uid ?? null,
+          email: user?.email ?? null,
+        });
+        logger.info("🟣 [AuthContext] onIdTokenChanged →", {
+          data: {
+            startupSessionId: getStartupSessionId(),
+            uid: user?.uid ?? null,
+            email: user?.email ?? null,
+          },
+        });
+      });
+
+      return unsubscribe;
+    } catch (error: any) {
+      logger.warn(
+        "[AuthContext] Failed to set up id-token listener:",
+        error?.message ?? error,
+      );
+      return () => {};
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      const auth = getAuthInstance();
+      logStartupEvent("AuthContext auth listener registering");
 
       // Log whether a persisted session exists at boot, BEFORE the
       // onAuthStateChanged listener fires.  This confirms AsyncStorage-
       // backed persistence is working.
       if (auth.currentUser) {
+        logStartupEvent("Persisted auth session found at boot", {
+          uid: auth.currentUser.uid,
+          email: auth.currentUser.email ?? null,
+        });
         logger.info(
           "🔵 [AuthContext] Persisted session found at boot:",
           auth.currentUser.email,
         );
       } else {
+        logStartupEvent("No persisted auth session at boot");
         logger.info(
           "🔵 [AuthContext] No persisted session at boot — waiting for onAuthStateChanged",
         );
@@ -238,9 +382,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       const unsubscribe = auth.onAuthStateChanged(
         async (user: any) => {
+          const previousUid = currentUserIdRef.current;
+          currentUserIdRef.current = user?.uid ?? null;
+          logStartupEvent("Auth state changed", {
+            previousUid,
+            nextUid: user?.uid ?? null,
+            sameUid: previousUid === (user?.uid ?? null),
+            email: user?.email ?? null,
+          });
           logger.info(
             "🔵 [AuthContext] onAuthStateChanged →",
             user ? `restored ${user.email}` : "no user (logged out)",
+            {
+              data: {
+                startupSessionId: getStartupSessionId(),
+                previousUid,
+                nextUid: user?.uid ?? null,
+                sameUid: previousUid === (user?.uid ?? null),
+              },
+            },
           );
           setCurrentFirebaseUser(user);
 
@@ -303,7 +463,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         },
       );
 
-      return unsubscribe;
+      return () => {
+        logStartupEvent("AuthContext auth listener removed");
+        unsubscribe();
+      };
     } catch (error: any) {
       logger.warn(
         "Failed to set up auth listener (this is OK with placeholder config):",

@@ -25,7 +25,7 @@ export const TOOLBAR_SCHEMA_VERSION = 1;
  *   Supports horizontal resizing (flex weight).
  * - `camera`: Camera (tap) + gallery (long press) dual-mode button.
  * - `game`: Opens the game picker modal.
- * - `animal`: Sends equipped animal / opens animal picker on long press.
+ * - `animal`: Animal picker (tap) + alternate animal picker (long press) dual-mode button.
  * - `send`: Dedicated send button (arrow-up icon). Shows when text present.
  * - `emoji`: Opens emoji keyboard for inserting emoji into text input.
  * - `schedule`: Schedule message button (clock icon, DM only).
@@ -145,6 +145,9 @@ export const EDIT_MODE_LONG_PRESS_DURATION = 500;
 
 /** Additional edit-mode delay applied only to the camera toolbar item. */
 export const CAMERA_EDIT_MODE_EXTRA_DELAY_MS = 500;
+
+/** Additional edit-mode delay applied only to the animal toolbar item. */
+export const ANIMAL_EDIT_MODE_EXTRA_DELAY_MS = 500;
 
 // =============================================================================
 // Default Layout

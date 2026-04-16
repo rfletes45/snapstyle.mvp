@@ -341,6 +341,24 @@ export function getLastNotificationResponse(): Notifications.NotificationRespons
   return Notifications.getLastNotificationResponse();
 }
 
+export async function clearLastNotificationResponse(): Promise<void> {
+  const notificationsModule = Notifications as typeof Notifications & {
+    clearLastNotificationResponseAsync?: () => Promise<void>;
+    clearLastNotificationResponse?: () => void;
+  };
+
+  if (
+    typeof notificationsModule.clearLastNotificationResponseAsync === "function"
+  ) {
+    await notificationsModule.clearLastNotificationResponseAsync();
+    return;
+  }
+
+  if (typeof notificationsModule.clearLastNotificationResponse === "function") {
+    notificationsModule.clearLastNotificationResponse();
+  }
+}
+
 export async function cancelAllNotifications(): Promise<void> {
   await Notifications.cancelAllScheduledNotificationsAsync();
 }

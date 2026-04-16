@@ -126,6 +126,7 @@ import {
 import { AnimatedMessageRow } from "@/components/chat/AnimatedMessageRow";
 import type { ChatMessageListRef } from "@/components/chat/ChatMessageList";
 import { ChatSkeleton } from "@/components/chat/ChatSkeleton";
+import { getToolbarItemEditModeLongPressDuration } from "@/components/chat/ComposerToolbar/ComposerToolbarRegistry";
 import {
   SuspenseFullEmojiPicker,
   SuspenseScheduleMessageModal,
@@ -135,7 +136,6 @@ import { ErrorState } from "@/components/ui";
 
 // Services
 import {
-  sendAnimalSignalMessage,
   sendChatDraft,
   sendGifMessage,
   sendMediaAttachmentMessage,
@@ -193,7 +193,6 @@ import { GroupStackedMessageRenderer } from "@/components/chat/GroupStackedMessa
 import { createCardCornerWidthStore } from "@/components/chat/useGroupedCardLayout";
 import { useComposerSheet } from "@/contexts/ComposerSheetContext";
 import { useAnimalEntitlement } from "@/hooks/useAnimalEntitlement";
-import { playAnimalSound } from "@/services/chat/animalSoundService";
 import { useConversationDisplayMode } from "@/store/ConversationDisplayModeContext";
 
 // Voice channels (Stream-powered)
@@ -1560,25 +1559,21 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     [],
   );
 
-  // Animal button press handler — sends a structured animal signal message
-  const handleAnimalPress = useCallback(async () => {
-    if (!uid || !groupId) return;
-    const { equippedAnimalId, canSend } = animalEntitlement;
-    if (!canSend || !equippedAnimalId) return;
+  // Animal button tap opens the quick anchored picker bubble.
+  const handleAnimalPress = useCallback(() => {
+    if (!uid) return;
+    setAnimalPickerVisible(true);
+  }, [uid]);
 
-    try {
-      await playAnimalSound(equippedAnimalId);
-    } catch (e) {
-      logger.warn("❌ [GroupChatScreen] Animal sound error:", e);
-    }
-    const result = await sendAnimalSignalMessage({
-      chat: screen.chat,
-      animalId: equippedAnimalId,
+  // Holding the animal button opens the full animal customization picker.
+  const handleAnimalAlternatePress = useCallback(() => {
+    if (!uid) return;
+    setAnimalPickerVisible(false);
+    navigation.navigate("Customization", {
+      initialSection: "chat",
+      initialTab: "chat_animal_theme",
     });
-    if (!result.success) {
-      logger.error("❌ [GroupChatScreen] Animal send error:", result.error);
-    }
-  }, [uid, groupId, animalEntitlement, screen.chat]);
+  }, [navigation, uid]);
 
   // Animal picker equip handler — refresh profile so the button updates
   const handleAnimalEquipped = useCallback(
@@ -2498,6 +2493,9 @@ export default function GroupChatScreen({ route, navigation }: Props) {
                 onLongPress={handleAddAttachment}
                 disabled={screen.sending || attachmentPicker.isMaxReached}
                 interactionLocked={toolbar.isEditing}
+                editModeActivationDurationMs={getToolbarItemEditModeLongPressDuration(
+                  "camera",
+                )}
                 size={40}
               />
             }
@@ -2551,12 +2549,10 @@ export default function GroupChatScreen({ route, navigation }: Props) {
             currentUid={uid}
             onGameSelected={GAMES_V4_ENABLED ? handleGameSelected : undefined}
             onAnimalPress={handleAnimalPress}
+            onAnimalAlternatePress={handleAnimalAlternatePress}
             animalThemeId={animalEntitlement.equippedAnimalId}
-            animalLocked={
-              !animalEntitlement.canSend && !animalEntitlement.loading
-            }
+            animalDisabled={!uid}
             animalPickerVisible={animalPickerVisible}
-            onAnimalLongPress={() => setAnimalPickerVisible(true)}
             onAnimalPickerClose={() => setAnimalPickerVisible(false)}
             currentUserId={uid}
             onAnimalEquipped={handleAnimalEquipped}

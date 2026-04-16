@@ -10,6 +10,7 @@
  */
 
 import {
+  ANIMAL_EDIT_MODE_EXTRA_DELAY_MS,
   CAMERA_EDIT_MODE_EXTRA_DELAY_MS,
   EDIT_MODE_LONG_PRESS_DURATION,
   type ComposerToolbarItemId,
@@ -65,7 +66,8 @@ const TOOLBAR_ITEM_DEFINITIONS: ToolbarItemDefinition[] = [
   {
     itemId: "animal",
     displayName: "Animal",
-    description: "Send your equipped animal or pick a new one.",
+    description:
+      "Tap for the quick animal picker, hold for the full animal catalog.",
     icon: "paw",
     category: "actions",
     canRemove: true,
@@ -73,6 +75,11 @@ const TOOLBAR_ITEM_DEFINITIONS: ToolbarItemDefinition[] = [
     maxInstances: 1,
     defaultPosition: 3,
     available: true,
+    interaction: {
+      // Animal now owns its own hold-to-alternate-picker gesture.
+      editModeLongPressDurationMs:
+        EDIT_MODE_LONG_PRESS_DURATION + ANIMAL_EDIT_MODE_EXTRA_DELAY_MS,
+    },
   },
   {
     itemId: "send",

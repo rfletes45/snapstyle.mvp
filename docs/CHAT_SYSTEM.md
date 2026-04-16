@@ -5,7 +5,7 @@
 > custom font colors, data contracts, inbox/unread, threading, notifications,
 > performance, known issues, and sustaining roadmap.
 
-Last verified: 2026-04-13
+Last verified: 2026-04-15
 
 ---
 
@@ -159,26 +159,27 @@ This means:
 
 ### Components
 
-| File                                                  | Purpose                                                   |
-| ----------------------------------------------------- | --------------------------------------------------------- |
-| `src/components/chat/ChatHeader.tsx`                  | Shared header scaffold                                    |
-| `src/components/chat/ChatMessageList.tsx`             | Inverted FlatList wrapper                                 |
-| `src/components/chat/ChatComposer.tsx`                | Composer UI (text input, toolbar, attachments)            |
-| `src/components/chat/CameraLongPressButton.tsx`       | Dual-action camera button: tap camera, hold to arm photos |
-| `src/components/chat/ChatMessageRenderer.tsx`         | DM entry point — delegates to Stacked or Bubble renderer  |
-| `src/components/chat/MessageActionsSheet.tsx`         | Long-press action sheet with quick reactions              |
-| `src/components/chat/SystemMessageChip.tsx`           | System message presentation                               |
-| `src/components/DMMessageItem.tsx`                    | DM bubble-mode message renderer                           |
-| `src/components/chat/StackedMessageRenderer.tsx`      | DM stacked-mode message renderer with card containers     |
-| `src/components/chat/GroupStackedMessageRenderer.tsx` | Group stacked-mode message renderer with card containers  |
-| `src/components/chat/ReactionBar.tsx`                 | ReactionPills + QuickReactionBar                          |
-| `src/components/chat/ReactionDetailSheet.tsx`         | Modal showing who reacted per emoji                       |
-| `src/components/chat/ThreadIndicator.tsx`             | "View thread (N replies)" link                            |
-| `src/components/chat/DateDivider.tsx`                 | Day separator                                             |
-| `src/components/chat/ChatKeyboardScrollView.tsx`      | KCSV adapter + ChatFooterWrapper + isKCSVAvailable        |
-| `src/components/chat/PickerLoadingFallback.tsx`       | Suspense fallback for lazy-loaded picker buttons          |
-| `src/components/chat/lazyChatComponents.tsx`          | React.lazy wrappers for modals (emoji, schedule, block)   |
-| `src/components/chat/pickerPreload.ts`                | Eager preload registry for toolbar picker sheet bundles   |
+| File                                                  | Purpose                                                        |
+| ----------------------------------------------------- | -------------------------------------------------------------- |
+| `src/components/chat/ChatHeader.tsx`                  | Shared header scaffold                                         |
+| `src/components/chat/ChatMessageList.tsx`             | Inverted FlatList wrapper                                      |
+| `src/components/chat/ChatComposer.tsx`                | Composer UI (text input, toolbar, attachments)                 |
+| `src/components/chat/CameraLongPressButton.tsx`       | Dual-action camera button: tap camera, hold to arm photos      |
+| `src/components/chat/AnimalLongPressButton.tsx`       | Dual-action animal button: tap quick picker, hold full catalog |
+| `src/components/chat/ChatMessageRenderer.tsx`         | DM entry point — delegates to Stacked or Bubble renderer       |
+| `src/components/chat/MessageActionsSheet.tsx`         | Long-press action sheet with quick reactions                   |
+| `src/components/chat/SystemMessageChip.tsx`           | System message presentation                                    |
+| `src/components/DMMessageItem.tsx`                    | DM bubble-mode message renderer                                |
+| `src/components/chat/StackedMessageRenderer.tsx`      | DM stacked-mode message renderer with card containers          |
+| `src/components/chat/GroupStackedMessageRenderer.tsx` | Group stacked-mode message renderer with card containers       |
+| `src/components/chat/ReactionBar.tsx`                 | ReactionPills + QuickReactionBar                               |
+| `src/components/chat/ReactionDetailSheet.tsx`         | Modal showing who reacted per emoji                            |
+| `src/components/chat/ThreadIndicator.tsx`             | "View thread (N replies)" link                                 |
+| `src/components/chat/DateDivider.tsx`                 | Day separator                                                  |
+| `src/components/chat/ChatKeyboardScrollView.tsx`      | KCSV adapter + ChatFooterWrapper + isKCSVAvailable             |
+| `src/components/chat/PickerLoadingFallback.tsx`       | Suspense fallback for lazy-loaded picker buttons               |
+| `src/components/chat/lazyChatComponents.tsx`          | React.lazy wrappers for modals (emoji, schedule, block)        |
+| `src/components/chat/pickerPreload.ts`                | Eager preload registry for toolbar picker sheet bundles        |
 
 ### Hooks & Services
 
@@ -1203,20 +1204,51 @@ When the hold crosses the image-picker threshold, the camera button updates **be
 
 The armed image-picker state stays visible until the gesture resolves or is cancelled. If toolbar edit mode takes over, the camera button clears the armed state and suppresses the gallery launch.
 
+If the user keeps holding past the camera slot's edit-mode threshold, the parent toolbar slot marks that press as claimed for edit mode before entering edit mode. The camera button treats that preemption signal as a hard cancellation point, so release cannot also open the gallery.
+
+#### Animal Button Interaction Contract
+
+The `animal` toolbar item is now a **single dual-behavior item** backed by `AnimalLongPressButton.tsx`.
+
+Animal behavior:
+
+- **Quick tap** → opens the lightweight anchored animal picker bubble in chat
+- **Hold** → arms alternate animal-picker mode after `425 ms`
+- **Release after arming** → opens the full animal catalog via `Customization` → `chat_animal_theme`
+
+When the hold crosses the alternate-picker threshold, the animal button updates **before** navigation happens:
+
+- the equipped animal image swaps to the alternate animal-picker icon (`paw`)
+- the circular button background turns purple (`#8B5CF6`)
+- one light haptic fires
+
+The armed alternate-picker state stays visible until the gesture resolves or is cancelled. If toolbar edit mode takes over, the animal button clears the armed state and suppresses the alternate picker launch.
+
+If the user keeps holding past the animal slot's edit-mode threshold, the parent toolbar slot marks that press as claimed for edit mode before entering edit mode. The animal button treats that preemption signal as a hard cancellation point, so release cannot also navigate to the full animal picker.
+
 #### Toolbar Gesture Ownership
 
-Toolbar edit mode is owned by `ComposerToolbarItem.tsx` via a slot-level long-press gesture, while the camera tap-vs-hold behavior is owned by `CameraLongPressButton.tsx` inside the camera slot.
+Toolbar edit mode is owned by `ComposerToolbarItem.tsx` via a slot-level long-press gesture, while child dual-mode buttons own their own tap-vs-hold behavior inside the slot.
+
+Current child-owned dual-mode buttons:
+
+- `CameraLongPressButton.tsx`
+- `AnimalLongPressButton.tsx`
 
 Default edit-mode long press:
 
 - `500 ms` for all standard toolbar items
 
-Camera-only timing exception:
+Dual-mode timing exceptions:
 
 - image-picker arming threshold: `425 ms`
+- animal alternate-picker arming threshold: `425 ms`
 - edit-mode threshold: `1000 ms` (`500 ms` base + `500 ms` camera-only delay)
+- animal edit-mode threshold: `1000 ms` (`500 ms` base + `500 ms` animal-only delay)
 
-This camera-only delay prevents the slot-level edit-mode gesture from stealing the same press that is intended to switch the camera into image-picker mode. Other toolbar items keep the original edit-mode timing.
+These item-specific delays prevent the slot-level edit-mode gesture from stealing the same press that is intended to switch the camera or animal button into its alternate picker mode. Other toolbar items keep the original edit-mode timing.
+
+Crossing the slot's edit-mode threshold is also treated as a hard cancellation point for the child dual-mode action. The slot publishes that preemption before edit mode is entered, which avoids the responder race where edit mode appears and the earlier child hold action still fires on release.
 
 #### Persistence (Dual-Write)
 
@@ -2129,8 +2161,10 @@ Key invariant: `warmRemoteImage()` always calls `Image.loadAsync()` — it does 
 14. Composer toolbar drag-and-drop works
 15. Quick tap on camera button opens the camera without entering toolbar edit mode
 16. Hold on camera button flips to the photo icon, turns purple, triggers one light haptic, and opens the photo library before edit mode can steal the gesture
-17. GIF picker loads and sends GIF messages
-18. Custom font color applies in both display modes
+17. Quick tap on animal button opens the anchored animal picker without entering toolbar edit mode
+18. Hold on animal button flips to the alternate picker icon, turns purple, triggers one light haptic, and opens the full animal picker before edit mode can steal the gesture
+19. GIF picker loads and sends GIF messages
+20. Custom font color applies in both display modes
 
 ---
 

@@ -9,6 +9,7 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import React, { useCallback, useEffect, useMemo, useRef } from "react";
 import { StyleSheet } from "react-native";
 
+import type { HydrationState } from "@/components/AppGate";
 import AppGate from "@/components/AppGate";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import WarningModal from "@/components/WarningModal";
@@ -30,6 +31,11 @@ import type {
   ProfileTabStackParamList,
   RootStackParamList,
 } from "@/types/navigation/root";
+import {
+  logStartupEvent,
+  logStartupMount,
+  logStartupUnmount,
+} from "@/utils/startupTrace";
 
 // Auth screens
 import ForgotPasswordScreen from "@/screens/auth/ForgotPasswordScreen";
@@ -395,13 +401,31 @@ function MainStack() {
   const navigation = useNavigation<any>();
   const hasRestoredRef = useRef(false);
 
+  useEffect(() => {
+    logStartupMount("MainStack");
+    return () => {
+      logStartupUnmount("MainStack");
+    };
+  }, []);
+
   // Resume last open chat on app reopen (one-shot on mount)
   useEffect(() => {
     if (hasRestoredRef.current) return;
     hasRestoredRef.current = true;
 
     getLastOpenChat().then((state) => {
-      if (!state) return;
+      if (!state) {
+        logStartupEvent("MainStack restore skipped", {
+          reason: "no_last_open_chat",
+        });
+        return;
+      }
+
+      logStartupEvent("MainStack restoring last open chat", {
+        screen: state.screen,
+        params: state.params,
+      });
+
       // Clear immediately so we don't restore again on next mount
       clearLastOpenChat();
       // Navigate to the persisted chat screen
@@ -684,6 +708,20 @@ function MainStack() {
   );
 }
 
+function HydrationStateLogger({
+  hydrationState,
+}: {
+  hydrationState: HydrationState;
+}) {
+  useEffect(() => {
+    logStartupEvent("AppGate hydration state changed", {
+      hydrationState,
+    });
+  }, [hydrationState]);
+
+  return null;
+}
+
 interface RootNavigatorProps {
   navigationRef?: React.RefObject<NavigationContainerRef<RootStackParamList> | null>;
   onRouteChange?: (routeName: keyof RootStackParamList | undefined) => void;
@@ -731,8 +769,18 @@ export default function RootNavigator({
 }: RootNavigatorProps) {
   const { theme, markProfileReady, syncProfileTheme } = useAppTheme();
   const { setCurrentScreen } = useInAppNotifications();
+  const previousRouteNameRef = useRef<keyof RootStackParamList | undefined>(
+    undefined,
+  );
 
   const navRef = externalRef || navigationRef;
+
+  useEffect(() => {
+    logStartupMount("RootNavigator");
+    return () => {
+      logStartupUnmount("RootNavigator");
+    };
+  }, []);
 
   const getActiveRouteName = useCallback(() => {
     if (!navRef || !("current" in navRef)) return undefined;
@@ -746,14 +794,28 @@ export default function RootNavigator({
   // Track the active route name for context-aware notification suppression
   const handleStateChange = useCallback(() => {
     const routeName = getActiveRouteName();
+    if (routeName !== previousRouteNameRef.current) {
+      logStartupEvent("Navigation route changed", {
+        previousRouteName: previousRouteNameRef.current ?? null,
+        routeName: routeName ?? null,
+      });
+      previousRouteNameRef.current = routeName;
+    }
     setCurrentScreen(routeName ?? null);
     onRouteChange?.(routeName);
   }, [getActiveRouteName, onRouteChange, setCurrentScreen]);
 
   const handleReady = useCallback(() => {
     const routeName = getActiveRouteName();
+    logStartupEvent("Navigation container ready", {
+      routeName: routeName ?? null,
+    });
+    previousRouteNameRef.current = routeName;
     setCurrentScreen(routeName ?? null);
     onRouteChange?.(routeName);
+    logStartupEvent("Flushing pending navigation queue", {
+      routeName: routeName ?? null,
+    });
     flushPendingNavigation();
   }, [getActiveRouteName, onRouteChange, setCurrentScreen]);
 
@@ -817,6 +879,7 @@ export default function RootNavigator({
           onReady={handleReady}
           onStateChange={handleStateChange}
         >
+          <HydrationStateLogger hydrationState={hydrationState} />
           {hydrationState === "ready" ? (
             <>
               <ProfileReadySignal

@@ -84,6 +84,7 @@ import { AnimatedMessageRow } from "@/components/chat/AnimatedMessageRow";
 import { CameraLongPressButton } from "@/components/chat/CameraLongPressButton";
 import type { ChatMessageListRef } from "@/components/chat/ChatMessageList";
 import { ChatSkeleton } from "@/components/chat/ChatSkeleton";
+import { getToolbarItemEditModeLongPressDuration } from "@/components/chat/ComposerToolbar/ComposerToolbarRegistry";
 import { DateDivider } from "@/components/chat/DateDivider";
 import {
   SuspenseBlockUserModal,
@@ -120,7 +121,6 @@ import { SheetDismissLayer } from "@/components/chat/SheetDismissLayer";
 
 // Services
 import {
-  sendAnimalSignalMessage,
   sendChatDraft,
   sendGifMessage,
   sendMediaAttachmentMessage,
@@ -151,7 +151,6 @@ import {
 import { Spacing } from "@/constants/theme";
 import { buildSenderStyle } from "@/cosmetics/chatAppearanceResolver";
 import { useAnimalEntitlement } from "@/hooks/useAnimalEntitlement";
-import { playAnimalSound } from "@/services/chat/animalSoundService";
 import type {
   AttachmentV2,
   MessageV2,
@@ -1288,26 +1287,21 @@ export default function ChatScreen({
     returnIndexRef.current = null;
   }, []);
 
-  // Animal button press handler — sends a structured animal signal message
-  const handleAnimalPress = useCallback(async () => {
-    if (!uid || !chatId) return;
-    const { equippedAnimalId, canSend } = animalEntitlement;
-    if (!canSend || !equippedAnimalId) return;
+  // Animal button tap opens the quick anchored picker bubble.
+  const handleAnimalPress = useCallback(() => {
+    if (!uid) return;
+    setAnimalPickerVisible(true);
+  }, [uid]);
 
-    try {
-      // Play animal sound + haptic (fire and forget but still catch errors)
-      await playAnimalSound(equippedAnimalId);
-    } catch (e) {
-      logger.warn("❌ [ChatScreen] Animal sound error:", e);
-    }
-    const result = await sendAnimalSignalMessage({
-      chat: screen.chat,
-      animalId: equippedAnimalId,
+  // Holding the animal button opens the full animal customization picker.
+  const handleAnimalAlternatePress = useCallback(() => {
+    if (!uid) return;
+    setAnimalPickerVisible(false);
+    navigation.navigate("Customization", {
+      initialSection: "chat",
+      initialTab: "chat_animal_theme",
     });
-    if (!result.success) {
-      logger.error("❌ [ChatScreen] Animal send error:", result.error);
-    }
-  }, [uid, chatId, animalEntitlement, screen.chat]);
+  }, [navigation, uid]);
 
   // Animal picker equip handler — refresh profile so the button updates
   const handleAnimalEquipped = useCallback(
@@ -1550,6 +1544,9 @@ export default function ChatScreen({
       onLongPress={handleAddAttachment}
       disabled={screen.sending || attachmentPicker.isMaxReached}
       interactionLocked={toolbar.isEditing}
+      editModeActivationDurationMs={getToolbarItemEditModeLongPressDuration(
+        "camera",
+      )}
       size={40}
     />
   );
@@ -1744,12 +1741,10 @@ export default function ChatScreen({
               currentUid={uid}
               onGameSelected={GAMES_V4_ENABLED ? handleGameSelected : undefined}
               onAnimalPress={handleAnimalPress}
+              onAnimalAlternatePress={handleAnimalAlternatePress}
               animalThemeId={animalEntitlement.equippedAnimalId}
-              animalLocked={
-                !animalEntitlement.canSend && !animalEntitlement.loading
-              }
+              animalDisabled={!uid}
               animalPickerVisible={animalPickerVisible}
-              onAnimalLongPress={() => setAnimalPickerVisible(true)}
               onAnimalPickerClose={() => setAnimalPickerVisible(false)}
               currentUserId={uid}
               onAnimalEquipped={handleAnimalEquipped}
