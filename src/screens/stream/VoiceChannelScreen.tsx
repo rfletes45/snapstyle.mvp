@@ -34,6 +34,7 @@ import {
   CallingState,
   ParticipantView,
   StreamCall,
+  useCall,
   useCallStateHooks,
 } from "@stream-io/video-react-native-sdk";
 import React, { useCallback, useEffect, useRef, useState } from "react";
@@ -49,6 +50,8 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+
+import { NoiseCancellationWrapper } from "@/components/stream/NoiseCancellationWrapper";
 
 let callManager: any = null;
 try {
@@ -259,7 +262,12 @@ export default function VoiceChannelScreen({ route, navigation }: Props) {
 
   return (
     <StreamCall call={activeCall}>
-      <VoiceChannelContent onLeave={handleLeave} onMinimize={handleMinimize} />
+      <NoiseCancellationWrapper>
+        <VoiceChannelContent
+          onLeave={handleLeave}
+          onMinimize={handleMinimize}
+        />
+      </NoiseCancellationWrapper>
     </StreamCall>
   );
 }
@@ -288,6 +296,53 @@ function VoiceChannelContent({
     direction: cameraDirection,
   } = useCameraState();
   const isJoined = callingState === CallingState.JOINED;
+  const call = useCall();
+
+  // ── Post-join mic state reconciliation ──────────────────────────────────
+  const micReconciliationRef = useRef(false);
+  useEffect(() => {
+    if (!isJoined || !call || micReconciliationRef.current) return;
+    micReconciliationRef.current = true;
+
+    const timer = setTimeout(() => {
+      const micState = call.microphone?.state;
+      const actualStatus = micState?.status; // 'enabled' | 'disabled' | undefined
+      const optimistic = micState?.optimisticStatus; // what the UI thinks
+      const intendedUnmuted = optimistic === "enabled";
+
+      if (intendedUnmuted && actualStatus !== "enabled") {
+        console.warn(
+          "[VoiceChannelScreen] UI-level mic desync detected after join:",
+          { optimistic, actualStatus },
+          "— forcing recovery cycle",
+        );
+        call.microphone
+          .disable()
+          .then(() => new Promise<void>((r) => setTimeout(r, 300)))
+          .then(() => call.microphone.enable())
+          .then(() => {
+            console.info(
+              "[VoiceChannelScreen] UI-level mic recovery completed. New status:",
+              String(call.microphone?.state?.status ?? "unknown"),
+            );
+          })
+          .catch((err: any) => {
+            console.warn(
+              "[VoiceChannelScreen] UI-level mic recovery failed:",
+              err,
+            );
+          });
+      } else {
+        console.info("[VoiceChannelScreen] Mic state healthy after join:", {
+          optimistic,
+          actualStatus,
+        });
+      }
+    }, 3000);
+
+    return () => clearTimeout(timer);
+  }, [isJoined, call]);
+
   const [isSpeakerOn, setIsSpeakerOn] = useState(true); // Voice rooms default to speaker
   const [audioRoutePickerVisible, setAudioRoutePickerVisible] = useState(false);
   const [currentAudioRoute, setCurrentAudioRoute] =

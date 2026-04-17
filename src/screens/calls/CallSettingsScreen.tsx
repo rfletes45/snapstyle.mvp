@@ -584,14 +584,14 @@ export function CallSettingsScreen() {
             "volume-medium",
           )}
           {renderInfoRow(
-            "Audio Processing",
-            "Noise suppression, echo control, and gain handling follow the device and Stream defaults in this build.",
-            "information-circle-outline",
+            "Noise Cancellation",
+            "Powered by Stream / Krisp. Enabled automatically during calls when your Stream dashboard has noise cancellation set to 'available' or 'auto-on' for the call type. Echo cancellation and auto gain control are handled by the platform WebRTC stack.",
+            "mic-outline",
           )}
           {false &&
             renderToggle(
               "Noise Suppression",
-              "Handled by device hardware — saved for future use",
+              "Legacy setting — Stream/Krisp noise cancellation is now used instead",
               settings.noiseSuppression,
               (value) => updateSetting("noiseSuppression", value),
             )}

@@ -2,16 +2,22 @@
  * useVoiceRoomOccupancy
  *
  * Tracks who is currently in a group's voice room without joining.
- * Uses the read-only `queryVoiceChannel()` helper to read participant state with configurable
- * refresh interval. Returns occupant list, active state, and whether
- * the current user is in the room.
+ *
+ * **Hybrid approach** (fast + reliable):
+ * - When the local user is IN the room, subscribes to the active call's
+ *   `participants$` observable for real-time, sub-second avatar updates.
+ * - Otherwise falls back to polling `queryVoiceChannel()` at configurable
+ *   intervals (default 8 s, ±20 % jitter).
+ * - Polling continues in the background even when real-time data is active
+ *   so the transition back to polling-only is seamless on leave.
  *
  * @module hooks/useVoiceRoomOccupancy
  */
 
 import { CALL_FEATURES } from "@/constants/featureFlags";
+import { useStreamCall } from "@/contexts/StreamCallContext";
 import { useAuth } from "@/store/AuthContext";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppState } from "react-native";
 
 export interface VoiceRoomOccupant {
@@ -52,9 +58,13 @@ export function useVoiceRoomOccupancy(
   interval = 8_000,
 ): UseVoiceRoomOccupancyResult {
   const { currentFirebaseUser } = useAuth();
+  const { isReady: isStreamReady, activeCall, activeSession } = useStreamCall();
   const uid = currentFirebaseUser?.uid;
 
-  const [occupants, setOccupants] = useState<VoiceRoomOccupant[]>([]);
+  // ── Polling state ───────────────────────────────────────────────────────
+  const [polledOccupants, setPolledOccupants] = useState<VoiceRoomOccupant[]>(
+    [],
+  );
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
@@ -62,13 +72,59 @@ export function useVoiceRoomOccupancy(
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const fetchingRef = useRef(false);
 
+  // ── Real-time participant state (when local user is in the room) ───────
+  const [liveOccupants, setLiveOccupants] = useState<
+    VoiceRoomOccupant[] | null
+  >(null);
+
+  // Determine whether we should use live data for this room
+  const isLocalUserInThisRoom =
+    activeSession?.type === "voice_channel" &&
+    (activeSession as { groupId?: string }).groupId === groupId;
+
+  // Subscribe to real-time participants when the local user is in this room
+  useEffect(() => {
+    if (!isLocalUserInThisRoom || !activeCall) {
+      setLiveOccupants(null);
+      return;
+    }
+
+    // Stream SDK's participants$ emits the full participant array in real time
+    const subscription = activeCall.state.participants$.subscribe(
+      (participants: any[]) => {
+        if (!mountedRef.current) return;
+        const mapped: VoiceRoomOccupant[] = (participants ?? []).map(
+          (p: any) => ({
+            userId: p.userId ?? p.user_id ?? "",
+            name: p.name ?? p.userId ?? p.user_id ?? "",
+            image: p.image ?? p.profileImageURL ?? undefined,
+          }),
+        );
+        // Sort for stable ordering
+        mapped.sort((a, b) => a.userId.localeCompare(b.userId));
+        setLiveOccupants(mapped);
+      },
+    );
+
+    return () => subscription.unsubscribe();
+  }, [isLocalUserInThisRoom, activeCall]);
+
+  // ── Polling fetch ───────────────────────────────────────────────────────
   const fetchOccupancy = useCallback(async () => {
     if (!groupId || !CALL_FEATURES.CALLS_ENABLED) {
       if (mountedRef.current) {
-        setOccupants([]);
+        setPolledOccupants([]);
         setErrorMessage(null);
         setLastUpdatedAt(null);
         setLoading(false);
+      }
+      return;
+    }
+
+    if (!isStreamReady) {
+      if (mountedRef.current) {
+        setLoading(true);
+        setErrorMessage(null);
       }
       return;
     }
@@ -89,7 +145,7 @@ export function useVoiceRoomOccupancy(
           a.userId.localeCompare(b.userId),
         );
 
-        setOccupants(
+        setPolledOccupants(
           sorted.map((p) => ({
             userId: p.userId,
             name: p.name || p.userId,
@@ -105,7 +161,7 @@ export function useVoiceRoomOccupancy(
         );
         setErrorMessage(result.message || "Voice room status unavailable.");
       } else {
-        setOccupants([]);
+        setPolledOccupants([]);
         setErrorMessage(null);
         setLastUpdatedAt(Date.now());
       }
@@ -123,13 +179,22 @@ export function useVoiceRoomOccupancy(
         setLoading(false);
       }
     }
-  }, [groupId]);
+  }, [groupId, isStreamReady]);
 
   // Pause polling when app is backgrounded
   useEffect(() => {
     if (!groupId || !CALL_FEATURES.CALLS_ENABLED) return;
 
     mountedRef.current = true;
+
+    if (!isStreamReady) {
+      setLoading(true);
+      setErrorMessage(null);
+
+      return () => {
+        mountedRef.current = false;
+      };
+    }
 
     // Initial fetch
     fetchOccupancy();
@@ -162,7 +227,10 @@ export function useVoiceRoomOccupancy(
       }
       subscription.remove();
     };
-  }, [groupId, interval, fetchOccupancy]);
+  }, [groupId, interval, fetchOccupancy, isStreamReady]);
+
+  // ── Merge: prefer real-time data when available ─────────────────────────
+  const occupants = liveOccupants ?? polledOccupants;
 
   const isActive = occupants.length > 0;
   const isCurrentUserInRoom = uid
@@ -176,15 +244,27 @@ export function useVoiceRoomOccupancy(
         ? "active"
         : "idle";
 
-  return {
-    occupants,
-    isActive,
-    isCurrentUserInRoom,
-    loading,
-    error: errorMessage !== null,
-    errorMessage,
-    status,
-    lastUpdatedAt,
-    refresh: fetchOccupancy,
-  };
+  return useMemo(
+    () => ({
+      occupants,
+      isActive,
+      isCurrentUserInRoom,
+      loading,
+      error: errorMessage !== null,
+      errorMessage,
+      status,
+      lastUpdatedAt,
+      refresh: fetchOccupancy,
+    }),
+    [
+      occupants,
+      isActive,
+      isCurrentUserInRoom,
+      loading,
+      errorMessage,
+      status,
+      lastUpdatedAt,
+      fetchOccupancy,
+    ],
+  );
 }

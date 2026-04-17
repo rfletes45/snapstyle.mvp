@@ -3,7 +3,10 @@ import InAppToast from "@/components/InAppToast";
 import { FloatingVideoOverlay } from "@/components/stream/FloatingVideoOverlay";
 import IncomingCallHandler from "@/components/stream/IncomingCallHandler";
 import { NativePiPBridge } from "@/components/stream/NativePiPBridge";
-import { StreamCallProvider } from "@/contexts/StreamCallContext";
+import {
+  StreamCallProvider,
+  StreamVideoEffectsProvider,
+} from "@/contexts/StreamCallContext";
 import { loadCustomFonts } from "@/fonts/fontLoader";
 import { useOutboxProcessor } from "@/hooks/useOutboxProcessor";
 import { lockToPortrait } from "@/hooks/useScreenOrientation";
@@ -32,6 +35,10 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { PaperProvider } from "react-native-paper";
+import {
+  SafeAreaProvider,
+  initialWindowMetrics,
+} from "react-native-safe-area-context";
 
 // Keep splash screen visible until we explicitly hide it
 SplashScreen.preventAutoHideAsync().catch(() => {
@@ -235,16 +242,18 @@ function AppContent() {
                         }
                       />
                       <InAppToast onNavigate={handleToastNavigate} />
-                      <IncomingCallHandler
-                        onNavigateToCall={(callId, mode) => {
-                          globalNavigate("DirectCall" as any, {
-                            callId,
-                            recipientName: "",
-                            mode,
-                            isOutgoing: false,
-                          });
-                        }}
-                      />
+                      <StreamVideoEffectsProvider>
+                        <IncomingCallHandler
+                          onNavigateToCall={(callId, mode) => {
+                            globalNavigate("DirectCall" as any, {
+                              callId,
+                              recipientName: "",
+                              mode,
+                              isOutgoing: false,
+                            });
+                          }}
+                        />
+                      </StreamVideoEffectsProvider>
                       <NativePiPBridge />
                       <FloatingVideoOverlay
                         isOnCallScreen={
@@ -286,7 +295,9 @@ function ThemedRootWrapper({ children }: { children: React.ReactNode }) {
     <GestureHandlerRootView
       style={[styles.container, { backgroundColor: colors.background }]}
     >
-      {children}
+      <SafeAreaProvider initialMetrics={initialWindowMetrics}>
+        {children}
+      </SafeAreaProvider>
     </GestureHandlerRootView>
   );
 }

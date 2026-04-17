@@ -197,7 +197,7 @@ import { useConversationDisplayMode } from "@/store/ConversationDisplayModeConte
 
 // Voice channels (Stream-powered)
 import { VoiceRoomAvatarStack } from "@/components/stream/VoiceRoomAvatarStack";
-import { VoiceRoomJoinBanner } from "@/components/stream/VoiceRoomJoinBanner";
+import { VoiceRoomJoinStatusToast } from "@/components/stream/VoiceRoomJoinStatusToast";
 import { useStreamCall } from "@/contexts/StreamCallContext";
 import { useVoiceRoomOccupancy } from "@/hooks/useVoiceRoomOccupancy";
 import { getVoiceChannelId } from "@/services/stream/voiceChannelIds";
@@ -2620,20 +2620,20 @@ export default function GroupChatScreen({ route, navigation }: Props) {
         />
       )}
 
-      {voiceRoomJoinState === "error" &&
-        voiceRoomJoinGroupId === groupId &&
-        voiceRoomJoinError && (
-          <VoiceRoomJoinBanner
-            message={voiceRoomJoinError}
-            onRetry={() => {
-              clearVoiceRoomJoinError();
-              if (group && groupId) {
-                joinChannelInline(groupId, group.name || "Voice Channel");
-              }
-            }}
-            onDismiss={clearVoiceRoomJoinError}
-          />
-        )}
+      <VoiceRoomJoinStatusToast
+        voiceRoomJoinState={voiceRoomJoinState}
+        voiceRoomJoinGroupId={voiceRoomJoinGroupId}
+        voiceRoomJoinError={voiceRoomJoinError}
+        groupId={groupId}
+        groupName={resolvedGroupName}
+        onRetry={() => {
+          clearVoiceRoomJoinError();
+          if (group && groupId) {
+            joinChannelInline(groupId, group.name || "Voice Channel");
+          }
+        }}
+        onDismiss={clearVoiceRoomJoinError}
+      />
 
       <Snackbar
         visible={snackbar.visible}

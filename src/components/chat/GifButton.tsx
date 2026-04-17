@@ -26,11 +26,11 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { StyleSheet } from "react-native";
+import { StyleSheet, View } from "react-native";
 import { IconButton, useTheme } from "react-native-paper";
 
 import type { DraggableBottomSheetHandle } from "./DraggableBottomSheet";
-import { PickerLoadingFallback } from "./PickerLoadingFallback";
+import { ButtonLoadingOverlay } from "./PickerLoadingFallback";
 import { getGifPickerImport, getResolvedGifPicker } from "./pickerPreload";
 
 const LazyGifPicker = React.lazy(() => getGifPickerImport());
@@ -102,18 +102,22 @@ function GifButtonBase({ onGifSelected, size = 24 }: GifButtonProps) {
   // promise is settled, producing a 1-frame fallback flash. Reading the
   // resolved ref synchronously eliminates that flash entirely.
   const ResolvedPicker = pickerOpen ? getResolvedGifPicker() : null;
+  const isLoading = pickerOpen && !ResolvedPicker;
 
   return (
     <>
-      <IconButton
-        icon="file-gif-box"
-        size={size}
-        iconColor={theme.colors.onSurfaceVariant}
-        onPress={handlePress}
-        style={styles.button}
-        accessibilityLabel="Open GIF picker"
-        accessibilityRole="button"
-      />
+      <View>
+        <IconButton
+          icon="file-gif-box"
+          size={size}
+          iconColor={theme.colors.onSurfaceVariant}
+          onPress={handlePress}
+          style={styles.button}
+          accessibilityLabel="Open GIF picker"
+          accessibilityRole="button"
+        />
+        {isLoading && <ButtonLoadingOverlay />}
+      </View>
       {pickerOpen &&
         (ResolvedPicker ? (
           <ResolvedPicker
@@ -125,7 +129,7 @@ function GifButtonBase({ onGifSelected, size = 24 }: GifButtonProps) {
             sharedTranslateY={sheetTranslateY}
           />
         ) : (
-          <Suspense fallback={<PickerLoadingFallback />}>
+          <Suspense fallback={null}>
             <LazyGifPicker
               ref={sheetRef}
               open={pickerOpen}

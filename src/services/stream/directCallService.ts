@@ -15,18 +15,19 @@
 import { callSettingsService } from "@/services/calls";
 import type { DirectCallMode } from "@/types/streamCall";
 import type { Call } from "@stream-io/video-react-native-sdk";
-import { validateParticipantIds } from "./callSettingsValidator";
-import {
-  requestCallPermissions,
-  startCallAudioSession,
-  stopCallAudioSession,
-} from "./callSessionManager";
+import { schedulePostJoinMediaHealthCheck } from "./callMediaHealthCheck";
 import {
   applyCallMediaPreferences,
   applyCallReconnectPolicy,
   applyPreferredCameraDirection,
   joinCallWithRetry,
 } from "./callRuntime";
+import {
+  requestCallPermissions,
+  startCallAudioSession,
+  stopCallAudioSession,
+} from "./callSessionManager";
+import { validateParticipantIds } from "./callSettingsValidator";
 import { getStreamClient } from "./streamClient";
 import { ensureStreamUsersExist } from "./streamUserProvisioning";
 import { toStreamDevice } from "./streamUtils";
@@ -34,8 +35,9 @@ import { toStreamDevice } from "./streamUtils";
 const TAG = "[DirectCallService]";
 
 const getCallingState = () =>
-  (require("@stream-io/video-react-native-sdk") as typeof import("@stream-io/video-react-native-sdk"))
-    .CallingState;
+  (
+    require("@stream-io/video-react-native-sdk") as typeof import("@stream-io/video-react-native-sdk")
+  ).CallingState;
 
 /**
  * Stream call type for 1:1 ringing calls.
@@ -177,6 +179,9 @@ export async function acceptDirectCall(
       enableCamera: cameraOn,
     });
     applyCallMediaPreferences(call, `accepted direct call ${call.id}`);
+
+    // Schedule post-join health check to catch silent mic failures
+    schedulePostJoinMediaHealthCheck(call, `accepted direct call ${call.id}`);
   } catch (err) {
     console.error(`${TAG} Accept/join failed:`, err);
     await stopCallAudioSession();
@@ -221,15 +226,28 @@ function watchLocalDeviceSetupOnJoin(
   },
 ): void {
   const CallingState = getCallingState();
+  console.info(
+    `${TAG} [${options.context}] Watching for JOINED state to enable local devices...`,
+  );
   const subscription = call.state.callingState$.subscribe((state) => {
     if (state === CallingState.JOINED) {
       subscription.unsubscribe();
+      console.info(
+        `${TAG} [${options.context}] JOINED detected — enabling local devices`,
+      );
       ensureLocalDevices(call, options)
         .then(() => {
           applyCallMediaPreferences(call, options.context);
+          // Schedule post-join health check to catch silent mic failures
+          schedulePostJoinMediaHealthCheck(call, options.context);
         })
         .catch((err) => {
-          console.warn(`${TAG} Failed to prepare local devices after join:`, err);
+          console.warn(
+            `${TAG} [${options.context}] Failed to prepare local devices after join:`,
+            err,
+          );
+          // Still attempt health check — it may be able to recover
+          schedulePostJoinMediaHealthCheck(call, options.context);
         });
       return;
     }
@@ -239,6 +257,9 @@ function watchLocalDeviceSetupOnJoin(
       state === CallingState.IDLE ||
       state === CallingState.RECONNECTING_FAILED
     ) {
+      console.info(
+        `${TAG} [${options.context}] Call left/idle before JOINED — aborting device setup watcher`,
+      );
       subscription.unsubscribe();
     }
   });
@@ -253,10 +274,31 @@ async function ensureLocalDevices(
   },
 ): Promise<void> {
   if (options.enableMicrophone) {
-    try {
-      await call.microphone.enable();
-    } catch (err) {
-      console.warn(`${TAG} microphone.enable failed:`, err);
+    console.info(`${TAG} [${options.context}] Enabling microphone...`);
+    let micEnabled = false;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        await call.microphone.enable();
+        micEnabled = true;
+        console.info(
+          `${TAG} [${options.context}] Microphone enable succeeded (attempt ${attempt})`,
+        );
+        break;
+      } catch (err) {
+        console.warn(
+          `${TAG} [${options.context}] microphone.enable attempt ${attempt} failed:`,
+          err,
+        );
+        if (attempt < 2) {
+          // Brief delay before retry — allows native audio pipeline to settle
+          await new Promise<void>((r) => setTimeout(r, 500));
+        }
+      }
+    }
+    if (!micEnabled) {
+      console.error(
+        `${TAG} [${options.context}] Microphone enable failed after all attempts — user may have one-way audio`,
+      );
     }
   }
 
@@ -266,7 +308,7 @@ async function ensureLocalDevices(
     try {
       await call.camera.enable();
     } catch (err) {
-      console.warn(`${TAG} camera.enable failed:`, err);
+      console.warn(`${TAG} [${options.context}] camera.enable failed:`, err);
     }
   }
 }

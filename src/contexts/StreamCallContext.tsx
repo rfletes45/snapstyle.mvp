@@ -14,6 +14,13 @@ import { CALL_FEATURES } from "@/constants/featureFlags";
 import { useAuth } from "@/store/AuthContext";
 import { useUser } from "@/store/UserContext";
 import type { ActiveMediaSession, DirectCallMode } from "@/types/streamCall";
+import * as HapticsUtil from "@/utils/haptics";
+import {
+  logStartupError,
+  logStartupEvent,
+  logStartupMount,
+  logStartupUnmount,
+} from "@/utils/startupTrace";
 import { generateUUID } from "@/utils/uuid";
 import type {
   Call,
@@ -67,6 +74,9 @@ const destroyStreamClient = streamSvc?.destroyStreamClient;
 const clearTokenCache = streamSvc?.clearTokenCache;
 const stopCallAudioSession = streamSvc?.stopCallAudioSession;
 
+const CALLS_INITIALIZING_MESSAGE =
+  "Calls are still initializing. Please try again in a moment.";
+
 interface StreamCallContextType {
   isReady: boolean;
   activeSession: ActiveMediaSession;
@@ -104,12 +114,16 @@ const StreamCallContext = createContext<StreamCallContextType | undefined>(
   undefined,
 );
 
+const StreamVideoClientContext = createContext<StreamVideoClient | null>(null);
+
 function StreamCallInnerProvider({
   children,
   userId,
+  isReady,
 }: {
   children: React.ReactNode;
-  userId: string;
+  userId: string | null;
+  isReady: boolean;
 }) {
   const [activeSession, setActiveSession] = useState<ActiveMediaSession>(null);
   const [activeCall, setActiveCall] = useState<Call | null>(null);
@@ -148,6 +162,13 @@ function StreamCallInnerProvider({
     setVoiceRoomJoinError(null);
     setVoiceRoomJoinGroupId(null);
   }, []);
+
+  useEffect(() => {
+    if (userId) return;
+
+    deliberatelyLeftChannelsRef.current.clear();
+    clearActiveState();
+  }, [clearActiveState, userId]);
 
   useEffect(() => {
     const call = activeCallRef.current;
@@ -189,6 +210,11 @@ function StreamCallInnerProvider({
       mode: DirectCallMode,
       recipientName?: string,
     ): Promise<string> => {
+      const readyUserId = userId;
+      if (!isReady || !readyUserId) {
+        throw new Error(CALLS_INITIALIZING_MESSAGE);
+      }
+
       if (busyRef.current) {
         throw new Error("Already in a call or voice channel.");
       }
@@ -196,7 +222,12 @@ function StreamCallInnerProvider({
 
       const callId = uuidv4();
       try {
-        const call = await startDirectCall(callId, userId, recipientId, mode);
+        const call = await startDirectCall(
+          callId,
+          readyUserId,
+          recipientId,
+          mode,
+        );
         activeCallRef.current = call;
         setActiveCall(call);
         setActiveSession({
@@ -211,33 +242,40 @@ function StreamCallInnerProvider({
         throw err;
       }
     },
-    [userId],
+    [isReady, userId],
   );
 
-  const acceptCallAction = useCallback(async (call: Call) => {
-    if (busyRef.current) {
-      await rejectDirectCall(call, "busy");
-      return;
-    }
-    busyRef.current = true;
+  const acceptCallAction = useCallback(
+    async (call: Call) => {
+      if (!isReady) {
+        throw new Error(CALLS_INITIALIZING_MESSAGE);
+      }
 
-    try {
-      const mode = (call.state.custom?.mode as DirectCallMode) ?? "audio";
-      await acceptDirectCall(call, mode);
+      if (busyRef.current) {
+        await rejectDirectCall(call, "busy");
+        return;
+      }
+      busyRef.current = true;
 
-      activeCallRef.current = call;
-      setActiveCall(call);
-      setActiveSession({
-        type: "direct_call",
-        callId: call.id,
-        recipientName: call.state.createdBy?.name,
-        mode,
-      });
-    } catch (err) {
-      busyRef.current = false;
-      throw err;
-    }
-  }, []);
+      try {
+        const mode = (call.state.custom?.mode as DirectCallMode) ?? "audio";
+        await acceptDirectCall(call, mode);
+
+        activeCallRef.current = call;
+        setActiveCall(call);
+        setActiveSession({
+          type: "direct_call",
+          callId: call.id,
+          recipientName: call.state.createdBy?.name,
+          mode,
+        });
+      } catch (err) {
+        busyRef.current = false;
+        throw err;
+      }
+    },
+    [isReady],
+  );
 
   const rejectCallAction = useCallback(
     async (call: Call, reason: "decline" | "busy" | "cancel" = "decline") => {
@@ -273,6 +311,11 @@ function StreamCallInnerProvider({
 
   const joinChannelAction = useCallback(
     async (groupId: string, groupName: string) => {
+      const readyUserId = userId;
+      if (!isReady || !readyUserId) {
+        throw new Error(CALLS_INITIALIZING_MESSAGE);
+      }
+
       if (busyRef.current) {
         throw new Error("Already in a call or voice channel.");
       }
@@ -281,8 +324,27 @@ function StreamCallInnerProvider({
       const channelId = `voice_channel_${groupId}`;
       deliberatelyLeftChannelsRef.current.delete(channelId);
 
+      // Defensive: if a stale call object lingers from a previous session,
+      // clear it before starting a new join to avoid impossible states.
+      if (activeCallRef.current) {
+        console.warn(
+          "[StreamCallContext] Clearing stale activeCall before voice channel join:",
+          activeCallRef.current.id,
+        );
+        activeCallRef.current = null;
+        setActiveCall(null);
+        setActiveSession(null);
+      }
+
       try {
-        const call = await joinVoiceChannel(groupId, groupName, userId);
+        const call = await joinVoiceChannel(groupId, groupName, readyUserId);
+
+        // Guard: verify the call object is valid after the async join
+        if (!call || !call.id) {
+          busyRef.current = false;
+          throw new Error("joinVoiceChannel returned an invalid call object.");
+        }
+
         activeCallRef.current = call;
         setActiveCall(call);
         setActiveSession({
@@ -298,11 +360,18 @@ function StreamCallInnerProvider({
         throw err;
       }
     },
-    [userId],
+    [isReady, userId],
   );
 
   const joinChannelInlineAction = useCallback(
     (groupId: string, groupName: string) => {
+      if (!isReady || !userId) {
+        setVoiceRoomJoinState("error");
+        setVoiceRoomJoinError(CALLS_INITIALIZING_MESSAGE);
+        setVoiceRoomJoinGroupId(groupId);
+        return;
+      }
+
       // Pre-flight: already busy?
       if (busyRef.current) {
         setVoiceRoomJoinState("error");
@@ -310,6 +379,17 @@ function StreamCallInnerProvider({
           "You're already in a call. Leave it first to join this voice channel.",
         );
         setVoiceRoomJoinGroupId(groupId);
+        return;
+      }
+
+      // Pre-flight: already joining this exact group?
+      if (
+        voiceRoomJoinState === "joining" &&
+        voiceRoomJoinGroupId === groupId
+      ) {
+        console.warn(
+          "[StreamCallContext] joinChannelInline called while already joining same group — ignoring duplicate",
+        );
         return;
       }
 
@@ -321,11 +401,21 @@ function StreamCallInnerProvider({
       // Delegate to the existing joinChannel which handles busyRef,
       // deliberatelyLeftChannels, SDK join, and activeSession setup.
       joinChannelAction(groupId, groupName).catch((err: any) => {
+        console.error(
+          "[StreamCallContext] joinChannelInline failed:",
+          err?.message ?? err,
+        );
         setVoiceRoomJoinState("error");
         setVoiceRoomJoinError(err?.message || "Failed to join voice channel");
       });
     },
-    [joinChannelAction],
+    [
+      isReady,
+      joinChannelAction,
+      userId,
+      voiceRoomJoinGroupId,
+      voiceRoomJoinState,
+    ],
   );
 
   const leaveChannelAction = useCallback(async () => {
@@ -370,6 +460,8 @@ function StreamCallInnerProvider({
       voiceRoomJoinState === "joined" &&
       (prev === "joining" || prev === "idle")
     ) {
+      // Haptic on successful local join — fires exactly once per transition
+      HapticsUtil.success();
       setTimeout(() => {
         ringtoneService?.playSoundEffect("room_join");
       }, 300);
@@ -414,7 +506,7 @@ function StreamCallInnerProvider({
 
   const value = useMemo<StreamCallContextType>(
     () => ({
-      isReady: true,
+      isReady,
       activeSession,
       isBusy,
       startCall: startCallAction,
@@ -433,6 +525,7 @@ function StreamCallInnerProvider({
       clearVoiceRoomJoinError,
     }),
     [
+      isReady,
       activeSession,
       isBusy,
       startCallAction,
@@ -470,13 +563,36 @@ export function StreamCallProvider({
   const currentUserId = currentFirebaseUser?.uid ?? null;
 
   useEffect(() => {
+    logStartupMount("StreamCallProvider", {
+      callsEnabled: CALL_FEATURES.CALLS_ENABLED,
+    });
+    return () => {
+      logStartupUnmount("StreamCallProvider");
+    };
+  }, []);
+
+  useEffect(() => {
+    logStartupEvent("StreamCall provider state changed", {
+      currentUserId,
+      hasProfile: !!profile,
+      hasClient: !!client,
+    });
+  }, [client, currentUserId, profile]);
+
+  useEffect(() => {
     if (!CALL_FEATURES.CALLS_ENABLED) return;
 
     if (!currentUserId) {
+      logStartupEvent("StreamCall client clearing", {
+        reason: "no_authenticated_user",
+      });
       const cleanup = async () => {
         try {
           await destroyStreamClient();
         } catch (err: any) {
+          logStartupError("StreamCall client destroy failed", err, {
+            reason: "no_authenticated_user",
+          });
           console.warn("[StreamCallProvider] destroyStreamClient failed:", err);
         }
         clearTokenCache();
@@ -486,7 +602,13 @@ export function StreamCallProvider({
       return;
     }
 
-    if (!profile) return;
+    if (!profile) {
+      logStartupEvent("StreamCall client init deferred", {
+        reason: "profile_not_ready",
+        currentUserId,
+      });
+      return;
+    }
 
     let cancelled = false;
 
@@ -496,11 +618,25 @@ export function StreamCallProvider({
       (profile as any)?.profilePicture?.thumbnailUrl ??
       undefined;
 
+    logStartupEvent("StreamCall client init started", {
+      currentUserId,
+      hasDisplayName: !!displayName,
+      hasProfilePicUrl: !!profilePicUrl,
+    });
+
     initStreamClient(currentUserId, displayName, profilePicUrl)
       .then((nextClient: StreamVideoClient) => {
-        if (!cancelled) setClient(nextClient);
+        if (!cancelled) {
+          setClient(nextClient);
+          logStartupEvent("StreamCall client init completed", {
+            currentUserId,
+          });
+        }
       })
       .catch((err: any) => {
+        logStartupError("StreamCall client init failed", err, {
+          currentUserId,
+        });
         console.error(
           "[StreamCallProvider] Failed to init Stream client:",
           err,
@@ -512,45 +648,30 @@ export function StreamCallProvider({
     };
   }, [currentUserId, profile]);
 
-  if (!CALL_FEATURES.CALLS_ENABLED || !client || !currentFirebaseUser?.uid) {
-    const noopValue: StreamCallContextType = {
-      isReady: false,
-      activeSession: null,
-      isBusy: false,
-      startCall: async () => {
-        throw new Error("Calls not available");
-      },
-      acceptCall: async () => {},
-      rejectCall: async () => {},
-      endCall: async () => {},
-      joinChannel: async () => {
-        throw new Error("Calls not available");
-      },
-      joinChannelInline: () => {},
-      leaveChannel: async () => {},
-      wasChannelDeliberatelyLeft: () => false,
-      clearDeliberateLeave: () => {},
-      activeCall: null,
-      voiceRoomJoinState: "idle",
-      voiceRoomJoinError: null,
-      voiceRoomJoinGroupId: null,
-      clearVoiceRoomJoinError: () => {},
-    };
-
-    return (
-      <StreamCallContext.Provider value={noopValue}>
-        {children}
-      </StreamCallContext.Provider>
-    );
-  }
-
   return (
-    <StreamVideo client={client}>
-      <StreamCallInnerProvider userId={currentFirebaseUser.uid}>
+    <StreamVideoClientContext.Provider value={client}>
+      <StreamCallInnerProvider
+        userId={currentUserId}
+        isReady={!!client && !!currentUserId}
+      >
         {children}
       </StreamCallInnerProvider>
-    </StreamVideo>
+    </StreamVideoClientContext.Provider>
   );
+}
+
+export function StreamVideoEffectsProvider({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  const client = useContext(StreamVideoClientContext);
+
+  if (!CALL_FEATURES.CALLS_ENABLED || !client || !StreamVideo) {
+    return null;
+  }
+
+  return <StreamVideo client={client}>{children}</StreamVideo>;
 }
 
 export function useStreamCall(): StreamCallContextType {

@@ -26,11 +26,11 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { StyleSheet } from "react-native";
+import { StyleSheet, View } from "react-native";
 import { IconButton, useTheme } from "react-native-paper";
 
 import type { DraggableBottomSheetHandle } from "./DraggableBottomSheet";
-import { PickerLoadingFallback } from "./PickerLoadingFallback";
+import { ButtonLoadingOverlay } from "./PickerLoadingFallback";
 import {
   getResolvedStickerPicker,
   getStickerPickerImport,
@@ -99,18 +99,22 @@ function StickerButtonBase({
   );
 
   const ResolvedPicker = pickerOpen ? getResolvedStickerPicker() : null;
+  const isLoading = pickerOpen && !ResolvedPicker;
 
   return (
     <>
-      <IconButton
-        icon="sticker-emoji"
-        size={size}
-        iconColor={theme.colors.onSurfaceVariant}
-        onPress={handlePress}
-        style={styles.button}
-        accessibilityLabel="Open sticker picker"
-        accessibilityRole="button"
-      />
+      <View>
+        <IconButton
+          icon="sticker-emoji"
+          size={size}
+          iconColor={theme.colors.onSurfaceVariant}
+          onPress={handlePress}
+          style={styles.button}
+          accessibilityLabel="Open sticker picker"
+          accessibilityRole="button"
+        />
+        {isLoading && <ButtonLoadingOverlay />}
+      </View>
       {pickerOpen &&
         (ResolvedPicker ? (
           <ResolvedPicker
@@ -122,7 +126,7 @@ function StickerButtonBase({
             sharedTranslateY={sheetTranslateY}
           />
         ) : (
-          <Suspense fallback={<PickerLoadingFallback />}>
+          <Suspense fallback={null}>
             <LazyStickerPicker
               ref={sheetRef}
               open={pickerOpen}

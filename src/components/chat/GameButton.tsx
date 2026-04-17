@@ -25,11 +25,11 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { StyleSheet } from "react-native";
+import { StyleSheet, View } from "react-native";
 import { IconButton, useTheme } from "react-native-paper";
 
 import type { DraggableBottomSheetHandle } from "./DraggableBottomSheet";
-import { PickerLoadingFallback } from "./PickerLoadingFallback";
+import { ButtonLoadingOverlay } from "./PickerLoadingFallback";
 import { getGamePickerImport, getResolvedGamePicker } from "./pickerPreload";
 
 const LazyGamePickerModal = React.lazy(() => getGamePickerImport());
@@ -100,18 +100,22 @@ function GameButtonBase({
   );
 
   const ResolvedPicker = pickerOpen ? getResolvedGamePicker() : null;
+  const isLoading = pickerOpen && !ResolvedPicker;
 
   return (
     <>
-      <IconButton
-        icon="gamepad-variant-outline"
-        size={size}
-        iconColor={theme.colors.onSurfaceVariant}
-        onPress={handlePress}
-        style={styles.button}
-        accessibilityLabel="Open game picker"
-        accessibilityRole="button"
-      />
+      <View>
+        <IconButton
+          icon="gamepad-variant-outline"
+          size={size}
+          iconColor={theme.colors.onSurfaceVariant}
+          onPress={handlePress}
+          style={styles.button}
+          accessibilityLabel="Open game picker"
+          accessibilityRole="button"
+        />
+        {isLoading && <ButtonLoadingOverlay />}
+      </View>
       {pickerOpen &&
         (ResolvedPicker ? (
           <ResolvedPicker
@@ -124,7 +128,7 @@ function GameButtonBase({
             sharedTranslateY={sheetTranslateY}
           />
         ) : (
-          <Suspense fallback={<PickerLoadingFallback />}>
+          <Suspense fallback={null}>
             <LazyGamePickerModal
               ref={sheetRef}
               open={pickerOpen}

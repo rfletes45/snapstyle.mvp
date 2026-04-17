@@ -459,6 +459,7 @@ const CameraScreen: React.FC = () => {
   const [timerSeconds, setTimerSeconds] = useState<TimerOption>(0);
   const [countdown, setCountdown] = useState<number | null>(null);
   const [isBusy, setIsBusy] = useState(false);
+  const [showFilterPicker, setShowFilterPicker] = useState(false);
 
   // ==========================================================================
   // LOCAL STATE - Editor mode
@@ -619,6 +620,9 @@ const CameraScreen: React.FC = () => {
           timestamp: Date.now(),
         });
       }
+
+      // Close filter picker if open (transitioning to editor mode)
+      setShowFilterPicker(false);
 
       // Show the preview immediately — defer compression to export time
       setCurrentSnap(media);
@@ -831,9 +835,10 @@ const CameraScreen: React.FC = () => {
     }
   }, [handleFlipCamera]);
 
-  // Filter carousel item — uses colour indicators derived from each filter's
-  // colour matrix.  Avoids the need for a captured preview frame, which was
-  // previously causing the camera to freeze.
+  // Filter picker item — uses colour indicators derived from each filter's
+  // colour matrix. Lightweight: no Skia Canvas, no live camera duplication.
+  // Each thumbnail is a static color swatch that represents the filter's
+  // visual character, computed once and cached.
   const renderFilterItem = useCallback(
     ({ item, index }: { item: FilterConfig; index: number }) => {
       const isSelected = selectedFilterIndex === index;
@@ -859,6 +864,9 @@ const CameraScreen: React.FC = () => {
                 size={18}
                 color="rgba(255,255,255,0.5)"
               />
+            )}
+            {isSelected && item.id !== "none" && (
+              <Ionicons name="checkmark-circle" size={18} color="#007AFF" />
             )}
           </View>
           <Text
@@ -1007,6 +1015,7 @@ const CameraScreen: React.FC = () => {
     setElementPositions({});
     setRotation(0);
     setSelectedFilterId("none");
+    setShowFilterPicker(false);
     clearAllFilters();
     haptic();
   }, [clearAllFilters, haptic]);
@@ -1859,6 +1868,14 @@ const CameraScreen: React.FC = () => {
             horizontal
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.filterList}
+            initialNumToRender={6}
+            maxToRenderPerBatch={4}
+            windowSize={5}
+            getItemLayout={(_data, index) => ({
+              length: 80,
+              offset: 80 * index,
+              index,
+            })}
           />
           {selectedFilterId !== "none" && (
             <View style={styles.intensityRow}>
@@ -1952,24 +1969,69 @@ const CameraScreen: React.FC = () => {
         </View>
       )}
 
-      {/* --- CAMERA: Filter Carousel (only in camera mode, hidden while recording) */}
+      {/* --- CAMERA: Filter Button (opens picker on demand) -------- */}
       {!isEditorMode && !recordingState.isRecording && (
-        <View style={styles.filterCarouselContainer}>
-          <FlatList
-            data={ALL_FILTERS}
-            renderItem={renderFilterItem}
-            keyExtractor={filterKeyExtractor}
-            ListEmptyComponent={
-              <Text style={styles.listEmptyText}>No filters available.</Text>
-            }
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.filterCarouselContent}
-            initialNumToRender={6}
-            maxToRenderPerBatch={4}
-            windowSize={5}
+        <TouchableOpacity
+          style={styles.filterPickerButton}
+          onPress={() => {
+            setShowFilterPicker(true);
+            triggerHaptic();
+          }}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="color-filter-outline" size={22} color="#fff" />
+          {activeFilter && (
+            <Text style={styles.filterPickerButtonLabel} numberOfLines={1}>
+              {activeFilter.name}
+            </Text>
+          )}
+          {!activeFilter && (
+            <Text style={styles.filterPickerButtonLabel}>Filters</Text>
+          )}
+        </TouchableOpacity>
+      )}
+
+      {/* --- CAMERA: Filter Picker Modal (lazy-mounted on demand) -- */}
+      {showFilterPicker && (
+        <Modal
+          visible={showFilterPicker}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setShowFilterPicker(false)}
+        >
+          <TouchableOpacity
+            style={styles.filterPickerBackdrop}
+            activeOpacity={1}
+            onPress={() => setShowFilterPicker(false)}
           />
-        </View>
+          <View style={styles.filterPickerSheet}>
+            <View style={styles.filterPickerHeader}>
+              <Text style={styles.filterPickerTitle}>Filters</Text>
+              <TouchableOpacity
+                onPress={() => setShowFilterPicker(false)}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              >
+                <Ionicons name="close" size={24} color="#fff" />
+              </TouchableOpacity>
+            </View>
+            <FlatList
+              data={ALL_FILTERS}
+              renderItem={renderFilterItem}
+              keyExtractor={filterKeyExtractor}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.filterPickerList}
+              initialNumToRender={8}
+              maxToRenderPerBatch={6}
+              windowSize={5}
+              getItemLayout={(_data, index) => ({
+                length: 72,
+                offset: 72 * index,
+                index,
+              })}
+            />
+          </View>
+        </Modal>
       )}
 
       {/* --- CAMERA: Recording Timer Indicator ----------------------------- */}
@@ -2411,7 +2473,55 @@ const styles = StyleSheet.create({
   },
   zoomText: { color: "#FFD700", fontSize: 13, fontWeight: "700" },
 
-  // -- Filter Carousel (camera mode) ------------------------------------------
+  // -- Filter Button + Picker (camera mode) ----------------------------------
+  filterPickerButton: {
+    position: "absolute",
+    bottom: 125,
+    alignSelf: "center",
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(0,0,0,0.55)",
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    gap: 6,
+    zIndex: 15,
+  },
+  filterPickerButtonLabel: {
+    color: "#fff",
+    fontSize: 13,
+    fontWeight: "600",
+    maxWidth: 100,
+  },
+  filterPickerBackdrop: {
+    flex: 1,
+  },
+  filterPickerSheet: {
+    backgroundColor: "rgba(0,0,0,0.92)",
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    paddingBottom: 36,
+  },
+  filterPickerHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "rgba(255,255,255,0.12)",
+  },
+  filterPickerTitle: {
+    color: "#fff",
+    fontSize: 17,
+    fontWeight: "700",
+  },
+  filterPickerList: {
+    paddingHorizontal: 10,
+    paddingVertical: 16,
+    alignItems: "center",
+  },
+  // (Legacy filterCarouselContainer kept for reference but no longer rendered)
   filterCarouselContainer: {
     position: "absolute",
     bottom: 118,

@@ -3,4 +3,8 @@
  */
 
 // Stream Call Context (replaces legacy CallContext)
-export { StreamCallProvider, useStreamCall } from "./StreamCallContext";
+export {
+  StreamCallProvider,
+  StreamVideoEffectsProvider,
+  useStreamCall,
+} from "./StreamCallContext";

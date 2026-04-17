@@ -26,11 +26,11 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { StyleSheet } from "react-native";
+import { StyleSheet, View } from "react-native";
 import { IconButton, useTheme } from "react-native-paper";
 
 import type { DraggableBottomSheetHandle } from "./DraggableBottomSheet";
-import { PickerLoadingFallback } from "./PickerLoadingFallback";
+import { ButtonLoadingOverlay } from "./PickerLoadingFallback";
 import {
   getGifStickerPickerImport,
   getResolvedGifStickerPicker,
@@ -110,18 +110,22 @@ function GifStickerButtonBase({
   );
 
   const ResolvedPicker = pickerOpen ? getResolvedGifStickerPicker() : null;
+  const isLoading = pickerOpen && !ResolvedPicker;
 
   return (
     <>
-      <IconButton
-        icon="image-multiple"
-        size={size}
-        iconColor={theme.colors.onSurfaceVariant}
-        onPress={handlePress}
-        style={styles.button}
-        accessibilityLabel="Open GIF and Sticker picker"
-        accessibilityRole="button"
-      />
+      <View>
+        <IconButton
+          icon="image-multiple"
+          size={size}
+          iconColor={theme.colors.onSurfaceVariant}
+          onPress={handlePress}
+          style={styles.button}
+          accessibilityLabel="Open GIF and Sticker picker"
+          accessibilityRole="button"
+        />
+        {isLoading && <ButtonLoadingOverlay />}
+      </View>
       {pickerOpen &&
         (ResolvedPicker ? (
           <ResolvedPicker
@@ -134,7 +138,7 @@ function GifStickerButtonBase({
             sharedTranslateY={sheetTranslateY}
           />
         ) : (
-          <Suspense fallback={<PickerLoadingFallback />}>
+          <Suspense fallback={null}>
             <LazyGifStickerPicker
               ref={sheetRef}
               open={pickerOpen}

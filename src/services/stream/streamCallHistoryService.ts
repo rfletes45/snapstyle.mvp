@@ -10,6 +10,7 @@ import type {
   StreamCallHistoryEntry,
   StreamCallHistoryFilter,
 } from "@/types/streamCallHistory";
+import { createLogger } from "@/utils/log";
 import {
   collection,
   getDocs,
@@ -23,8 +24,24 @@ import {
 
 const getDb = () => getFirestoreInstance();
 const getAuth = () => getAuthInstance();
+const logger = createLogger("services/streamCallHistory");
 
 const COLLECTION = "StreamCallHistory";
+const RETRY_DELAYS_MS = [500, 1000, 2000];
+
+function isPermissionDelayError(error: unknown): boolean {
+  const code = (error as { code?: string } | undefined)?.code ?? "";
+  return (
+    code === "permission-denied" ||
+    String(error).includes("Missing or insufficient permissions")
+  );
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
 
 function getUserHistoryRef() {
   const uid = getAuth().currentUser?.uid;
@@ -65,8 +82,35 @@ export async function getStreamCallHistory(
     );
   }
 
-  const snapshot = await getDocs(q);
-  return snapshot.docs.map((docSnap) => docSnap.data() as StreamCallHistoryEntry);
+  for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt += 1) {
+    try {
+      const snapshot = await getDocs(q);
+      return snapshot.docs.map(
+        (docSnap) => docSnap.data() as StreamCallHistoryEntry,
+      );
+    } catch (error) {
+      if (
+        !isPermissionDelayError(error) ||
+        attempt === RETRY_DELAYS_MS.length
+      ) {
+        throw error;
+      }
+
+      const delayMs = RETRY_DELAYS_MS[attempt];
+      logger.warn(
+        `[StreamCallHistory] getDocs permission delay, retrying in ${delayMs}ms`,
+        {
+          data: {
+            attempt: attempt + 1,
+            filterType: filter?.filterType ?? "all",
+          },
+        },
+      );
+      await delay(delayMs);
+    }
+  }
+
+  return [];
 }
 
 export function subscribeToStreamCallHistory(
@@ -82,17 +126,55 @@ export function subscribeToStreamCallHistory(
 
   const q = query(ctx.ref, orderBy("createdAt", "desc"), limit(maxResults));
 
-  return onSnapshot(
-    q,
-    (snapshot) => {
-      const entries = snapshot.docs.map(
-        (docSnap) => docSnap.data() as StreamCallHistoryEntry,
-      );
-      onUpdate(entries);
-    },
-    (err) => {
-      console.error("[StreamCallHistory] Subscription error:", err);
-      onError?.(err);
-    },
-  );
+  let cancelled = false;
+  let currentUnsubscribe: Unsubscribe | null = null;
+  let retryTimer: ReturnType<typeof setTimeout> | null = null;
+  let attempt = 0;
+
+  const attach = () => {
+    if (cancelled) return;
+
+    currentUnsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        attempt = 0;
+        const entries = snapshot.docs.map(
+          (docSnap) => docSnap.data() as StreamCallHistoryEntry,
+        );
+        onUpdate(entries);
+      },
+      (err) => {
+        console.error("[StreamCallHistory] Subscription error:", err);
+
+        if (isPermissionDelayError(err) && attempt < RETRY_DELAYS_MS.length) {
+          const delayMs = RETRY_DELAYS_MS[attempt] ?? 2000;
+          attempt += 1;
+          currentUnsubscribe = null;
+          logger.warn(
+            `[StreamCallHistory] Subscription permission delay, retrying in ${delayMs}ms`,
+            {
+              data: {
+                attempt,
+                maxResults,
+              },
+            },
+          );
+          retryTimer = setTimeout(attach, delayMs);
+          return;
+        }
+
+        onError?.(err);
+      },
+    );
+  };
+
+  attach();
+
+  return () => {
+    cancelled = true;
+    if (retryTimer) {
+      clearTimeout(retryTimer);
+    }
+    currentUnsubscribe?.();
+  };
 }

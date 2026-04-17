@@ -19,7 +19,6 @@ import { useComposerSheet } from "@/contexts/ComposerSheetContext";
 import { useAppTheme } from "@/store/ThemeContext";
 import {
   isKeyboardControllerAvailable,
-  KeyboardStickyView,
   KeyboardChatScrollView as OptionalKeyboardChatScrollView,
   useReanimatedKeyboardAnimationCompat,
 } from "@/utils/optionalKeyboardController";
@@ -267,50 +266,57 @@ export function ChatFooterWrapper({ children }: { children: React.ReactNode }) {
     [liveKeyboardHeight],
   );
 
-  // Derive the offset the composer should translate up by.
-  //   sheetVisibleHeight = how much of the sheet is on-screen
-  //   clamp to initialSnapHeight (keyboard-equivalent) = "follow zone"
-  //   subtract keyboard contribution to avoid double-offset.
-  //   No extra lift — composer sits flush against the sheet top edge.
-  const COMPOSER_SHEET_LIFT = 0;
-  const composerOffset = useDerivedValue(() => {
-    if (isSheetActive.value === 0) return 0;
+  // Unified footer offset — single source of truth for the footer's vertical
+  // position in the KCSV path.  Combines the keyboard height and the
+  // composer-attached sheet into one derived value computed in a single
+  // worklet.  This eliminates the dual-driver desynchronization that
+  // occurred when KeyboardStickyView and a separate composerOffset
+  // translateY were in independent animation pipelines: even though
+  // mathematically their sum stayed constant, a 1-frame lag between the
+  // two drivers caused the footer to teleport upward and settle back down
+  // during the keyboard→sheet handoff (visible in native/TestFlight).
+  const unifiedFooterOffset = useDerivedValue(() => {
+    const kbH = Math.abs(keyboardHeight.value);
+
+    if (isSheetActive.value === 0) return kbH;
 
     const sheetVisible = getSheetVisibleHeight(sheetTranslateY.value);
     const clamped = clampSheetToInitialSnap(
       sheetVisible,
       initialSnapHeight.value,
     );
-    // keyboardHeight from Reanimated is negative when open (keyboard-controller convention)
-    const kbContribution = Math.abs(keyboardHeight.value);
-    const base = Math.max(0, clamped - kbContribution);
-    return base > 0 ? base + COMPOSER_SHEET_LIFT : 0;
-  }, [sheetTranslateY, initialSnapHeight, isSheetActive, keyboardHeight]);
+    return Math.max(kbH, clamped);
+  }, [keyboardHeight, isSheetActive, sheetTranslateY, initialSnapHeight]);
 
-  // Pipe composerOffset → sheetExtraPadding so KCSV shifts chat content
+  // Pipe the sheet's extra contribution → sheetExtraPadding so KCSV shifts
+  // chat content.  This is the portion of the unified offset beyond what the
+  // keyboard itself contributes.
   useAnimatedReaction(
-    () => composerOffset.value,
+    () => {
+      const kbH = Math.abs(keyboardHeight.value);
+      return Math.max(0, unifiedFooterOffset.value - kbH);
+    },
     (current) => {
       sheetExtraPadding.value = current;
     },
-    [sheetExtraPadding],
+    [sheetExtraPadding, keyboardHeight],
   );
 
-  const offsetStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: -composerOffset.value }],
+  const unifiedOffsetStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: -unifiedFooterOffset.value }],
   }));
 
   if (kcsvAvailable) {
-    // KCSV path: KSV positions footer at keyboard top, translateY adds
-    // the sheet offset so the footer sits above the composer-attached sheet.
+    // KCSV path: a single translateY derived from the unified footer offset
+    // positions the footer above the keyboard *or* the active sheet —
+    // whichever is taller.  No KeyboardStickyView wrapper needed.
     return (
-      <KeyboardStickyView
-        style={styles.footerLayer}
+      <Animated.View
+        style={[styles.footerLayer, unifiedOffsetStyle]}
         pointerEvents="box-none"
-        offset={{ closed: 0, opened: 0 }}
       >
-        <Animated.View style={offsetStyle}>{children}</Animated.View>
-      </KeyboardStickyView>
+        {children}
+      </Animated.View>
     );
   }
 

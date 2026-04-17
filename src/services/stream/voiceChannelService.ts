@@ -7,16 +7,17 @@
  */
 
 import type { Call } from "@stream-io/video-react-native-sdk";
-import {
-  requestCallPermissions,
-  startCallAudioSession,
-  stopCallAudioSession,
-} from "./callSessionManager";
+import { schedulePostJoinMediaHealthCheck } from "./callMediaHealthCheck";
 import {
   applyCallMediaPreferences,
   applyCallReconnectPolicy,
   joinCallWithRetry,
 } from "./callRuntime";
+import {
+  requestCallPermissions,
+  startCallAudioSession,
+  stopCallAudioSession,
+} from "./callSessionManager";
 import { getStreamClient } from "./streamClient";
 import { ensureStreamUsersExist } from "./streamUserProvisioning";
 import { getVoiceChannelId } from "./voiceChannelIds";
@@ -29,32 +30,40 @@ export async function joinVoiceChannel(
   groupName: string,
   userId?: string,
 ): Promise<Call> {
-  const client = getStreamClient();
+  const TAG = "[VoiceChannelService]";
+  console.info(
+    `${TAG} joinVoiceChannel starting — groupId=${groupId}, userId=${userId ?? "none"}`,
+  );
+
+  let client;
+  try {
+    client = getStreamClient();
+  } catch (err: any) {
+    console.error(`${TAG} Stream client not available:`, err);
+    throw new Error("Call system not initialized. Please try again.");
+  }
+
   const channelId = getVoiceChannelId(groupId);
 
   if (userId) {
     try {
       await ensureStreamUsersExist([userId]);
     } catch (err) {
-      console.warn(
-        "[VoiceChannelService] User provisioning failed (non-fatal):",
-        err,
-      );
+      console.warn(`${TAG} User provisioning failed (non-fatal):`, err);
     }
   }
 
+  console.info(`${TAG} Requesting microphone permission...`);
   try {
     await requestCallPermissions({ microphone: true });
   } catch (err) {
-    console.warn(
-      "[VoiceChannelService] Permission request failed before room join:",
-      err,
-    );
+    console.warn(`${TAG} Permission request failed before room join:`, err);
     throw err;
   }
 
   const call = client.call(VOICE_CHANNEL_TYPE, channelId);
 
+  console.info(`${TAG} Creating/getting voice channel ${channelId}...`);
   try {
     await call.getOrCreate({
       data: {
@@ -65,7 +74,7 @@ export async function joinVoiceChannel(
       },
     });
   } catch (err: any) {
-    console.error("[VoiceChannelService] getOrCreate failed:", err);
+    console.error(`${TAG} getOrCreate failed:`, err);
     throw new Error(
       `Unable to open voice channel: ${err?.message ?? "unknown error"}`,
     );
@@ -73,27 +82,52 @@ export async function joinVoiceChannel(
 
   applyCallReconnectPolicy(call, `voice channel ${channelId}`);
 
+  console.info(`${TAG} Starting audio session...`);
   try {
     await startCallAudioSession("speaker");
   } catch (err) {
-    console.warn("[VoiceChannelService] callManager.start failed:", err);
+    console.warn(`${TAG} callManager.start failed:`, err);
   }
 
+  console.info(`${TAG} Joining call...`);
   try {
     await joinCallWithRetry(
       call,
       { create: false },
       `voice channel ${channelId}`,
     );
-    try {
-      await call.microphone.enable();
-    } catch (err) {
-      console.warn("[VoiceChannelService] microphone.enable failed:", err);
+
+    console.info(`${TAG} Joined successfully — enabling microphone...`);
+    let micEnabled = false;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        await call.microphone.enable();
+        micEnabled = true;
+        console.info(`${TAG} Microphone enable succeeded (attempt ${attempt})`);
+        break;
+      } catch (err) {
+        console.warn(
+          `${TAG} microphone.enable attempt ${attempt} failed:`,
+          err,
+        );
+        if (attempt < 2) {
+          await new Promise<void>((r) => setTimeout(r, 500));
+        }
+      }
     }
+    if (!micEnabled) {
+      console.error(
+        `${TAG} Microphone enable failed after all attempts — user may have one-way audio`,
+      );
+    }
+
     applyCallMediaPreferences(call, `voice channel ${channelId}`);
+
+    // Schedule post-join health check to catch silent mic failures
+    schedulePostJoinMediaHealthCheck(call, `voice channel ${channelId}`);
   } catch (err: any) {
     await stopCallAudioSession();
-    console.error("[VoiceChannelService] join failed:", err);
+    console.error(`${TAG} join failed:`, err);
     const message = err?.message ?? "unknown error";
     if (message.includes("Microphone permission is required")) {
       throw new Error(message);
@@ -101,6 +135,7 @@ export async function joinVoiceChannel(
     throw new Error(`Unable to join voice channel: ${message}`);
   }
 
+  console.info(`${TAG} joinVoiceChannel complete for ${channelId}`);
   return call;
 }
 
@@ -152,8 +187,17 @@ export type VoiceChannelQueryResult =
 export async function queryVoiceChannel(
   groupId: string,
 ): Promise<VoiceChannelQueryResult> {
-  const client = getStreamClient();
   const channelId = getVoiceChannelId(groupId);
+  let client;
+
+  try {
+    client = getStreamClient();
+  } catch (err: any) {
+    return {
+      status: "error",
+      message: err?.message ?? "Stream client not initialized.",
+    };
+  }
 
   try {
     const response = await client.streamClient.post<{

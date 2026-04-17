@@ -49,3 +49,8 @@ export {
   startCallAudioSession,
   stopCallAudioSession,
 } from "./callSessionManager";
+
+export {
+  runPostJoinMediaHealthCheck,
+  schedulePostJoinMediaHealthCheck,
+} from "./callMediaHealthCheck";

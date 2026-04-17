@@ -16,13 +16,13 @@
  */
 
 import { ProfilePicture } from "@/components/profile/ProfilePicture/ProfilePicture";
-import { CallConnectionBadge } from "@/components/stream/CallConnectionBadge";
 import type { AudioRoute } from "@/components/stream/AudioRoutePicker";
 import {
   AudioRoutePicker,
   applyAudioRoute,
   getAudioRouteFromStatus,
 } from "@/components/stream/AudioRoutePicker";
+import { CallConnectionBadge } from "@/components/stream/CallConnectionBadge";
 import { CallControlBar } from "@/components/stream/CallControlBar";
 import { useStreamCall } from "@/contexts/StreamCallContext";
 import { callSettingsService } from "@/services/calls";
@@ -48,7 +48,12 @@ import React, {
   useState,
 } from "react";
 import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
+
+import { NoiseCancellationWrapper } from "@/components/stream/NoiseCancellationWrapper";
 
 // Lazy-load ringtone service for outgoing ring sound
 let ringtoneService: typeof import("@/services/calls/ringtoneService") | null =
@@ -153,13 +158,15 @@ export default function DirectCallScreen({ route, navigation }: Props) {
 
   return (
     <StreamCall call={activeCall}>
-      <DirectCallContent
-        recipientName={recipientName}
-        mode={mode}
-        isOutgoing={isOutgoing}
-        onEndCall={handleEndCall}
-        onMinimize={handleMinimize}
-      />
+      <NoiseCancellationWrapper>
+        <DirectCallContent
+          recipientName={recipientName}
+          mode={mode}
+          isOutgoing={isOutgoing}
+          onEndCall={handleEndCall}
+          onMinimize={handleMinimize}
+        />
+      </NoiseCancellationWrapper>
     </StreamCall>
   );
 }
@@ -205,6 +212,56 @@ function DirectCallContent({
     cameraDirection === "front"
       ? callSettingsService.getSettingsSync().mirrorFrontCamera
       : false;
+  const insets = useSafeAreaInsets();
+
+  // ── Post-join mic state reconciliation ──────────────────────────────────
+  // The service layer runs its own health check, but this is a UI-level
+  // safety net. If the user's mic is supposed to be unmuted (optimisticIsMute
+  // === false) but the actual SDK track status says otherwise after join
+  // stabilizes, we force a disable→re-enable cycle to self-heal.
+  const micReconciliationRef = useRef(false);
+  useEffect(() => {
+    if (!isJoined || !call || micReconciliationRef.current) return;
+    micReconciliationRef.current = true;
+
+    const timer = setTimeout(() => {
+      const micState = call.microphone?.state;
+      const actualStatus = micState?.status; // 'enabled' | 'disabled' | undefined
+      const optimistic = micState?.optimisticStatus; // what the UI thinks
+      const intendedUnmuted = optimistic === "enabled";
+
+      if (intendedUnmuted && actualStatus !== "enabled") {
+        console.warn(
+          "[DirectCallScreen] UI-level mic desync detected after join:",
+          { optimistic, actualStatus },
+          "— forcing recovery cycle",
+        );
+        call.microphone
+          .disable()
+          .then(() => new Promise<void>((r) => setTimeout(r, 300)))
+          .then(() => call.microphone.enable())
+          .then(() => {
+            console.info(
+              "[DirectCallScreen] UI-level mic recovery completed. New status:",
+              String(call.microphone?.state?.status ?? "unknown"),
+            );
+          })
+          .catch((err) => {
+            console.warn(
+              "[DirectCallScreen] UI-level mic recovery failed:",
+              err,
+            );
+          });
+      } else {
+        console.info("[DirectCallScreen] Mic state healthy after join:", {
+          optimistic,
+          actualStatus,
+        });
+      }
+    }, 3000);
+
+    return () => clearTimeout(timer);
+  }, [isJoined, call]);
 
   // Speaker toggle state — tracked locally (SDK doesn't provide useSpeakerState on RN)
   const [isSpeakerOn, setIsSpeakerOn] = useState(isVideo); // Default speaker ON for video
@@ -476,12 +533,9 @@ function DirectCallContent({
   // Joined video calls — custom video rendering with full controls
   if (isVideo && isJoined) {
     return (
-      <SafeAreaView
-        style={[styles.container, { backgroundColor: "#000" }]}
-        edges={["top"]}
-      >
-        {/* Remote video (full screen) */}
-        <View style={styles.videoContent}>
+      <View style={[styles.container, { backgroundColor: "#000" }]}>
+        {/* Video layer — fills entire screen edge-to-edge */}
+        <View style={StyleSheet.absoluteFill} pointerEvents="none">
           {remoteParticipant?.hasVideo && remoteParticipant.participant ? (
             <ParticipantView
               participant={remoteParticipant.participant}
@@ -513,62 +567,63 @@ function DirectCallContent({
               <Text style={styles.videoFallbackName}>{displayName}</Text>
             </View>
           )}
-
-          {/* Local self-view PiP */}
-          {!isInPiPMode &&
-            localParticipant &&
-            !isCameraOff &&
-            hasVideo(localParticipant) && (
-              <View style={styles.localPip}>
-                <ParticipantView
-                  participant={localParticipant}
-                  trackType="videoTrack"
-                  style={styles.localPipVideo}
-                  objectFit="cover"
-                  ParticipantLabel={null as any}
-                  ParticipantReaction={null as any}
-                  mirror={shouldMirrorLocalVideo}
-                />
-              </View>
-            )}
         </View>
 
-        {/* Header floating over video */}
+        {/* UI overlay — safe-area-aware, layered above video */}
         {!isInPiPMode && (
-          <View style={styles.videoHeader}>
-            <Pressable
-              onPress={onMinimize}
-              style={styles.videoBackButton}
-              accessibilityLabel="Minimize call"
-              hitSlop={12}
-            >
-              <MaterialCommunityIcons
-                name="chevron-down"
-                size={28}
-                color="#fff"
-              />
-            </Pressable>
-            <View style={styles.videoHeaderCenter}>
-              <Text style={styles.videoStatusText}>{statusText}</Text>
-              <CallConnectionBadge
-                callingState={callingState}
-                connectionQuality={remoteConnectionQuality}
-              />
+          <View style={styles.videoUiOverlay} pointerEvents="box-none">
+            {/* Header with explicit safe-area top padding */}
+            <View style={[styles.videoHeader, { paddingTop: insets.top + 8 }]}>
+              <Pressable
+                onPress={onMinimize}
+                style={styles.videoBackButton}
+                accessibilityLabel="Minimize call"
+                hitSlop={12}
+              >
+                <MaterialCommunityIcons
+                  name="chevron-down"
+                  size={28}
+                  color="#fff"
+                />
+              </Pressable>
+              <View style={styles.videoHeaderCenter}>
+                <Text style={styles.videoStatusText}>{statusText}</Text>
+                <CallConnectionBadge
+                  callingState={callingState}
+                  connectionQuality={remoteConnectionQuality}
+                />
+              </View>
+              <Pressable
+                onPress={() => setAudioRoutePickerVisible(true)}
+                style={styles.videoBackButton}
+                accessibilityLabel="Audio output"
+                hitSlop={12}
+              >
+                <MaterialCommunityIcons name="speaker" size={22} color="#fff" />
+              </Pressable>
             </View>
-            <Pressable
-              onPress={() => setAudioRoutePickerVisible(true)}
-              style={styles.videoBackButton}
-              accessibilityLabel="Audio output"
-              hitSlop={12}
-            >
-              <MaterialCommunityIcons name="speaker" size={22} color="#fff" />
-            </Pressable>
-          </View>
-        )}
 
-        {/* Full video call controls */}
-        {!isInPiPMode && (
-          <>
+            {/* Middle area — local PiP lives here; touches pass to video */}
+            <View style={styles.videoMiddle} pointerEvents="box-none">
+              {/* Local self-view PiP */}
+              {localParticipant &&
+                !isCameraOff &&
+                hasVideo(localParticipant) && (
+                  <View style={styles.localPip}>
+                    <ParticipantView
+                      participant={localParticipant}
+                      trackType="videoTrack"
+                      style={styles.localPipVideo}
+                      objectFit="cover"
+                      ParticipantLabel={null as any}
+                      ParticipantReaction={null as any}
+                      mirror={shouldMirrorLocalVideo}
+                    />
+                  </View>
+                )}
+            </View>
+
+            {/* Full video call controls */}
             <CallControlBar
               isMuted={isMuted}
               onToggleMic={handleToggleMic}
@@ -591,9 +646,9 @@ function DirectCallContent({
               currentRoute={currentAudioRoute}
               onRouteSelected={handleAudioRouteSelect}
             />
-          </>
+          </View>
         )}
-      </SafeAreaView>
+      </View>
     );
   }
 
@@ -728,19 +783,22 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
 
-  // Video call header (floating over video)
-  videoHeader: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
+  // Video call UI overlay (above video layer)
+  videoUiOverlay: {
+    ...StyleSheet.absoluteFillObject,
     zIndex: 10,
-    elevation: 4,
+  },
+  // Video call header (flow child inside overlay — safe-area paddingTop applied inline)
+  videoHeader: {
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingBottom: 8,
     backgroundColor: "rgba(0,0,0,0.3)",
+  },
+  // Middle area between header and controls (holds local PiP)
+  videoMiddle: {
+    flex: 1,
   },
   videoBackButton: {
     width: 40,
@@ -759,9 +817,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
   },
-  videoContent: {
-    flex: 1,
-  },
+
   videoFallback: {
     ...StyleSheet.absoluteFillObject,
     justifyContent: "center",

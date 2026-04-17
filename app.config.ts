@@ -153,6 +153,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
         androidKeepCallAlive: true,
         androidPictureInPicture: true,
         iOSEnableMultitaskingCameraAccess: true,
+        addNoiseCancellation: true,
       },
     ],
     // Firebase messaging (Android push for incoming calls)
