@@ -134,9 +134,7 @@ export const InboxTabs = memo(function InboxTabs({
                     },
                   ]}
                 >
-                  {tab.badge > 99
-                    ? "99+"
-                    : tab.badge}
+                  {tab.badge > 99 ? "99+" : tab.badge}
                 </Badge>
               )}
             </TouchableOpacity>

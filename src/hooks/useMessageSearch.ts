@@ -590,10 +590,9 @@ export function useMessageSearch(allConversations: InboxConversation[] = []) {
               throw fallbackError;
             }
           } else {
-            log.error(
-              "SQLite message search failed",
-              { data: { error: dbError } },
-            );
+            log.error("SQLite message search failed", {
+              data: { error: dbError },
+            });
             throw dbError;
           }
         }

@@ -304,9 +304,7 @@ export default function GameOverScreenV4() {
               { color: theme.isDark ? "#AAA" : "#666" },
             ]}
           >
-            {loadingSlow
-              ? "Still processing results…"
-              : "Processing Results…"}
+            {loadingSlow ? "Still processing results…" : "Processing Results…"}
           </Text>
           {loadingSlow && (
             <Text

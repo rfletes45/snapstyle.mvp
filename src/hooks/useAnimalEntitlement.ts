@@ -12,7 +12,10 @@
  * @module hooks/useAnimalEntitlement
  */
 
-import { DEFAULT_ANIMAL_THEME_ID, hasAnimalImage } from "@/cosmetics/animalAssets";
+import {
+  DEFAULT_ANIMAL_THEME_ID,
+  hasAnimalImage,
+} from "@/cosmetics/animalAssets";
 import { getCosmeticById } from "@/cosmetics/catalog";
 import type { ChatAppearance } from "@/cosmetics/types";
 import { hasEntitlement } from "@/services/entitlements";
