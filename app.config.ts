@@ -23,6 +23,9 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       // Photo library permission (required for App Store)
       NSPhotoLibraryUsageDescription:
         "Vibe needs photo library access to save and share photos",
+      // Location permission (required by linked SDKs)
+      NSLocationWhenInUseUsageDescription:
+        "Vibe may use your location to connect you with nearby friends",
       // Background modes used by Stream calls and notifications
       UIBackgroundModes: ["audio", "remote-notification", "fetch", "voip"],
     },
