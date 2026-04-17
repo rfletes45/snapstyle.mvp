@@ -32,6 +32,7 @@ import {
   prepareGroupChatNavigation,
 } from "@/services/chat/threadIdentityWarmup";
 import { useAppTheme } from "@/store/ThemeContext";
+import type { InboxConversation } from "@/types/messaging";
 import { log } from "@/utils/log";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import DateTimePicker, {
@@ -79,6 +80,7 @@ import { SearchResultItem } from "./SearchResultItem";
 interface SearchSheetProps {
   visible: boolean;
   onDismiss: () => void;
+  allConversations: InboxConversation[];
 }
 
 type FilterView = "none" | "menu" | "datePicker" | "personPicker";
@@ -159,7 +161,11 @@ function getContentIcon(f: ContentFilter): string {
 // Component
 // =============================================================================
 
-export function SearchSheet({ visible, onDismiss }: SearchSheetProps) {
+export function SearchSheet({
+  visible,
+  onDismiss,
+  allConversations,
+}: SearchSheetProps) {
   const { colors, isDark } = useAppTheme();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
@@ -179,13 +185,13 @@ export function SearchSheet({ visible, onDismiss }: SearchSheetProps) {
     results,
     isSearching,
     hasSearched,
+    error,
     recentSearches,
     saveRecentSearch,
     removeRecentSearchItem,
     clearAllRecentSearches,
     resetSearch,
-    allConversations,
-  } = useMessageSearch();
+  } = useMessageSearch(allConversations);
 
   // ---------------------------------------------------------------------------
   // Animation — mirrors DraggableBottomSheet architecture exactly:
@@ -205,12 +211,23 @@ export function SearchSheet({ visible, onDismiss }: SearchSheetProps) {
   const [datePickerMode, setDatePickerMode] = useState<DatePickerMode>("after");
   const [datePickerValue, setDatePickerValue] = useState(new Date());
   const [showAndroidPicker, setShowAndroidPicker] = useState(false);
+  const initialConversationCountRef = useRef(allConversations.length);
+
+  useEffect(() => {
+    log.debug("[SearchSheet] mounted", {
+      data: { conversationCount: initialConversationCountRef.current },
+    });
+    return () => {
+      log.debug("[SearchSheet] unmounted");
+    };
+  }, []);
 
   // =========================================================================
   // Open / Close — close animates out, then calls onDismiss to unmount
   // =========================================================================
 
   const doFinalClose = useCallback(() => {
+    log.debug("[SearchSheet] doFinalClose: resetting and dismissing");
     setFilterView("none");
     setShowAndroidPicker(false);
     resetSearch();
@@ -220,6 +237,7 @@ export function SearchSheet({ visible, onDismiss }: SearchSheetProps) {
   const closeSheet = useCallback(() => {
     if (isClosing.current) return;
     isClosing.current = true;
+    log.debug("[SearchSheet] closeSheet: starting dismiss animation");
     Keyboard.dismiss();
     translateY.value = withSpring(DISMISS_Y, SPRING_CONFIG, (finished) => {
       if (finished) {
@@ -231,6 +249,7 @@ export function SearchSheet({ visible, onDismiss }: SearchSheetProps) {
   // Open animation: spring from DISMISS_Y → OPEN_Y
   useEffect(() => {
     if (visible) {
+      log.debug("[SearchSheet] opened");
       isClosing.current = false;
       translateY.value = withSpring(OPEN_Y, SPRING_CONFIG);
     }
@@ -400,7 +419,11 @@ export function SearchSheet({ visible, onDismiss }: SearchSheetProps) {
   const handleScopeSelect = useCallback(
     (key: ScopeFilter) => {
       Keyboard.dismiss();
-      setScopeFilter(scopeFilter === key ? "all" : key);
+      const next = scopeFilter === key ? "all" : key;
+      log.debug("[SearchSheet] scope filter", {
+        data: { from: scopeFilter, to: next },
+      });
+      setScopeFilter(next);
       setFilterView("none");
     },
     [scopeFilter, setScopeFilter],
@@ -410,7 +433,11 @@ export function SearchSheet({ visible, onDismiss }: SearchSheetProps) {
   const handleContentSelect = useCallback(
     (key: ContentFilter) => {
       Keyboard.dismiss();
-      setContentFilter(contentFilter === key ? "all" : key);
+      const next = contentFilter === key ? "all" : key;
+      log.debug("[SearchSheet] content filter", {
+        data: { from: contentFilter, to: next },
+      });
+      setContentFilter(next);
       setFilterView("none");
     },
     [contentFilter, setContentFilter],
@@ -501,6 +528,7 @@ export function SearchSheet({ visible, onDismiss }: SearchSheetProps) {
   const handleBrowseShortcut = useCallback(
     (key: ContentFilter) => {
       Keyboard.dismiss();
+      log.debug("[SearchSheet] browse shortcut", { data: { content: key } });
       setContentFilter(key);
     },
     [setContentFilter],
@@ -508,6 +536,7 @@ export function SearchSheet({ visible, onDismiss }: SearchSheetProps) {
 
   /** Clear all filters at once */
   const handleClearAllFilters = useCallback(() => {
+    log.debug("[SearchSheet] clearing all filters");
     setScopeFilter("all");
     setContentFilter("all");
     setDateRange({});
@@ -549,15 +578,51 @@ export function SearchSheet({ visible, onDismiss }: SearchSheetProps) {
 
   const sentOn = isSentOnRange(dateRange);
 
+  const resultBranch = isSearching
+    ? "loading"
+    : error
+      ? "error"
+      : hasSearched && results.length > 0
+        ? "results"
+        : hasSearched
+          ? "empty"
+          : "pre-search";
+
+  useEffect(() => {
+    if (!visible) return;
+    log.debug("[SearchSheet] render branch", {
+      data: {
+        branch: resultBranch,
+        filterView,
+        queryLen: query.trim().length,
+        hasActiveFilters,
+        isSearching,
+        hasSearched,
+        resultCount: results.length,
+        hasError: !!error,
+      },
+    });
+  }, [
+    visible,
+    resultBranch,
+    filterView,
+    query,
+    hasActiveFilters,
+    isSearching,
+    hasSearched,
+    results.length,
+    error,
+  ]);
+
   // Contacts list for person picker (extracted from DM conversations)
   const contacts = useMemo(() => {
     const seen = new Set<string>();
-    const list: Array<{
+    const list: {
       userId: string;
       displayName: string;
       avatarUrl: string | null;
       decorationId: string | null;
-    }> = [];
+    }[] = [];
     for (const c of allConversations) {
       if (c.type === "dm" && c.otherUserId && !seen.has(c.otherUserId)) {
         seen.add(c.otherUserId);
@@ -837,8 +902,33 @@ export function SearchSheet({ visible, onDismiss }: SearchSheetProps) {
                 </>
               )}
 
+              {/* Error */}
+              {!isSearching && error && (
+                <View style={styles.emptyContainer}>
+                  <MaterialCommunityIcons
+                    name="alert-circle-outline"
+                    size={48}
+                    color={colors.error || "#ef4444"}
+                  />
+                  <Text style={[styles.emptyTitle, { color: colors.text }]}>
+                    Search could not finish
+                  </Text>
+                  <Text
+                    style={[
+                      styles.emptySubtitle,
+                      { color: colors.textSecondary },
+                    ]}
+                  >
+                    {error}
+                  </Text>
+                </View>
+              )}
+
               {/* Empty results */}
-              {!isSearching && hasSearched && results.length === 0 && (
+              {!isSearching &&
+                !error &&
+                hasSearched &&
+                results.length === 0 && (
                 <View style={styles.emptyContainer}>
                   <MaterialCommunityIcons
                     name="magnify-close"

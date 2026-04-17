@@ -49,6 +49,10 @@ export interface ComputeUnreadCountInput {
  * 2) manual unread marker wins
  * 3) otherwise compare last activity vs private read watermark (+ tolerance)
  * 4) fallback to server-provided unread hint only when private watermark is absent
+ *
+ * When the conversation IS unread, returns the server-provided
+ * `unreadHintCount` so badges display the true message count.
+ * Falls back to 1 when no server count is available (fan-out mode).
  */
 export function computeUnreadCount(input: ComputeUnreadCountInput): number {
   const {
@@ -60,6 +64,10 @@ export function computeUnreadCount(input: ComputeUnreadCountInput): number {
     lastMessageSenderId,
     currentUserId,
   } = input;
+
+  // Prefer the server-provided count when we know the conversation is unread.
+  // In fan-out mode (no server inbox doc) unreadHintCount is 0 → fall back to 1.
+  const countWhenUnread = unreadHintCount > 0 ? unreadHintCount : 1;
 
   // The sender's own messages should never produce an unread badge.
   if (
@@ -78,17 +86,17 @@ export function computeUnreadCount(input: ComputeUnreadCountInput): number {
     memberState.lastMarkedUnreadAt &&
     memberState.lastMarkedUnreadAt > memberState.lastSeenAtPrivate
   ) {
-    return 1;
+    return countWhenUnread;
   }
 
   if (lastActivityAt > memberState.lastSeenAtPrivate + UNREAD_TOLERANCE_MS) {
-    return 1;
+    return countWhenUnread;
   }
 
   // If no private watermark exists yet (cold start/new member doc), respect
   // any server-side unread hint as a best-effort fallback.
   if (!memberState.lastSeenAtPrivate && unreadHintCount > 0) {
-    return 1;
+    return countWhenUnread;
   }
 
   return 0;
@@ -154,6 +162,12 @@ export function normalizeConversationRow(
     lastMessageSenderId,
     currentUserId,
   });
+
+  if (__DEV__ && unreadCount > 0) {
+    console.log(
+      `[normalizeInboxRow] ${id} unread=${unreadCount} (hint=${unreadHintCount ?? 0})`,
+    );
+  }
 
   return {
     id,

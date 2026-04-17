@@ -161,10 +161,15 @@ function ChatMessageListInner<T>(
     [],
   );
 
-  // Scroll to bottom (for inverted list, this is offset 0)
-  const scrollToBottom = useCallback((animated = true) => {
-    flatListRef.current?.scrollToOffset({ offset: 0, animated });
-  }, []);
+  // Scroll to bottom (for inverted list, visual bottom = -contentInset.top
+  // on the KCSV path, or offset 0 on fallback).  Delegates to the unified
+  // scroll state's scrollToLatest which uses the inset-aware offset.
+  const scrollToBottom = useCallback(
+    (animated = true) => {
+      scrollState.scrollToLatest();
+    },
+    [scrollState],
+  );
 
   // Scroll to index
   const scrollToIndex = useCallback(

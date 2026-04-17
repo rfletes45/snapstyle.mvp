@@ -79,3 +79,27 @@ export async function stopCallAudioSession(): Promise<void> {
     console.warn("[CallSessionManager] callManager.stop failed:", err);
   }
 }
+
+/**
+ * Re-apply the audio output endpoint (speaker / earpiece) **without**
+ * restarting the native audio session.
+ *
+ * Use this after `call.join()` returns to ensure the correct audio route
+ * is active. The Stream SDK's internal `callManager.start()` during join
+ * may have changed the route, and calling `startCallAudioSession()` again
+ * would trigger another `adm.reset()` on iOS.
+ */
+export function reanchorAudioEndpoint(
+  deviceEndpointType: CallAudioDeviceEndpoint,
+): void {
+  const callManager = getCallManager();
+  if (!callManager?.speaker?.setForceSpeakerphoneOn) {
+    return;
+  }
+
+  const wantsSpeaker = deviceEndpointType === "speaker";
+  callManager.speaker.setForceSpeakerphoneOn(wantsSpeaker);
+  console.info(
+    `[CallSessionManager] Re-anchored audio endpoint to ${deviceEndpointType}`,
+  );
+}

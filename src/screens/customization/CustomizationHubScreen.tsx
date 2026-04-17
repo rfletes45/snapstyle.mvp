@@ -774,7 +774,13 @@ export default function CustomizationHubScreen({
     picture,
     decoration,
     refresh: refreshPicture,
-  } = useProfilePicture({ userId: uid });
+  } = useProfilePicture({
+    userId: uid,
+    seed: {
+      picture: baseProfile?.profilePicture,
+      decoration: baseProfile?.avatarDecoration,
+    },
+  });
 
   // Section & tab from route params
   const initialTab = route?.params?.initialTab;

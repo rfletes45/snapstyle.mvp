@@ -364,6 +364,16 @@ export const createGameInviteV4 = functions.https.onCall(
     trace.mark("tx_start");
     await db.runTransaction(async (tx) => {
       const convSnap = await tx.get(convRef);
+
+      if (!convSnap.exists) {
+        // Guard: the conversation doc must exist — assertConversationMember
+        // already verified this, but a concurrent delete is possible.
+        throw new functions.https.HttpsError(
+          "not-found",
+          "Conversation not found. The chat may have been deleted.",
+        );
+      }
+
       const current: string[] =
         convSnap.data()?.[PINNED_INVITE_IDS_FIELD] || [];
 
@@ -376,21 +386,47 @@ export const createGameInviteV4 = functions.https.onCall(
       }
 
       tx.set(inviteRef, invite);
-      tx.update(convRef, { [PINNED_INVITE_IDS_FIELD]: updated });
+      tx.update(convRef, {
+        [PINNED_INVITE_IDS_FIELD]: updated,
+        // Bump lastMessageAt so the conversation surfaces in the recipient's
+        // inbox.  Without this, DMs that haven't had recent messages stay
+        // buried and the recipient never discovers the invite.
+        lastMessageAt: now,
+      });
     });
     trace.mark("tx_committed");
 
     // PERF: Fan-out notifications fire-and-forget — don't block the response.
     // Notifications are non-critical for the invite creation success path.
     getConversationMemberIds(input.conversationId, input.conversationScope)
-      .then((memberIds) => notifyInviteCreated(invite, displayName, memberIds))
+      .then((memberIds) => {
+        const recipientCount = memberIds.filter((m) => m !== uid).length;
+        if (recipientCount === 0) {
+          console.warn(
+            `[gamesV4] No recipients for invite ${inviteId} — ` +
+              `memberIds=${JSON.stringify(memberIds)}, sender=${uid}, ` +
+              `scope=${input.conversationScope}, conv=${input.conversationId}`,
+          );
+          return;
+        }
+        console.log(
+          `[gamesV4] Sending invite notifications for ${inviteId} to ` +
+            `${recipientCount} recipient(s) ` +
+            `(scope=${input.conversationScope})`,
+        );
+        return notifyInviteCreated(invite, displayName, memberIds);
+      })
       .catch((err) =>
-        console.error("[gamesV4] Failed to send invite notifications:", err),
+        console.error(
+          `[gamesV4] Failed to send invite notifications for ${inviteId}:`,
+          err,
+        ),
       );
 
     console.log(
       `[gamesV4] Invite ${inviteId} created by ${uid} for ${input.gameId} ` +
-        `in ${input.conversationScope}:${input.conversationId}`,
+        `in ${input.conversationScope}:${input.conversationId} ` +
+        `(pinned to ${convCollection}/${input.conversationId})`,
     );
     trace.end();
 

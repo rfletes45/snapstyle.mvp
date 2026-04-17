@@ -45,6 +45,7 @@ export {
 } from "./callSettingsValidator";
 
 export {
+  reanchorAudioEndpoint,
   requestCallPermissions,
   startCallAudioSession,
   stopCallAudioSession,
@@ -52,6 +53,7 @@ export {
 
 export {
   ensureMicrophonePublishing,
+  forceRefreshMicrophoneCapture,
   getMicrophonePublishSnapshot,
   runPostJoinMediaHealthCheck,
   schedulePostJoinMediaHealthCheck,

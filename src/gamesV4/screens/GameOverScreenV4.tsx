@@ -204,7 +204,13 @@ export default function GameOverScreenV4() {
           index: 1,
           routes: [
             { name: "MainTabs", params: { screen: "Messages" } },
-            { name: "ChatDetail", params: { friendUid } },
+            {
+              name: "ChatDetail",
+              params: {
+                friendUid,
+                initialData: { chatId: conversationId },
+              },
+            },
           ],
         }),
       );
@@ -299,8 +305,8 @@ export default function GameOverScreenV4() {
             ]}
           >
             {loadingSlow
-              ? "Still calculating results…"
-              : "Calculating results…"}
+              ? "Still processing results…"
+              : "Processing Results…"}
           </Text>
           {loadingSlow && (
             <Text

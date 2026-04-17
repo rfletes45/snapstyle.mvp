@@ -998,9 +998,21 @@ export function addWidget(
   size: WidgetSizeKey,
   config: WidgetInstance["config"] = {},
 ): WidgetInstance[] {
-  // Guard: don't add duplicate if an instance of this type already exists
-  const existing = widgets.find((w) => w.widgetType === widgetType);
-  if (existing) return widgets;
+  // If a hidden instance of this type exists, restore it instead of creating
+  // a duplicate. This makes "add from normal section" behave identically to
+  // "Restore Hidden".
+  const existingHidden = widgets.find(
+    (w) => w.widgetType === widgetType && !w.visible,
+  );
+  if (existingHidden) {
+    return restoreWidget(widgets, existingHidden.instanceId) ?? widgets;
+  }
+
+  // Guard: don't add duplicate if a visible instance already exists
+  const existingVisible = widgets.find(
+    (w) => w.widgetType === widgetType && w.visible,
+  );
+  if (existingVisible) return widgets;
 
   const bottomRow = getMaxPlacedRow(widgets.filter((w) => w.visible));
 

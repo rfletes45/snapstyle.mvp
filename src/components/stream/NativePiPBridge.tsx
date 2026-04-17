@@ -5,13 +5,20 @@
  * root-level place so direct video calls can enter system PiP from either the
  * full call screen or the in-app floating overlay, without mounting duplicate
  * PiP views during navigation transitions.
+ *
+ * IMPORTANT: Uses StreamCallProvider (context-only) instead of StreamCall
+ * (which mounts AppStateListener, DeviceStats, etc.) to avoid a duplicate
+ * AppStateListener race condition. DirectCallScreen already wraps in
+ * <StreamCall>, which provides the authoritative AppStateListener. Mounting
+ * a second one here causes two listeners to race on the same call.camera
+ * during foreground restore, corrupting camera state.
  */
 
 import { useStreamCall } from "@/contexts/StreamCallContext";
 import React from "react";
 
 let CallingState: any = null;
-let StreamCall: any = null;
+let StreamCallProvider: any = null;
 let RTCViewPipIOS: any = null;
 let useAutoEnterPiPEffect: (
   disablePictureInPicture: boolean | undefined,
@@ -21,10 +28,14 @@ let useCallStateHooks: any = null;
 try {
   const sdk = require("@stream-io/video-react-native-sdk");
   CallingState = sdk.CallingState;
-  StreamCall = sdk.StreamCall;
   RTCViewPipIOS = sdk.RTCViewPipIOS;
   useAutoEnterPiPEffect = sdk.useAutoEnterPiPEffect ?? useAutoEnterPiPEffect;
   useCallStateHooks = sdk.useCallStateHooks;
+
+  // Use StreamCallProvider (context-only) from bindings — NOT StreamCall
+  // which mounts AppStateListener and other side-effect components.
+  StreamCallProvider =
+    require("@stream-io/video-react-bindings").StreamCallProvider;
 } catch {
   // Stream SDK not available in this environment
 }
@@ -38,18 +49,15 @@ export function NativePiPBridge() {
     activeSession?.type === "direct_call" &&
     activeSession.mode === "video" &&
     !!activeCall &&
-    !!StreamCall;
+    !!StreamCallProvider;
 
   if (!shouldMount || !activeCall) return null;
 
-  // Error boundary prevents SDK hook failures from crashing the entire app.
-  // NativePiPBridge is mounted at the root level, so an unhandled throw here
-  // would take down every screen.
   return (
     <VideoRenderErrorBoundary fallback={null}>
-      <StreamCall call={activeCall}>
+      <StreamCallProvider call={activeCall}>
         <NativePiPBridgeContent />
-      </StreamCall>
+      </StreamCallProvider>
     </VideoRenderErrorBoundary>
   );
 }

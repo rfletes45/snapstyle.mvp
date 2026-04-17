@@ -6,6 +6,7 @@
  * mutually exclusive.
  */
 
+import * as functions from "firebase-functions";
 import { notifyUser } from "../notificationCenter";
 import type {
   GameId,
@@ -52,39 +53,71 @@ export async function notifyInviteCreated(
   senderDisplayName: string,
   recipientUids: string[],
 ): Promise<void> {
-  await Promise.all(
-    recipientUids
-      .filter((uid) => uid !== invite.createdBy)
-      .map((uid) =>
-        notifyUser({
-          recipientUid: uid,
-          type: "game_invite",
-          category: "games",
-          dedupeKey: `game_invite:${invite.inviteId}:${uid}`,
-          collapseKey: `game_invite:${invite.conversationId}`,
-          title: `${senderDisplayName} invited you to play`,
-          subtitle: gameName(invite.gameId),
-          body: `Tap to join the ${gameName(invite.gameId)} lobby`,
-          actorUid: invite.createdBy,
-          actorName: senderDisplayName,
+  const targets = recipientUids.filter((uid) => uid !== invite.createdBy);
+
+  functions.logger.info("[gamesV4:notify] notifyInviteCreated", {
+    inviteId: invite.inviteId,
+    gameId: invite.gameId,
+    scope: invite.conversationScope,
+    conversationId: invite.conversationId,
+    sender: invite.createdBy,
+    recipientCount: targets.length,
+  });
+
+  const results = await Promise.allSettled(
+    targets.map((uid) =>
+      notifyUser({
+        recipientUid: uid,
+        type: "game_invite",
+        category: "games",
+        dedupeKey: `game_invite:${invite.inviteId}:${uid}`,
+        collapseKey: `game_invite:${invite.conversationId}`,
+        title: `${senderDisplayName} invited you to play`,
+        subtitle: gameName(invite.gameId),
+        body: `Tap to join the ${gameName(invite.gameId)} lobby`,
+        actorUid: invite.createdBy,
+        actorName: senderDisplayName,
+        conversationId: invite.conversationId,
+        conversationScope: invite.conversationScope,
+        inviteId: invite.inviteId,
+        gameId: invite.gameId,
+        route: {
+          screen: "GameLobbyV4",
+          params: { inviteId: invite.inviteId },
+        },
+        data: {
+          inviteId: invite.inviteId,
           conversationId: invite.conversationId,
           conversationScope: invite.conversationScope,
-          inviteId: invite.inviteId,
           gameId: invite.gameId,
-          route: {
-            screen: "GameLobbyV4",
-            params: { inviteId: invite.inviteId },
-          },
-          data: {
-            inviteId: invite.inviteId,
-            conversationId: invite.conversationId,
-            conversationScope: invite.conversationScope,
-            gameId: invite.gameId,
-          },
-          respectConversationMute: true,
-        }),
-      ),
+        },
+        respectConversationMute: true,
+      }),
+    ),
   );
+
+  const failed = results.filter((r) => r.status === "rejected");
+  if (failed.length > 0) {
+    functions.logger.warn("[gamesV4:notify] Some invite notifications failed", {
+      inviteId: invite.inviteId,
+      total: targets.length,
+      failed: failed.length,
+      errors: failed.map((r) =>
+        r.status === "rejected" ? String(r.reason) : "",
+      ),
+    });
+  } else {
+    functions.logger.info(
+      "[gamesV4:notify] All invite notifications dispatched",
+      {
+        inviteId: invite.inviteId,
+        total: targets.length,
+        channels: results.map((r) =>
+          r.status === "fulfilled" ? r.value.channel : "error",
+        ),
+      },
+    );
+  }
 }
 
 export async function notifyTurn(
@@ -176,6 +209,7 @@ export async function notifyResolved(
             sessionId: result.sessionId,
             inviteId: result.inviteId,
             conversationId: result.conversationId,
+            conversationScope,
             gameId: result.gameId,
             resolutionType: result.resolutionType,
           },
@@ -191,6 +225,12 @@ export async function notifyPlayerJoinedLobby(
 ): Promise<void> {
   if (!invite.hostId) return;
 
+  // Resolve the joiner's uid from the invite's participant list — the joiner
+  // is the most-recently-added participant who isn't the host.
+  const joinerUid =
+    [...invite.participantIds].reverse().find((p) => p !== invite.hostId) ??
+    null;
+
   await notifyUser({
     recipientUid: invite.hostId,
     type: "game_lobby_ready",
@@ -200,6 +240,7 @@ export async function notifyPlayerJoinedLobby(
     title: `${joinerDisplayName} joined your lobby`,
     subtitle: gameName(invite.gameId),
     body: "Your game is ready to start!",
+    actorUid: joinerUid,
     actorName: joinerDisplayName,
     conversationId: invite.conversationId,
     conversationScope: invite.conversationScope,

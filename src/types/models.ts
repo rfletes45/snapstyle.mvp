@@ -2,6 +2,7 @@
 
 import type { ConversationDisplayMode } from "@/chat/displayMode";
 import type { ChatAppearance } from "@/cosmetics/types";
+import type { ProfilePicture, UserAvatarDecoration } from "./userProfile";
 
 export interface User {
   uid: string;
@@ -12,6 +13,12 @@ export interface User {
   expoPushToken?: string;
   createdAt: number;
   lastActive: number;
+
+  /** Profile picture (url + thumbnail) — present in the Firestore doc */
+  profilePicture?: ProfilePicture;
+
+  /** Equipped avatar decoration — present in the Firestore doc */
+  avatarDecoration?: UserAvatarDecoration;
 
   /** Equipped background cosmetic ID (unified cosmetics system) */
   equippedBackgroundId?: string | null;

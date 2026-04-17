@@ -489,6 +489,12 @@ export function InAppNotificationsProvider({ children }: ProviderProps) {
             now - item.createdAtMs > INITIAL_STALE_NOTIFICATION_MS);
 
         if (shouldSilence) {
+          if (__DEV__ && item.type?.startsWith("game_")) {
+            log.info(
+              `[InApp] Game notification silenced: type=${item.type} id=${item.id} ` +
+                `reason=${!enabled ? "disabled" : appState !== "active" ? "inactive" : "stale_on_hydrate"}`,
+            );
+          }
           markUserNotificationPresented(uid, item.id).catch((error) => {
             log.warn("Failed to mark stale notification presented", error);
           });
@@ -496,6 +502,12 @@ export function InAppNotificationsProvider({ children }: ProviderProps) {
         }
 
         const toast = buildToast(item);
+        if (__DEV__ && item.type?.startsWith("game_")) {
+          log.info(
+            `[InApp] Game notification received: type=${item.type} id=${item.id} ` +
+              `toast=${toast ? "built" : "null (normalize failed)"}`,
+          );
+        }
         markUserNotificationPresented(uid, item.id).catch((error) => {
           log.warn("Failed to mark notification presented", error);
         });

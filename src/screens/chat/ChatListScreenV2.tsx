@@ -80,6 +80,8 @@ import {
 } from "./requestsTabUtils";
 // Theme
 
+const interactionLog = log.child("InboxInteraction");
+
 // =============================================================================
 // Types
 // =============================================================================
@@ -105,6 +107,21 @@ export default function ChatListScreen() {
   // ── Contacts enablement banner state ────────────────────────────────
   const contactsPerm = useContactsPermission();
   const contactsDiscovery = useContactsDiscovery(uid || undefined);
+
+  // Data from useInboxData hook
+  const {
+    pinnedConversations,
+    regularConversations,
+    allConversations,
+    loading,
+    error,
+    totalUnread,
+    filter,
+    setFilter,
+    refresh,
+    markConversationReadOptimistic,
+    togglePinOptimistic,
+  } = useInboxData(uid);
 
   // "New user" = account created < 14 days ago
   const isNewUser = useMemo(() => {
@@ -163,19 +180,17 @@ export default function ChatListScreen() {
     setCurrentScreen,
   } = useInAppNotifications();
 
-  // Data from useInboxData hook
-  const {
-    pinnedConversations,
-    regularConversations,
-    loading,
-    error,
-    totalUnread,
-    filter,
-    setFilter,
-    refresh,
-    markConversationReadOptimistic,
-    togglePinOptimistic,
-  } = useInboxData(uid);
+  React.useEffect(() => {
+    if (!__DEV__) return;
+    interactionLog.debug("Messages screen mounted", {
+      data: { hasUid: !!uid },
+    });
+    return () => {
+      interactionLog.debug("Messages screen unmounted", {
+        data: { hasUid: !!uid },
+      });
+    };
+  }, [uid]);
 
   React.useEffect(() => {
     const requestedFilter = route.params?.initialFilter;
@@ -232,6 +247,65 @@ export default function ChatListScreen() {
 
   // Search sheet state
   const [searchSheetVisible, setSearchSheetVisible] = useState(false);
+
+  React.useEffect(() => {
+    if (!__DEV__) return;
+    interactionLog.debug("overlay state changed", {
+      data: {
+        contextMenuVisible: contextMenu.visible,
+        contextConversationId: contextMenu.conversation?.id ?? null,
+        contextConversationType: contextMenu.conversation?.type ?? null,
+        muteSheetVisible,
+        muteConversationId: muteTargetConversation?.id ?? null,
+        deleteDialogVisible,
+        deleteConversationId: deleteTargetConversation?.id ?? null,
+        searchSheetVisible,
+      },
+    });
+  }, [
+    contextMenu.conversation?.id,
+    contextMenu.conversation?.type,
+    contextMenu.visible,
+    deleteDialogVisible,
+    deleteTargetConversation?.id,
+    muteSheetVisible,
+    muteTargetConversation?.id,
+    searchSheetVisible,
+  ]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (__DEV__) {
+        interactionLog.debug("Messages screen focused", {
+          data: {
+            filter,
+            regularCount: regularConversations.length,
+            pinnedCount: pinnedConversations.length,
+            contextMenuVisible: contextMenu.visible,
+            muteSheetVisible,
+            deleteDialogVisible,
+            searchSheetVisible,
+          },
+        });
+      }
+
+      return () => {
+        if (__DEV__) {
+          interactionLog.debug("Messages screen blurred", {
+            data: { filter },
+          });
+        }
+      };
+    }, [
+      contextMenu.visible,
+      deleteDialogVisible,
+      filter,
+      muteSheetVisible,
+      pinnedConversations.length,
+      regularConversations.length,
+      searchSheetVisible,
+    ]),
+  );
 
   // Unified inbox requests (friend requests + group invites + message requests)
   const {
@@ -334,6 +408,16 @@ export default function ChatListScreen() {
    */
   const handleConversationPressIn = useCallback(
     (conversation: InboxConversation) => {
+      if (__DEV__) {
+        interactionLog.debug("press-in warmup callback", {
+          data: {
+            conversationId: conversation.id,
+            type: conversation.type,
+            hasOtherUserId: !!conversation.otherUserId,
+          },
+        });
+      }
+
       if (conversation.type === "dm") {
         prepareDmThreadEntry({
           avatarUrl: conversation.profilePictureUrl || conversation.avatarUrl,
@@ -421,97 +505,148 @@ export default function ChatListScreen() {
 
   const handleConversationPress = useCallback(
     (conversation: InboxConversation) => {
-      // Optimistically mark as read in local state (immediate UI update)
-      markConversationReadOptimistic(conversation.id, conversation.type);
-
-      // Also persist to Firestore (background operation)
-      actions.markRead(conversation);
-
-      if (conversation.type === "dm") {
-        // OPTIMIZATION: Navigate immediately, warm identity assets in background.
-        // Previously this awaited prepareDmThreadEntry before navigating,
-        // adding 100-300ms of delay before the screen transition even started.
-        prepareDmThreadEntry({
-          avatarUrl: conversation.profilePictureUrl || conversation.avatarUrl,
-          decorationId: conversation.decorationId,
-        }).catch((error) => {
-          log.warn("[Inbox] Failed to warm DM thread identity", { error });
-        });
-
-        navigation.navigate("ChatDetail", {
-          friendUid: conversation.otherUserId,
-          // OPTIMIZATION: Pass cached data for instant display
-          // This eliminates refetching when opening a chat
-          initialData: {
-            chatId: conversation.id,
-            friendName: conversation.name,
-            friendAvatar:
-              conversation.profilePictureUrl || conversation.avatarUrl,
-            friendAvatarConfig: conversation.avatarConfig,
-            friendDecorationId: conversation.decorationId,
+      if (__DEV__) {
+        interactionLog.debug("tap callback received", {
+          data: {
+            conversationId: conversation.id,
+            type: conversation.type,
+            hasOtherUserId: !!conversation.otherUserId,
           },
         });
-      } else {
-        const prepared = getPreparedGroupChatData(
-          conversation.id,
-          "chat-list-press",
-        );
-        const initialGroupData = {
-          name: conversation.name || prepared?.name || "",
-          avatarUrl:
-            normalizeRemoteImageUrl(
-              conversation.avatarUrl ?? prepared?.avatarUrl,
-            ) ?? null,
-          backgroundUrl:
-            normalizeRemoteImageUrl(
-              conversation.backgroundUrl !== undefined
-                ? conversation.backgroundUrl
-                : prepared?.backgroundUrl,
-            ) ?? null,
-        };
+      }
 
-        rememberPreparedGroupChatData(
-          conversation.id,
-          initialGroupData,
-          "chat-list-press",
-        );
+      try {
+        // Optimistically mark as read in local state (immediate UI update)
+        markConversationReadOptimistic(conversation.id, conversation.type);
 
-        if (__DEV__) {
-          traceGroupWallpaper(conversation.id, "chat-list-press", {
-            hasConversationBackground: !!conversation.backgroundUrl,
-            preparedBackground: !!prepared?.backgroundUrl,
-            navigatedBackground: !!initialGroupData.backgroundUrl,
+        // Also persist to Firestore (background operation)
+        void actions.markRead(conversation).catch((error) => {
+          interactionLog.warn("mark-read failed after tap", {
+            data: {
+              conversationId: conversation.id,
+              type: conversation.type,
+              error,
+            },
+          });
+        });
+
+        if (conversation.type === "dm") {
+          // OPTIMIZATION: Navigate immediately, warm identity assets in background.
+          // Previously this awaited prepareDmThreadEntry before navigating,
+          // adding 100-300ms of delay before the screen transition even started.
+          prepareDmThreadEntry({
+            avatarUrl: conversation.profilePictureUrl || conversation.avatarUrl,
+            decorationId: conversation.decorationId,
+          }).catch((error) => {
+            log.warn("[Inbox] Failed to warm DM thread identity", { error });
+          });
+
+          if (__DEV__) {
+            interactionLog.debug("navigation attempt", {
+              data: {
+                route: "ChatDetail",
+                conversationId: conversation.id,
+                type: conversation.type,
+                hasFriendUid: !!conversation.otherUserId,
+              },
+            });
+          }
+
+          navigation.navigate("ChatDetail", {
+            friendUid: conversation.otherUserId,
+            // OPTIMIZATION: Pass cached data for instant display
+            // This eliminates refetching when opening a chat
+            initialData: {
+              chatId: conversation.id,
+              friendName: conversation.name,
+              friendAvatar:
+                conversation.profilePictureUrl || conversation.avatarUrl,
+              friendAvatarConfig: conversation.avatarConfig,
+              friendDecorationId: conversation.decorationId,
+            },
+          });
+        } else {
+          const prepared = getPreparedGroupChatData(
+            conversation.id,
+            "chat-list-press",
+          );
+          const initialGroupData = {
+            name: conversation.name || prepared?.name || "",
+            avatarUrl:
+              normalizeRemoteImageUrl(
+                conversation.avatarUrl ?? prepared?.avatarUrl,
+              ) ?? null,
+            backgroundUrl:
+              normalizeRemoteImageUrl(
+                conversation.backgroundUrl !== undefined
+                  ? conversation.backgroundUrl
+                  : prepared?.backgroundUrl,
+              ) ?? null,
+          };
+
+          rememberPreparedGroupChatData(
+            conversation.id,
+            initialGroupData,
+            "chat-list-press",
+          );
+
+          if (__DEV__) {
+            traceGroupWallpaper(conversation.id, "chat-list-press", {
+              hasConversationBackground: !!conversation.backgroundUrl,
+              preparedBackground: !!prepared?.backgroundUrl,
+              navigatedBackground: !!initialGroupData.backgroundUrl,
+            });
+          }
+
+          // OPTIMIZATION: Navigate immediately with data we already have,
+          // rather than awaiting prepareGroupChatNavigation which performs
+          // Firestore reads and image prefetching before navigation starts.
+          // The group screen will load full data via its own subscriptions.
+          const navParams: {
+            groupId: string;
+            groupName?: string;
+            initialGroupData?: {
+              name: string;
+              avatarUrl: string | null;
+              backgroundUrl: string | null;
+            };
+          } = {
+            groupId: conversation.id,
+            groupName: initialGroupData.name || conversation.name,
+            initialGroupData,
+          };
+
+          if (__DEV__) {
+            interactionLog.debug("navigation attempt", {
+              data: {
+                route: "GroupChat",
+                conversationId: conversation.id,
+                type: conversation.type,
+                hasGroupId: !!navParams.groupId,
+              },
+            });
+          }
+
+          navigation.navigate("GroupChat", navParams);
+
+          // Warm identity assets in background (non-blocking)
+          void prepareGroupChatNavigation({
+            groupId: conversation.id,
+            groupName: initialGroupData.name || undefined,
+            groupAvatarUrl: initialGroupData.avatarUrl,
+            backgroundUrl: initialGroupData.backgroundUrl,
+          }).catch((err) => {
+            log.warn("[Inbox] Background group warmup failed", { err });
           });
         }
-
-        // OPTIMIZATION: Navigate immediately with data we already have,
-        // rather than awaiting prepareGroupChatNavigation which performs
-        // Firestore reads and image prefetching before navigation starts.
-        // The group screen will load full data via its own subscriptions.
-        const navParams: {
-          groupId: string;
-          groupName?: string;
-          initialGroupData?: {
-            name: string;
-            avatarUrl: string | null;
-            backgroundUrl: string | null;
-          };
-        } = {
-          groupId: conversation.id,
-          groupName: initialGroupData.name || conversation.name,
-          initialGroupData,
-        };
-        navigation.navigate("GroupChat", navParams);
-
-        // Warm identity assets in background (non-blocking)
-        void prepareGroupChatNavigation({
-          groupId: conversation.id,
-          groupName: initialGroupData.name || undefined,
-          groupAvatarUrl: initialGroupData.avatarUrl,
-          backgroundUrl: initialGroupData.backgroundUrl,
-        }).catch((err) => {
-          log.warn("[Inbox] Background group warmup failed", { err });
+      } catch (error) {
+        interactionLog.error("tap callback failed", error, {
+          data: {
+            conversationId: conversation.id,
+            type: conversation.type,
+          },
         });
+        throw error;
       }
     },
     [navigation, actions, markConversationReadOptimistic],
@@ -533,10 +668,33 @@ export default function ChatListScreen() {
       conversation: InboxConversation,
       event?: { pageX: number; pageY: number },
     ) => {
+      if (__DEV__) {
+        interactionLog.debug("long-press callback received", {
+          data: {
+            conversationId: conversation.id,
+            type: conversation.type,
+            hasPosition: !!event,
+            pageX: event?.pageX,
+            pageY: event?.pageY,
+          },
+        });
+      }
+
       // Show context menu at touch position
       const position = event
         ? { x: event.pageX, y: event.pageY }
         : { x: 100, y: 200 }; // fallback position
+
+      if (__DEV__) {
+        interactionLog.debug("context-menu open attempt", {
+          data: {
+            conversationId: conversation.id,
+            type: conversation.type,
+            x: position.x,
+            y: position.y,
+          },
+        });
+      }
 
       setContextMenu({
         visible: true,
@@ -548,18 +706,32 @@ export default function ChatListScreen() {
   );
 
   const handleCloseContextMenu = useCallback(() => {
+    if (__DEV__) {
+      interactionLog.debug("context-menu close", {
+        data: {
+          conversationId: contextMenu.conversation?.id ?? null,
+          type: contextMenu.conversation?.type ?? null,
+        },
+      });
+    }
     setContextMenu({
       visible: false,
       position: { x: 0, y: 0 },
       conversation: null,
     });
-  }, []);
+  }, [contextMenu.conversation?.id, contextMenu.conversation?.type]);
 
   const handleSearchPress = useCallback(() => {
+    if (__DEV__) {
+      interactionLog.debug("search sheet open requested");
+    }
     setSearchSheetVisible(true);
   }, []);
 
   const handleSearchDismiss = useCallback(() => {
+    if (__DEV__) {
+      interactionLog.debug("search sheet dismissed");
+    }
     setSearchSheetVisible(false);
   }, []);
 
@@ -880,6 +1052,7 @@ export default function ChatListScreen() {
             conversations={pinnedConversations}
             typingMap={inboxTyping}
             onConversationPress={handleConversationPress}
+            onConversationPressIn={handleConversationPressIn}
             onAvatarPress={handleAvatarPress}
             onLongPress={handleLongPress}
           />
@@ -896,6 +1069,7 @@ export default function ChatListScreen() {
     pinnedConversations,
     inboxTyping,
     handleConversationPress,
+    handleConversationPressIn,
     handleAvatarPress,
     handleLongPress,
   ]);
@@ -1109,6 +1283,7 @@ export default function ChatListScreen() {
       <SearchSheet
         visible={searchSheetVisible}
         onDismiss={handleSearchDismiss}
+        allConversations={allConversations}
       />
     </View>
   );

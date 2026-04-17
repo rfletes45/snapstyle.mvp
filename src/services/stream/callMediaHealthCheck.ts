@@ -71,7 +71,9 @@ export function getMicrophonePublishSnapshot(
   const canSendAudio = !!call.state.ownCapabilities?.includes(
     OwnCapability.SEND_AUDIO,
   );
-  const localPublishedAudio = localParticipant ? hasAudio(localParticipant) : false;
+  const localPublishedAudio = localParticipant
+    ? hasAudio(localParticipant)
+    : false;
   const publishedTracks = [...(localParticipant?.publishedTracks ?? [])];
   const hasMediaStream = !!mediaStream;
   const hasLiveAudioTrack = audioTracks.some(
@@ -143,10 +145,12 @@ export async function ensureMicrophonePublishing(
   call: Call,
   context: string,
   options: EnsureMicrophonePublishingOptions = {},
-): Promise<MicrophonePublishSnapshot & {
-  recovered: boolean;
-  recoveryAttempts: number;
-}> {
+): Promise<
+  MicrophonePublishSnapshot & {
+    recovered: boolean;
+    recoveryAttempts: number;
+  }
+> {
   const settleMs = options.settleMs ?? 0;
   const recoveryAttempts = options.recoveryAttempts ?? 2;
   if (settleMs > 0) await delay(settleMs);
@@ -198,7 +202,9 @@ export async function ensureMicrophonePublishing(
       snapshot = getMicrophonePublishSnapshot(call);
       recovered = snapshot.healthy;
       if (recovered) {
-        console.info(`${TAG} [${context}] Audio republish restored mic publish.`);
+        console.info(
+          `${TAG} [${context}] Audio republish restored mic publish.`,
+        );
         return { ...snapshot, recovered, recoveryAttempts: attemptsUsed };
       }
     }
@@ -280,4 +286,123 @@ export function schedulePostJoinMediaHealthCheck(
   runPostJoinMediaHealthCheck(call, context, delayMs).catch((err) => {
     console.warn(`${TAG} [${context}] Health check failed unexpectedly:`, err);
   });
+}
+
+// ---------------------------------------------------------------------------
+// Post-join forced mic refresh
+// ---------------------------------------------------------------------------
+
+/**
+ * Delay (ms) after join() returns before restarting the microphone.
+ *
+ * The Stream SDK's Call.join() internally calls `callManager.start()` which
+ * dispatches native audio-session work (`adm.reset()` → reconfigure →
+ * restore) on an async dispatch queue. We must wait for that work to complete
+ * before creating a fresh capture, otherwise the new capture is immediately
+ * invalidated by the pending native reset.
+ */
+const POST_JOIN_NATIVE_SETTLE_MS = 300;
+
+/**
+ * Brief pause after tearing down the old mic capture and before starting
+ * a new one, so the native audio device module has time to fully release
+ * the previous recording session.
+ */
+const MIC_TEARDOWN_SETTLE_MS = 200;
+
+/**
+ * Pause after re-enabling the mic to let the publish round-trip complete
+ * and the SFU participant state update.
+ */
+const MIC_PUBLISH_SETTLE_MS = 400;
+
+/**
+ * Force-restart the microphone capture to create a fresh audio pipeline.
+ *
+ * **Why this is necessary:**
+ *
+ * The Stream SDK's `Call.join()` (in `@stream-io/video-client`) calls
+ * `applyDeviceConfig(settings, true)` → enables + publishes the mic, and
+ * then immediately calls `callManager.start()`. The native implementation
+ * of `start()` runs `setup()` which calls `adm.reset()` — resetting the
+ * WebRTC audio device module. This reset can disconnect the already-
+ * published MediaStreamTrack from the native audio capture.
+ *
+ * The track stays `readyState === "live"` and the SFU still lists the
+ * participant as publishing audio, so the health check reports
+ * `healthy: true` — but **no actual audio data flows**.
+ *
+ * The fix: disable the mic (stops old stale tracks), then re-enable it
+ * (getUserMedia → fresh capture connected to the post-reset ADM) → publish
+ * the new track. This is exactly what a manual mute/unmute does, which is
+ * why that user action "unsticks" the audio.
+ *
+ * @returns The final mic health snapshot after the refresh.
+ */
+export async function forceRefreshMicrophoneCapture(
+  call: Call,
+  context: string,
+): Promise<
+  MicrophonePublishSnapshot & { refreshed: boolean; refreshAttempts: number }
+> {
+  // Wait for the native audio-session reconfiguration queued by the SDK's
+  // internal callManager.start() to complete on the native dispatch queue.
+  await delay(POST_JOIN_NATIVE_SETTLE_MS);
+
+  const preSnapshot = getMicrophonePublishSnapshot(call);
+  console.info(
+    `${TAG} [${context}] Force mic refresh — pre-restart state:`,
+    preSnapshot,
+  );
+
+  if (!preSnapshot.canSendAudio) {
+    console.warn(
+      `${TAG} [${context}] No SEND_AUDIO capability — skipping mic refresh`,
+    );
+    return { ...preSnapshot, refreshed: false, refreshAttempts: 0 };
+  }
+
+  // ── Restart cycle ────────────────────────────────────────────────────
+  try {
+    // 1. Tear down the old (potentially stale) capture chain completely.
+    //    forceStop: true ensures tracks are stopped and the stream is released,
+    //    not merely muted/paused.
+    console.info(`${TAG} [${context}] Disabling mic (forceStop) for refresh`);
+    await call.microphone.disable({ forceStop: true });
+    await delay(MIC_TEARDOWN_SETTLE_MS);
+
+    // 2. Re-enable — getUserMedia() creates a new MediaStream with fresh
+    //    tracks that are connected to the post-reset audio device module.
+    //    Because callingState === JOINED, the SDK will also publish the new
+    //    stream to the SFU automatically.
+    console.info(`${TAG} [${context}] Re-enabling mic with fresh capture`);
+    await call.microphone.enable();
+    await waitForSettledDeviceState(call);
+    await delay(MIC_PUBLISH_SETTLE_MS);
+  } catch (err) {
+    console.warn(`${TAG} [${context}] Error during mic refresh cycle:`, err);
+  }
+
+  // ── Verify ───────────────────────────────────────────────────────────
+  let postSnapshot = getMicrophonePublishSnapshot(call);
+  console.info(
+    `${TAG} [${context}] Force mic refresh — post-restart state:`,
+    postSnapshot,
+  );
+
+  if (postSnapshot.healthy) {
+    return { ...postSnapshot, refreshed: true, refreshAttempts: 1 };
+  }
+
+  // ── Fallback: full recovery if the first restart didn't stick ────────
+  console.warn(
+    `${TAG} [${context}] Mic unhealthy after first refresh — running full recovery`,
+  );
+  const recovery = await ensureMicrophonePublishing(
+    call,
+    `${context} post-refresh-recovery`,
+    { settleMs: 0, recoveryAttempts: 2, forceEnable: true },
+  );
+
+  return { ...recovery, refreshed: true, refreshAttempts: 2 };
 }

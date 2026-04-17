@@ -208,7 +208,7 @@ const WIDGET_DEFINITIONS: WidgetTypeDefinition[] = [
     canConfigure: false,
     defaultPlacementHint: "middle",
     maxInstances: 1,
-    visibilityMode: "all",
+    visibilityMode: "owner-only",
     interactiveForOwnerOnly: true,
   },
   {
@@ -226,7 +226,7 @@ const WIDGET_DEFINITIONS: WidgetTypeDefinition[] = [
     canConfigure: false,
     defaultPlacementHint: "bottom",
     maxInstances: 1,
-    visibilityMode: "all",
+    visibilityMode: "owner-only",
     interactiveForOwnerOnly: true,
   },
   {
@@ -244,7 +244,7 @@ const WIDGET_DEFINITIONS: WidgetTypeDefinition[] = [
     canConfigure: false,
     defaultPlacementHint: "bottom",
     maxInstances: 1,
-    visibilityMode: "all",
+    visibilityMode: "owner-only",
     interactiveForOwnerOnly: true,
   },
 ];

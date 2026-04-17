@@ -25,7 +25,10 @@ import { CallControlBar } from "@/components/stream/CallControlBar";
 import { VideoRenderErrorBoundary } from "@/components/stream/VideoRenderErrorBoundary";
 import { useStreamCall } from "@/contexts/StreamCallContext";
 import { callSettingsService } from "@/services/calls";
-import { ensureMicrophonePublishing } from "@/services/stream/callMediaHealthCheck";
+import {
+  forceRefreshMicrophoneCapture,
+  getMicrophonePublishSnapshot,
+} from "@/services/stream/callMediaHealthCheck";
 import { useAppTheme } from "@/store/ThemeContext";
 import type { MainStackParamList } from "@/types/navigation/root";
 import { requestCameraPermission } from "@/utils/permissions";
@@ -89,6 +92,7 @@ export default function VoiceChannelScreen({ route, navigation }: Props) {
   } = useStreamCall();
   const { colors } = useAppTheme();
   const [joinError, setJoinError] = useState<string | null>(null);
+  const [retryTrigger, setRetryTrigger] = useState(0);
   const joinAttemptedRef = useRef(false);
   const joinAttemptIdRef = useRef(0);
   const mountedRef = useRef(true);
@@ -148,9 +152,17 @@ export default function VoiceChannelScreen({ route, navigation }: Props) {
     joinAttemptedRef.current = true;
     const attemptId = ++joinAttemptIdRef.current;
 
+    console.info(
+      `[VoiceChannelScreen] Direct join attempt starting — groupId=${groupId}, channelId=${channelId}, attemptId=${attemptId}`,
+    );
+
     joinChannel(groupId, channelName).catch((err: any) => {
       if (attemptId !== joinAttemptIdRef.current) return;
-      console.error("[VoiceChannelScreen] joinChannel error:", err);
+      console.error("[VoiceChannelScreen] joinChannel error:", {
+        message: err?.message,
+        stage: err?.stage ?? "unknown",
+        streamCode: err?.streamCode ?? err?.code ?? null,
+      });
       joinAttemptedRef.current = false;
       if (mountedRef.current) {
         setJoinError(err?.message || "Failed to join voice channel");
@@ -164,6 +176,7 @@ export default function VoiceChannelScreen({ route, navigation }: Props) {
     isBusy,
     isAlreadyInChannel,
     joinChannel,
+    retryTrigger,
     voiceRoomJoinState,
     wasChannelDeliberatelyLeft,
   ]);
@@ -216,6 +229,7 @@ export default function VoiceChannelScreen({ route, navigation }: Props) {
               setJoinError(null);
               joinAttemptIdRef.current += 1;
               joinAttemptedRef.current = false;
+              setRetryTrigger((n) => n + 1);
             }}
           >
             <Text style={styles.retryButtonText}>Retry</Text>
@@ -229,7 +243,9 @@ export default function VoiceChannelScreen({ route, navigation }: Props) {
               if (navigation.canGoBack()) navigation.goBack();
             }}
           >
-            <Text style={[styles.retryButtonText, { color: colors.text }]}>Go Back</Text>
+            <Text style={[styles.retryButtonText, { color: colors.text }]}>
+              Go Back
+            </Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -295,33 +311,44 @@ function VoiceChannelContent({
   const isJoined = callingState === CallingState.JOINED;
   const call = useCall();
 
-  // Post-join mic publish reconciliation. This checks the SFU-visible audio
-  // publication, not just the local optimistic microphone state.
+  // Post-join mic publish reconciliation.
+  // The service layer already does a forceRefreshMicrophoneCapture right
+  // after join, but screen remounts or reconnects can leave device state
+  // stale. This safety-net check runs 4s after JOINED and forces a full
+  // mic restart if audio is not flowing.
   const micReconciliationRef = useRef(false);
   useEffect(() => {
     if (!isJoined || !call || micReconciliationRef.current) return;
     micReconciliationRef.current = true;
 
     const timer = setTimeout(() => {
-      ensureMicrophonePublishing(call, "voice channel UI reconciliation", {
-        settleMs: 0,
-        recoveryAttempts: 1,
-      })
-        .then((snapshot) => {
-          if (!snapshot.healthy && snapshot.micIntendedEnabled) {
-            console.warn(
-              "[VoiceChannelScreen] Mic still not publishing after UI reconciliation:",
-              snapshot,
-            );
-          }
-        })
-        .catch((err: any) => {
-          console.warn("[VoiceChannelScreen] UI-level mic recovery failed:", err);
+      const snapshot = getMicrophonePublishSnapshot(call);
+      console.info(
+        "[VoiceChannelScreen] Mic reconciliation snapshot:",
+        snapshot,
+      );
+      if (!snapshot.healthy && snapshot.canSendAudio) {
+        console.warn(
+          "[VoiceChannelScreen] Mic unhealthy at reconciliation — force-refreshing",
+        );
+        forceRefreshMicrophoneCapture(
+          call,
+          "voice channel UI reconciliation",
+        ).catch((err: any) => {
+          console.warn(
+            "[VoiceChannelScreen] UI-level mic recovery failed:",
+            err,
+          );
         });
-    }, 3000);
+      }
+    }, 4000);
 
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      micReconciliationRef.current = false;
+    };
   }, [isJoined, call]);
+
   const [isSpeakerOn, setIsSpeakerOn] = useState(true); // Voice rooms default to speaker
   const [audioRoutePickerVisible, setAudioRoutePickerVisible] = useState(false);
   const [currentAudioRoute, setCurrentAudioRoute] =

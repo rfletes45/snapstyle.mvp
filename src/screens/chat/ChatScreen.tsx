@@ -1376,16 +1376,43 @@ export default function ChatScreen({
   // Games V4: handle game selection from picker
   const handleGameSelected = useCallback(
     async (gameId: GameId) => {
-      if (!chatId || !uid || gameInviteCreating) return;
+      if (!uid || gameInviteCreating) return;
+
+      // Resolve chatId on-demand if the screen was opened without one
+      // (e.g. from ProfilePreview, FriendsScreen, or CallsScreen).
+      let resolvedChatId = chatId;
+      if (!resolvedChatId) {
+        try {
+          resolvedChatId = await getOrCreateChat(uid, friendUid);
+          setChatId(resolvedChatId);
+        } catch (initErr: any) {
+          console.warn(
+            "[ChatScreen] Game invite blocked — chat init failed:",
+            initErr?.message,
+          );
+          Alert.alert(
+            "Game Error",
+            initErr?.message?.includes("Cannot chat")
+              ? "You cannot send a game invite to this user."
+              : "Could not initialize chat. Please try again.",
+          );
+          return;
+        }
+      }
+
       setGameInviteCreating(true);
       try {
+        console.log(
+          `[ChatScreen] Creating DM game invite: game=${gameId} chat=${resolvedChatId}`,
+        );
         const { inviteId } = await createGameInvite({
-          conversationId: chatId,
+          conversationId: resolvedChatId,
           conversationScope: "dm",
           gameId,
         });
         navigation.navigate("GameLobbyV4", { inviteId });
       } catch (err: any) {
+        console.warn("[ChatScreen] Game invite creation failed:", err?.message);
         const msg =
           err?.code === "functions/not-found" || err?.message === "not-found"
             ? "Game service is not available. Please make sure Cloud Functions are deployed."
@@ -1395,7 +1422,7 @@ export default function ChatScreen({
         setGameInviteCreating(false);
       }
     },
-    [chatId, uid, navigation, gameInviteCreating],
+    [chatId, uid, friendUid, navigation, gameInviteCreating],
   );
 
   const handleScheduleMessage = async (scheduledFor: Date) => {

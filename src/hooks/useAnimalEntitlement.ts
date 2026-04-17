@@ -12,15 +12,15 @@
  * @module hooks/useAnimalEntitlement
  */
 
-import { hasAnimalImage } from "@/cosmetics/animalAssets";
+import { DEFAULT_ANIMAL_THEME_ID, hasAnimalImage } from "@/cosmetics/animalAssets";
 import { getCosmeticById } from "@/cosmetics/catalog";
 import type { ChatAppearance } from "@/cosmetics/types";
 import { hasEntitlement } from "@/services/entitlements";
 import { useEffect, useState } from "react";
 
 interface AnimalEntitlementState {
-  /** The currently equipped animal ID (null if none equipped) */
-  equippedAnimalId: string | null;
+  /** The currently equipped animal ID (defaults to duck when none equipped) */
+  equippedAnimalId: string;
   /** Whether the user can send this animal (owned + equipped + valid) */
   canSend: boolean;
   /** Whether the entitlement check is still loading */
@@ -51,7 +51,9 @@ export function useAnimalEntitlement(
   uid: string | null | undefined,
   chatAppearance: ChatAppearance | null | undefined,
 ): AnimalEntitlementState {
-  const equippedAnimalId = chatAppearance?.animalThemeId ?? null;
+  const rawAnimalId = chatAppearance?.animalThemeId ?? null;
+  // Fall back to duck when nothing is equipped — duck is free and always valid
+  const equippedAnimalId = rawAnimalId ?? DEFAULT_ANIMAL_THEME_ID;
   const [canSend, setCanSend] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -59,8 +61,8 @@ export function useAnimalEntitlement(
     let cancelled = false;
 
     async function check() {
-      // No user or no equipped animal → can't send
-      if (!uid || !equippedAnimalId || !hasAnimalImage(equippedAnimalId)) {
+      // No user or invalid animal asset → can't send
+      if (!uid || !hasAnimalImage(equippedAnimalId)) {
         setCanSend(false);
         setLoading(false);
         return;

@@ -50,6 +50,7 @@ import { useTasksSummary } from "@/hooks/useTasksSummary";
 import { useTopStreaks } from "@/hooks/useTopStreaks";
 import { useWallet } from "@/hooks/useWallet";
 import { fetchUserActivities } from "@/services/activityFeed";
+import { getFriends } from "@/services/friends";
 
 import { useAuth } from "@/store/AuthContext";
 import { useConversationDisplayMode } from "@/store/ConversationDisplayModeContext";
@@ -88,12 +89,18 @@ export default function OwnProfileScreen({
   const { profile: fullProfile, refresh: refreshFullProfile } =
     useFullProfileData({ userId: currentFirebaseUser?.uid || "" });
 
-  // Profile picture hook
+  // Profile picture hook — seed from UserContext to avoid flash
   const {
     picture,
     decoration,
     refresh: refreshPicture,
-  } = useProfilePicture({ userId: currentFirebaseUser?.uid || "" });
+  } = useProfilePicture({
+    userId: currentFirebaseUser?.uid || "",
+    seed: {
+      picture: baseProfile?.profilePicture,
+      decoration: baseProfile?.avatarDecoration,
+    },
+  });
 
   // Derived from hook results
   const pictureUrl = picture?.url || null;
@@ -159,6 +166,24 @@ export default function OwnProfileScreen({
   } = useGameStatsV4();
 
   const pendingRewards = usePendingRewards();
+
+  // ── Friend Count ────────────────────────────────────────────────────
+
+  const [friendCount, setFriendCount] = useState(0);
+
+  useEffect(() => {
+    const uid = currentFirebaseUser?.uid;
+    if (!uid) return;
+    let cancelled = false;
+    getFriends(uid)
+      .then((list) => {
+        if (!cancelled) setFriendCount(list.length);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [currentFirebaseUser?.uid]);
 
   // ── New Widget Data Hooks ───────────────────────────────────────────
 
@@ -383,7 +408,7 @@ export default function OwnProfileScreen({
         totalGames: globalStats?.gamesPlayed ?? 0,
         totalWins: globalStats?.gamesWon ?? 0,
         totalHours: 0,
-        friendCount: profile?.stats?.friendCount ?? 0,
+        friendCount,
       },
       "recent-activity": {
         activities: recentActivities,
@@ -434,6 +459,7 @@ export default function OwnProfileScreen({
       topStreaks,
       pendingRewards.unclaimedLevelRewardCount,
       globalStats,
+      friendCount,
       favoriteGameData,
       recentActivities,
       navigation,

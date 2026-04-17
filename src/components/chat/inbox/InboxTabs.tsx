@@ -72,7 +72,7 @@ export const InboxTabs = memo(function InboxTabs({
     {
       key: "unread",
       label: "Unread",
-      badge: unreadCount > 0 ? 1 : undefined,
+      badge: unreadCount > 0 ? unreadCount : undefined,
     },
     { key: "groups", label: "Groups" },
     { key: "dms", label: "DMs" },
@@ -134,11 +134,9 @@ export const InboxTabs = memo(function InboxTabs({
                     },
                   ]}
                 >
-                  {tab.key === "unread"
-                    ? "!"
-                    : tab.badge > 99
-                      ? "99+"
-                      : tab.badge}
+                  {tab.badge > 99
+                    ? "99+"
+                    : tab.badge}
                 </Badge>
               )}
             </TouchableOpacity>

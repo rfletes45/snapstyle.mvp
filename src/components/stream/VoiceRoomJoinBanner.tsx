@@ -41,26 +41,18 @@ export function VoiceRoomJoinBanner({
       />
       <Text
         style={[styles.message, { color: onErrorContainer }]}
-        numberOfLines={2}
+        numberOfLines={4}
       >
         {message}
       </Text>
       {onRetry && (
         <TouchableOpacity
           onPress={onRetry}
-          style={[
-            styles.action,
-            { borderColor: onErrorContainer },
-          ]}
+          style={[styles.action, { borderColor: onErrorContainer }]}
           accessibilityLabel="Retry joining voice room"
           accessibilityRole="button"
         >
-          <Text
-            style={[
-              styles.actionText,
-              { color: onErrorContainer },
-            ]}
-          >
+          <Text style={[styles.actionText, { color: onErrorContainer }]}>
             Retry
           </Text>
         </TouchableOpacity>
@@ -71,11 +63,7 @@ export function VoiceRoomJoinBanner({
         accessibilityLabel="Dismiss error"
         accessibilityRole="button"
       >
-        <Ionicons
-          name="close"
-          size={18}
-          color={onErrorContainer}
-        />
+        <Ionicons name="close" size={18} color={onErrorContainer} />
       </TouchableOpacity>
     </View>
   );

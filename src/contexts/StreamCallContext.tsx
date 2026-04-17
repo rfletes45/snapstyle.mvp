@@ -324,6 +324,10 @@ function StreamCallInnerProvider({
       const channelId = `voice_channel_${groupId}`;
       deliberatelyLeftChannelsRef.current.delete(channelId);
 
+      console.info(
+        `[StreamCallContext] joinChannelAction starting — groupId=${groupId}, channelId=${channelId}, userId=${readyUserId}, busyRef=true`,
+      );
+
       // Defensive: if a stale call object lingers from a previous session,
       // clear it before starting a new join to avoid impossible states.
       if (activeCallRef.current) {
@@ -345,6 +349,10 @@ function StreamCallInnerProvider({
           throw new Error("joinVoiceChannel returned an invalid call object.");
         }
 
+        console.info(
+          `[StreamCallContext] joinChannelAction succeeded — callId=${call.id}`,
+        );
+
         activeCallRef.current = call;
         setActiveCall(call);
         setActiveSession({
@@ -355,7 +363,15 @@ function StreamCallInnerProvider({
         });
         // Mark inline join as successful
         setVoiceRoomJoinState("joined");
-      } catch (err) {
+      } catch (err: any) {
+        console.error("[StreamCallContext] joinChannelAction failed:", {
+          groupId,
+          channelId,
+          userId: readyUserId,
+          errorMessage: err?.message,
+          stage: err?.stage ?? "unknown",
+          streamCode: err?.streamCode ?? err?.code ?? null,
+        });
         busyRef.current = false;
         throw err;
       }
@@ -366,6 +382,10 @@ function StreamCallInnerProvider({
   const joinChannelInlineAction = useCallback(
     (groupId: string, groupName: string) => {
       if (!isReady || !userId) {
+        console.warn(
+          "[StreamCallContext] joinChannelInline rejected: not ready",
+          { isReady, hasUserId: !!userId },
+        );
         setVoiceRoomJoinState("error");
         setVoiceRoomJoinError(CALLS_INITIALIZING_MESSAGE);
         setVoiceRoomJoinGroupId(groupId);
@@ -374,6 +394,10 @@ function StreamCallInnerProvider({
 
       // Pre-flight: already busy?
       if (busyRef.current) {
+        console.warn("[StreamCallContext] joinChannelInline rejected: busy", {
+          activeSessionType: activeSession?.type ?? "none",
+          activeCallId: activeCallRef.current?.id ?? "none",
+        });
         setVoiceRoomJoinState("error");
         setVoiceRoomJoinError(
           "You're already in a call. Leave it first to join this voice channel.",
@@ -393,6 +417,10 @@ function StreamCallInnerProvider({
         return;
       }
 
+      console.info(
+        `[StreamCallContext] joinChannelInline starting — groupId=${groupId}`,
+      );
+
       // Set joining state immediately so UI can react
       setVoiceRoomJoinState("joining");
       setVoiceRoomJoinError(null);
@@ -401,15 +429,19 @@ function StreamCallInnerProvider({
       // Delegate to the existing joinChannel which handles busyRef,
       // deliberatelyLeftChannels, SDK join, and activeSession setup.
       joinChannelAction(groupId, groupName).catch((err: any) => {
-        console.error(
-          "[StreamCallContext] joinChannelInline failed:",
-          err?.message ?? err,
-        );
+        const errorMsg = err?.message || "Failed to join voice channel";
+        console.error("[StreamCallContext] joinChannelInline failed:", {
+          groupId,
+          errorMessage: errorMsg,
+          stage: err?.stage ?? "unknown",
+          streamCode: err?.streamCode ?? err?.code ?? null,
+        });
         setVoiceRoomJoinState("error");
-        setVoiceRoomJoinError(err?.message || "Failed to join voice channel");
+        setVoiceRoomJoinError(errorMsg);
       });
     },
     [
+      activeSession,
       isReady,
       joinChannelAction,
       userId,

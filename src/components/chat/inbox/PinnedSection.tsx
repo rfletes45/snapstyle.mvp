@@ -38,6 +38,8 @@ export interface PinnedSectionProps {
   typingMap?: Map<string, ConversationTypingInfo>;
   /** Called when a conversation is pressed */
   onConversationPress: (conversation: InboxConversation) => void;
+  /** Called on finger-down before opening a conversation */
+  onConversationPressIn?: (conversation: InboxConversation) => void;
   /** Called when avatar is pressed */
   onAvatarPress: (conversation: InboxConversation) => void;
   /** Called when long pressed with optional position */
@@ -55,6 +57,7 @@ export const PinnedSection = memo(function PinnedSection({
   conversations,
   typingMap,
   onConversationPress,
+  onConversationPressIn,
   onAvatarPress,
   onLongPress,
 }: PinnedSectionProps) {
@@ -110,6 +113,7 @@ export const PinnedSection = memo(function PinnedSection({
               conversation={conversation}
               isTyping={typingMap?.get(conversation.id)?.isTyping || false}
               onPress={() => onConversationPress(conversation)}
+              onPressIn={() => onConversationPressIn?.(conversation)}
               onAvatarPress={() => onAvatarPress(conversation)}
               onLongPress={(event) => onLongPress?.(conversation, event)}
             />

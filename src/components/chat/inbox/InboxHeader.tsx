@@ -15,13 +15,11 @@
 
 import { ProfilePictureWithDecoration } from "@/components/profile/ProfilePicture";
 import { Spacing } from "@/constants/theme";
-import { useProfilePicture } from "@/hooks/useProfilePicture";
-import { useAuth } from "@/store/AuthContext";
 import { useAppTheme } from "@/store/ThemeContext";
 import { useUser } from "@/store/UserContext";
 import * as haptics from "@/utils/haptics";
 import { CommonActions, useNavigation } from "@react-navigation/native";
-import React, { useCallback } from "react";
+import React, { useCallback, useEffect, useRef } from "react";
 import { StyleSheet, TouchableOpacity, View } from "react-native";
 import { Appbar, IconButton } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -39,15 +37,25 @@ export interface InboxHeaderProps {
 // Component
 // =============================================================================
 
-export function InboxHeader({ onSearchPress }: InboxHeaderProps) {
+export const InboxHeader = React.memo(function InboxHeader({
+  onSearchPress,
+}: InboxHeaderProps) {
   const { colors, isDark } = useAppTheme();
   const { profile } = useUser();
-  const { currentFirebaseUser } = useAuth();
-  const { picture, decoration } = useProfilePicture({
-    userId: currentFirebaseUser?.uid || "",
-  });
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
+
+  // ── DEV diagnostics: trace when the avatar URL becomes available ──
+  const mountTimeRef = useRef(performance.now());
+  useEffect(() => {
+    if (__DEV__) {
+      const url = profile?.profilePicture?.url;
+      const elapsed = (performance.now() - mountTimeRef.current).toFixed(1);
+      console.log(
+        `[InboxHeader] render — avatar URL ${url ? "READY" : "null"} (${elapsed}ms since mount)`,
+      );
+    }
+  });
 
   const handleAvatarPress = useCallback(() => {
     haptics.buttonPress();
@@ -118,9 +126,9 @@ export function InboxHeader({ onSearchPress }: InboxHeaderProps) {
           accessibilityRole="button"
         >
           <ProfilePictureWithDecoration
-            pictureUrl={picture?.url || null}
+            pictureUrl={profile?.profilePicture?.url || null}
             name={profile?.displayName || ""}
-            decorationId={decoration?.decorationId || null}
+            decorationId={profile?.avatarDecoration?.decorationId || null}
             size={38}
           />
         </TouchableOpacity>
@@ -161,7 +169,7 @@ export function InboxHeader({ onSearchPress }: InboxHeaderProps) {
       </View>
     </View>
   );
-}
+});
 
 // =============================================================================
 // Styles

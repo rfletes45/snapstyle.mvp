@@ -320,6 +320,21 @@ function initializeSchema(database: SQLiteDatabase): void {
 
     logger.info(`[Database] Schema initialized to version ${DATABASE_VERSION}`);
   }
+
+  ensureSearchIndexes(database);
+}
+
+function ensureSearchIndexes(database: SQLiteDatabase): void {
+  database.execSync(`
+    CREATE INDEX IF NOT EXISTS idx_messages_search_recent
+      ON messages(deleted_for_all, COALESCE(server_received_at, created_at) DESC);
+    CREATE INDEX IF NOT EXISTS idx_messages_search_scope_recent
+      ON messages(scope, deleted_for_all, COALESCE(server_received_at, created_at) DESC);
+    CREATE INDEX IF NOT EXISTS idx_messages_search_kind_recent
+      ON messages(kind, deleted_for_all, COALESCE(server_received_at, created_at) DESC);
+    CREATE INDEX IF NOT EXISTS idx_messages_search_sender_recent
+      ON messages(sender_id, deleted_for_all, COALESCE(server_received_at, created_at) DESC);
+  `);
 }
 
 // =============================================================================

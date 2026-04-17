@@ -26,7 +26,10 @@ import { CallConnectionBadge } from "@/components/stream/CallConnectionBadge";
 import { CallControlBar } from "@/components/stream/CallControlBar";
 import { useStreamCall } from "@/contexts/StreamCallContext";
 import { callSettingsService } from "@/services/calls";
-import { ensureMicrophonePublishing } from "@/services/stream/callMediaHealthCheck";
+import {
+  forceRefreshMicrophoneCapture,
+  getMicrophonePublishSnapshot,
+} from "@/services/stream/callMediaHealthCheck";
 import { useAppTheme } from "@/store/ThemeContext";
 import type { MainStackParamList } from "@/types/navigation/root";
 import { requestCameraPermission } from "@/utils/permissions";
@@ -208,38 +211,61 @@ function DirectCallContent({
   const call = useCall();
   const isJoined = callingState === CallingState.JOINED;
   const isInPiPMode = useIsInPiPMode();
+
+  // PiP restore: When PiP exits (isInPiPMode: true → false), the native
+  // RTCMTLVideoView (Metal) often fails to resume rendering because Metal
+  // was suspended while the app was in background. Force the ParticipantView
+  // to remount by changing its key, which triggers didMoveToWindow on the
+  // native RTCVideoView and re-attaches the Metal renderer to the track.
+  const [pipRestoreGeneration, setPipRestoreGeneration] = useState(0);
+  const prevPiPModeRef = useRef(false);
+  useEffect(() => {
+    if (prevPiPModeRef.current && !isInPiPMode) {
+      // PiP just exited — schedule a remount on next frame
+      console.info(
+        "[DirectCallScreen] PiP exited — forcing video renderer remount",
+      );
+      setPipRestoreGeneration((g) => g + 1);
+    }
+    prevPiPModeRef.current = isInPiPMode;
+  }, [isInPiPMode]);
+
   const shouldMirrorLocalVideo =
     cameraDirection === "front"
       ? callSettingsService.getSettingsSync().mirrorFrontCamera
       : false;
   const callInsets = useStableCallInsets();
 
-  // Post-join mic publish reconciliation. The service layer runs this too,
-  // but screen remounts/reconnects can leave device state stale.
+  // Post-join mic publish reconciliation.
+  // The service layer already does a forceRefreshMicrophoneCapture right
+  // after join, but screen remounts or reconnects can leave device state
+  // stale. This safety-net check runs 4s after JOINED and forces a full
+  // mic restart if audio is not flowing.
   const micReconciliationRef = useRef(false);
   useEffect(() => {
     if (!isJoined || !call || micReconciliationRef.current) return;
     micReconciliationRef.current = true;
 
     const timer = setTimeout(() => {
-      ensureMicrophonePublishing(call, "direct call UI reconciliation", {
-        settleMs: 0,
-        recoveryAttempts: 1,
-      })
-        .then((snapshot) => {
-          if (!snapshot.healthy && snapshot.micIntendedEnabled) {
-            console.warn(
-              "[DirectCallScreen] Mic still not publishing after UI reconciliation:",
-              snapshot,
-            );
-          }
-        })
-        .catch((err) => {
+      const snapshot = getMicrophonePublishSnapshot(call);
+      console.info("[DirectCallScreen] Mic reconciliation snapshot:", snapshot);
+      if (!snapshot.healthy && snapshot.canSendAudio) {
+        console.warn(
+          "[DirectCallScreen] Mic unhealthy at reconciliation — force-refreshing",
+        );
+        forceRefreshMicrophoneCapture(
+          call,
+          "direct call UI reconciliation",
+        ).catch((err) => {
           console.warn("[DirectCallScreen] UI-level mic recovery failed:", err);
         });
-    }, 3000);
+      }
+    }, 4000);
 
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      micReconciliationRef.current = false;
+    };
   }, [isJoined, call]);
   // Speaker toggle state — tracked locally (SDK doesn't provide useSpeakerState on RN)
   const [isSpeakerOn, setIsSpeakerOn] = useState(isVideo); // Default speaker ON for video
@@ -330,7 +356,13 @@ function DirectCallContent({
   useEffect(() => {
     if (pipModeLogRef.current === isInPiPMode) return;
     pipModeLogRef.current = isInPiPMode;
-  }, [isInPiPMode]);
+    console.info(
+      `[DirectCallScreen] PiP mode: ${isInPiPMode}`,
+      isInPiPMode
+        ? "— hiding controls overlay"
+        : `— restoring, generation=${pipRestoreGeneration}`,
+    );
+  }, [isInPiPMode, pipRestoreGeneration]);
 
   // Safe mic toggle — only allow when JOINED to prevent permanent track death
   const handleToggleMic = useCallback(async () => {
@@ -519,6 +551,7 @@ function DirectCallContent({
           remoteParticipant.participant &&
           remoteParticipant.participant.sessionId ? (
             <ParticipantView
+              key={`remote-pip-${pipRestoreGeneration}`}
               participant={remoteParticipant.participant}
               trackType="videoTrack"
               style={StyleSheet.absoluteFill}

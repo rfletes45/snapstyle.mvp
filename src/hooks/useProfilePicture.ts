@@ -20,7 +20,6 @@ import {
 import type { ProfilePicture, UserAvatarDecoration } from "@/types/userProfile";
 import { useCallback, useEffect, useState } from "react";
 
-
 import { createLogger } from "@/utils/log";
 const logger = createLogger("hooks/useProfilePicture");
 export interface UseProfilePictureOptions {
@@ -28,6 +27,11 @@ export interface UseProfilePictureOptions {
   userId: string;
   /** Whether to subscribe to real-time updates */
   realtime?: boolean;
+  /** Seed values from an already-loaded context to avoid flash of null */
+  seed?: {
+    picture?: ProfilePicture | null;
+    decoration?: UserAvatarDecoration | null;
+  };
 }
 
 export interface UseProfilePictureReturn {
@@ -56,10 +60,13 @@ export interface UseProfilePictureReturn {
 export function useProfilePicture({
   userId,
   realtime = false,
+  seed,
 }: UseProfilePictureOptions): UseProfilePictureReturn {
-  const [picture, setPicture] = useState<ProfilePicture | null>(null);
+  const [picture, setPicture] = useState<ProfilePicture | null>(
+    seed?.picture ?? null,
+  );
   const [decoration, setDecoration] = useState<UserAvatarDecoration | null>(
-    null,
+    seed?.decoration ?? null,
   );
   const [ownedDecorations, setOwnedDecorations] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);

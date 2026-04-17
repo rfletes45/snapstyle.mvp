@@ -291,6 +291,7 @@ export function useBoardState(
       if (!def) return false;
       const resolvedSize = size ?? def.defaultSize;
       const result = addWidgetToBoard(workingWidgets, widgetType, resolvedSize);
+      if (result === workingWidgets) return false; // no change (already placed)
       setWorkingWidgets(result);
       return true;
     },

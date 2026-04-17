@@ -66,14 +66,27 @@ export function usePinnedInvites(
     setLoading(true);
     setError(null);
 
+    console.log(
+      `[PinnedInvites] Subscribing: scope=${scope} id=${conversationId}`,
+    );
+
     const unsub = subscribeToPinnedInviteIds(
       conversationId,
       scope,
       (ids) => {
+        if (__DEV__ || ids.length > 0) {
+          console.log(
+            `[PinnedInvites] Received ${ids.length} pinned ID(s) for ${scope}:${conversationId}`,
+          );
+        }
         setInviteIds(ids);
         setLoading(false);
       },
       (err) => {
+        console.warn(
+          `[PinnedInvites] Subscription error for ${scope}:${conversationId}:`,
+          err.message,
+        );
         setError(err);
         setLoading(false);
       },

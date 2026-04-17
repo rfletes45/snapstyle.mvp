@@ -15,8 +15,9 @@ import { Spacing } from "@/constants/theme";
 import { useAppTheme } from "@/store/ThemeContext";
 import type { InboxConversation } from "@/types/messaging";
 import * as haptics from "@/utils/haptics";
+import { createLogger } from "@/utils/log";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import React, { memo, useCallback, useRef } from "react";
+import React, { memo, useCallback, useEffect, useRef } from "react";
 import { StyleSheet, View } from "react-native";
 import { RectButton } from "react-native-gesture-handler";
 import ReanimatedSwipeable, {
@@ -28,6 +29,8 @@ import Animated, {
   type SharedValue,
   useAnimatedStyle,
 } from "react-native-reanimated";
+
+const interactionLog = createLogger("InboxInteraction");
 
 // =============================================================================
 // Types
@@ -219,16 +222,53 @@ export function SwipeableConversation({
   const isPinned = !!conversation.memberState.pinnedAt;
   const isMuted = !!conversation.memberState.mutedUntil;
 
+  useEffect(() => {
+    if (!__DEV__) return;
+    interactionLog.debug("swipe wrapper render", {
+      data: {
+        conversationId: conversation.id,
+        type: conversation.type,
+        enabled,
+        isPinned,
+        isMuted,
+      },
+    });
+  }, [
+    conversation.id,
+    conversation.type,
+    enabled,
+    isMuted,
+    isPinned,
+  ]);
+
   const renderLeftActions = useCallback(
     (_progress: SharedValue<number>, translation: SharedValue<number>) => (
       <LeftAction
         isPinned={isPinned}
         primaryColor={colors.primary}
         translation={translation}
-        onPress={() => handleAction(onPin)}
+        onPress={() => {
+          if (__DEV__) {
+            interactionLog.debug("swipe action pressed", {
+              data: {
+                action: isPinned ? "unpin" : "pin",
+                conversationId: conversation.id,
+                type: conversation.type,
+              },
+            });
+          }
+          handleAction(onPin);
+        }}
       />
     ),
-    [colors.primary, handleAction, isPinned, onPin],
+    [
+      colors.primary,
+      conversation.id,
+      conversation.type,
+      handleAction,
+      isPinned,
+      onPin,
+    ],
   );
 
   const renderRightActions = useCallback(
@@ -238,16 +278,116 @@ export function SwipeableConversation({
         warningColor={colors.warning}
         errorColor={colors.error}
         translation={translation}
-        onMute={() => handleAction(onMute)}
-        onDelete={() => handleAction(onDelete)}
+        onMute={() => {
+          if (__DEV__) {
+            interactionLog.debug("swipe action pressed", {
+              data: {
+                action: isMuted ? "unmute" : "mute",
+                conversationId: conversation.id,
+                type: conversation.type,
+              },
+            });
+          }
+          handleAction(onMute);
+        }}
+        onDelete={() => {
+          if (__DEV__) {
+            interactionLog.debug("swipe action pressed", {
+              data: {
+                action: "delete",
+                conversationId: conversation.id,
+                type: conversation.type,
+              },
+            });
+          }
+          handleAction(onDelete);
+        }}
       />
     ),
-    [colors.error, colors.warning, handleAction, isMuted, onDelete, onMute],
+    [
+      colors.error,
+      colors.warning,
+      conversation.id,
+      conversation.type,
+      handleAction,
+      isMuted,
+      onDelete,
+      onMute,
+    ],
   );
 
-  const onSwipeableOpen = useCallback(() => {
+  const onSwipeableOpenStartDrag = useCallback(
+    (direction: string) => {
+      if (__DEV__) {
+        interactionLog.debug("swipe open drag started", {
+          data: {
+            conversationId: conversation.id,
+            type: conversation.type,
+            direction,
+          },
+        });
+      }
+    },
+    [conversation.id, conversation.type],
+  );
+
+  const onSwipeableCloseStartDrag = useCallback(
+    (direction: string) => {
+      if (__DEV__) {
+        interactionLog.debug("swipe close drag started", {
+          data: {
+            conversationId: conversation.id,
+            type: conversation.type,
+            direction,
+          },
+        });
+      }
+    },
+    [conversation.id, conversation.type],
+  );
+
+  const onSwipeableWillOpen = useCallback(
+    (direction: string) => {
+      if (__DEV__) {
+        interactionLog.debug("swipe will open", {
+          data: {
+            conversationId: conversation.id,
+            type: conversation.type,
+            direction,
+          },
+        });
+      }
+    },
+    [conversation.id, conversation.type],
+  );
+
+  const onSwipeableOpen = useCallback((direction: string) => {
+    if (__DEV__) {
+      interactionLog.debug("swipe opened", {
+        data: {
+          conversationId: conversation.id,
+          type: conversation.type,
+          direction,
+        },
+      });
+    }
     haptics.swipeThreshold();
-  }, []);
+  }, [conversation.id, conversation.type]);
+
+  const onSwipeableClose = useCallback(
+    (direction: string) => {
+      if (__DEV__) {
+        interactionLog.debug("swipe closed", {
+          data: {
+            conversationId: conversation.id,
+            type: conversation.type,
+            direction,
+          },
+        });
+      }
+    },
+    [conversation.id, conversation.type],
+  );
 
   if (!enabled) {
     return <>{children}</>;
@@ -261,7 +401,11 @@ export function SwipeableConversation({
       rightThreshold={40}
       renderLeftActions={renderLeftActions}
       renderRightActions={renderRightActions}
+      onSwipeableOpenStartDrag={onSwipeableOpenStartDrag}
+      onSwipeableCloseStartDrag={onSwipeableCloseStartDrag}
+      onSwipeableWillOpen={onSwipeableWillOpen}
       onSwipeableOpen={onSwipeableOpen}
+      onSwipeableClose={onSwipeableClose}
       overshootLeft={false}
       overshootRight={false}
     >

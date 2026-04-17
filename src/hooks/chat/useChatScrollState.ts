@@ -14,6 +14,8 @@
  *   native `autoscrollToTopThreshold` which caused false teleport-to-bottom
  *   during fast upward scroll / pagination)
  * - All real-time reads use refs; React state only updates on boundary crossings
+ * - Content-inset-aware scrolling: accounts for KCSV's contentInset so
+ *   scroll-to-bottom targets the correct offset in native builds
  *
  * @module hooks/chat/useChatScrollState
  */
@@ -24,6 +26,10 @@ import type {
   NativeScrollEvent,
   NativeSyntheticEvent,
 } from "react-native";
+
+// Toggle for send-time / scroll diagnostics (set to true when debugging
+// keyboard/scroll issues in TestFlight or native builds).
+const ENABLE_SCROLL_DIAGNOSTICS = false;
 
 // =============================================================================
 // Types
@@ -103,6 +109,12 @@ export function useChatScrollState(
   const showJumpPillRef = useRef(false);
   const flatListRef = useRef<FlatList<any> | null>(null);
 
+  // Track the native contentInset.top reported by scroll events.
+  // On the KCSV path (native builds) this equals the keyboard-driven
+  // content inset that KeyboardChatScrollView applies to the inverted
+  // FlatList.  On fallback (Expo) or Android it stays 0.
+  const contentInsetTopRef = useRef(0);
+
   // Track previous newest message ID to distinguish new messages from pagination
   const prevNewestIdRef = useRef<string | undefined>(newestMessageId);
   const prevCountRef = useRef(messageCount);
@@ -114,55 +126,88 @@ export function useChatScrollState(
   }, [isKeyboardOpen]);
 
   // ── Scroll processing (shared by all scroll handlers) ─────────────────
-  const processScrollOffset = useCallback((offset: number) => {
-    const clampedOffset = Math.max(0, offset);
-    distanceRef.current = clampedOffset;
+  //
+  // For an inverted FlatList the "visual bottom" (newest messages) is at
+  // native contentOffset.y = -contentInset.top when KCSV is active.
+  // Without KCSV, contentInset.top is 0 and the bottom is at offset 0.
+  //
+  // The true distance from the visual bottom is therefore:
+  //   distance = contentOffset.y − (−contentInset.top)
+  //            = contentOffset.y + contentInset.top
+  //
+  // This replaces the old `Math.max(0, offset)` clamp which inflated the
+  // effective at-bottom threshold by the entire contentInset height on
+  // native builds.
+  const processScrollOffset = useCallback(
+    (offset: number, contentInsetTop: number) => {
+      contentInsetTopRef.current = contentInsetTop;
 
-    // ── isAtBottom boundary crossing ──
-    const atBottom = clampedOffset <= AT_BOTTOM_THRESHOLD;
-    if (atBottom !== isAtBottomRef.current) {
-      isAtBottomRef.current = atBottom;
-      setIsAtBottom(atBottom);
-    }
+      const distanceFromBottom = Math.max(0, offset + contentInsetTop);
+      distanceRef.current = distanceFromBottom;
 
-    // ── Pill hysteresis ──
-    if (!showJumpPillRef.current && clampedOffset > SHOW_PILL_THRESHOLD) {
-      // Scrolled far enough away → show pill
-      showJumpPillRef.current = true;
-      setShowJumpPill(true);
-    } else if (showJumpPillRef.current && clampedOffset < HIDE_PILL_THRESHOLD) {
-      // Scrolled back close enough → hide pill + reset unread
-      showJumpPillRef.current = false;
-      setShowJumpPill(false);
-      setNewMessagesWhileAway(0);
-    }
-  }, []);
+      // ── isAtBottom boundary crossing ──
+      const atBottom = distanceFromBottom <= AT_BOTTOM_THRESHOLD;
+      if (atBottom !== isAtBottomRef.current) {
+        isAtBottomRef.current = atBottom;
+        setIsAtBottom(atBottom);
+      }
+
+      // ── Pill hysteresis ──
+      if (
+        !showJumpPillRef.current &&
+        distanceFromBottom > SHOW_PILL_THRESHOLD
+      ) {
+        // Scrolled far enough away → show pill
+        showJumpPillRef.current = true;
+        setShowJumpPill(true);
+      } else if (
+        showJumpPillRef.current &&
+        distanceFromBottom < HIDE_PILL_THRESHOLD
+      ) {
+        // Scrolled back close enough → hide pill + reset unread
+        showJumpPillRef.current = false;
+        setShowJumpPill(false);
+        setNewMessagesWhileAway(0);
+      }
+    },
+    [],
+  );
 
   // ── FlatList event handlers ────────────────────────────────────────────
   const onScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-      processScrollOffset(event.nativeEvent.contentOffset.y);
+      const { contentOffset, contentInset } = event.nativeEvent;
+      processScrollOffset(contentOffset.y, contentInset?.top ?? 0);
     },
     [processScrollOffset],
   );
 
   const onScrollEndDrag = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-      processScrollOffset(event.nativeEvent.contentOffset.y);
+      const { contentOffset, contentInset } = event.nativeEvent;
+      processScrollOffset(contentOffset.y, contentInset?.top ?? 0);
     },
     [processScrollOffset],
   );
 
   const onMomentumScrollEnd = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-      processScrollOffset(event.nativeEvent.contentOffset.y);
+      const { contentOffset, contentInset } = event.nativeEvent;
+      processScrollOffset(contentOffset.y, contentInset?.top ?? 0);
     },
     [processScrollOffset],
   );
 
   // ── Scroll-to-latest action ────────────────────────────────────────────
   const scrollToLatest = useCallback(() => {
-    flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
+    // On the KCSV path the inverted list's visual bottom sits at
+    // contentOffset.y = -contentInset.top, not 0.  Using the tracked
+    // inset keeps the scroll target correct regardless of whether KCSV
+    // is active (native) or not (Expo fallback, where inset stays 0).
+    flatListRef.current?.scrollToOffset({
+      offset: -contentInsetTopRef.current,
+      animated: true,
+    });
     // Reset state immediately so the pill disappears on tap
     showJumpPillRef.current = false;
     setShowJumpPill(false);
@@ -197,11 +242,30 @@ export function useChatScrollState(
         const added = messageCount - prevCountRef.current;
         setNewMessagesWhileAway((prev) => prev + added);
       } else {
-        // User IS at bottom → scroll to offset 0 so the new message is
-        // visible immediately.  `animated: false` keeps it instant (matches
-        // the old native `autoscrollToTopThreshold` behaviour without the
-        // risk of false-triggering during pagination / fast scroll).
-        flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
+        // User IS at bottom → scroll so the new message is visible
+        // immediately.  On the KCSV path (native builds) the inverted
+        // list's visual bottom is at contentOffset.y = -contentInset.top,
+        // not 0.  Scrolling to raw offset 0 would place the newest
+        // message behind the keyboard — the exact "teleport downward"
+        // bug observed in TestFlight.  Using the tracked contentInset
+        // keeps the target correct for both native (KCSV) and Expo
+        // fallback (where contentInset.top stays 0).
+        const targetOffset = -contentInsetTopRef.current;
+
+        if (ENABLE_SCROLL_DIAGNOSTICS) {
+          // eslint-disable-next-line no-console
+          console.log("[ChatScroll] auto-scroll on new message", {
+            newestMessageId: newestMessageId?.substring(0, 8),
+            contentInsetTop: contentInsetTopRef.current,
+            targetOffset,
+            distanceFromBottom: distanceRef.current,
+          });
+        }
+
+        flatListRef.current?.scrollToOffset({
+          offset: targetOffset,
+          animated: false,
+        });
       }
     }
 

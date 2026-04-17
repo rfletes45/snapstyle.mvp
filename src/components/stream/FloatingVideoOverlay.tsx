@@ -31,15 +31,19 @@ let useCallStateHooks: any = null;
 let useIsInPiPMode: () => boolean = () => false;
 let CallingState: any = null;
 let hasVideo: any = null;
-let StreamCall: any = null;
+let StreamCallProvider: any = null;
 try {
   const sdk = require("@stream-io/video-react-native-sdk");
   ParticipantView = sdk.ParticipantView;
   useCallStateHooks = sdk.useCallStateHooks;
   useIsInPiPMode = sdk.useIsInPiPMode ?? useIsInPiPMode;
   CallingState = sdk.CallingState;
-  StreamCall = sdk.StreamCall;
   hasVideo = require("@stream-io/video-client").hasVideo;
+
+  // Use StreamCallProvider (context-only) instead of StreamCall to avoid
+  // mounting a duplicate AppStateListener that races with DirectCallScreen's.
+  StreamCallProvider =
+    require("@stream-io/video-react-bindings").StreamCallProvider;
 } catch {
   // Not available
 }
@@ -84,13 +88,14 @@ export function FloatingVideoOverlay({
     );
   }
 
-  // Video calls: wrap in StreamCall for video rendering
-  if (!StreamCall) return null;
+  // Video calls: wrap in StreamCallProvider (context-only) for video rendering.
+  // Avoids duplicate AppStateListener — DirectCallScreen owns the authoritative one.
+  if (!StreamCallProvider) return null;
   return (
     <VideoRenderErrorBoundary fallback={null}>
-      <StreamCall call={activeCall}>
+      <StreamCallProvider call={activeCall}>
         <FloatingVideoContent activeCall={activeCall} />
-      </StreamCall>
+      </StreamCallProvider>
     </VideoRenderErrorBoundary>
   );
 }

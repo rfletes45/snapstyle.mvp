@@ -220,7 +220,7 @@ export function VoiceRoomJoinStatusToast({
     >
       {icon}
 
-      <Text style={[styles.message, { color: textColor }]} numberOfLines={2}>
+      <Text style={[styles.message, { color: textColor }]} numberOfLines={4}>
         {messageText}
       </Text>
 

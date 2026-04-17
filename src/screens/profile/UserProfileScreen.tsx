@@ -59,6 +59,7 @@ import {
   acceptFriendRequest,
   cancelFriendRequest,
   declineFriendRequest,
+  getFriends,
   removeFriend,
   sendFriendRequest,
 } from "@/services/friends";
@@ -170,6 +171,9 @@ function UserProfileScreenContent({
     pbs: Array<{ gameId: string; totalPlays?: number; totalWins?: number }>;
   } | null>(null);
 
+  // Friend count for the viewed user (loaded on mount)
+  const [friendCount, setFriendCount] = useState(0);
+
   // Recent activities for the viewed user
   const [recentActivities, setRecentActivities] = useState<
     Array<{ id: string; text: string; time: string; icon?: string }>
@@ -232,15 +236,16 @@ function UserProfileScreenContent({
     loadProfileData();
   }, [loadProfileData]);
 
-  // Load game stats for the viewed user (best-effort, non-blocking)
+  // Load game stats and friend count for the viewed user (best-effort, non-blocking)
   useEffect(() => {
     if (!userId) return;
     let cancelled = false;
     (async () => {
       try {
-        const [statsData, pbsData] = await Promise.all([
+        const [statsData, pbsData, friendsList] = await Promise.all([
           fetchUserStatsCache(userId),
           fetchAllGamePBs(userId),
+          getFriends(userId),
         ]);
         if (!cancelled) {
           setGameStats({
@@ -248,6 +253,7 @@ function UserProfileScreenContent({
             gamesWon: statsData?.gamesWon ?? 0,
             pbs: pbsData ?? [],
           });
+          setFriendCount(friendsList.length);
         }
       } catch {
         // Non-critical — profile still works without game stats
@@ -892,7 +898,7 @@ function UserProfileScreenContent({
         totalGames: gameStats?.gamesPlayed ?? 0,
         totalWins: gameStats?.gamesWon ?? 0,
         totalHours: 0,
-        friendCount: 0,
+        friendCount,
       },
       "recent-activity": {
         activities: activityPrivacyHidden ? [] : recentActivities,
@@ -914,27 +920,10 @@ function UserProfileScreenContent({
         onUnblock: handleUnblock,
         onMoreOptions: handleMoreOptions,
       },
-      // tasks-overview: omitted — owner-only widget, filtered out for viewers
-      "wallet-balance": {
-        balance: (profile as any)?.wallet?.tokensBalance ?? 0,
-        loading: false,
-        isOwner: false,
-        isCustomizing: false,
-      },
-      "theme-mode": {
-        themeMode: (profile as any)?.useSystemTheme
-          ? "auto"
-          : profile?.theme?.equippedThemeId?.includes("dark")
-            ? "dark"
-            : "light",
-        isOwner: false,
-        isCustomizing: false,
-      },
-      "chat-layout-mode": {
-        chatLayoutMode: (profile as any)?.conversationDisplayMode ?? "bubbles",
-        isOwner: false,
-        isCustomizing: false,
-      },
+      // tasks-overview: owner-only widget, filtered out for viewers
+      // wallet-balance: owner-only widget, filtered out for viewers
+      // theme-mode: owner-only widget, filtered out for viewers
+      // chat-layout-mode: owner-only widget, filtered out for viewers
     }),
     [
       profile,
@@ -951,6 +940,7 @@ function UserProfileScreenContent({
       mutualFriends,
       favoriteGameData,
       gameStats,
+      friendCount,
       recentActivities,
       navigation,
       isMuted,

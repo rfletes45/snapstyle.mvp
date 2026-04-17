@@ -18,8 +18,9 @@ import { Spacing } from "@/constants/theme";
 import { useAppTheme } from "@/store/ThemeContext";
 import type { InboxConversation } from "@/types/messaging";
 import { formatRelativeTime, toTimestamp } from "@/utils/dates";
+import { createLogger } from "@/utils/log";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import React, { memo, useCallback, useMemo } from "react";
+import React, { memo, useCallback, useEffect, useMemo, useRef } from "react";
 import {
   StyleSheet,
   TouchableOpacity,
@@ -28,6 +29,18 @@ import {
 } from "react-native";
 import { Badge, Text } from "react-native-paper";
 import { formatUnreadBadge } from "./unreadBadge";
+
+const interactionLog = createLogger("InboxInteraction");
+
+const DEFAULT_TOUCH_POSITION = { pageX: 100, pageY: 200 };
+
+function getTouchPosition(event?: GestureResponderEvent) {
+  if (!event?.nativeEvent) return null;
+  return {
+    pageX: event.nativeEvent.pageX,
+    pageY: event.nativeEvent.pageY,
+  };
+}
 
 // =============================================================================
 // Text Highlighting Helper
@@ -133,6 +146,31 @@ export const ConversationItem = memo(function ConversationItem({
   const isUnread = unreadCount > 0 || !!memberState.lastMarkedUnreadAt;
   const unreadBadgeText = formatUnreadBadge(unreadCount);
 
+  useEffect(() => {
+    if (!__DEV__) return;
+    interactionLog.debug("row render", {
+      data: {
+        conversationId: conversation.id,
+        type,
+        hasOnPress: typeof onPress === "function",
+        hasOnLongPress: typeof onLongPress === "function",
+        hasOnPressIn: typeof onPressIn === "function",
+        isPinned,
+        isMuted,
+        isUnread,
+      },
+    });
+  }, [
+    conversation.id,
+    isMuted,
+    isPinned,
+    isUnread,
+    onLongPress,
+    onPress,
+    onPressIn,
+    type,
+  ]);
+
   // Format last message preview
   const previewText = useMemo(() => {
     if (!lastMessage) return "No messages yet";
@@ -160,13 +198,68 @@ export const ConversationItem = memo(function ConversationItem({
     return formatRelativeTime(toTimestamp(lastMessage.timestamp));
   }, [lastMessage?.timestamp]);
 
-  // Handle long press with position extraction
+  // Keep a fallback coordinate from press-in in case a platform omits the
+  // long-press event payload.
+  const lastTouchPos = useRef(DEFAULT_TOUCH_POSITION);
+
+  const handlePress = useCallback(() => {
+    if (__DEV__) {
+      interactionLog.debug("row tap fired", {
+        data: { conversationId: conversation.id, type },
+      });
+    }
+    onPress();
+  }, [conversation.id, onPress, type]);
+
+  const handleAvatarPress = useCallback(() => {
+    if (__DEV__) {
+      interactionLog.debug("avatar tap fired", {
+        data: { conversationId: conversation.id, type },
+      });
+    }
+    onAvatarPress();
+  }, [conversation.id, onAvatarPress, type]);
+
+  const handlePressIn = useCallback(
+    (event: GestureResponderEvent) => {
+      const position = getTouchPosition(event);
+      if (position) {
+        lastTouchPos.current = position;
+      }
+      if (__DEV__) {
+        interactionLog.debug("row press-in fired", {
+          data: {
+            conversationId: conversation.id,
+            type,
+            hasPosition: !!position,
+            pageX: position?.pageX,
+            pageY: position?.pageY,
+          },
+        });
+      }
+      onPressIn?.();
+    },
+    [conversation.id, onPressIn, type],
+  );
+
   const handleLongPress = useCallback(
     (event: GestureResponderEvent) => {
-      const { pageX, pageY } = event.nativeEvent;
-      onLongPress({ pageX, pageY });
+      const eventPosition = getTouchPosition(event);
+      const position = eventPosition ?? lastTouchPos.current;
+      if (__DEV__) {
+        interactionLog.debug("row long-press fired", {
+          data: {
+            conversationId: conversation.id,
+            type,
+            usedEventPosition: !!eventPosition,
+            pageX: position.pageX,
+            pageY: position.pageY,
+          },
+        });
+      }
+      onLongPress(position);
     },
-    [onLongPress],
+    [conversation.id, onLongPress, type],
   );
 
   return (
@@ -176,8 +269,8 @@ export const ConversationItem = memo(function ConversationItem({
         { backgroundColor: colors.background },
         isUnread && { backgroundColor: colors.primary + "08" },
       ]}
-      onPress={onPress}
-      onPressIn={onPressIn}
+      onPress={handlePress}
+      onPressIn={handlePressIn}
       onLongPress={handleLongPress}
       activeOpacity={0.7}
       accessibilityRole="button"
@@ -185,7 +278,7 @@ export const ConversationItem = memo(function ConversationItem({
     >
       {/* Avatar */}
       <TouchableOpacity
-        onPress={onAvatarPress}
+        onPress={handleAvatarPress}
         style={styles.avatarContainer}
         accessibilityLabel={`View ${type === "dm" ? "profile" : "group info"}`}
       >

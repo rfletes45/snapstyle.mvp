@@ -8,7 +8,7 @@
 
 import type { Call } from "@stream-io/video-react-native-sdk";
 import {
-  ensureMicrophonePublishing,
+  forceRefreshMicrophoneCapture,
   schedulePostJoinMediaHealthCheck,
 } from "./callMediaHealthCheck";
 import {
@@ -17,10 +17,12 @@ import {
   joinCallWithRetry,
 } from "./callRuntime";
 import {
+  reanchorAudioEndpoint,
   requestCallPermissions,
   startCallAudioSession,
   stopCallAudioSession,
 } from "./callSessionManager";
+import { sanitizeSettingsOverride } from "./callSettingsValidator";
 import { getStreamClient } from "./streamClient";
 import { ensureStreamUsersExist } from "./streamUserProvisioning";
 import { getVoiceChannelId } from "./voiceChannelIds";
@@ -28,8 +30,51 @@ import { getVoiceChannelId } from "./voiceChannelIds";
 const VOICE_CHANNEL_TYPE = "default";
 export { getVoiceChannelId } from "./voiceChannelIds";
 
+const TAG = "[VoiceChannelService]";
+
 const delay = (ms: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Extract the most useful diagnostic string from a Stream SDK error.
+ *
+ * The SDK's `ErrorFromResponse` carries `code`, `status`, and the full Axios
+ * `response` (including `response.data.message`, `response.data.more_info`,
+ * and `response.data.details`). A bare `new Error(err.message)` loses all of
+ * that. This helper preserves the critical bits in a single loggable string.
+ */
+function extractStreamErrorDetail(err: any): {
+  /** Human-readable summary suitable for the user-facing toast / banner */
+  userMessage: string;
+  /** Verbose detail string written to the console for remote debugging */
+  debugDetail: string;
+} {
+  const code: number | null = err?.code ?? err?.response?.data?.code ?? null;
+  const status: number | null = err?.status ?? err?.response?.status ?? null;
+  const apiMessage: string =
+    err?.response?.data?.message ?? err?.message ?? "unknown error";
+  const moreInfo: string = err?.response?.data?.more_info ?? "";
+  const details: unknown = err?.response?.data?.details ?? null;
+  const unrecoverable: boolean = err?.unrecoverable === true;
+
+  const debugParts = [
+    `message=${JSON.stringify(apiMessage)}`,
+    code != null ? `code=${code}` : null,
+    status != null ? `httpStatus=${status}` : null,
+    moreInfo ? `more_info=${moreInfo}` : null,
+    details ? `details=${JSON.stringify(details)}` : null,
+    unrecoverable ? "unrecoverable=true" : null,
+  ].filter(Boolean);
+
+  return {
+    userMessage: apiMessage,
+    debugDetail: debugParts.join(", "),
+  };
+}
 
 async function ensureVoiceChannelMembership(
   call: Call,
@@ -43,22 +88,145 @@ async function ensureVoiceChannelMembership(
     });
   } catch (err) {
     console.warn(
-      "[VoiceChannelService] Could not upsert current user as room member (non-fatal):",
+      `${TAG} Could not upsert current user as room member (non-fatal):`,
       err,
     );
   }
 }
+
+// ---------------------------------------------------------------------------
+// Settings override for voice channels
+// ---------------------------------------------------------------------------
+
+function buildVoiceChannelSettingsOverride() {
+  // Voice channels are audio-only. Do NOT include a `video` key here.
+  // Stream's API defaults omitted target_resolution to {width:0, height:0}
+  // when any video field is present, which fails validation (must be ≥ 240).
+  return {
+    audio: {
+      access_request_enabled: true,
+      default_device: "speaker" as const,
+      mic_default_on: true,
+      speaker_default_on: true,
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// getOrCreate with a single retry (strips settings_override on retry)
+// ---------------------------------------------------------------------------
+
+async function getOrCreateVoiceChannel(
+  call: Call,
+  userId: string | undefined,
+  groupId: string,
+  groupName: string,
+): Promise<void> {
+  const channelId = call.id;
+  const baseData = {
+    ...(userId ? { members: [{ user_id: userId }] } : {}),
+    custom: { groupId, groupName },
+  };
+
+  // Run sanitizeSettingsOverride as a safety net — it will log warnings
+  // if any future change introduces video.target_resolution values < 240.
+  const settingsOverride = buildVoiceChannelSettingsOverride();
+  sanitizeSettingsOverride(settingsOverride as any);
+
+  console.info(
+    `${TAG} getOrCreate payload for ${channelId}:`,
+    JSON.stringify({
+      custom: baseData.custom,
+      hasMembers: !!baseData.members,
+      settingsOverride,
+    }),
+  );
+
+  // First attempt: full payload including settings_override
+  try {
+    await call.getOrCreate({
+      data: {
+        ...baseData,
+        settings_override: settingsOverride,
+      },
+    });
+    return; // success
+  } catch (firstErr: any) {
+    const { userMessage, debugDetail } = extractStreamErrorDetail(firstErr);
+    console.error(
+      `${TAG} getOrCreate FAILED (attempt 1/2) for ${channelId}:`,
+      debugDetail,
+    );
+    console.error(
+      `${TAG} settings_override sent:`,
+      JSON.stringify(settingsOverride),
+    );
+
+    // If the error is specifically a validation / bad-request error (code 4),
+    // retry once WITHOUT settings_override. This handles the case where the
+    // Stream Dashboard call-type config rejects one of the overrides.
+    // Use Number() to handle both string and numeric code values from the SDK.
+    const errCode = firstErr?.code ?? firstErr?.response?.data?.code;
+    if (Number(errCode) === 4) {
+      console.warn(
+        `${TAG} Retrying getOrCreate WITHOUT settings_override (code 4 = validation error)`,
+      );
+      try {
+        await call.getOrCreate({ data: baseData });
+        console.info(
+          `${TAG} getOrCreate succeeded on retry (no settings_override) for ${channelId}`,
+        );
+        return; // success on retry
+      } catch (retryErr: any) {
+        const retryDetail = extractStreamErrorDetail(retryErr);
+        console.error(
+          `${TAG} getOrCreate FAILED (attempt 2/2) for ${channelId}:`,
+          retryDetail.debugDetail,
+        );
+        // Fall through to throw the retry error
+        throw Object.assign(
+          new Error(`Unable to open voice channel: ${retryDetail.userMessage}`),
+          { streamCode: retryErr?.code ?? null, stage: "getOrCreate" },
+        );
+      }
+    }
+
+    // Non-code-4 errors: throw immediately with full detail
+    throw Object.assign(
+      new Error(`Unable to open voice channel: ${userMessage}`),
+      { streamCode: errCode ?? null, stage: "getOrCreate" },
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Main join
+// ---------------------------------------------------------------------------
 
 export async function joinVoiceChannel(
   groupId: string,
   groupName: string,
   userId?: string,
 ): Promise<Call> {
-  const TAG = "[VoiceChannelService]";
+  // ── Input validation ────────────────────────────────────────────────
+  if (!groupId || typeof groupId !== "string" || groupId.trim().length === 0) {
+    const msg = `${TAG} joinVoiceChannel called with invalid groupId: ${JSON.stringify(groupId)}`;
+    console.error(msg);
+    throw new Error("Cannot join voice channel: missing group identifier.");
+  }
+  if (!groupName || typeof groupName !== "string") {
+    // Non-fatal: default to a safe placeholder so the API call can proceed
+    console.warn(
+      `${TAG} groupName missing or invalid (${JSON.stringify(groupName)}), using fallback`,
+    );
+    groupName = "Voice Channel";
+  }
+
   console.info(
-    `${TAG} joinVoiceChannel starting — groupId=${groupId}, userId=${userId ?? "none"}`,
+    `${TAG} joinVoiceChannel starting — groupId=${groupId}, groupName=${JSON.stringify(groupName)}, userId=${userId ?? "none"}`,
   );
 
+  // ── Stream client ───────────────────────────────────────────────────
   let client;
   try {
     client = getStreamClient();
@@ -68,7 +236,11 @@ export async function joinVoiceChannel(
   }
 
   const channelId = getVoiceChannelId(groupId);
+  console.info(
+    `${TAG} Resolved channelId=${channelId}, callType=${VOICE_CHANNEL_TYPE}`,
+  );
 
+  // ── User provisioning (best-effort) ─────────────────────────────────
   if (userId) {
     try {
       await ensureStreamUsersExist([userId]);
@@ -77,6 +249,7 @@ export async function joinVoiceChannel(
     }
   }
 
+  // ── Microphone permission ───────────────────────────────────────────
   console.info(`${TAG} Requesting microphone permission...`);
   try {
     await requestCallPermissions({ microphone: true });
@@ -85,46 +258,16 @@ export async function joinVoiceChannel(
     throw err;
   }
 
+  // ── getOrCreate (with retry) ────────────────────────────────────────
   const call = client.call(VOICE_CHANNEL_TYPE, channelId);
 
   console.info(`${TAG} Creating/getting voice channel ${channelId}...`);
-  try {
-    await call.getOrCreate({
-      data: {
-        ...(userId
-          ? {
-              members: [{ user_id: userId }],
-            }
-          : {}),
-        custom: {
-          groupId,
-          groupName,
-        },
-        settings_override: {
-          audio: {
-            access_request_enabled: true,
-            default_device: "speaker",
-            mic_default_on: true,
-            speaker_default_on: true,
-          },
-          video: {
-            access_request_enabled: true,
-            camera_default_on: false,
-            enabled: true,
-          },
-        },
-      },
-    });
-    await ensureVoiceChannelMembership(call, userId);
-  } catch (err: any) {
-    console.error(`${TAG} getOrCreate failed:`, err);
-    throw new Error(
-      `Unable to open voice channel: ${err?.message ?? "unknown error"}`,
-    );
-  }
+  await getOrCreateVoiceChannel(call, userId, groupId, groupName);
+  await ensureVoiceChannelMembership(call, userId);
 
   applyCallReconnectPolicy(call, `voice channel ${channelId}`);
 
+  // ── Audio session ───────────────────────────────────────────────────
   console.info(`${TAG} Starting audio session...`);
   try {
     await startCallAudioSession("speaker");
@@ -133,6 +276,7 @@ export async function joinVoiceChannel(
     console.warn(`${TAG} callManager.start failed:`, err);
   }
 
+  // ── Join (with SDK-level retry) ─────────────────────────────────────
   console.info(`${TAG} Joining call...`);
   try {
     await joinCallWithRetry(
@@ -141,14 +285,24 @@ export async function joinVoiceChannel(
       `voice channel ${channelId}`,
     );
 
-    console.info(`${TAG} Joined successfully. Verifying microphone publish...`);
-    const micResult = await ensureMicrophonePublishing(
+    // ── Post-join mic refresh ──────────────────────────────────────
+    // The SDK's join() internally calls callManager.start() which runs
+    // native setup() → adm.reset(), disconnecting the already-published
+    // mic track from the audio capture. We must force a full mic restart
+    // to create a fresh capture chain.
+    console.info(
+      `${TAG} Joined successfully. Force-refreshing microphone capture...`,
+    );
+    reanchorAudioEndpoint("speaker");
+    const micResult = await forceRefreshMicrophoneCapture(
       call,
       `voice channel ${channelId}`,
-      { settleMs: 500, recoveryAttempts: 3, forceEnable: true },
     );
     if (!micResult.healthy) {
-      console.error(`${TAG} Microphone failed to publish after join:`, micResult);
+      console.error(
+        `${TAG} Microphone failed to publish after join:`,
+        micResult,
+      );
       throw new Error(
         "Microphone could not be started for this voice room. Leave and try again.",
       );
@@ -159,18 +313,25 @@ export async function joinVoiceChannel(
     // Schedule post-join health check to catch silent mic failures
     schedulePostJoinMediaHealthCheck(call, `voice channel ${channelId}`);
   } catch (err: any) {
+    // ── Cleanup on join failure ─────────────────────────────────────
     try {
       await call.leave({ reject: false });
     } catch {
       // Best-effort cleanup only.
     }
     await stopCallAudioSession();
-    console.error(`${TAG} join failed:`, err);
-    const message = err?.message ?? "unknown error";
+
+    const { userMessage, debugDetail } = extractStreamErrorDetail(err);
+    console.error(`${TAG} join failed:`, debugDetail);
+
+    const message = err?.message ?? userMessage;
     if (message.includes("Microphone permission is required")) {
       throw new Error(message);
     }
-    throw new Error(`Unable to join voice channel: ${message}`);
+    throw Object.assign(
+      new Error(`Unable to join voice channel: ${userMessage}`),
+      { streamCode: err?.code ?? null, stage: "join" },
+    );
   }
 
   console.info(`${TAG} joinVoiceChannel complete for ${channelId}`);

@@ -29,7 +29,11 @@ export type UserNotificationType =
   | "game_resolved"
   | "achievement_unlocked"
   | "gift_received"
-  | "gift_opened";
+  | "gift_opened"
+  | "streak_milestone"
+  | "streak_at_risk"
+  | "cosmetic_unlock"
+  | "story_viewed";
 
 export interface UserNotificationRoute {
   screen: string;

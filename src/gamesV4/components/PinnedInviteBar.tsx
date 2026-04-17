@@ -202,9 +202,13 @@ export function PinnedInviteBar({
   );
 
   // Filter out cancelled invites (resolved without sessionId)
-  const visibleInvites = invites.filter(
-    (inv) => !isCancelledInvite(inv),
-  );
+  const visibleInvites = invites.filter((inv) => !isCancelledInvite(inv));
+
+  if (__DEV__ && invites.length > 0 && visibleInvites.length === 0) {
+    console.log(
+      `[PinnedInviteBar] ${invites.length} invite(s) loaded but all filtered (cancelled)`,
+    );
+  }
 
   // Don't render if no invites or loading
   if (loading || visibleInvites.length === 0) {

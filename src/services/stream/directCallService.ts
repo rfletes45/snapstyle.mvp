@@ -16,7 +16,7 @@ import { callSettingsService } from "@/services/calls";
 import type { DirectCallMode } from "@/types/streamCall";
 import type { Call } from "@stream-io/video-react-native-sdk";
 import {
-  ensureMicrophonePublishing,
+  forceRefreshMicrophoneCapture,
   schedulePostJoinMediaHealthCheck,
 } from "./callMediaHealthCheck";
 import {
@@ -26,6 +26,7 @@ import {
   joinCallWithRetry,
 } from "./callRuntime";
 import {
+  reanchorAudioEndpoint,
   requestCallPermissions,
   startCallAudioSession,
   stopCallAudioSession,
@@ -135,6 +136,7 @@ export async function startDirectCall(
     context: `outgoing direct call ${callId}`,
     enableMicrophone: true,
     enableCamera: cameraOn,
+    deviceEndpoint,
   });
   return call;
 }
@@ -176,10 +178,16 @@ export async function acceptDirectCall(
       await joinCallWithRetry(call, undefined, `direct call ${call.id}`);
     }
 
+    // The SDK's join() internally calls callManager.start() → setup() →
+    // adm.reset(), which can disconnect the already-published mic track.
+    // Re-anchor the audio endpoint and force-refresh the mic capture.
+    reanchorAudioEndpoint(deviceEndpoint);
+
     await ensureLocalDevices(call, {
       context: `accepted direct call ${call.id}`,
       enableMicrophone: true,
       enableCamera: cameraOn,
+      deviceEndpoint,
     });
     applyCallMediaPreferences(call, `accepted direct call ${call.id}`);
 
@@ -226,6 +234,7 @@ function watchLocalDeviceSetupOnJoin(
     context: string;
     enableMicrophone: boolean;
     enableCamera: boolean;
+    deviceEndpoint?: import("./callSessionManager").CallAudioDeviceEndpoint;
   },
 ): void {
   const CallingState = getCallingState();
@@ -236,8 +245,14 @@ function watchLocalDeviceSetupOnJoin(
     if (state === CallingState.JOINED) {
       subscription.unsubscribe();
       console.info(
-        `${TAG} [${options.context}] JOINED detected — enabling local devices`,
+        `${TAG} [${options.context}] JOINED detected — re-anchoring audio and refreshing devices`,
       );
+
+      // Re-anchor audio endpoint after the SDK's internal callManager.start()
+      if (options.deviceEndpoint) {
+        reanchorAudioEndpoint(options.deviceEndpoint);
+      }
+
       ensureLocalDevices(call, options)
         .then(() => {
           applyCallMediaPreferences(call, options.context);
@@ -274,20 +289,22 @@ async function ensureLocalDevices(
     context: string;
     enableMicrophone: boolean;
     enableCamera: boolean;
+    deviceEndpoint?: import("./callSessionManager").CallAudioDeviceEndpoint;
   },
 ): Promise<void> {
   if (options.enableMicrophone) {
+    // Force-restart the mic to create a fresh capture chain after the
+    // SDK's internal callManager.start() → adm.reset() during join.
     console.info(
-      `${TAG} [${options.context}] Enabling and verifying microphone publish...`,
+      `${TAG} [${options.context}] Force-refreshing microphone capture...`,
     );
-    const micResult = await ensureMicrophonePublishing(call, options.context, {
-      settleMs: 250,
-      recoveryAttempts: 2,
-      forceEnable: true,
-    });
+    const micResult = await forceRefreshMicrophoneCapture(
+      call,
+      options.context,
+    );
     if (!micResult.healthy) {
       console.warn(
-        `${TAG} [${options.context}] Microphone is not publishing after recovery attempts:`,
+        `${TAG} [${options.context}] Microphone is not publishing after refresh:`,
         micResult,
       );
     }

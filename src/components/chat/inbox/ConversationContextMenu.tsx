@@ -16,8 +16,9 @@ import { BorderRadius, Spacing } from "@/constants/theme";
 import { useAppTheme } from "@/store/ThemeContext";
 import type { InboxConversation } from "@/types/messaging";
 import * as haptics from "@/utils/haptics";
+import { createLogger } from "@/utils/log";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import React, { memo, useMemo } from "react";
+import React, { memo, useCallback, useEffect, useMemo } from "react";
 import {
   Dimensions,
   Modal,
@@ -27,6 +28,8 @@ import {
   View,
 } from "react-native";
 import { Divider, Text } from "react-native-paper";
+
+const interactionLog = createLogger("InboxInteraction");
 
 // =============================================================================
 // Types
@@ -176,16 +179,64 @@ export const ConversationContextMenu = memo(function ConversationContextMenu({
     return { x, y };
   }, [position, menuItems.length]);
 
+  useEffect(() => {
+    if (!__DEV__ || !visible || !conversation) return;
+    interactionLog.debug("context menu visible", {
+      data: {
+        conversationId: conversation.id,
+        type: conversation.type,
+        requestedX: position.x,
+        requestedY: position.y,
+        x: menuPosition.x,
+        y: menuPosition.y,
+        itemCount: menuItems.length,
+      },
+    });
+  }, [
+    conversation,
+    menuItems.length,
+    menuPosition.x,
+    menuPosition.y,
+    position.x,
+    position.y,
+    visible,
+  ]);
+
   // Handle item press with haptic feedback
-  const handleItemPress = (item: MenuItem) => {
-    if (item.destructive) {
-      haptics.deleteWarning();
-    } else {
-      haptics.buttonPress();
+  const handleItemPress = useCallback(
+    (item: MenuItem) => {
+      if (__DEV__) {
+        interactionLog.debug("context menu item pressed", {
+          data: {
+            action: item.label,
+            conversationId: conversation?.id ?? null,
+            type: conversation?.type ?? null,
+            destructive: !!item.destructive,
+          },
+        });
+      }
+      if (item.destructive) {
+        haptics.deleteWarning();
+      } else {
+        haptics.buttonPress();
+      }
+      onClose();
+      item.onPress();
+    },
+    [conversation?.id, conversation?.type, onClose],
+  );
+
+  const handleBackdropPress = useCallback(() => {
+    if (__DEV__) {
+      interactionLog.debug("context menu backdrop pressed", {
+        data: {
+          conversationId: conversation?.id ?? null,
+          type: conversation?.type ?? null,
+        },
+      });
     }
     onClose();
-    item.onPress();
-  };
+  }, [conversation?.id, conversation?.type, onClose]);
 
   if (!visible || !conversation) return null;
 
@@ -197,7 +248,7 @@ export const ConversationContextMenu = memo(function ConversationContextMenu({
       onRequestClose={onClose}
       statusBarTranslucent
     >
-      <TouchableWithoutFeedback onPress={onClose}>
+      <TouchableWithoutFeedback onPress={handleBackdropPress}>
         <View style={styles.overlay}>
           <TouchableWithoutFeedback>
             <View

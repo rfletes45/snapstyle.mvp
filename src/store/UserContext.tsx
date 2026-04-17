@@ -1,5 +1,6 @@
 import { getFirestoreInstance } from "@/services/firebase";
 import { User as AppUser } from "@/types/models";
+import { prefetchImages } from "@/utils/imagePrefetch";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { doc, getDoc } from "firebase/firestore";
 import React, {
@@ -286,6 +287,17 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       }
     };
   }, []);
+
+  // ── AVATAR PREFETCH: Warm expo-image cache as soon as the profile
+  // picture URL is known (from AsyncStorage cache or Firestore fetch).
+  // This ensures the InboxHeader avatar renders instantly from cache.
+  const lastPrefetchedUrlRef = useRef<string | null>(null);
+  useEffect(() => {
+    const url = profile?.profilePicture?.url ?? null;
+    if (!url || url === lastPrefetchedUrlRef.current) return;
+    lastPrefetchedUrlRef.current = url;
+    prefetchImages([url]).catch(() => {});
+  }, [profile?.profilePicture?.url]);
 
   const value = useMemo(
     () => ({
