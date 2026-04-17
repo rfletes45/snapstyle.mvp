@@ -7,7 +7,10 @@
  */
 
 import type { Call } from "@stream-io/video-react-native-sdk";
-import { schedulePostJoinMediaHealthCheck } from "./callMediaHealthCheck";
+import {
+  ensureMicrophonePublishing,
+  schedulePostJoinMediaHealthCheck,
+} from "./callMediaHealthCheck";
 import {
   applyCallMediaPreferences,
   applyCallReconnectPolicy,
@@ -24,6 +27,27 @@ import { getVoiceChannelId } from "./voiceChannelIds";
 
 const VOICE_CHANNEL_TYPE = "default";
 export { getVoiceChannelId } from "./voiceChannelIds";
+
+const delay = (ms: number) =>
+  new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+async function ensureVoiceChannelMembership(
+  call: Call,
+  userId?: string,
+): Promise<void> {
+  if (!userId) return;
+
+  try {
+    await call.updateCallMembers({
+      update_members: [{ user_id: userId }],
+    });
+  } catch (err) {
+    console.warn(
+      "[VoiceChannelService] Could not upsert current user as room member (non-fatal):",
+      err,
+    );
+  }
+}
 
 export async function joinVoiceChannel(
   groupId: string,
@@ -67,12 +91,31 @@ export async function joinVoiceChannel(
   try {
     await call.getOrCreate({
       data: {
+        ...(userId
+          ? {
+              members: [{ user_id: userId }],
+            }
+          : {}),
         custom: {
           groupId,
           groupName,
         },
+        settings_override: {
+          audio: {
+            access_request_enabled: true,
+            default_device: "speaker",
+            mic_default_on: true,
+            speaker_default_on: true,
+          },
+          video: {
+            access_request_enabled: true,
+            camera_default_on: false,
+            enabled: true,
+          },
+        },
       },
     });
+    await ensureVoiceChannelMembership(call, userId);
   } catch (err: any) {
     console.error(`${TAG} getOrCreate failed:`, err);
     throw new Error(
@@ -85,6 +128,7 @@ export async function joinVoiceChannel(
   console.info(`${TAG} Starting audio session...`);
   try {
     await startCallAudioSession("speaker");
+    await delay(250);
   } catch (err) {
     console.warn(`${TAG} callManager.start failed:`, err);
   }
@@ -97,35 +141,29 @@ export async function joinVoiceChannel(
       `voice channel ${channelId}`,
     );
 
-    console.info(`${TAG} Joined successfully — enabling microphone...`);
-    let micEnabled = false;
-    for (let attempt = 1; attempt <= 2; attempt++) {
-      try {
-        await call.microphone.enable();
-        micEnabled = true;
-        console.info(`${TAG} Microphone enable succeeded (attempt ${attempt})`);
-        break;
-      } catch (err) {
-        console.warn(
-          `${TAG} microphone.enable attempt ${attempt} failed:`,
-          err,
-        );
-        if (attempt < 2) {
-          await new Promise<void>((r) => setTimeout(r, 500));
-        }
-      }
-    }
-    if (!micEnabled) {
-      console.error(
-        `${TAG} Microphone enable failed after all attempts — user may have one-way audio`,
+    console.info(`${TAG} Joined successfully. Verifying microphone publish...`);
+    const micResult = await ensureMicrophonePublishing(
+      call,
+      `voice channel ${channelId}`,
+      { settleMs: 500, recoveryAttempts: 3, forceEnable: true },
+    );
+    if (!micResult.healthy) {
+      console.error(`${TAG} Microphone failed to publish after join:`, micResult);
+      throw new Error(
+        "Microphone could not be started for this voice room. Leave and try again.",
       );
     }
-
+    console.info(`${TAG} Microphone publish verified for ${channelId}`);
     applyCallMediaPreferences(call, `voice channel ${channelId}`);
 
     // Schedule post-join health check to catch silent mic failures
     schedulePostJoinMediaHealthCheck(call, `voice channel ${channelId}`);
   } catch (err: any) {
+    try {
+      await call.leave({ reject: false });
+    } catch {
+      // Best-effort cleanup only.
+    }
     await stopCallAudioSession();
     console.error(`${TAG} join failed:`, err);
     const message = err?.message ?? "unknown error";

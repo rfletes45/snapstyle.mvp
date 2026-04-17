@@ -67,7 +67,7 @@ const TOOLBAR_ITEM_DEFINITIONS: ToolbarItemDefinition[] = [
     itemId: "animal",
     displayName: "Animal",
     description:
-      "Tap for the quick animal picker, hold for the full animal catalog.",
+      "Tap to send your equipped animal, hold for the full animal catalog.",
     icon: "paw",
     category: "actions",
     canRemove: true,

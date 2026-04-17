@@ -121,6 +121,7 @@ import { SheetDismissLayer } from "@/components/chat/SheetDismissLayer";
 
 // Services
 import {
+  sendAnimalSignalMessage,
   sendChatDraft,
   sendGifMessage,
   sendMediaAttachmentMessage,
@@ -128,6 +129,7 @@ import {
 } from "@/chat/sendDraft";
 import { blockUser, hasBlockBetweenUsers } from "@/services/blocking";
 import { getOrCreateChat } from "@/services/chat";
+import { playAnimalSound } from "@/services/chat/animalSoundService";
 import { safeSystemText } from "@/services/chat/normalizeMessage";
 import { getUserProfileByUid } from "@/services/friends";
 import { registerGifShare } from "@/services/gif/gifService";
@@ -365,7 +367,7 @@ export default function ChatScreen({
   const insets = useSafeAreaInsets();
   const { currentFirebaseUser } = useAuth();
   const { setCurrentChatId } = useInAppNotifications();
-  const { profile, refreshProfile } = useUser();
+  const { profile } = useUser();
   const uid = currentFirebaseUser?.uid;
   const chatAppearance = profile?.chatAppearance ?? null;
   const { displayMode } = useConversationDisplayMode();
@@ -414,7 +416,6 @@ export default function ChatScreen({
   const [blockModalVisible, setBlockModalVisible] = useState(false);
   const [reportModalVisible, setReportModalVisible] = useState(false);
   const [scheduleModalVisible, setScheduleModalVisible] = useState(false);
-  const [animalPickerVisible, setAnimalPickerVisible] = useState(false);
   const [dmBlocked, setDmBlocked] = useState(false);
 
   // Games V4 state
@@ -1287,32 +1288,27 @@ export default function ChatScreen({
     returnIndexRef.current = null;
   }, []);
 
-  // Animal button tap opens the quick anchored picker bubble.
+  // Tap sends the equipped animal directly into chat + plays its sound.
   const handleAnimalPress = useCallback(() => {
-    if (!uid) return;
-    setAnimalPickerVisible(true);
-  }, [uid]);
+    if (!uid || !animalEntitlement.canSend) return;
+    const animalId = animalEntitlement.equippedAnimalId;
+    playAnimalSound(animalId);
+    sendAnimalSignalMessage({ chat: screen.chat, animalId });
+  }, [
+    uid,
+    animalEntitlement.canSend,
+    animalEntitlement.equippedAnimalId,
+    screen.chat,
+  ]);
 
   // Holding the animal button opens the full animal customization picker.
   const handleAnimalAlternatePress = useCallback(() => {
     if (!uid) return;
-    setAnimalPickerVisible(false);
     navigation.navigate("Customization", {
       initialSection: "chat",
       initialTab: "chat_animal_theme",
     });
   }, [navigation, uid]);
-
-  // Animal picker equip handler — refresh profile so the button updates
-  const handleAnimalEquipped = useCallback(
-    (animalId: string) => {
-      setAnimalPickerVisible(false);
-      // Profile uses one-shot reads; must explicitly refresh so
-      // useAnimalEntitlement picks up the new chatAppearance.animalThemeId
-      refreshProfile();
-    },
-    [refreshProfile],
-  );
 
   const handleBlockConfirm = useCallback(
     async (reason?: string) => {
@@ -1743,11 +1739,7 @@ export default function ChatScreen({
               onAnimalPress={handleAnimalPress}
               onAnimalAlternatePress={handleAnimalAlternatePress}
               animalThemeId={animalEntitlement.equippedAnimalId}
-              animalDisabled={!uid}
-              animalPickerVisible={animalPickerVisible}
-              onAnimalPickerClose={() => setAnimalPickerVisible(false)}
-              currentUserId={uid}
-              onAnimalEquipped={handleAnimalEquipped}
+              animalDisabled={!uid || !animalEntitlement.canSend}
               voiceButtonComponent={
                 voiceRecorder.isAvailable &&
                 !screen.composer.text.trim() &&

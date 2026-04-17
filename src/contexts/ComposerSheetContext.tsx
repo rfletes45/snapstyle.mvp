@@ -24,7 +24,11 @@ import React, {
   useState,
 } from "react";
 import { Dimensions, Keyboard, Platform } from "react-native";
-import { useSharedValue, type SharedValue } from "react-native-reanimated";
+import {
+  useSharedValue,
+  withTiming,
+  type SharedValue,
+} from "react-native-reanimated";
 
 const SCREEN_HEIGHT = Dimensions.get("window").height;
 
@@ -81,6 +85,15 @@ export interface ComposerSheetContextValue {
 
   /** Update the stored keyboard height (called by the keyboard hook). */
   setLastKeyboardHeight: (height: number) => void;
+
+  /** Floor offset that holds the composer position during sheet→keyboard
+   *  handoff, preventing the transient drop to baseline.  Consumed by
+   *  every bottom-offset derivation as `Math.max(computed, handoffFloor)`. */
+  handoffFloor: SharedValue<number>;
+
+  /** Signal that the next deactivateSheet should capture a handoff floor
+   *  because the keyboard is about to open (composer focus). */
+  beginKeyboardHandoff: () => void;
 }
 
 // ─── Context ─────────────────────────────────────────────────────────────────
@@ -101,6 +114,7 @@ export function ComposerSheetProvider({
   const isSheetActive = useSharedValue(0);
   const sheetExtraPadding = useSharedValue(0);
   const liveKeyboardHeight = useSharedValue(0);
+  const handoffFloor = useSharedValue(0);
 
   const [lastKeyboardHeight, setLastKbH] = useState(DEFAULT_KEYBOARD_HEIGHT);
 
@@ -113,6 +127,13 @@ export function ComposerSheetProvider({
    *  Prevents deactivateSheet from resetting shared animated values (translateY,
    *  isSheetActive, etc.) so there is no visible gap between sheets. */
   const switchingRef = useRef(false);
+
+  /** True when the next deactivateSheet should capture the current effective
+   *  sheet height into handoffFloor (because the keyboard is about to open). */
+  const handoffPendingRef = useRef(false);
+
+  /** Safety timer ID — clears handoffFloor if the keyboard never arrives. */
+  const handoffTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const setLastKeyboardHeight = useCallback((h: number) => {
     if (h > 0) setLastKbH(h);
@@ -156,6 +177,13 @@ export function ComposerSheetProvider({
       // Persist for future use
       if (kbH > 0) setLastKbH(kbH);
 
+      // Clear any pending handoff floor — a new sheet is taking over.
+      handoffFloor.value = 0;
+      if (handoffTimerRef.current) {
+        clearTimeout(handoffTimerRef.current);
+        handoffTimerRef.current = null;
+      }
+
       const initialSheetHeight = getKeyboardReplacementSheetHeight(kbH);
 
       // Match the sheet's real keyboard-height snap so the composer/chat
@@ -178,6 +206,7 @@ export function ComposerSheetProvider({
       initialSnapHeight,
       isSheetActive,
       sheetTranslateY,
+      handoffFloor,
     ],
   );
 
@@ -187,12 +216,35 @@ export function ComposerSheetProvider({
     // and clearing it here would break future switches. The animated values
     // are also preserved so there is no 1-frame gap where the sheet disappears.
     if (switchingRef.current) return;
+
+    // ── Sheet → keyboard handoff ──────────────────────────────────────────
+    // When the composer is about to gain focus (keyboard opening), capture
+    // the current effective sheet offset as a floor so every bottom-offset
+    // derivation stays ≥ this value until the keyboard takes over.  This
+    // prevents the transient drop-to-baseline frame that occurs when
+    // isSheetActive resets to 0 before keyboardHeight has risen.
+    if (handoffPendingRef.current) {
+      const sheetVisible = Math.max(0, SCREEN_HEIGHT - sheetTranslateY.value);
+      const clamped = Math.min(
+        sheetVisible,
+        Math.max(0, initialSnapHeight.value),
+      );
+      handoffFloor.value = Math.max(0, clamped);
+      handoffPendingRef.current = false;
+    }
+
     activeCloseRef.current = null;
     isSheetActive.value = 0;
     sheetTranslateY.value = SCREEN_HEIGHT;
     initialSnapHeight.value = 0;
     sheetExtraPadding.value = 0;
-  }, [isSheetActive, sheetTranslateY, initialSnapHeight, sheetExtraPadding]);
+  }, [
+    isSheetActive,
+    sheetTranslateY,
+    initialSnapHeight,
+    sheetExtraPadding,
+    handoffFloor,
+  ]);
 
   const dismissActiveSheet = useCallback(() => {
     if (activeCloseRef.current) {
@@ -201,6 +253,20 @@ export function ComposerSheetProvider({
       close();
     }
   }, []);
+
+  const beginKeyboardHandoff = useCallback(() => {
+    handoffPendingRef.current = true;
+
+    // Safety: if the keyboard never opens (e.g. hardware keyboard, edge
+    // case), smoothly decay the floor after 600 ms so the UI isn't stuck.
+    if (handoffTimerRef.current) clearTimeout(handoffTimerRef.current);
+    handoffTimerRef.current = setTimeout(() => {
+      handoffTimerRef.current = null;
+      if (handoffFloor.value > 0) {
+        handoffFloor.value = withTiming(0, { duration: 200 });
+      }
+    }, 600);
+  }, [handoffFloor]);
 
   const value = useMemo<ComposerSheetContextValue>(
     () => ({
@@ -214,6 +280,8 @@ export function ComposerSheetProvider({
       deactivateSheet,
       dismissActiveSheet,
       setLastKeyboardHeight,
+      handoffFloor,
+      beginKeyboardHandoff,
     }),
     [
       sheetTranslateY,
@@ -226,6 +294,8 @@ export function ComposerSheetProvider({
       deactivateSheet,
       dismissActiveSheet,
       setLastKeyboardHeight,
+      handoffFloor,
+      beginKeyboardHandoff,
     ],
   );
 
@@ -259,5 +329,7 @@ export function useComposerSheet(): ComposerSheetContextValue {
     deactivateSheet: NOOP,
     dismissActiveSheet: NOOP,
     setLastKeyboardHeight: NOOP,
+    handoffFloor: STUB_SHARED_VALUE,
+    beginKeyboardHandoff: NOOP,
   };
 }

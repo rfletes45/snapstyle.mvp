@@ -15,7 +15,10 @@
 import { callSettingsService } from "@/services/calls";
 import type { DirectCallMode } from "@/types/streamCall";
 import type { Call } from "@stream-io/video-react-native-sdk";
-import { schedulePostJoinMediaHealthCheck } from "./callMediaHealthCheck";
+import {
+  ensureMicrophonePublishing,
+  schedulePostJoinMediaHealthCheck,
+} from "./callMediaHealthCheck";
 import {
   applyCallMediaPreferences,
   applyCallReconnectPolicy,
@@ -274,34 +277,21 @@ async function ensureLocalDevices(
   },
 ): Promise<void> {
   if (options.enableMicrophone) {
-    console.info(`${TAG} [${options.context}] Enabling microphone...`);
-    let micEnabled = false;
-    for (let attempt = 1; attempt <= 2; attempt++) {
-      try {
-        await call.microphone.enable();
-        micEnabled = true;
-        console.info(
-          `${TAG} [${options.context}] Microphone enable succeeded (attempt ${attempt})`,
-        );
-        break;
-      } catch (err) {
-        console.warn(
-          `${TAG} [${options.context}] microphone.enable attempt ${attempt} failed:`,
-          err,
-        );
-        if (attempt < 2) {
-          // Brief delay before retry — allows native audio pipeline to settle
-          await new Promise<void>((r) => setTimeout(r, 500));
-        }
-      }
-    }
-    if (!micEnabled) {
-      console.error(
-        `${TAG} [${options.context}] Microphone enable failed after all attempts — user may have one-way audio`,
+    console.info(
+      `${TAG} [${options.context}] Enabling and verifying microphone publish...`,
+    );
+    const micResult = await ensureMicrophonePublishing(call, options.context, {
+      settleMs: 250,
+      recoveryAttempts: 2,
+      forceEnable: true,
+    });
+    if (!micResult.healthy) {
+      console.warn(
+        `${TAG} [${options.context}] Microphone is not publishing after recovery attempts:`,
+        micResult,
       );
     }
   }
-
   await applyPreferredCameraDirection(call, options.context);
 
   if (options.enableCamera) {

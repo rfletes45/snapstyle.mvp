@@ -136,11 +136,13 @@ import { ErrorState } from "@/components/ui";
 
 // Services
 import {
+  sendAnimalSignalMessage,
   sendChatDraft,
   sendGifMessage,
   sendMediaAttachmentMessage,
   sendVoiceRecordingMessage,
 } from "@/chat/sendDraft";
+import { playAnimalSound } from "@/services/chat/animalSoundService";
 import {
   describeRemoteUrlForLog,
   getPreparedGroupChatData,
@@ -321,7 +323,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   const { currentFirebaseUser } = useAuth();
   const uid = currentFirebaseUser?.uid;
   const { setCurrentChatId } = useInAppNotifications();
-  const { profile, refreshProfile } = useUser();
+  const { profile } = useUser();
   const animalEntitlement = useAnimalEntitlement(
     uid,
     profile?.chatAppearance ?? null,
@@ -457,7 +459,6 @@ export default function GroupChatScreen({ route, navigation }: Props) {
 
   // Scheduled messages state (UNI-09)
   const [scheduleModalVisible, setScheduleModalVisible] = useState(false);
-  const [animalPickerVisible, setAnimalPickerVisible] = useState(false);
 
   // Games V4 state
   const [gameInviteCreating, setGameInviteCreating] = useState(false);
@@ -1559,32 +1560,27 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     [],
   );
 
-  // Animal button tap opens the quick anchored picker bubble.
+  // Tap sends the equipped animal directly into chat + plays its sound.
   const handleAnimalPress = useCallback(() => {
-    if (!uid) return;
-    setAnimalPickerVisible(true);
-  }, [uid]);
+    if (!uid || !animalEntitlement.canSend) return;
+    const animalId = animalEntitlement.equippedAnimalId;
+    playAnimalSound(animalId);
+    sendAnimalSignalMessage({ chat: screen.chat, animalId });
+  }, [
+    uid,
+    animalEntitlement.canSend,
+    animalEntitlement.equippedAnimalId,
+    screen.chat,
+  ]);
 
   // Holding the animal button opens the full animal customization picker.
   const handleAnimalAlternatePress = useCallback(() => {
     if (!uid) return;
-    setAnimalPickerVisible(false);
     navigation.navigate("Customization", {
       initialSection: "chat",
       initialTab: "chat_animal_theme",
     });
   }, [navigation, uid]);
-
-  // Animal picker equip handler — refresh profile so the button updates
-  const handleAnimalEquipped = useCallback(
-    (animalId: string) => {
-      setAnimalPickerVisible(false);
-      // Profile uses one-shot reads; must explicitly refresh so
-      // useAnimalEntitlement picks up the new chatAppearance.animalThemeId
-      refreshProfile();
-    },
-    [refreshProfile],
-  );
 
   // ==========================================================================
   // Schedule Message (UNI-09)
@@ -2454,6 +2450,21 @@ export default function GroupChatScreen({ route, navigation }: Props) {
 
         {/* Keyboard-aware footer: typing indicator + composer */}
         <ChatFooterWrapper>
+          <VoiceRoomJoinStatusToast
+            voiceRoomJoinState={voiceRoomJoinState}
+            voiceRoomJoinGroupId={voiceRoomJoinGroupId}
+            voiceRoomJoinError={voiceRoomJoinError}
+            groupId={groupId}
+            groupName={resolvedGroupName}
+            style={styles.voiceRoomJoinToastOverlay}
+            onRetry={() => {
+              clearVoiceRoomJoinError();
+              if (group && groupId) {
+                joinChannelInline(groupId, group.name || "Voice Channel");
+              }
+            }}
+            onDismiss={clearVoiceRoomJoinError}
+          />
           {/* Typing Indicator — display-mode aware */}
           {displayMode === "stacked" ? (
             <TypingBar
@@ -2551,11 +2562,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
             onAnimalPress={handleAnimalPress}
             onAnimalAlternatePress={handleAnimalAlternatePress}
             animalThemeId={animalEntitlement.equippedAnimalId}
-            animalDisabled={!uid}
-            animalPickerVisible={animalPickerVisible}
-            onAnimalPickerClose={() => setAnimalPickerVisible(false)}
-            currentUserId={uid}
-            onAnimalEquipped={handleAnimalEquipped}
+            animalDisabled={!uid || !animalEntitlement.canSend}
             textInputRef={textInputRef}
             // Customizable toolbar
             toolbarItems={toolbar.items}
@@ -2619,21 +2626,6 @@ export default function GroupChatScreen({ route, navigation }: Props) {
           onEmojiSelected={handleFullEmojiReaction}
         />
       )}
-
-      <VoiceRoomJoinStatusToast
-        voiceRoomJoinState={voiceRoomJoinState}
-        voiceRoomJoinGroupId={voiceRoomJoinGroupId}
-        voiceRoomJoinError={voiceRoomJoinError}
-        groupId={groupId}
-        groupName={resolvedGroupName}
-        onRetry={() => {
-          clearVoiceRoomJoinError();
-          if (group && groupId) {
-            joinChannelInline(groupId, group.name || "Voice Channel");
-          }
-        }}
-        onDismiss={clearVoiceRoomJoinError}
-      />
 
       <Snackbar
         visible={snackbar.visible}
@@ -2734,6 +2726,14 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   snackbar: {},
+  voiceRoomJoinToastOverlay: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: "100%",
+    zIndex: 30,
+    elevation: 8,
+  },
   scheduleButton: {
     margin: 0,
     width: 40,

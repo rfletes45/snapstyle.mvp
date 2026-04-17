@@ -660,6 +660,21 @@ export function StreamCallProvider({
   );
 }
 
+/**
+ * Wraps children in <StreamVideo> when the client is ready.
+ *
+ * IMPORTANT: This provider MUST remain an ancestor of every component that
+ * renders ParticipantView or any other Stream Video SDK UI component.
+ * The SDK's <StreamVideo> provides StreamTheme (ThemeContext) which
+ * ParticipantView requires — removing this wrapper or moving it lower in
+ * the tree will cause an immediate crash:
+ *   "useThemeContext hook was called outside the ThemeContext Provider"
+ *
+ * When the client is not yet initialised (logged-out state, app boot) this
+ * renders children WITHOUT the <StreamVideo> wrapper so the rest of the UI
+ * is never blocked. Call-related UI that depends on the client should use
+ * its own isReady / activeCall guard to avoid rendering prematurely.
+ */
 export function StreamVideoEffectsProvider({
   children,
 }: {
@@ -668,7 +683,9 @@ export function StreamVideoEffectsProvider({
   const client = useContext(StreamVideoClientContext);
 
   if (!CALL_FEATURES.CALLS_ENABLED || !client || !StreamVideo) {
-    return null;
+    // Always render children — never return null. The rest of the UI must
+    // not be blocked while the Stream client initialises.
+    return <>{children}</>;
   }
 
   return <StreamVideo client={client}>{children}</StreamVideo>;

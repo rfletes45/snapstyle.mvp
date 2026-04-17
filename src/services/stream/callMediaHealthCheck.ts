@@ -1,160 +1,269 @@
 /**
  * Call Media Health Check
  *
- * Post-join verification and self-healing for microphone/camera publish state.
+ * Post-join verification and self-healing for microphone publish state.
  *
- * Problem this solves:
- * - The Stream SDK's `call.microphone.enable()` can appear to succeed (the
- *   optimistic `useMicrophoneState` returns "unmuted") while the actual WebRTC
- *   track is never published. This causes "false unmuted" (UI shows unmuted,
- *   but the other party hears nothing) and one-way audio.
- * - The root cause is a race between `callManager.start()` (native audio
- *   session), `call.join()`, and `call.microphone.enable()`. If the native
- *   audio capture pipeline isn't ready when the SDK enables the mic, the
- *   track publish silently fails.
- *
- * Solution:
- * - After joining, wait for the SDK state to stabilize, then inspect the
- *   actual mic publish status via `call.microphone.state.status`.
- * - If the intended state is "enabled/unmuted" but the actual status shows
- *   otherwise, force a disable→re-enable cycle to trigger a real publish.
- * - Log every phase for diagnostics.
+ * The important distinction here is "microphone enabled" versus "audio track
+ * published to the SFU". Stream's device manager can optimistically report an
+ * enabled microphone, and subsequent enable() calls can no-op, while the local
+ * participant still has no AUDIO entry in publishedTracks. Remote users then
+ * truthfully see the participant as muted and hear nothing.
  */
 
+import { hasAudio, OwnCapability, SfuModels } from "@stream-io/video-client";
 import type { Call } from "@stream-io/video-react-native-sdk";
 
 const TAG = "[CallMediaHealthCheck]";
 
-/** How long to wait after join before running the health check (ms). */
 const HEALTH_CHECK_DELAY_MS = 2000;
+const RECOVERY_RETRY_DELAY_MS = 900;
+const DIRECT_REPUBLISH_SETTLE_MS = 500;
+const FORCE_RESTART_SETTLE_MS = 350;
 
-/** Maximum number of recovery attempts. */
-const MAX_RECOVERY_ATTEMPTS = 2;
-
-/** Delay between recovery attempts (ms). */
-const RECOVERY_RETRY_DELAY_MS = 1500;
-
-export interface MediaHealthCheckResult {
+export interface MicrophonePublishSnapshot {
   micIntendedEnabled: boolean;
   micActualStatus: string;
+  micOptimisticStatus: string;
+  canSendAudio: boolean;
+  localPublishedAudio: boolean;
+  publishedTracks: unknown[];
+  hasMediaStream: boolean;
+  hasLiveAudioTrack: boolean;
+  healthy: boolean;
+}
+
+export interface EnsureMicrophonePublishingOptions {
+  settleMs?: number;
+  recoveryAttempts?: number;
+  forceEnable?: boolean;
+}
+
+export interface MediaHealthCheckResult extends MicrophonePublishSnapshot {
   micRecovered: boolean;
   micRecoveryAttempts: number;
   cameraIntendedEnabled: boolean;
   cameraActualStatus: string;
 }
 
-/**
- * Inspects the actual microphone publish state and reconciles if needed.
- *
- * Call this after the call reaches JOINED state and local devices have been
- * set up. The function will wait `delayMs` before checking, then attempt
- * recovery if the mic is expected to be enabled but is not actually publishing.
- *
- * @param call - The active Stream call object.
- * @param context - A human-readable label for logging (e.g. "outgoing direct call abc123").
- * @param delayMs - How long to wait before checking (default: 2000ms).
- * @returns A promise that resolves with the health check result.
- */
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function getAudioTracks(mediaStream: unknown): MediaStreamTrack[] {
+  const stream = mediaStream as { getAudioTracks?: () => MediaStreamTrack[] };
+  return stream?.getAudioTracks?.() ?? [];
+}
+
+function getMicrophoneMediaStream(call: Call): MediaStream | undefined {
+  return call.microphone?.state?.mediaStream as MediaStream | undefined;
+}
+
+export function getMicrophonePublishSnapshot(
+  call: Call,
+): MicrophonePublishSnapshot {
+  const micState = call.microphone?.state;
+  const localParticipant = call.state.localParticipant;
+  const mediaStream = getMicrophoneMediaStream(call);
+  const audioTracks = getAudioTracks(mediaStream);
+  const micActualStatus = String(micState?.status ?? "unknown");
+  const micOptimisticStatus = String(micState?.optimisticStatus ?? "unknown");
+  const micIntendedEnabled = micState?.optimisticStatus === "enabled";
+  const canSendAudio = !!call.state.ownCapabilities?.includes(
+    OwnCapability.SEND_AUDIO,
+  );
+  const localPublishedAudio = localParticipant ? hasAudio(localParticipant) : false;
+  const publishedTracks = [...(localParticipant?.publishedTracks ?? [])];
+  const hasMediaStream = !!mediaStream;
+  const hasLiveAudioTrack = audioTracks.some(
+    (track) => track.readyState === "live" && track.enabled !== false,
+  );
+
+  return {
+    micIntendedEnabled,
+    micActualStatus,
+    micOptimisticStatus,
+    canSendAudio,
+    localPublishedAudio,
+    publishedTracks,
+    hasMediaStream,
+    hasLiveAudioTrack,
+    healthy:
+      canSendAudio &&
+      micActualStatus === "enabled" &&
+      hasLiveAudioTrack &&
+      localPublishedAudio,
+  };
+}
+
+async function waitForSettledDeviceState(call: Call): Promise<void> {
+  try {
+    await call.microphone?.statusChangeSettled?.();
+  } catch (err) {
+    console.warn(`${TAG} microphone status settle wait failed:`, err);
+  }
+}
+
+async function tryDirectAudioRepublish(
+  call: Call,
+  context: string,
+): Promise<boolean> {
+  const mediaStream = getMicrophoneMediaStream(call);
+  if (!mediaStream || getAudioTracks(mediaStream).length === 0) return false;
+
+  try {
+    console.warn(
+      `${TAG} [${context}] Mic is enabled but audio is not published. Republish attempt starting.`,
+    );
+    await call.publish(mediaStream, SfuModels.TrackType.AUDIO);
+    await delay(DIRECT_REPUBLISH_SETTLE_MS);
+    return true;
+  } catch (err) {
+    console.warn(`${TAG} [${context}] Direct audio republish failed:`, err);
+    return false;
+  }
+}
+
+async function forceMicrophoneRestart(
+  call: Call,
+  context: string,
+  attempt: number,
+  maxAttempts: number,
+): Promise<void> {
+  console.warn(
+    `${TAG} [${context}] Mic publish recovery ${attempt}/${maxAttempts}: restarting capture and publish.`,
+  );
+  await call.microphone.disable({ forceStop: true });
+  await delay(FORCE_RESTART_SETTLE_MS);
+  await call.microphone.enable();
+  await waitForSettledDeviceState(call);
+  await delay(RECOVERY_RETRY_DELAY_MS);
+}
+
+export async function ensureMicrophonePublishing(
+  call: Call,
+  context: string,
+  options: EnsureMicrophonePublishingOptions = {},
+): Promise<MicrophonePublishSnapshot & {
+  recovered: boolean;
+  recoveryAttempts: number;
+}> {
+  const settleMs = options.settleMs ?? 0;
+  const recoveryAttempts = options.recoveryAttempts ?? 2;
+  if (settleMs > 0) await delay(settleMs);
+
+  let snapshot = getMicrophonePublishSnapshot(call);
+  console.info(`${TAG} [${context}] Mic publish snapshot:`, snapshot);
+
+  if (!snapshot.micIntendedEnabled) {
+    if (!options.forceEnable) {
+      return { ...snapshot, recovered: false, recoveryAttempts: 0 };
+    }
+
+    try {
+      console.info(
+        `${TAG} [${context}] Microphone is not requested enabled. Enabling for join/setup path.`,
+      );
+      await call.microphone.enable();
+      await waitForSettledDeviceState(call);
+      await delay(RECOVERY_RETRY_DELAY_MS);
+      snapshot = getMicrophonePublishSnapshot(call);
+    } catch (err) {
+      console.warn(`${TAG} [${context}] Forced microphone enable failed:`, err);
+    }
+  }
+
+  if (!snapshot.canSendAudio) {
+    console.error(
+      `${TAG} [${context}] Current user does not have send-audio capability.`,
+      snapshot,
+    );
+    return { ...snapshot, recovered: false, recoveryAttempts: 0 };
+  }
+
+  if (snapshot.healthy) {
+    return { ...snapshot, recovered: false, recoveryAttempts: 0 };
+  }
+
+  let recovered = false;
+  let attemptsUsed = 0;
+
+  if (
+    snapshot.micActualStatus === "enabled" &&
+    snapshot.hasMediaStream &&
+    snapshot.hasLiveAudioTrack &&
+    !snapshot.localPublishedAudio
+  ) {
+    const republishAttempted = await tryDirectAudioRepublish(call, context);
+    if (republishAttempted) {
+      snapshot = getMicrophonePublishSnapshot(call);
+      recovered = snapshot.healthy;
+      if (recovered) {
+        console.info(`${TAG} [${context}] Audio republish restored mic publish.`);
+        return { ...snapshot, recovered, recoveryAttempts: attemptsUsed };
+      }
+    }
+  }
+
+  for (let attempt = 1; attempt <= recoveryAttempts; attempt++) {
+    attemptsUsed = attempt;
+    try {
+      await forceMicrophoneRestart(call, context, attempt, recoveryAttempts);
+    } catch (err) {
+      console.warn(
+        `${TAG} [${context}] Mic restart attempt ${attempt} failed:`,
+        err,
+      );
+    }
+
+    snapshot = getMicrophonePublishSnapshot(call);
+    console.info(
+      `${TAG} [${context}] Mic publish snapshot after recovery ${attempt}:`,
+      snapshot,
+    );
+    if (snapshot.healthy) {
+      recovered = true;
+      break;
+    }
+  }
+
+  if (!snapshot.healthy) {
+    console.error(
+      `${TAG} [${context}] Mic publish recovery failed. Remote participants will see this user as muted until audio publishes.`,
+      snapshot,
+    );
+  }
+
+  return { ...snapshot, recovered, recoveryAttempts: attemptsUsed };
+}
+
 export async function runPostJoinMediaHealthCheck(
   call: Call,
   context: string,
   delayMs: number = HEALTH_CHECK_DELAY_MS,
 ): Promise<MediaHealthCheckResult> {
-  // Wait for SDK state to stabilize after join
-  await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+  await delay(delayMs);
 
-  const micState = call.microphone?.state;
   const cameraState = call.camera?.state;
-
-  // Determine intended vs actual mic state
-  const micActualStatus = String(micState?.status ?? "unknown");
-  const micOptimisticStatus = micState?.optimisticStatus; // 'enabled' | 'disabled' | undefined
-  // If optimisticStatus is "enabled", the user intends the mic to be on
-  const micIntendedEnabled = micOptimisticStatus === "enabled";
-
   const cameraActualStatus = String(cameraState?.status ?? "unknown");
-  const cameraOptimisticStatus = cameraState?.optimisticStatus;
-  const cameraIntendedEnabled = cameraOptimisticStatus === "enabled";
+  const cameraIntendedEnabled = cameraState?.optimisticStatus === "enabled";
 
-  console.info(`${TAG} [${context}] Post-join health check starting`, {
-    micIntendedEnabled,
-    micActualStatus,
-    micOptimisticStatus,
-    cameraIntendedEnabled,
-    cameraActualStatus,
+  const micResult = await ensureMicrophonePublishing(call, context, {
+    settleMs: 0,
+    recoveryAttempts: 2,
   });
 
-  let micRecovered = false;
-  let micRecoveryAttempts = 0;
-
-  // Check if mic is in a desync state: UI says unmuted but track isn't actually enabled/publishing
-  if (micIntendedEnabled && !isMicActuallyPublishing(micActualStatus)) {
-    console.warn(
-      `${TAG} [${context}] MIC DESYNC DETECTED — UI says unmuted but actual status is "${micActualStatus}". Attempting recovery.`,
-    );
-
-    for (let attempt = 1; attempt <= MAX_RECOVERY_ATTEMPTS; attempt++) {
-      micRecoveryAttempts = attempt;
-      try {
-        // Force disable then re-enable to trigger a real publish cycle
-        console.info(
-          `${TAG} [${context}] Recovery attempt ${attempt}/${MAX_RECOVERY_ATTEMPTS}: disabling mic...`,
-        );
-        await call.microphone.disable();
-
-        // Brief pause to let the SDK fully tear down the old track
-        await new Promise<void>((resolve) => setTimeout(resolve, 300));
-
-        console.info(
-          `${TAG} [${context}] Recovery attempt ${attempt}/${MAX_RECOVERY_ATTEMPTS}: re-enabling mic...`,
-        );
-        await call.microphone.enable();
-
-        // Wait for the new track to publish
-        await new Promise<void>((resolve) =>
-          setTimeout(resolve, RECOVERY_RETRY_DELAY_MS),
-        );
-
-        const newStatus = String(call.microphone?.state?.status ?? "unknown");
-        console.info(
-          `${TAG} [${context}] Recovery attempt ${attempt} result: mic status is now "${newStatus}"`,
-        );
-
-        if (isMicActuallyPublishing(newStatus)) {
-          micRecovered = true;
-          console.info(
-            `${TAG} [${context}] MIC RECOVERY SUCCESSFUL on attempt ${attempt}.`,
-          );
-          break;
-        }
-      } catch (err) {
-        console.warn(
-          `${TAG} [${context}] Recovery attempt ${attempt} failed:`,
-          err,
-        );
-      }
-    }
-
-    if (!micRecovered) {
-      console.error(
-        `${TAG} [${context}] MIC RECOVERY FAILED after ${MAX_RECOVERY_ATTEMPTS} attempts. User will need to manually toggle mute.`,
-      );
-    }
-  } else if (micIntendedEnabled) {
-    console.info(
-      `${TAG} [${context}] Mic health check PASSED — mic is publishing as intended.`,
-    );
-  } else {
-    console.info(
-      `${TAG} [${context}] Mic intended muted — no recovery needed.`,
-    );
-  }
-
   const result: MediaHealthCheckResult = {
-    micIntendedEnabled,
-    micActualStatus,
-    micRecovered,
-    micRecoveryAttempts,
+    micIntendedEnabled: micResult.micIntendedEnabled,
+    micActualStatus: micResult.micActualStatus,
+    micOptimisticStatus: micResult.micOptimisticStatus,
+    canSendAudio: micResult.canSendAudio,
+    localPublishedAudio: micResult.localPublishedAudio,
+    publishedTracks: micResult.publishedTracks,
+    hasMediaStream: micResult.hasMediaStream,
+    hasLiveAudioTrack: micResult.hasLiveAudioTrack,
+    healthy: micResult.healthy,
+    micRecovered: micResult.recovered,
+    micRecoveryAttempts: micResult.recoveryAttempts,
     cameraIntendedEnabled,
     cameraActualStatus,
   };
@@ -163,23 +272,6 @@ export async function runPostJoinMediaHealthCheck(
   return result;
 }
 
-/**
- * Determines whether the mic status string indicates actual publishing.
- *
- * The Stream SDK reports status as "enabled", "disabled", "undefined", etc.
- * On RN, the mic status comes from the SFU track state. "enabled" means the
- * track is published and active.
- */
-function isMicActuallyPublishing(status: string): boolean {
-  // The SDK uses "enabled" when the track is live and publishing.
-  // Anything else ("disabled", "undefined", "unknown", etc.) means it's not.
-  return status === "enabled" || status === "true" || status === (true as any);
-}
-
-/**
- * Schedule a background health check that won't block the caller.
- * Swallows all errors so it's safe to call fire-and-forget.
- */
 export function schedulePostJoinMediaHealthCheck(
   call: Call,
   context: string,

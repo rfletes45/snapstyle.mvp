@@ -13,8 +13,9 @@ import React from "react";
 let CallingState: any = null;
 let StreamCall: any = null;
 let RTCViewPipIOS: any = null;
-let useAutoEnterPiPEffect: (disablePictureInPicture: boolean | undefined) => void =
-  () => {};
+let useAutoEnterPiPEffect: (
+  disablePictureInPicture: boolean | undefined,
+) => void = () => {};
 let useCallStateHooks: any = null;
 
 try {
@@ -22,12 +23,13 @@ try {
   CallingState = sdk.CallingState;
   StreamCall = sdk.StreamCall;
   RTCViewPipIOS = sdk.RTCViewPipIOS;
-  useAutoEnterPiPEffect =
-    sdk.useAutoEnterPiPEffect ?? useAutoEnterPiPEffect;
+  useAutoEnterPiPEffect = sdk.useAutoEnterPiPEffect ?? useAutoEnterPiPEffect;
   useCallStateHooks = sdk.useCallStateHooks;
 } catch {
   // Stream SDK not available in this environment
 }
+
+import { VideoRenderErrorBoundary } from "@/components/stream/VideoRenderErrorBoundary";
 
 export function NativePiPBridge() {
   const { activeCall, activeSession } = useStreamCall();
@@ -40,10 +42,15 @@ export function NativePiPBridge() {
 
   if (!shouldMount || !activeCall) return null;
 
+  // Error boundary prevents SDK hook failures from crashing the entire app.
+  // NativePiPBridge is mounted at the root level, so an unhandled throw here
+  // would take down every screen.
   return (
-    <StreamCall call={activeCall}>
-      <NativePiPBridgeContent />
-    </StreamCall>
+    <VideoRenderErrorBoundary fallback={null}>
+      <StreamCall call={activeCall}>
+        <NativePiPBridgeContent />
+      </StreamCall>
+    </VideoRenderErrorBoundary>
   );
 }
 

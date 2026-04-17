@@ -281,5 +281,11 @@ export {
   watchdogGamesV4,
 };
 
-// ─── Contacts Matching ─────────────────────────────────────────────────────
-export { matchContacts } from "./contacts";
+// ─── Contacts Matching & Discovery ─────────────────────────────────────
+export {
+  getContactRecommendations,
+  matchContacts,
+  removeSyncedContacts,
+  syncContacts,
+  updateContactDiscoverySettings,
+} from "./contacts";

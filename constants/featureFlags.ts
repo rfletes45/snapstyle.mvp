@@ -335,3 +335,25 @@ export const CHAT_FEATURES = {
   /** Route typing/read/delivery writes through Cloud Function callables */
   CHAT_PRIVACY_SERVER_ENFORCED: false,
 } as const;
+
+// =============================================================================
+// Contacts Discovery Feature Flag
+// =============================================================================
+
+/**
+ * Master switch for the contacts-based friend discovery system.
+ *
+ * When enabled:
+ * - Contacts permission card appears in Add Friends sheet
+ * - Users can sync contacts to find friends already on the app
+ * - Ranked recommendations with explanation tags ("In your contacts", etc.)
+ * - Inviteable contacts list for non-matched contacts
+ * - Privacy controls (sync toggle, discoverability toggle, data removal)
+ *
+ * When disabled:
+ * - No contacts-related UI is shown
+ * - Existing Add Friends sheet remains unchanged
+ *
+ * @default true
+ */
+export const CONTACTS_DISCOVERY_ENABLED = true;

@@ -26,6 +26,7 @@ import { CallConnectionBadge } from "@/components/stream/CallConnectionBadge";
 import { CallControlBar } from "@/components/stream/CallControlBar";
 import { useStreamCall } from "@/contexts/StreamCallContext";
 import { callSettingsService } from "@/services/calls";
+import { ensureMicrophonePublishing } from "@/services/stream/callMediaHealthCheck";
 import { useAppTheme } from "@/store/ThemeContext";
 import type { MainStackParamList } from "@/types/navigation/root";
 import { requestCameraPermission } from "@/utils/permissions";
@@ -48,12 +49,11 @@ import React, {
   useState,
 } from "react";
 import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
-import {
-  SafeAreaView,
-  useSafeAreaInsets,
-} from "react-native-safe-area-context";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 import { NoiseCancellationWrapper } from "@/components/stream/NoiseCancellationWrapper";
+import { useStableCallInsets } from "@/components/stream/useStableCallInsets";
+import { VideoRenderErrorBoundary } from "@/components/stream/VideoRenderErrorBoundary";
 
 // Lazy-load ringtone service for outgoing ring sound
 let ringtoneService: typeof import("@/services/calls/ringtoneService") | null =
@@ -78,7 +78,7 @@ export default function DirectCallScreen({ route, navigation }: Props) {
   const { endCall, activeCall } = useStreamCall();
   const { colors } = useAppTheme();
 
-  // Normalize params once at the top — prevents undefined-driven re-renders
+  // Normalize params once at the top to prevent undefined-driven re-renders.
   const params = route.params as {
     callId?: string;
     recipientName?: string;
@@ -93,10 +93,6 @@ export default function DirectCallScreen({ route, navigation }: Props) {
       : (params.mode ?? "audio");
   const isOutgoing = params.isOutgoing ?? activeCall?.isCreatedByMe ?? false;
 
-  // Ref-gate prevents multiple endCall dispatches. Once endCall is invoked
-  // (by user tap, remote hangup, or callingState→LEFT), this ref ensures
-  // we never fire it again — which would cause redundant state resets and
-  // rapid <StreamCall> mount/unmount cycles that trigger hook ordering errors.
   const endedRef = useRef(false);
   const dismissedRef = useRef(false);
 
@@ -119,13 +115,10 @@ export default function DirectCallScreen({ route, navigation }: Props) {
     }
   }, [dismissScreen, endCall]);
 
-  // Minimize — go back but stay in call
   const handleMinimize = useCallback(() => {
     if (navigation.canGoBack()) navigation.goBack();
   }, [navigation]);
 
-  // Auto-dismiss if no active call after a short delay.
-  // Skip if endedRef is already set — handleEndCall already navigated away.
   useEffect(() => {
     if (!activeCall && !endedRef.current) {
       const timer = setTimeout(() => {
@@ -157,23 +150,30 @@ export default function DirectCallScreen({ route, navigation }: Props) {
   }
 
   return (
-    <StreamCall call={activeCall}>
-      <NoiseCancellationWrapper>
-        <DirectCallContent
+    <VideoRenderErrorBoundary
+      fallback={
+        <VideoErrorFallbackScreen
           recipientName={recipientName}
-          mode={mode}
-          isOutgoing={isOutgoing}
           onEndCall={handleEndCall}
           onMinimize={handleMinimize}
+          colors={colors}
         />
-      </NoiseCancellationWrapper>
-    </StreamCall>
+      }
+    >
+      <StreamCall call={activeCall}>
+        <NoiseCancellationWrapper>
+          <DirectCallContent
+            recipientName={recipientName}
+            mode={mode}
+            isOutgoing={isOutgoing}
+            onEndCall={handleEndCall}
+            onMinimize={handleMinimize}
+          />
+        </NoiseCancellationWrapper>
+      </StreamCall>
+    </VideoRenderErrorBoundary>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Inner content (must be inside StreamCall provider)
-// ---------------------------------------------------------------------------
 
 function DirectCallContent({
   recipientName,
@@ -212,57 +212,35 @@ function DirectCallContent({
     cameraDirection === "front"
       ? callSettingsService.getSettingsSync().mirrorFrontCamera
       : false;
-  const insets = useSafeAreaInsets();
+  const callInsets = useStableCallInsets();
 
-  // ── Post-join mic state reconciliation ──────────────────────────────────
-  // The service layer runs its own health check, but this is a UI-level
-  // safety net. If the user's mic is supposed to be unmuted (optimisticIsMute
-  // === false) but the actual SDK track status says otherwise after join
-  // stabilizes, we force a disable→re-enable cycle to self-heal.
+  // Post-join mic publish reconciliation. The service layer runs this too,
+  // but screen remounts/reconnects can leave device state stale.
   const micReconciliationRef = useRef(false);
   useEffect(() => {
     if (!isJoined || !call || micReconciliationRef.current) return;
     micReconciliationRef.current = true;
 
     const timer = setTimeout(() => {
-      const micState = call.microphone?.state;
-      const actualStatus = micState?.status; // 'enabled' | 'disabled' | undefined
-      const optimistic = micState?.optimisticStatus; // what the UI thinks
-      const intendedUnmuted = optimistic === "enabled";
-
-      if (intendedUnmuted && actualStatus !== "enabled") {
-        console.warn(
-          "[DirectCallScreen] UI-level mic desync detected after join:",
-          { optimistic, actualStatus },
-          "— forcing recovery cycle",
-        );
-        call.microphone
-          .disable()
-          .then(() => new Promise<void>((r) => setTimeout(r, 300)))
-          .then(() => call.microphone.enable())
-          .then(() => {
-            console.info(
-              "[DirectCallScreen] UI-level mic recovery completed. New status:",
-              String(call.microphone?.state?.status ?? "unknown"),
-            );
-          })
-          .catch((err) => {
+      ensureMicrophonePublishing(call, "direct call UI reconciliation", {
+        settleMs: 0,
+        recoveryAttempts: 1,
+      })
+        .then((snapshot) => {
+          if (!snapshot.healthy && snapshot.micIntendedEnabled) {
             console.warn(
-              "[DirectCallScreen] UI-level mic recovery failed:",
-              err,
+              "[DirectCallScreen] Mic still not publishing after UI reconciliation:",
+              snapshot,
             );
-          });
-      } else {
-        console.info("[DirectCallScreen] Mic state healthy after join:", {
-          optimistic,
-          actualStatus,
+          }
+        })
+        .catch((err) => {
+          console.warn("[DirectCallScreen] UI-level mic recovery failed:", err);
         });
-      }
     }, 3000);
 
     return () => clearTimeout(timer);
   }, [isJoined, call]);
-
   // Speaker toggle state — tracked locally (SDK doesn't provide useSpeakerState on RN)
   const [isSpeakerOn, setIsSpeakerOn] = useState(isVideo); // Default speaker ON for video
   const [wasAcceptedByRemote, setWasAcceptedByRemote] = useState(false);
@@ -531,12 +509,15 @@ function DirectCallContent({
   })();
 
   // Joined video calls — custom video rendering with full controls
-  if (isVideo && isJoined) {
+  // Guard: only render video subtree when call object + joined state are valid
+  if (isVideo && isJoined && call) {
     return (
       <View style={[styles.container, { backgroundColor: "#000" }]}>
         {/* Video layer — fills entire screen edge-to-edge */}
         <View style={StyleSheet.absoluteFill} pointerEvents="none">
-          {remoteParticipant?.hasVideo && remoteParticipant.participant ? (
+          {remoteParticipant?.hasVideo &&
+          remoteParticipant.participant &&
+          remoteParticipant.participant.sessionId ? (
             <ParticipantView
               participant={remoteParticipant.participant}
               trackType="videoTrack"
@@ -573,7 +554,9 @@ function DirectCallContent({
         {!isInPiPMode && (
           <View style={styles.videoUiOverlay} pointerEvents="box-none">
             {/* Header with explicit safe-area top padding */}
-            <View style={[styles.videoHeader, { paddingTop: insets.top + 8 }]}>
+            <View
+              style={[styles.videoHeader, { paddingTop: callInsets.top + 8 }]}
+            >
               <Pressable
                 onPress={onMinimize}
                 style={styles.videoBackButton}
@@ -607,6 +590,7 @@ function DirectCallContent({
             <View style={styles.videoMiddle} pointerEvents="box-none">
               {/* Local self-view PiP */}
               {localParticipant &&
+                localParticipant.sessionId &&
                 !isCameraOff &&
                 hasVideo(localParticipant) && (
                   <View style={styles.localPip}>
@@ -654,9 +638,14 @@ function DirectCallContent({
 
   // Audio call UI (or ringing/connecting state)
   return (
-    <SafeAreaView
-      style={[styles.container, { backgroundColor: colors.background }]}
-      edges={["top"]}
+    <View
+      style={[
+        styles.container,
+        {
+          backgroundColor: colors.background,
+          paddingTop: callInsets.top,
+        },
+      ]}
     >
       {/* Header with back arrow */}
       <View style={styles.audioHeader}>
@@ -745,7 +734,74 @@ function DirectCallContent({
         currentRoute={currentAudioRoute}
         onRouteSelected={handleAudioRouteSelect}
       />
-    </SafeAreaView>
+    </View>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Error fallback — keeps call alive in audio mode when video subtree crashes
+// ---------------------------------------------------------------------------
+
+function VideoErrorFallbackScreen({
+  recipientName,
+  onEndCall,
+  onMinimize,
+  colors,
+}: {
+  recipientName: string;
+  onEndCall: () => void;
+  onMinimize: () => void;
+  colors: { background: string; text: string; textSecondary: string };
+}) {
+  return (
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <View style={styles.audioHeader}>
+        <Pressable
+          onPress={onMinimize}
+          style={styles.backButton}
+          accessibilityLabel="Minimize call"
+          hitSlop={12}
+        >
+          <MaterialCommunityIcons
+            name="chevron-down"
+            size={28}
+            color={colors.text}
+          />
+        </Pressable>
+        <Text style={[styles.headerCallType, { color: colors.textSecondary }]}>
+          Audio Call
+        </Text>
+        <View style={styles.backButton} />
+      </View>
+      <View style={styles.centered}>
+        <MaterialCommunityIcons
+          name="video-off-outline"
+          size={48}
+          color={colors.textSecondary}
+        />
+        <Text
+          style={[styles.recipientName, { color: colors.text, marginTop: 16 }]}
+        >
+          {recipientName || "Call"}
+        </Text>
+        <Text
+          style={[
+            styles.statusText,
+            { color: colors.textSecondary, marginTop: 8 },
+          ]}
+        >
+          Video unavailable — call continued in audio mode
+        </Text>
+      </View>
+      <View style={{ flex: 1 }} />
+      <CallControlBar
+        isMuted={false}
+        onToggleMic={() => {}}
+        micDisabled
+        onLeave={onEndCall}
+        leaveLabel="End"
+      />
+    </View>
   );
 }
 

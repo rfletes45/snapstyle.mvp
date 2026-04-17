@@ -21,9 +21,11 @@ import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
+  type StyleProp,
   StyleSheet,
   Text,
   TouchableOpacity,
+  type ViewStyle,
 } from "react-native";
 
 // ---------------------------------------------------------------------------
@@ -40,6 +42,7 @@ interface VoiceRoomJoinStatusToastProps {
   groupName: string;
   onRetry: () => void;
   onDismiss: () => void;
+  style?: StyleProp<ViewStyle>;
 }
 
 // ---------------------------------------------------------------------------
@@ -74,6 +77,7 @@ export function VoiceRoomJoinStatusToast({
   groupName,
   onRetry,
   onDismiss,
+  style,
 }: VoiceRoomJoinStatusToastProps) {
   const { colors } = useAppTheme();
 
@@ -205,6 +209,7 @@ export function VoiceRoomJoinStatusToast({
     <Animated.View
       style={[
         styles.container,
+        style,
         {
           backgroundColor: bgColor,
           opacity: animValue,

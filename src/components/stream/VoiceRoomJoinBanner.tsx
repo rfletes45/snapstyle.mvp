@@ -23,6 +23,8 @@ export function VoiceRoomJoinBanner({
   onDismiss,
 }: VoiceRoomJoinBannerProps) {
   const { colors } = useAppTheme();
+  const onErrorContainer =
+    (colors as { onErrorContainer?: string }).onErrorContainer ?? "#fff";
 
   return (
     <View
@@ -34,11 +36,11 @@ export function VoiceRoomJoinBanner({
       <Ionicons
         name="alert-circle"
         size={18}
-        color={colors.onErrorContainer ?? "#fff"}
+        color={onErrorContainer}
         style={styles.icon}
       />
       <Text
-        style={[styles.message, { color: colors.onErrorContainer ?? "#fff" }]}
+        style={[styles.message, { color: onErrorContainer }]}
         numberOfLines={2}
       >
         {message}
@@ -48,7 +50,7 @@ export function VoiceRoomJoinBanner({
           onPress={onRetry}
           style={[
             styles.action,
-            { borderColor: colors.onErrorContainer ?? "#fff" },
+            { borderColor: onErrorContainer },
           ]}
           accessibilityLabel="Retry joining voice room"
           accessibilityRole="button"
@@ -56,7 +58,7 @@ export function VoiceRoomJoinBanner({
           <Text
             style={[
               styles.actionText,
-              { color: colors.onErrorContainer ?? "#fff" },
+              { color: onErrorContainer },
             ]}
           >
             Retry
@@ -72,7 +74,7 @@ export function VoiceRoomJoinBanner({
         <Ionicons
           name="close"
           size={18}
-          color={colors.onErrorContainer ?? "#fff"}
+          color={onErrorContainer}
         />
       </TouchableOpacity>
     </View>

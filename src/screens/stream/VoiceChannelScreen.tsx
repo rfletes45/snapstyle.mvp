@@ -22,8 +22,10 @@ import {
 } from "@/components/stream/AudioRoutePicker";
 import { CallConnectionBadge } from "@/components/stream/CallConnectionBadge";
 import { CallControlBar } from "@/components/stream/CallControlBar";
+import { VideoRenderErrorBoundary } from "@/components/stream/VideoRenderErrorBoundary";
 import { useStreamCall } from "@/contexts/StreamCallContext";
 import { callSettingsService } from "@/services/calls";
+import { ensureMicrophonePublishing } from "@/services/stream/callMediaHealthCheck";
 import { useAppTheme } from "@/store/ThemeContext";
 import type { MainStackParamList } from "@/types/navigation/root";
 import { requestCameraPermission } from "@/utils/permissions";
@@ -52,6 +54,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { NoiseCancellationWrapper } from "@/components/stream/NoiseCancellationWrapper";
+import { useStableCallInsets } from "@/components/stream/useStableCallInsets";
 
 let callManager: any = null;
 try {
@@ -127,15 +130,10 @@ export default function VoiceChannelScreen({ route, navigation }: Props) {
   useEffect(() => {
     if (!groupId || isAlreadyInChannel || joinAttemptedRef.current) return;
 
-    // If an inline join (from the group chat screen) is already in progress
-    // or has completed, don't start a duplicate join from this screen.
     if (voiceRoomJoinState === "joining" || voiceRoomJoinState === "joined") {
       return;
     }
 
-    // Guard: don't attempt to join if user is already in another call.
-    // The context's joinChannel() would throw, but checking here avoids
-    // a subtle race where isBusy becomes true between render and effect.
     if (isBusy && !isAlreadyInChannel) {
       setJoinError(
         "You're already in a call. Leave it first to join this voice channel.",
@@ -153,7 +151,7 @@ export default function VoiceChannelScreen({ route, navigation }: Props) {
     joinChannel(groupId, channelName).catch((err: any) => {
       if (attemptId !== joinAttemptIdRef.current) return;
       console.error("[VoiceChannelScreen] joinChannel error:", err);
-      joinAttemptedRef.current = false; // Allow retry on next mount/navigation
+      joinAttemptedRef.current = false;
       if (mountedRef.current) {
         setJoinError(err?.message || "Failed to join voice channel");
       }
@@ -231,9 +229,7 @@ export default function VoiceChannelScreen({ route, navigation }: Props) {
               if (navigation.canGoBack()) navigation.goBack();
             }}
           >
-            <Text style={[styles.retryButtonText, { color: colors.text }]}>
-              Go Back
-            </Text>
+            <Text style={[styles.retryButtonText, { color: colors.text }]}>Go Back</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -280,6 +276,7 @@ function VoiceChannelContent({
   onMinimize: () => void;
 }) {
   const { colors } = useAppTheme();
+  const callInsets = useStableCallInsets();
   const {
     useCallCallingState,
     useParticipants,
@@ -298,51 +295,33 @@ function VoiceChannelContent({
   const isJoined = callingState === CallingState.JOINED;
   const call = useCall();
 
-  // ── Post-join mic state reconciliation ──────────────────────────────────
+  // Post-join mic publish reconciliation. This checks the SFU-visible audio
+  // publication, not just the local optimistic microphone state.
   const micReconciliationRef = useRef(false);
   useEffect(() => {
     if (!isJoined || !call || micReconciliationRef.current) return;
     micReconciliationRef.current = true;
 
     const timer = setTimeout(() => {
-      const micState = call.microphone?.state;
-      const actualStatus = micState?.status; // 'enabled' | 'disabled' | undefined
-      const optimistic = micState?.optimisticStatus; // what the UI thinks
-      const intendedUnmuted = optimistic === "enabled";
-
-      if (intendedUnmuted && actualStatus !== "enabled") {
-        console.warn(
-          "[VoiceChannelScreen] UI-level mic desync detected after join:",
-          { optimistic, actualStatus },
-          "— forcing recovery cycle",
-        );
-        call.microphone
-          .disable()
-          .then(() => new Promise<void>((r) => setTimeout(r, 300)))
-          .then(() => call.microphone.enable())
-          .then(() => {
-            console.info(
-              "[VoiceChannelScreen] UI-level mic recovery completed. New status:",
-              String(call.microphone?.state?.status ?? "unknown"),
-            );
-          })
-          .catch((err: any) => {
+      ensureMicrophonePublishing(call, "voice channel UI reconciliation", {
+        settleMs: 0,
+        recoveryAttempts: 1,
+      })
+        .then((snapshot) => {
+          if (!snapshot.healthy && snapshot.micIntendedEnabled) {
             console.warn(
-              "[VoiceChannelScreen] UI-level mic recovery failed:",
-              err,
+              "[VoiceChannelScreen] Mic still not publishing after UI reconciliation:",
+              snapshot,
             );
-          });
-      } else {
-        console.info("[VoiceChannelScreen] Mic state healthy after join:", {
-          optimistic,
-          actualStatus,
+          }
+        })
+        .catch((err: any) => {
+          console.warn("[VoiceChannelScreen] UI-level mic recovery failed:", err);
         });
-      }
     }, 3000);
 
     return () => clearTimeout(timer);
   }, [isJoined, call]);
-
   const [isSpeakerOn, setIsSpeakerOn] = useState(true); // Voice rooms default to speaker
   const [audioRoutePickerVisible, setAudioRoutePickerVisible] = useState(false);
   const [currentAudioRoute, setCurrentAudioRoute] =
@@ -511,16 +490,9 @@ function VoiceChannelContent({
             },
           ]}
         >
-          {participantHasVideo ? (
-            <ParticipantView
-              participant={item}
-              trackType="videoTrack"
-              style={styles.participantVideo}
-              objectFit="cover"
-              ParticipantLabel={null as any}
-              ParticipantReaction={null as any}
-              mirror={item.isLocalParticipant && shouldMirrorLocalVideo}
-              ParticipantVideoFallback={() => (
+          {participantHasVideo && item.sessionId ? (
+            <VideoRenderErrorBoundary
+              fallback={
                 <View style={styles.tileAvatarContainer}>
                   <ProfilePicture
                     url={avatarUrl ?? null}
@@ -529,8 +501,28 @@ function VoiceChannelContent({
                     showLoading={false}
                   />
                 </View>
-              )}
-            />
+              }
+            >
+              <ParticipantView
+                participant={item}
+                trackType="videoTrack"
+                style={styles.participantVideo}
+                objectFit="cover"
+                ParticipantLabel={null as any}
+                ParticipantReaction={null as any}
+                mirror={item.isLocalParticipant && shouldMirrorLocalVideo}
+                ParticipantVideoFallback={() => (
+                  <View style={styles.tileAvatarContainer}>
+                    <ProfilePicture
+                      url={avatarUrl ?? null}
+                      name={displayName}
+                      size={Math.min(tileSize * 0.45, 56)}
+                      showLoading={false}
+                    />
+                  </View>
+                )}
+              />
+            </VideoRenderErrorBoundary>
           ) : (
             <View style={styles.tileAvatarContainer}>
               <ProfilePicture
@@ -575,13 +567,18 @@ function VoiceChannelContent({
         </View>
       );
     },
-    [colors, tileSize],
+    [colors, shouldMirrorLocalVideo, tileSize],
   );
 
   return (
-    <SafeAreaView
-      style={[styles.container, { backgroundColor: colors.background }]}
-      edges={["top"]}
+    <View
+      style={[
+        styles.container,
+        {
+          backgroundColor: colors.background,
+          paddingTop: callInsets.top,
+        },
+      ]}
     >
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
         <Pressable
@@ -671,7 +668,7 @@ function VoiceChannelContent({
         currentRoute={currentAudioRoute}
         onRouteSelected={handleAudioRouteSelect}
       />
-    </SafeAreaView>
+    </View>
   );
 }
 

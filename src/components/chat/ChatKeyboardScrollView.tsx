@@ -138,17 +138,21 @@ export function useRenderChatScrollComponent() {
 }
 
 export function useKeyboardBackdropHeight(): SharedValue<number> {
-  const { sheetTranslateY, isSheetActive } = useComposerSheet();
+  const { sheetTranslateY, isSheetActive, handoffFloor } = useComposerSheet();
   const { height: keyboardHeight } = useReanimatedKeyboardAnimationCompat();
 
   return useDerivedValue(() => {
     const kbH = Math.abs(keyboardHeight.value);
 
-    if (isSheetActive.value === 0) return kbH;
+    if (isSheetActive.value === 0) {
+      // During a sheet→keyboard handoff the floor keeps the backdrop tall
+      // until the keyboard catches up.
+      return Math.max(kbH, handoffFloor.value);
+    }
 
     const sheetVisible = getSheetVisibleHeight(sheetTranslateY.value);
     return Math.max(kbH, sheetVisible);
-  }, [sheetTranslateY, isSheetActive, keyboardHeight]);
+  }, [sheetTranslateY, isSheetActive, keyboardHeight, handoffFloor]);
 }
 
 interface KeyboardBackdropDebugState {
@@ -251,6 +255,7 @@ export function ChatFooterWrapper({ children }: { children: React.ReactNode }) {
     isSheetActive,
     sheetExtraPadding,
     liveKeyboardHeight,
+    handoffFloor,
   } = useComposerSheet();
   const { height: keyboardHeight } = useReanimatedKeyboardAnimationCompat();
 
@@ -278,7 +283,11 @@ export function ChatFooterWrapper({ children }: { children: React.ReactNode }) {
   const unifiedFooterOffset = useDerivedValue(() => {
     const kbH = Math.abs(keyboardHeight.value);
 
-    if (isSheetActive.value === 0) return kbH;
+    if (isSheetActive.value === 0) {
+      // During a sheet→keyboard handoff the floor prevents the footer
+      // from dropping to baseline before the keyboard has started rising.
+      return Math.max(kbH, handoffFloor.value);
+    }
 
     const sheetVisible = getSheetVisibleHeight(sheetTranslateY.value);
     const clamped = clampSheetToInitialSnap(
@@ -286,7 +295,29 @@ export function ChatFooterWrapper({ children }: { children: React.ReactNode }) {
       initialSnapHeight.value,
     );
     return Math.max(kbH, clamped);
-  }, [keyboardHeight, isSheetActive, sheetTranslateY, initialSnapHeight]);
+  }, [
+    keyboardHeight,
+    isSheetActive,
+    sheetTranslateY,
+    initialSnapHeight,
+    handoffFloor,
+  ]);
+
+  // Clear the handoff floor once the keyboard height has caught up.
+  // This keeps the floor alive only during the brief gap and removes it
+  // the instant the keyboard is tall enough, so it never lingers.
+  useAnimatedReaction(
+    () => ({
+      floor: handoffFloor.value,
+      kbH: Math.abs(keyboardHeight.value),
+    }),
+    (current) => {
+      if (current.floor > 0 && current.kbH >= current.floor * 0.85) {
+        handoffFloor.value = 0;
+      }
+    },
+    [handoffFloor, keyboardHeight],
+  );
 
   // Pipe the sheet's extra contribution → sheetExtraPadding so KCSV shifts
   // chat content.  This is the portion of the unified offset beyond what the
@@ -346,14 +377,17 @@ export function ChatFooterWrapper({ children }: { children: React.ReactNode }) {
  * Reanimated-driven paddingBottom that understands the full composer system.
  */
 function useEffectiveBottomInset(): SharedValue<number> {
-  const { sheetTranslateY, initialSnapHeight, isSheetActive } =
+  const { sheetTranslateY, initialSnapHeight, isSheetActive, handoffFloor } =
     useComposerSheet();
   const { height: keyboardHeight } = useReanimatedKeyboardAnimationCompat();
 
   return useDerivedValue(() => {
     const kbH = Math.abs(keyboardHeight.value);
 
-    if (isSheetActive.value === 0) return kbH;
+    if (isSheetActive.value === 0) {
+      // Respect handoff floor during sheet→keyboard transitions.
+      return Math.max(kbH, handoffFloor.value);
+    }
 
     const sheetVisible = getSheetVisibleHeight(sheetTranslateY.value);
     const clamped = clampSheetToInitialSnap(
@@ -485,12 +519,14 @@ function AnimatedSafeAreaSpacer({
   backgroundColor: string;
 }) {
   const { progress } = useReanimatedKeyboardAnimationCompat();
-  const { isSheetActive, sheetTranslateY, initialSnapHeight } =
+  const { isSheetActive, sheetTranslateY, initialSnapHeight, handoffFloor } =
     useComposerSheet();
 
   // Collapse spacer when keyboard is open OR when a composer-attached sheet
   // is active. Uses a smooth progress derived from the sheet's translate
   // so the collapse animates in sync with the sheet opening.
+  // Also stays collapsed during a sheet→keyboard handoff so the spacer
+  // doesn't flicker back to full height in the gap between the two.
   const animatedStyle = useAnimatedStyle(() => {
     let sheetProgress = 0;
     if (isSheetActive.value === 1 && initialSnapHeight.value > 0) {
@@ -500,7 +536,10 @@ function AnimatedSafeAreaSpacer({
         Math.max(0, sheetVisible / initialSnapHeight.value),
       );
     }
-    const factor = Math.max(progress.value, sheetProgress);
+    // Keep collapsed during handoff so the spacer doesn't re-expand
+    // in the gap before the keyboard arrives.
+    const handoffProgress = handoffFloor.value > 0 ? 1 : 0;
+    const factor = Math.max(progress.value, sheetProgress, handoffProgress);
     return {
       height: interpolate(factor, [0, 1], [height, 0]),
       backgroundColor,

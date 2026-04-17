@@ -6,6 +6,7 @@
  * - Extracts minimal fields (name, phones, emails)
  * - Normalizes and deduplicates identifiers
  * - Matches against existing app users via backend
+ * - Supports server-side sync with hashed identifiers
  *
  * @module services/contacts
  */
@@ -21,8 +22,9 @@ import {
   setDoc,
   where,
 } from "firebase/firestore";
+import { httpsCallable } from "firebase/functions";
 import { Platform } from "react-native";
-import { getFirestoreInstance } from "./firebase";
+import { getFirestoreInstance, getFunctionsInstance } from "./firebase";
 
 const logger = createLogger("services/contacts");
 
@@ -75,6 +77,15 @@ export type ContactPermissionStatus =
   | "undetermined"
   | "limited";
 
+/** Full permission info including platform-specific details. */
+export interface ContactsPermissionInfo {
+  status: ContactPermissionStatus;
+  /** Whether the system will show the permission prompt again. */
+  canAskAgain: boolean;
+  /** iOS 18+ access privilege level. */
+  accessPrivileges: "all" | "limited" | "none";
+}
+
 // ---------------------------------------------------------------------------
 // Permission Handling
 // ---------------------------------------------------------------------------
@@ -94,7 +105,40 @@ export async function getContactPermissionStatus(): Promise<ContactPermissionSta
 }
 
 /**
+ * Get full permission info including canAskAgain and accessPrivileges.
+ */
+export async function getContactPermissionInfo(): Promise<ContactsPermissionInfo> {
+  if (Platform.OS === "web") {
+    return { status: "denied", canAskAgain: false, accessPrivileges: "none" };
+  }
+
+  const response = await Contacts.getPermissionsAsync();
+  const status: ContactPermissionStatus =
+    response.status === "granted"
+      ? "granted"
+      : response.status === "denied"
+        ? "denied"
+        : (response.status as string) === "limited"
+          ? "limited"
+          : "undetermined";
+
+  const accessPrivileges: "all" | "limited" | "none" =
+    response.accessPrivileges === "all"
+      ? "all"
+      : response.accessPrivileges === "limited"
+        ? "limited"
+        : "none";
+
+  return {
+    status,
+    canAskAgain: response.canAskAgain,
+    accessPrivileges,
+  };
+}
+
+/**
  * Request contact permission. Only call after user explicitly taps.
+ * Returns full permission info so callers know whether to retry or open Settings.
  */
 export async function requestContactPermission(): Promise<ContactPermissionStatus> {
   if (Platform.OS === "web") return "denied";
@@ -104,6 +148,42 @@ export async function requestContactPermission(): Promise<ContactPermissionStatu
   if (status === "denied") return "denied";
   if ((status as string) === "limited") return "limited";
   return "denied";
+}
+
+/**
+ * Request contact permission, returning full info including canAskAgain.
+ */
+export async function requestContactPermissionFull(): Promise<ContactsPermissionInfo> {
+  if (Platform.OS === "web") {
+    return { status: "denied", canAskAgain: false, accessPrivileges: "none" };
+  }
+
+  const response = await Contacts.requestPermissionsAsync();
+  const status: ContactPermissionStatus =
+    response.status === "granted"
+      ? "granted"
+      : response.status === "denied"
+        ? "denied"
+        : (response.status as string) === "limited"
+          ? "limited"
+          : "undetermined";
+
+  const accessPrivileges: "all" | "limited" | "none" =
+    response.accessPrivileges === "all"
+      ? "all"
+      : response.accessPrivileges === "limited"
+        ? "limited"
+        : "none";
+
+  return { status, canAskAgain: response.canAskAgain, accessPrivileges };
+}
+
+/**
+ * iOS 18+ only: present the system contact access picker to expand limited access.
+ * Returns the IDs of newly granted contacts. Rejects on non-iOS or < iOS 18.
+ */
+export async function presentContactAccessPicker(): Promise<string[]> {
+  return Contacts.presentAccessPickerAsync();
 }
 
 // ---------------------------------------------------------------------------
@@ -445,5 +525,143 @@ export async function lookupUserByEmail(
     decorationId: data.avatarDecoration?.decorationId ?? null,
     contactName: data.displayName,
     matchType: "email",
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Server-side Contacts Sync & Recommendations
+// ---------------------------------------------------------------------------
+
+export interface ContactRecommendation {
+  uid: string;
+  username: string;
+  displayName: string;
+  avatarConfig: any;
+  profilePictureUrl: string | null;
+  decorationId: string | null;
+  matchType: "phone" | "email" | "reciprocal";
+  reciprocal: boolean;
+  mutualFriendCount: number;
+  explanationTags: string[];
+  score: number;
+}
+
+export interface SyncContactsResult {
+  matchedUsers: ContactRecommendation[];
+  alreadyFriendUids: string[];
+  pendingSentUids: string[];
+  pendingReceivedUids: string[];
+  syncedHashCount: number;
+  syncedAt: number;
+}
+
+export interface ContactDiscoverySettings {
+  syncEnabled: boolean;
+  discoverableViaContacts: boolean;
+  lastSyncedAt: number | null;
+  syncedHashCount: number;
+}
+
+export const DEFAULT_CONTACT_DISCOVERY_SETTINGS: ContactDiscoverySettings = {
+  syncEnabled: false,
+  discoverableViaContacts: true,
+  lastSyncedAt: null,
+  syncedHashCount: 0,
+};
+
+/**
+ * Sync contacts to the backend: upload normalized identifiers,
+ * server hashes them, matches against users, records reciprocal relationships.
+ */
+export async function syncContactsToBackend(
+  contacts: NormalizedContact[],
+): Promise<SyncContactsResult> {
+  const functions = getFunctionsInstance();
+
+  // Collect all phones and emails
+  const phones: string[] = [];
+  const emails: string[] = [];
+  for (const c of contacts) {
+    phones.push(...c.phones);
+    emails.push(...c.emails);
+  }
+
+  const callable = httpsCallable<
+    { phones: string[]; emails: string[] },
+    SyncContactsResult
+  >(functions, "syncContacts");
+
+  const result = await callable({ phones, emails });
+  return result.data;
+}
+
+/**
+ * Fetch contact-based recommendations from the backend.
+ */
+export async function getContactRecommendations(): Promise<{
+  recommendations: ContactRecommendation[];
+  alreadyFriendUids: string[];
+  pendingSentUids: string[];
+  pendingReceivedUids: string[];
+}> {
+  const functions = getFunctionsInstance();
+  const callable = httpsCallable<
+    unknown,
+    {
+      recommendations: ContactRecommendation[];
+      alreadyFriendUids: string[];
+      pendingSentUids: string[];
+      pendingReceivedUids: string[];
+    }
+  >(functions, "getContactRecommendations");
+
+  const result = await callable({});
+  return result.data;
+}
+
+/**
+ * Remove all synced contact data from the backend.
+ * This is separate from turning off sync — it permanently deletes stored hashes.
+ */
+export async function removeSyncedContacts(): Promise<void> {
+  const functions = getFunctionsInstance();
+  const callable = httpsCallable<unknown, { success: boolean }>(
+    functions,
+    "removeSyncedContacts",
+  );
+  await callable({});
+}
+
+/**
+ * Update contact discovery privacy settings on the backend.
+ */
+export async function updateContactDiscoverySettings(
+  settings: Partial<
+    Pick<ContactDiscoverySettings, "syncEnabled" | "discoverableViaContacts">
+  >,
+): Promise<void> {
+  const functions = getFunctionsInstance();
+  const callable = httpsCallable<
+    { syncEnabled?: boolean; discoverableViaContacts?: boolean },
+    { success: boolean }
+  >(functions, "updateContactDiscoverySettings");
+  await callable(settings);
+}
+
+/**
+ * Get contact discovery settings from the user's Firestore doc.
+ */
+export async function getContactDiscoverySettings(
+  uid: string,
+): Promise<ContactDiscoverySettings> {
+  const db = getFirestoreInstance();
+  const snap = await getDoc(doc(db, "Users", uid));
+  const data = snap.data()?.contactDiscovery;
+  if (!data) return { ...DEFAULT_CONTACT_DISCOVERY_SETTINGS };
+  return {
+    syncEnabled: data.syncEnabled ?? false,
+    discoverableViaContacts: data.discoverableViaContacts ?? true,
+    lastSyncedAt: data.lastSyncedAt ?? null,
+    syncedHashCount: data.syncedHashCount ?? 0,
   };
 }

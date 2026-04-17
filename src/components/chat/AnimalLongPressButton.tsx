@@ -2,8 +2,8 @@
  * AnimalLongPressButton
  *
  * A dual-mode animal button for the composer toolbar:
- * - Short tap: opens the lightweight animal picker bubble
- * - Hold (0.425s): arms the alternate animal picker mode
+ * - Short tap: sends the equipped animal into chat with sound
+ * - Hold (0.425s): arms the alternate picker mode
  * - Release after arming: opens the full animal customization picker
  *
  * Visual feedback:
@@ -213,9 +213,7 @@ export function AnimalLongPressButton({
       onPressOut={handlePressOut}
       disabled={disabled || interactionLocked}
       accessibilityLabel={
-        isAlternatePickerArmed
-          ? "Open alternate animal picker"
-          : "Open animal picker"
+        isAlternatePickerArmed ? "Open animal customization" : "Send animal"
       }
       accessibilityRole="button"
     >

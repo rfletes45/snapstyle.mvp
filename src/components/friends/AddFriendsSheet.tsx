@@ -2,24 +2,27 @@
  * AddFriendsSheet — Clean 3-tile Add Friends view in a DraggableBottomSheet.
  *
  * Tiles: Share Invite · QR Code · Quick Add
- * Below: Friend Recommendations carousel (if available).
+ * Below: Friend Recommendations carousel, then Contacts Discovery section.
  */
 
 import { DraggableBottomSheet } from "@/components/chat/DraggableBottomSheet";
 import { ProfilePictureWithDecoration } from "@/components/profile/ProfilePicture";
 import { BorderRadius, Spacing } from "@/constants/theme";
 import { useFriendSuggestions } from "@/hooks/useFriendSuggestions";
+import { useAuth } from "@/store/AuthContext";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { useCallback } from "react";
 import {
   ActivityIndicator,
   FlatList,
   Platform,
+  ScrollView,
   StyleSheet,
   TouchableOpacity,
   View,
 } from "react-native";
 import { Button, Text, useTheme } from "react-native-paper";
+import ContactsDiscoverySection from "./ContactsDiscoverySection";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -81,6 +84,7 @@ export default function AddFriendsSheet({
   onNavigateProfile,
 }: AddFriendsSheetProps) {
   const { colors } = useTheme();
+  const { currentFirebaseUser } = useAuth();
   const { suggestions, loading: sugLoading, dismiss } = useFriendSuggestions();
 
   const handlers: Record<string, () => void> = {
@@ -90,7 +94,8 @@ export default function AddFriendsSheet({
   };
 
   const hasSuggestions = suggestions.length > 0;
-  const snapHeight = hasSuggestions ? 0.62 : 0.42;
+  // Taller sheet to accommodate contacts discovery section
+  const snapHeight = 0.85;
 
   const handleAdd = useCallback(
     (uid: string, username: string) => {
@@ -106,7 +111,13 @@ export default function AddFriendsSheet({
       snapPoints={[snapHeight]}
       initialSnapIndex={0}
     >
-      <View style={styles.content}>
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        bounces={false}
+        nestedScrollEnabled
+      >
         <Text
           variant="titleLarge"
           style={[styles.heading, { color: colors.onSurface }]}
@@ -237,7 +248,14 @@ export default function AddFriendsSheet({
             )}
           </View>
         )}
-      </View>
+
+        {/* ── Contacts Discovery ─────────────────────────────── */}
+        <ContactsDiscoverySection
+          uid={currentFirebaseUser?.uid}
+          onSendRequest={onSendRequest}
+          onNavigateProfile={onNavigateProfile}
+        />
+      </ScrollView>
     </DraggableBottomSheet>
   );
 }
@@ -247,10 +265,13 @@ export default function AddFriendsSheet({
 // ---------------------------------------------------------------------------
 
 const styles = StyleSheet.create({
+  scrollView: {
+    flex: 1,
+  },
   content: {
     paddingHorizontal: Spacing.lg,
     paddingTop: Spacing.sm,
-    paddingBottom: Spacing.lg,
+    paddingBottom: Spacing.xl,
   },
   heading: {
     fontWeight: "700",

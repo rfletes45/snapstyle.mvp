@@ -68,7 +68,7 @@ export function useContactsOnboarding(
 ): ContactsOnboardingState {
   const { currentFirebaseUser } = useAuth();
   const uid = currentFirebaseUser?.uid;
-  const contacts = useContactsDiscovery();
+  const contacts = useContactsDiscovery(uid);
 
   const [ready, setReady] = useState(false);
   const [dismissedAt, setDismissedAt] = useState<number | null>(null);

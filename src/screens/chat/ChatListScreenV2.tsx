@@ -70,6 +70,10 @@ import {
 } from "@/components/chat/inbox";
 import { SearchSheet } from "@/components/chat/search";
 import { ErrorState, LoadingState } from "@/components/ui";
+import { ContactsEnablementBanner } from "@/components/ui/ContactsEnablementBanner";
+import { CONTACTS_DISCOVERY_ENABLED } from "@/constants/featureFlags";
+import { useContactsDiscovery } from "@/hooks/useContactsDiscovery";
+import { useContactsPermission } from "@/hooks/useContactsPermission";
 import {
   getUnifiedRequestsCount,
   isRequestsTabEmpty,
@@ -97,6 +101,60 @@ export default function ChatListScreen() {
   const route = useRoute<any>();
   const uid = currentFirebaseUser?.uid ?? "";
   const isFocused = useIsFocused();
+
+  // ── Contacts enablement banner state ────────────────────────────────
+  const contactsPerm = useContactsPermission();
+  const contactsDiscovery = useContactsDiscovery(uid || undefined);
+
+  // "New user" = account created < 14 days ago
+  const isNewUser = useMemo(() => {
+    const creationTime = currentFirebaseUser?.metadata?.creationTime;
+    if (!creationTime) return false;
+    const age = Date.now() - new Date(creationTime).getTime();
+    return age < 14 * 24 * 60 * 60 * 1000;
+  }, [currentFirebaseUser?.metadata?.creationTime]);
+
+  // Show contacts banner when:
+  // - Feature enabled
+  // - User is new or has few conversations
+  // - Permission not fully granted
+  // - Banner not dismissed (within cooldown)
+  const showContactsBanner = useMemo(() => {
+    if (!CONTACTS_DISCOVERY_ENABLED) return false;
+    if (!contactsPerm.ready) return false;
+    if (contactsPerm.permState === "granted_all") return false;
+    if (contactsPerm.messagesBannerDismissed) return false;
+    // Show for new users, or users with ≤ 3 conversations
+    const hasConversations = (regularConversations?.length ?? 0) > 3;
+    return isNewUser || !hasConversations;
+  }, [
+    contactsPerm.ready,
+    contactsPerm.permState,
+    contactsPerm.messagesBannerDismissed,
+    isNewUser,
+    regularConversations?.length,
+  ]);
+
+  // Prominent layout for truly empty inbox; compact otherwise
+  const contactsBannerProminent =
+    (regularConversations?.length ?? 0) === 0 &&
+    (pinnedConversations?.length ?? 0) === 0;
+
+  const handleContactsBannerEnable = useCallback(async () => {
+    const status = await contactsPerm.handleEnableContacts();
+    if (status === "granted" || status === "limited") {
+      contactsDiscovery.syncContacts();
+    }
+  }, [contactsPerm, contactsDiscovery]);
+
+  // Re-check permission after returning from Settings
+  useFocusEffect(
+    useCallback(() => {
+      if (contactsPerm.ready) {
+        contactsPerm.refreshPermission();
+      }
+    }, [contactsPerm]),
+  );
 
   // In-app notifications context (for tracking last viewed chat)
   const {
@@ -795,19 +853,46 @@ export default function ChatListScreen() {
     ],
   );
 
-  const ListHeaderComponent = useCallback(() => {
-    if (pinnedConversations.length === 0) return null;
+  // Use useMemo to produce a JSX element (not a function component).
+  // Passing a function to ListHeaderComponent causes FlatList to treat it
+  // as a component *type*; any dependency change swaps the type, forcing
+  // React to unmount/remount the entire header, which drops in-progress
+  // touch events and makes buttons appear unresponsive.
+  const listHeaderElement = useMemo(() => {
+    if (!showContactsBanner && pinnedConversations.length === 0) return null;
 
     return (
-      <PinnedSection
-        conversations={pinnedConversations}
-        typingMap={inboxTyping}
-        onConversationPress={handleConversationPress}
-        onAvatarPress={handleAvatarPress}
-        onLongPress={handleLongPress}
-      />
+      <View>
+        {/* Contacts enablement banner — above pinned conversations */}
+        {showContactsBanner && (
+          <ContactsEnablementBanner
+            permState={contactsPerm.permState}
+            onEnable={handleContactsBannerEnable}
+            onDismiss={contactsPerm.dismissMessagesBanner}
+            loading={contactsPerm.loading}
+            prominent={contactsBannerProminent}
+          />
+        )}
+
+        {/* Pinned conversations */}
+        {pinnedConversations.length > 0 && (
+          <PinnedSection
+            conversations={pinnedConversations}
+            typingMap={inboxTyping}
+            onConversationPress={handleConversationPress}
+            onAvatarPress={handleAvatarPress}
+            onLongPress={handleLongPress}
+          />
+        )}
+      </View>
     );
   }, [
+    showContactsBanner,
+    contactsPerm.permState,
+    contactsPerm.loading,
+    contactsPerm.dismissMessagesBanner,
+    contactsBannerProminent,
+    handleContactsBannerEnable,
     pinnedConversations,
     inboxTyping,
     handleConversationPress,
@@ -969,7 +1054,7 @@ export default function ChatListScreen() {
         <FlatList
           data={regularConversations}
           renderItem={renderConversationItem}
-          ListHeaderComponent={ListHeaderComponent}
+          ListHeaderComponent={listHeaderElement}
           ListEmptyComponent={ListEmptyComponent}
           keyExtractor={(item) => `${item.type}-${item.id}`}
           contentContainerStyle={

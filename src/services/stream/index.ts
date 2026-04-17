@@ -51,6 +51,8 @@ export {
 } from "./callSessionManager";
 
 export {
+  ensureMicrophonePublishing,
+  getMicrophonePublishSnapshot,
   runPostJoinMediaHealthCheck,
   schedulePostJoinMediaHealthCheck,
 } from "./callMediaHealthCheck";

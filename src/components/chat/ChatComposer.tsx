@@ -26,9 +26,7 @@ import { ReplyToMetadata } from "@/types/messaging";
 import React, { useCallback, useEffect, useMemo, useRef } from "react";
 import {
   ActivityIndicator,
-  Keyboard,
   Platform,
-  Pressable,
   StyleProp,
   StyleSheet,
   TextInput,
@@ -39,7 +37,6 @@ import {
 import { IconButton, Text, useTheme } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AnimalLongPressButton } from "./AnimalLongPressButton";
-import { AnimalPickerBubble } from "./AnimalPickerBubble";
 import { ComposerCustomizeToolbar } from "./ComposerToolbar/ComposerCustomizeToolbar";
 import { ComposerItemPicker } from "./ComposerToolbar/ComposerItemPicker";
 import { getToolbarItemEditModeLongPressDuration } from "./ComposerToolbar/ComposerToolbarRegistry";
@@ -111,7 +108,7 @@ export interface ChatComposerProps {
   onVoiceCancelled?: () => void;
   /** Maximum voice recording duration in ms (default: 60000 = 60s) */
   maxVoiceDuration?: number;
-  /** Opens the lightweight anchored animal picker bubble. */
+  /** Sends the equipped animal into chat on tap. */
   onAnimalPress?: () => void;
   /** Opens the alternate animal picker surface (full catalog/customization). */
   onAnimalAlternatePress?: () => void;
@@ -119,14 +116,6 @@ export interface ChatComposerProps {
   animalThemeId?: string | null;
   /** Whether the animal button is temporarily disabled. */
   animalDisabled?: boolean;
-  /** Whether the animal picker bubble is open */
-  animalPickerVisible?: boolean;
-  /** Called to close the animal picker */
-  onAnimalPickerClose?: () => void;
-  /** Current user ID (for animal picker ownership) */
-  currentUserId?: string;
-  /** Called when an animal is equipped from the picker */
-  onAnimalEquipped?: (animalId: string) => void;
   /** Game button handler (opens game picker) — DEPRECATED, use onGameSelected */
   onGamePress?: () => void;
   /** Called when a game is selected from the inline game picker. */
@@ -228,10 +217,6 @@ export function ChatComposer({
   onAnimalAlternatePress,
   animalThemeId,
   animalDisabled = false,
-  animalPickerVisible = false,
-  onAnimalPickerClose,
-  currentUserId,
-  onAnimalEquipped,
   onGamePress,
   onGameSelected,
   uploadProgress,
@@ -267,10 +252,14 @@ export function ChatComposer({
   // Picker search fields do NOT trigger this because they are separate
   // TextInput instances inside the picker — only the main NativeComposerInput /
   // TextInput fires this callback.
-  const { dismissActiveSheet } = useComposerSheet();
+  // beginKeyboardHandoff() captures the current sheet height as a handoff
+  // floor so the footer stays stable until the keyboard has risen far enough
+  // to take over — preventing the transient downward teleport.
+  const { dismissActiveSheet, beginKeyboardHandoff } = useComposerSheet();
   const handleMainInputFocus = useCallback(() => {
+    beginKeyboardHandoff();
     dismissActiveSheet();
-  }, [dismissActiveSheet]);
+  }, [beginKeyboardHandoff, dismissActiveSheet]);
 
   // Internal ref for TextInput - use provided ref or create our own
   const internalTextInputRef = useRef<TextInput | null>(null);
@@ -302,50 +291,10 @@ export function ChatComposer({
     [voiceButtonComponent],
   );
 
-  // Animal button ref for anchor measurement
-  const animalButtonRef = useRef<View>(null);
-  const [animalAnchor, setAnimalAnchor] = React.useState<{
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-  } | null>(null);
-
-  // Measure animal button position when picker opens
-  const measureAnimalButton = useCallback(() => {
-    if (animalButtonRef.current) {
-      animalButtonRef.current.measureInWindow((x, y, width, height) => {
-        setAnimalAnchor({ x, y, width, height });
-      });
-    }
-  }, []);
-
-  // Re-measure anchor when keyboard state changes while picker is visible
-  // so the bubble repositions correctly
-  useEffect(() => {
-    if (!animalPickerVisible) return;
-
-    const showEvent =
-      Platform.OS === "ios" ? "keyboardDidShow" : "keyboardDidShow";
-    const hideEvent =
-      Platform.OS === "ios" ? "keyboardDidHide" : "keyboardDidHide";
-
-    // Small delay allows the layout to settle after keyboard animation
-    const remeasure = () => setTimeout(measureAnimalButton, 100);
-
-    const sub1 = Keyboard.addListener(showEvent, remeasure);
-    const sub2 = Keyboard.addListener(hideEvent, remeasure);
-    return () => {
-      sub1.remove();
-      sub2.remove();
-    };
-  }, [animalPickerVisible, measureAnimalButton]);
-
-  const handleAnimalPickerPress = useCallback(() => {
+  const handleAnimalTap = useCallback(() => {
     if (animalDisabled || !onAnimalPress) return;
-    measureAnimalButton();
     onAnimalPress();
-  }, [animalDisabled, onAnimalPress, measureAnimalButton]);
+  }, [animalDisabled, onAnimalPress]);
 
   // Wrapper for onSend that refocuses the TextInput after sending.
   // Keeps the keyboard open after sending a message.
@@ -536,36 +485,16 @@ export function ChatComposer({
 
         case "animal":
           return onAnimalPress ? (
-            <View ref={animalButtonRef} collapsable={false}>
-              {animalPickerVisible ? (
-                <Pressable
-                  onPress={onAnimalPickerClose}
-                  style={styles.animalCloseButton}
-                  accessibilityLabel="Close animal picker"
-                  accessibilityRole="button"
-                >
-                  <IconButton
-                    icon="close"
-                    size={18}
-                    iconColor={colors.onPrimary}
-                    style={{ margin: 0 }}
-                  />
-                </Pressable>
-              ) : (
-                <AnimalLongPressButton
-                  animalId={animalThemeId}
-                  onShortPress={handleAnimalPickerPress}
-                  onLongPress={
-                    onAnimalAlternatePress ?? handleAnimalPickerPress
-                  }
-                  disabled={animalDisabled}
-                  interactionLocked={toolbarEditing}
-                  editModeActivationDurationMs={getToolbarItemEditModeLongPressDuration(
-                    "animal",
-                  )}
-                />
+            <AnimalLongPressButton
+              animalId={animalThemeId}
+              onShortPress={handleAnimalTap}
+              onLongPress={onAnimalAlternatePress ?? handleAnimalTap}
+              disabled={animalDisabled}
+              interactionLocked={toolbarEditing}
+              editModeActivationDurationMs={getToolbarItemEditModeLongPressDuration(
+                "animal",
               )}
-            </View>
+            />
           ) : null;
 
         case "send":
@@ -652,10 +581,8 @@ export function ChatComposer({
       onGameSelected,
       onAnimalPress,
       onAnimalAlternatePress,
-      animalPickerVisible,
-      onAnimalPickerClose,
       animalDisabled,
-      handleAnimalPickerPress,
+      handleAnimalTap,
       animalThemeId,
       onEmojiSelected,
       onGifSelected,
@@ -733,23 +660,6 @@ export function ChatComposer({
         </View>
       </View>
 
-      {/* Animal picker bubble overlay — always mounted for pre-loading */}
-      {onAnimalPress &&
-        currentUserId &&
-        onAnimalPickerClose &&
-        onAnimalEquipped && (
-          <AnimalPickerBubble
-            visible={animalPickerVisible}
-            onClose={onAnimalPickerClose}
-            uid={currentUserId}
-            equippedAnimalId={animalThemeId ?? null}
-            onEquipped={onAnimalEquipped}
-            anchorLayout={animalAnchor}
-            keyboardHeight={0}
-            safeAreaBottom={safeAreaBottom}
-          />
-        )}
-
       {/* Item picker bottom sheet */}
       {onToolbarAddItem && onToolbarResetDefaults && (
         <ComposerItemPicker
@@ -819,17 +729,6 @@ const styles = StyleSheet.create({
     margin: 0,
     width: 40,
     height: 40,
-  },
-  animalCloseButton: {
-    margin: 0,
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: "#D32F2F",
-    justifyContent: "center",
-    alignItems: "center",
-    overflow: "hidden",
-    marginVertical: 6,
   },
   uploadProgressContainer: {
     flexDirection: "row",

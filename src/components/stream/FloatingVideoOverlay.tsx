@@ -25,7 +25,7 @@ import {
   View,
 } from "react-native";
 
-// Lazy-load Stream SDK components
+import { VideoRenderErrorBoundary } from "@/components/stream/VideoRenderErrorBoundary";
 let ParticipantView: any = null;
 let useCallStateHooks: any = null;
 let useIsInPiPMode: () => boolean = () => false;
@@ -87,9 +87,11 @@ export function FloatingVideoOverlay({
   // Video calls: wrap in StreamCall for video rendering
   if (!StreamCall) return null;
   return (
-    <StreamCall call={activeCall}>
-      <FloatingVideoContent activeCall={activeCall} />
-    </StreamCall>
+    <VideoRenderErrorBoundary fallback={null}>
+      <StreamCall call={activeCall}>
+        <FloatingVideoContent activeCall={activeCall} />
+      </StreamCall>
+    </VideoRenderErrorBoundary>
   );
 }
 
@@ -260,8 +262,8 @@ function FloatingVideoContent({ activeCall }: { activeCall: any }) {
     }),
   ).current;
 
-  // Don't render if not joined or no remote video
-  if (!isJoined || !remoteWithVideo) return null;
+  // Don't render if not joined, no remote video, or participant session invalid
+  if (!isJoined || !remoteWithVideo || !remoteWithVideo.sessionId) return null;
 
   if (minimized) {
     return (
