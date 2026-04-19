@@ -64,6 +64,7 @@ jest.mock("@/utils/log", () => ({
     error: jest.fn(),
     warn: jest.fn(),
   }),
+  isDebugEnabled: () => false,
 }));
 
 jest.mock("@expo/vector-icons", () => {
@@ -163,6 +164,11 @@ describe("ConversationItem interactions", () => {
     act(() => {
       rowTouchable.props.onPress();
     });
+    expect(onPress).toHaveBeenCalledTimes(0);
+
+    act(() => {
+      rowTouchable.props.onPress();
+    });
     expect(onPress).toHaveBeenCalledTimes(1);
 
     act(() => {
@@ -170,8 +176,36 @@ describe("ConversationItem interactions", () => {
     });
     expect(onAvatarPress).toHaveBeenCalledTimes(1);
 
+    act(() => {
+      avatarTouchable.props.onPressIn({
+        nativeEvent: { pageX: 90, pageY: 120 },
+      });
+    });
+    expect(onPressIn).toHaveBeenCalledTimes(2);
+
+    act(() => {
+      avatarTouchable.props.onLongPress({
+        nativeEvent: { pageX: 91, pageY: 121 },
+      });
+    });
+    expect(onLongPress).toHaveBeenLastCalledWith({ pageX: 91, pageY: 121 });
+
+    act(() => {
+      avatarTouchable.props.onPress();
+    });
+    expect(onAvatarPress).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      avatarTouchable.props.onPress();
+    });
+    expect(onAvatarPress).toHaveBeenCalledTimes(2);
+
     expect(tree.root.findAllByType("RNGHTouchableOpacity")).toHaveLength(0);
     expect(tree.root.findAllByType(RNText).length).toBeGreaterThan(0);
     expect(tree.root.findAllByType(View).length).toBeGreaterThan(0);
+
+    act(() => {
+      tree.unmount();
+    });
   });
 });

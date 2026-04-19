@@ -42,6 +42,7 @@ import { useNavigation } from "@react-navigation/native";
 import React, {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -81,6 +82,11 @@ interface SearchSheetProps {
   visible: boolean;
   onDismiss: () => void;
   allConversations: InboxConversation[];
+  /**
+   * True once useInboxData has finished its initial load. Lets search
+   * auto-refresh when the roster transitions from empty to populated.
+   */
+  inboxReady?: boolean;
 }
 
 type FilterView = "none" | "menu" | "datePicker" | "personPicker";
@@ -161,10 +167,37 @@ function getContentIcon(f: ContentFilter): string {
 // Component
 // =============================================================================
 
-export function SearchSheet({
+/**
+ * Outer shell: only mounts SearchSheetInner (and its useMessageSearch hook)
+ * while the sheet is in flight. Keeps the search hook from running — and
+ * subscribing to inbox data — for the entire lifetime of the Messages
+ * screen. `shouldMount` stays true for a short grace period after close so
+ * the dismiss animation finishes cleanly before unmount.
+ */
+export function SearchSheet(props: SearchSheetProps) {
+  const { visible } = props;
+  const [shouldMount, setShouldMount] = useState(visible);
+
+  useEffect(() => {
+    if (visible) {
+      setShouldMount(true);
+      return;
+    }
+    // Keep the sheet mounted briefly so the close animation can play, then
+    // unmount to release the search hook and its data subscriptions.
+    const t = setTimeout(() => setShouldMount(false), 600);
+    return () => clearTimeout(t);
+  }, [visible]);
+
+  if (!shouldMount) return null;
+  return <SearchSheetInner {...props} />;
+}
+
+function SearchSheetInner({
   visible,
   onDismiss,
   allConversations,
+  inboxReady = true,
 }: SearchSheetProps) {
   const { colors, isDark } = useAppTheme();
   const insets = useSafeAreaInsets();
@@ -183,15 +216,17 @@ export function SearchSheet({
     personFilter,
     setPersonFilter,
     results,
-    isSearching,
-    hasSearched,
+    status,
+    commitRevision,
     error,
     recentSearches,
     saveRecentSearch,
     removeRecentSearchItem,
     clearAllRecentSearches,
     resetSearch,
-  } = useMessageSearch(allConversations);
+  } = useMessageSearch(allConversations, { inboxReady });
+
+  const isSearching = status === "searching";
 
   // ---------------------------------------------------------------------------
   // Animation — mirrors DraggableBottomSheet architecture exactly:
@@ -211,6 +246,7 @@ export function SearchSheet({
   const [datePickerMode, setDatePickerMode] = useState<DatePickerMode>("after");
   const [datePickerValue, setDatePickerValue] = useState(new Date());
   const [showAndroidPicker, setShowAndroidPicker] = useState(false);
+  const [isSearchInputFocused, setIsSearchInputFocused] = useState(false);
   const initialConversationCountRef = useRef(allConversations.length);
 
   useEffect(() => {
@@ -226,31 +262,90 @@ export function SearchSheet({
   // Open / Close — close animates out, then calls onDismiss to unmount
   // =========================================================================
 
-  const doFinalClose = useCallback(() => {
-    log.debug("[SearchSheet] doFinalClose: resetting and dismissing");
-    setFilterView("none");
-    setShowAndroidPicker(false);
-    resetSearch();
-    onDismiss();
-  }, [resetSearch, onDismiss]);
+  const isDismissed = useRef(false);
+  const closeGenerationRef = useRef(0);
+  const doFinalClose = useCallback(
+    (generation?: number, source = "unknown") => {
+      if (generation != null && generation !== closeGenerationRef.current) {
+        log.debug("[SearchSheet] doFinalClose skipped: stale generation", {
+          data: {
+            source,
+            generation,
+            currentGeneration: closeGenerationRef.current,
+          },
+        });
+        return;
+      }
+      if (!isClosing.current) {
+        log.debug("[SearchSheet] doFinalClose skipped: not closing", {
+          data: { source, generation },
+        });
+        return;
+      }
+      if (isDismissed.current) return;
+      isDismissed.current = true;
+      log.debug("[SearchSheet] doFinalClose: resetting and dismissing", {
+        data: { source, generation },
+      });
+      setFilterView("none");
+      setShowAndroidPicker(false);
+      resetSearch();
+      onDismiss();
+    },
+    [resetSearch, onDismiss],
+  );
+
+  const closeSafetyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const closeSheet = useCallback(() => {
     if (isClosing.current) return;
     isClosing.current = true;
-    log.debug("[SearchSheet] closeSheet: starting dismiss animation");
+    const generation = closeGenerationRef.current + 1;
+    closeGenerationRef.current = generation;
+    log.debug("[SearchSheet] closeSheet: starting dismiss animation", {
+      data: { generation },
+    });
     Keyboard.dismiss();
+    // Safety net: if the spring callback is swallowed by a concurrent
+    // animation interrupt, we still dismiss after a short grace window so
+    // the sheet can never become permanently half-closed.
+    if (closeSafetyTimer.current) clearTimeout(closeSafetyTimer.current);
+    closeSafetyTimer.current = setTimeout(() => {
+      closeSafetyTimer.current = null;
+      doFinalClose(generation, "safety-timer");
+    }, 500);
     translateY.value = withSpring(DISMISS_Y, SPRING_CONFIG, (finished) => {
       if (finished) {
-        scheduleOnRN(doFinalClose);
+        scheduleOnRN(doFinalClose, generation, "spring");
       }
     });
   }, [translateY, doFinalClose]);
 
-  // Open animation: spring from DISMISS_Y → OPEN_Y
   useEffect(() => {
+    return () => {
+      if (closeSafetyTimer.current) {
+        clearTimeout(closeSafetyTimer.current);
+        closeSafetyTimer.current = null;
+      }
+    };
+  }, []);
+
+  // Open animation: spring from DISMISS_Y → OPEN_Y. This is a layout effect
+  // so reopening invalidates stale close callbacks before normal timers can
+  // run and reset live query/filter state.
+  useLayoutEffect(() => {
     if (visible) {
-      log.debug("[SearchSheet] opened");
+      closeGenerationRef.current += 1;
+      if (closeSafetyTimer.current) {
+        clearTimeout(closeSafetyTimer.current);
+        closeSafetyTimer.current = null;
+        log.debug("[SearchSheet] cleared stale close safety timer on open");
+      }
+      log.debug("[SearchSheet] opened", {
+        data: { generation: closeGenerationRef.current },
+      });
       isClosing.current = false;
+      isDismissed.current = false;
       translateY.value = withSpring(OPEN_Y, SPRING_CONFIG);
     }
   }, [visible, translateY]);
@@ -409,6 +504,106 @@ export function SearchSheet({
       setQuery(term);
     },
     [setQuery],
+  );
+
+  const handleQueryChange = useCallback(
+    (nextQuery: string) => {
+      const currentLen = query.length;
+      const nextLen = nextQuery.length;
+      const becameEmpty = currentLen > 0 && nextLen === 0;
+
+      log.debug("[SearchSheet] query change", {
+        data: {
+          fromLen: currentLen,
+          toLen: nextLen,
+          becameEmpty,
+          visible,
+          filterView,
+        },
+      });
+
+      setQuery(nextQuery);
+    },
+    [filterView, query.length, setQuery, visible],
+  );
+
+  const handleQueryClear = useCallback(() => {
+    log.debug("[SearchSheet] query clear pressed", {
+      data: {
+        fromLen: query.length,
+        trimmedLen: query.trim().length,
+        visible,
+        filterView,
+      },
+    });
+    setQuery("");
+  }, [filterView, query, setQuery, visible]);
+
+  const handleSearchInputFocus = useCallback(() => {
+    setIsSearchInputFocused(true);
+    log.debug("[SearchSheet] input focus", {
+      data: {
+        queryLen: query.length,
+        trimmedQueryLen: query.trim().length,
+        status,
+        commitRevision,
+        filterView,
+      },
+    });
+  }, [commitRevision, filterView, query, status]);
+
+  const handleSearchInputBlur = useCallback(() => {
+    setIsSearchInputFocused(false);
+    log.debug("[SearchSheet] input blur", {
+      data: {
+        queryLen: query.length,
+        trimmedQueryLen: query.trim().length,
+        status,
+        commitRevision,
+        filterView,
+      },
+    });
+  }, [commitRevision, filterView, query, status]);
+
+  const renderSearchbarRight = useCallback(
+    ({
+      color,
+      style,
+      testID,
+    }: {
+      color: string;
+      style?: any;
+      testID?: string;
+    }) => {
+      if (!query.length) return null;
+      return (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Clear search text"
+          hitSlop={8}
+          onPressIn={() => {
+            log.debug("[SearchSheet] clear press in", {
+              data: { queryLen: query.length, commitRevision },
+            });
+          }}
+          onPressOut={() => {
+            log.debug("[SearchSheet] clear press out", {
+              data: { queryLen: query.length, commitRevision },
+            });
+          }}
+          onPress={handleQueryClear}
+          style={({ pressed }) => [
+            style,
+            styles.searchClearButton,
+            pressed && styles.searchClearButtonPressed,
+          ]}
+          testID={testID ? `${testID}-custom-clear` : undefined}
+        >
+          <MaterialCommunityIcons name="close" size={20} color={color} />
+        </Pressable>
+      );
+    },
+    [commitRevision, handleQueryClear, query.length],
   );
 
   // =========================================================================
@@ -575,29 +770,88 @@ export function SearchSheet({
     !!dateRange.after ||
     !!dateRange.before ||
     !!personFilter;
+  const trimmedQueryLen = query.trim().length;
+  const hasLiveSearchInput = trimmedQueryLen > 0 || hasActiveFilters;
 
   const sentOn = isSentOnRange(dateRange);
 
   const resultBranch = isSearching
     ? "loading"
-    : error
+    : status === "error" && error
       ? "error"
-      : hasSearched && results.length > 0
+      : status === "ready" && results.length > 0
         ? "results"
-        : hasSearched
+        : status === "ready"
           ? "empty"
-          : "pre-search";
+          : hasLiveSearchInput
+            ? results.length > 0
+              ? "results"
+              : "pending"
+            : "pre-search";
 
+  const resultsRenderKey = `results-${commitRevision}`;
+  const flatListExtraData = useMemo(
+    () => ({
+      commitRevision,
+      query,
+      resultBranch,
+      status,
+    }),
+    [commitRevision, query, resultBranch, status],
+  );
+
+  const renderCountRef = useRef(0);
+  renderCountRef.current += 1;
+  const lastRenderSyncRef = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    if (!visible) return;
+    const snapshot = {
+      branch: resultBranch,
+      status,
+      resultCount: results.length,
+      hasError: !!error,
+      queryLen: query.length,
+      trimmedQueryLen,
+      hasLiveSearchInput,
+      commitRevision,
+      renderCount: renderCountRef.current,
+      filterView,
+      inputFocused: isSearchInputFocused,
+      generation: closeGenerationRef.current,
+    };
+    const key = JSON.stringify(snapshot);
+    if (lastRenderSyncRef.current === key) return;
+    lastRenderSyncRef.current = key;
+    log.debug("[SearchSheet] render sync ->", { data: snapshot });
+  }, [
+    visible,
+    resultBranch,
+    status,
+    results.length,
+    error,
+    query,
+    trimmedQueryLen,
+    hasLiveSearchInput,
+    commitRevision,
+    filterView,
+    isSearchInputFocused,
+  ]);
+
+  // Log only when the visible render branch changes — avoids the former
+  // multi-dep log-spam that fired on every render.
+  const lastBranchRef = useRef<string | null>(null);
   useEffect(() => {
     if (!visible) return;
-    log.debug("[SearchSheet] render branch", {
+    if (lastBranchRef.current === resultBranch) return;
+    lastBranchRef.current = resultBranch;
+    log.debug("[SearchSheet] branch ->", {
       data: {
         branch: resultBranch,
-        filterView,
-        queryLen: query.trim().length,
-        hasActiveFilters,
-        isSearching,
-        hasSearched,
+        status,
+        commitRevision,
+        queryLen: query.length,
+        trimmedQueryLen,
+        hasLiveSearchInput,
         resultCount: results.length,
         hasError: !!error,
       },
@@ -605,13 +859,50 @@ export function SearchSheet({
   }, [
     visible,
     resultBranch,
-    filterView,
-    query,
-    hasActiveFilters,
-    isSearching,
-    hasSearched,
     results.length,
     error,
+    status,
+    commitRevision,
+    query.length,
+    trimmedQueryLen,
+    hasLiveSearchInput,
+  ]);
+
+  const lastCriteriaRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!visible) return;
+    const snapshot = {
+      queryLen: query.length,
+      trimmedQueryLen,
+      scope: scopeFilter,
+      content: contentFilter,
+      hasAfter: !!dateRange.after,
+      hasBefore: !!dateRange.before,
+      hasPerson: !!personFilter,
+      hasLiveSearchInput,
+      inputFocused: isSearchInputFocused,
+      status,
+      commitRevision,
+      resultBranch,
+    };
+    const key = JSON.stringify(snapshot);
+    if (lastCriteriaRef.current === key) return;
+    lastCriteriaRef.current = key;
+    log.debug("[SearchSheet] criteria ->", { data: snapshot });
+  }, [
+    visible,
+    query,
+    trimmedQueryLen,
+    scopeFilter,
+    contentFilter,
+    dateRange.after,
+    dateRange.before,
+    personFilter,
+    hasLiveSearchInput,
+    isSearchInputFocused,
+    status,
+    commitRevision,
+    resultBranch,
   ]);
 
   // Contacts list for person picker (extracted from DM conversations)
@@ -666,21 +957,21 @@ export function SearchSheet({
       </Animated.View>
 
       {/* Sheet — positioned entirely via translateY spring */}
-      <GestureDetector gesture={dragGesture}>
-        <Animated.View
-          style={[
-            styles.sheet,
-            sheetAnimatedStyle,
-            {
-              height: SCREEN_HEIGHT,
-              backgroundColor: colors.background,
-              borderTopLeftRadius: 16,
-              borderTopRightRadius: 16,
-              paddingBottom: Math.max(insets.bottom, 16),
-            },
-          ]}
-        >
-          {/* Drag Handle */}
+      <Animated.View
+        style={[
+          styles.sheet,
+          sheetAnimatedStyle,
+          {
+            height: SCREEN_HEIGHT,
+            backgroundColor: colors.background,
+            borderTopLeftRadius: 16,
+            borderTopRightRadius: 16,
+            paddingBottom: Math.max(insets.bottom, 16),
+          },
+        ]}
+      >
+        {/* Drag Handle */}
+        <GestureDetector gesture={dragGesture}>
           <View style={styles.handleContainer}>
             <View
               style={[
@@ -693,900 +984,893 @@ export function SearchSheet({
               ]}
             />
           </View>
+        </GestureDetector>
 
-          {/* Header Row: Title + Close */}
-          <View style={styles.headerRow}>
-            <Text style={[styles.headerTitle, { color: colors.text }]}>
-              Search Messages
-            </Text>
-            <IconButton
-              icon="close"
-              iconColor={colors.textSecondary}
-              size={22}
-              onPress={closeSheet}
-              accessibilityLabel="Close search"
-              style={styles.closeButton}
-            />
-          </View>
+        {/* Header Row: Title + Close */}
+        <View style={styles.headerRow}>
+          <Text style={[styles.headerTitle, { color: colors.text }]}>
+            Search Messages
+          </Text>
+          <IconButton
+            icon="close"
+            iconColor={colors.textSecondary}
+            size={22}
+            onPress={closeSheet}
+            accessibilityLabel="Close search"
+            style={styles.closeButton}
+          />
+        </View>
 
-          {/* Search Bar + Filter Button */}
-          <View style={styles.searchBarRow}>
-            <View style={styles.searchBarFlex}>
-              <Searchbar
-                ref={searchbarRef}
-                placeholder="Search messages, people, groups…"
-                value={query}
-                onChangeText={setQuery}
-                autoFocus={filterView === "none"}
-                style={[
-                  styles.searchbar,
-                  { backgroundColor: colors.surfaceVariant },
-                ]}
-                inputStyle={[styles.searchInput, { color: colors.text }]}
-                iconColor={colors.textSecondary}
-                onSubmitEditing={() => {
-                  if (query.trim()) {
-                    saveRecentSearch(query.trim());
-                  }
-                  Keyboard.dismiss();
-                }}
-              />
-            </View>
-            <IconButton
-              icon="tune"
-              iconColor={
-                hasActiveFilters ? colors.primary : colors.textSecondary
-              }
-              size={22}
-              onPress={() => {
-                Keyboard.dismiss();
-                setFilterView(filterView === "none" ? "menu" : "none");
-              }}
-              accessibilityLabel={
-                filterView === "none" ? "Open filters" : "Close filters"
-              }
+        {/* Search Bar + Filter Button */}
+        <View style={styles.searchBarRow}>
+          <View style={styles.searchBarFlex}>
+            <Searchbar
+              ref={searchbarRef}
+              placeholder="Search messages, people, groups…"
+              value={query}
+              onChangeText={handleQueryChange}
+              right={renderSearchbarRight}
+              rippleColor="transparent"
+              autoFocus={filterView === "none"}
+              onFocus={handleSearchInputFocus}
+              onBlur={handleSearchInputBlur}
               style={[
-                styles.filterButton,
-                hasActiveFilters && {
-                  backgroundColor: colors.primary + "18",
-                  borderRadius: 20,
-                },
+                styles.searchbar,
+                { backgroundColor: colors.surfaceVariant },
               ]}
+              inputStyle={[styles.searchInput, { color: colors.text }]}
+              iconColor={colors.textSecondary}
+              onSubmitEditing={() => {
+                if (query.trim()) {
+                  saveRecentSearch(query.trim());
+                }
+                Keyboard.dismiss();
+              }}
             />
           </View>
+          <IconButton
+            icon="tune"
+            iconColor={hasActiveFilters ? colors.primary : colors.textSecondary}
+            size={22}
+            onPress={() => {
+              Keyboard.dismiss();
+              setFilterView(filterView === "none" ? "menu" : "none");
+            }}
+            accessibilityLabel={
+              filterView === "none" ? "Open filters" : "Close filters"
+            }
+            style={[
+              styles.filterButton,
+              hasActiveFilters && {
+                backgroundColor: colors.primary + "18",
+                borderRadius: 20,
+              },
+            ]}
+          />
+        </View>
 
-          {/* Active Filter Tokens */}
-          {hasActiveFilters && filterView === "none" && (
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              style={styles.activeTokensScroll}
-              contentContainerStyle={styles.activeTokensContent}
-              keyboardShouldPersistTaps="handled"
-            >
-              {/* Scope token */}
-              {scopeFilter !== "all" && (
-                <Chip
-                  onClose={() => setScopeFilter("all")}
-                  icon={scopeFilter === "dms" ? "account" : "account-group"}
-                  style={[styles.activeToken, { backgroundColor: tokenBg }]}
-                  textStyle={[styles.tokenText, { color: colors.text }]}
-                  closeIconAccessibilityLabel="Clear scope filter"
+        {/* Active Filter Tokens */}
+        {hasActiveFilters && filterView === "none" && (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.activeTokensScroll}
+            contentContainerStyle={styles.activeTokensContent}
+            keyboardShouldPersistTaps="handled"
+          >
+            {/* Scope token */}
+            {scopeFilter !== "all" && (
+              <Chip
+                onClose={() => setScopeFilter("all")}
+                icon={scopeFilter === "dms" ? "account" : "account-group"}
+                style={[styles.activeToken, { backgroundColor: tokenBg }]}
+                textStyle={[styles.tokenText, { color: colors.text }]}
+                closeIconAccessibilityLabel="Clear scope filter"
+              >
+                {scopeFilter === "dms" ? "DMs" : "Groups"}
+              </Chip>
+            )}
+
+            {/* Content token */}
+            {contentFilter !== "all" && (
+              <Chip
+                onClose={() => setContentFilter("all")}
+                icon={getContentIcon(contentFilter)}
+                style={[styles.activeToken, { backgroundColor: tokenBg }]}
+                textStyle={[styles.tokenText, { color: colors.text }]}
+                closeIconAccessibilityLabel="Clear content filter"
+              >
+                Has: {getContentLabel(contentFilter)}
+              </Chip>
+            )}
+
+            {/* Date tokens */}
+            {sentOn ? (
+              <Chip
+                onClose={() => setDateRange({})}
+                icon="calendar"
+                style={[styles.activeToken, { backgroundColor: tokenBg }]}
+                textStyle={[styles.tokenText, { color: colors.text }]}
+                closeIconAccessibilityLabel="Clear date filter"
+              >
+                On: {formatShortDate(dateRange.after!)}
+              </Chip>
+            ) : (
+              <>
+                {dateRange.after && (
+                  <Chip
+                    onClose={() =>
+                      setDateRange({ ...dateRange, after: undefined })
+                    }
+                    icon="calendar-arrow-right"
+                    style={[styles.activeToken, { backgroundColor: tokenBg }]}
+                    textStyle={[styles.tokenText, { color: colors.text }]}
+                    closeIconAccessibilityLabel="Clear after-date filter"
+                  >
+                    After: {formatShortDate(dateRange.after)}
+                  </Chip>
+                )}
+                {dateRange.before && (
+                  <Chip
+                    onClose={() =>
+                      setDateRange({ ...dateRange, before: undefined })
+                    }
+                    icon="calendar-arrow-left"
+                    style={[styles.activeToken, { backgroundColor: tokenBg }]}
+                    textStyle={[styles.tokenText, { color: colors.text }]}
+                    closeIconAccessibilityLabel="Clear before-date filter"
+                  >
+                    Before: {formatShortDate(dateRange.before)}
+                  </Chip>
+                )}
+              </>
+            )}
+
+            {/* Person token */}
+            {personFilter && (
+              <Chip
+                onClose={() => setPersonFilter(null)}
+                icon="account"
+                style={[styles.activeToken, { backgroundColor: tokenBg }]}
+                textStyle={[styles.tokenText, { color: colors.text }]}
+                closeIconAccessibilityLabel="Clear person filter"
+              >
+                From: {personFilter.displayName}
+              </Chip>
+            )}
+          </ScrollView>
+        )}
+
+        {/* ============================================================= */}
+        {/* CONTENT AREA — switches based on filterView                    */}
+        {/* ============================================================= */}
+
+        {/* --- RESULTS VIEW (default) --- */}
+        {filterView === "none" && (
+          <View style={styles.resultsContainer}>
+            {/* Loading */}
+            {resultBranch === "loading" && (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="small" color={colors.primary} />
+                <Text
+                  style={[styles.loadingText, { color: colors.textSecondary }]}
                 >
-                  {scopeFilter === "dms" ? "DMs" : "Groups"}
-                </Chip>
-              )}
+                  Searching…
+                </Text>
+              </View>
+            )}
 
-              {/* Content token */}
-              {contentFilter !== "all" && (
-                <Chip
-                  onClose={() => setContentFilter("all")}
-                  icon={getContentIcon(contentFilter)}
-                  style={[styles.activeToken, { backgroundColor: tokenBg }]}
-                  textStyle={[styles.tokenText, { color: colors.text }]}
-                  closeIconAccessibilityLabel="Clear content filter"
+            {/* Pending debounce / fast execution window: no spinner unless slow. */}
+            {resultBranch === "pending" && (
+              <View style={styles.pendingContainer}>
+                <MaterialCommunityIcons
+                  name="magnify"
+                  size={32}
+                  color={colors.textSecondary}
+                />
+                <Text
+                  style={[
+                    styles.pendingText,
+                    { color: colors.textSecondary },
+                  ]}
                 >
-                  Has: {getContentLabel(contentFilter)}
-                </Chip>
-              )}
+                  Searching messages
+                </Text>
+              </View>
+            )}
 
-              {/* Date tokens */}
-              {sentOn ? (
-                <Chip
-                  onClose={() => setDateRange({})}
-                  icon="calendar"
-                  style={[styles.activeToken, { backgroundColor: tokenBg }]}
-                  textStyle={[styles.tokenText, { color: colors.text }]}
-                  closeIconAccessibilityLabel="Clear date filter"
-                >
-                  On: {formatShortDate(dateRange.after!)}
-                </Chip>
-              ) : (
-                <>
-                  {dateRange.after && (
-                    <Chip
-                      onClose={() =>
-                        setDateRange({ ...dateRange, after: undefined })
-                      }
-                      icon="calendar-arrow-right"
-                      style={[styles.activeToken, { backgroundColor: tokenBg }]}
-                      textStyle={[styles.tokenText, { color: colors.text }]}
-                      closeIconAccessibilityLabel="Clear after-date filter"
-                    >
-                      After: {formatShortDate(dateRange.after)}
-                    </Chip>
-                  )}
-                  {dateRange.before && (
-                    <Chip
-                      onClose={() =>
-                        setDateRange({ ...dateRange, before: undefined })
-                      }
-                      icon="calendar-arrow-left"
-                      style={[styles.activeToken, { backgroundColor: tokenBg }]}
-                      textStyle={[styles.tokenText, { color: colors.text }]}
-                      closeIconAccessibilityLabel="Clear before-date filter"
-                    >
-                      Before: {formatShortDate(dateRange.before)}
-                    </Chip>
-                  )}
-                </>
-              )}
-
-              {/* Person token */}
-              {personFilter && (
-                <Chip
-                  onClose={() => setPersonFilter(null)}
-                  icon="account"
-                  style={[styles.activeToken, { backgroundColor: tokenBg }]}
-                  textStyle={[styles.tokenText, { color: colors.text }]}
-                  closeIconAccessibilityLabel="Clear person filter"
-                >
-                  From: {personFilter.displayName}
-                </Chip>
-              )}
-            </ScrollView>
-          )}
-
-          {/* ============================================================= */}
-          {/* CONTENT AREA — switches based on filterView                    */}
-          {/* ============================================================= */}
-
-          {/* --- RESULTS VIEW (default) --- */}
-          {filterView === "none" && (
-            <View style={styles.resultsContainer}>
-              {/* Loading */}
-              {isSearching && (
-                <View style={styles.loadingContainer}>
-                  <ActivityIndicator size="small" color={colors.primary} />
+            {/* Results list */}
+            {resultBranch === "results" && (
+              <View key={resultsRenderKey} style={styles.resultsListShell}>
+                <View style={styles.resultsHeader}>
                   <Text
                     style={[
-                      styles.loadingText,
+                      styles.resultsCount,
                       { color: colors.textSecondary },
                     ]}
                   >
-                    Searching…
+                    {results.length} result
+                    {results.length !== 1 ? "s" : ""}
+                    {messageCount > 0 && conversationCount > 0
+                      ? ` · ${messageCount} message${messageCount !== 1 ? "s" : ""}, ${conversationCount} conversation${conversationCount !== 1 ? "s" : ""}`
+                      : ""}
                   </Text>
                 </View>
-              )}
 
-              {/* Results list */}
-              {!isSearching && hasSearched && results.length > 0 && (
-                <>
-                  <View style={styles.resultsHeader}>
-                    <Text
-                      style={[
-                        styles.resultsCount,
-                        { color: colors.textSecondary },
-                      ]}
-                    >
-                      {results.length} result
-                      {results.length !== 1 ? "s" : ""}
-                      {messageCount > 0 && conversationCount > 0
-                        ? ` · ${messageCount} message${messageCount !== 1 ? "s" : ""}, ${conversationCount} conversation${conversationCount !== 1 ? "s" : ""}`
-                        : ""}
-                    </Text>
-                  </View>
-
-                  <FlatList
-                    data={results}
-                    renderItem={renderResult}
-                    keyExtractor={keyExtractor}
-                    keyboardShouldPersistTaps="handled"
-                    keyboardDismissMode="on-drag"
-                    style={styles.resultsList}
-                    contentContainerStyle={{ paddingBottom: 24 }}
-                    initialNumToRender={15}
-                    maxToRenderPerBatch={10}
-                    removeClippedSubviews={Platform.OS === "android"}
-                  />
-                </>
-              )}
-
-              {/* Error */}
-              {!isSearching && error && (
-                <View style={styles.emptyContainer}>
-                  <MaterialCommunityIcons
-                    name="alert-circle-outline"
-                    size={48}
-                    color={colors.error || "#ef4444"}
-                  />
-                  <Text style={[styles.emptyTitle, { color: colors.text }]}>
-                    Search could not finish
-                  </Text>
-                  <Text
-                    style={[
-                      styles.emptySubtitle,
-                      { color: colors.textSecondary },
-                    ]}
-                  >
-                    {error}
-                  </Text>
-                </View>
-              )}
-
-              {/* Empty results */}
-              {!isSearching &&
-                !error &&
-                hasSearched &&
-                results.length === 0 && (
-                <View style={styles.emptyContainer}>
-                  <MaterialCommunityIcons
-                    name="magnify-close"
-                    size={48}
-                    color={colors.textSecondary}
-                  />
-                  <Text style={[styles.emptyTitle, { color: colors.text }]}>
-                    No results found
-                  </Text>
-                  <Text
-                    style={[
-                      styles.emptySubtitle,
-                      { color: colors.textSecondary },
-                    ]}
-                  >
-                    Try different keywords or adjust your filters
-                  </Text>
-                </View>
-              )}
-
-              {/* Pre-query state: recent searches + browse shortcuts */}
-              {!hasSearched && !isSearching && (
-                <ScrollView
-                  style={styles.preQueryContainer}
+                <FlatList
+                  data={results}
+                  extraData={flatListExtraData}
+                  renderItem={renderResult}
+                  keyExtractor={keyExtractor}
                   keyboardShouldPersistTaps="handled"
+                  keyboardDismissMode="on-drag"
+                  style={styles.resultsList}
+                  contentContainerStyle={{ paddingBottom: 24 }}
+                  initialNumToRender={15}
+                  maxToRenderPerBatch={10}
+                  removeClippedSubviews={false}
+                />
+              </View>
+            )}
+
+            {/* Error */}
+            {resultBranch === "error" && (
+              <View style={styles.emptyContainer}>
+                <MaterialCommunityIcons
+                  name="alert-circle-outline"
+                  size={48}
+                  color={colors.error || "#ef4444"}
+                />
+                <Text style={[styles.emptyTitle, { color: colors.text }]}>
+                  Search could not finish
+                </Text>
+                <Text
+                  style={[
+                    styles.emptySubtitle,
+                    { color: colors.textSecondary },
+                  ]}
                 >
-                  {/* Recent Searches */}
-                  {recentSearches.length > 0 && (
-                    <View style={styles.recentContainer}>
-                      <View style={styles.sectionHeader}>
+                  {error}
+                </Text>
+              </View>
+            )}
+
+            {/* Empty results */}
+            {resultBranch === "empty" && (
+              <View style={styles.emptyContainer}>
+                <MaterialCommunityIcons
+                  name="magnify-close"
+                  size={48}
+                  color={colors.textSecondary}
+                />
+                <Text style={[styles.emptyTitle, { color: colors.text }]}>
+                  No results found
+                </Text>
+                <Text
+                  style={[
+                    styles.emptySubtitle,
+                    { color: colors.textSecondary },
+                  ]}
+                >
+                  Try different keywords or adjust your filters
+                </Text>
+              </View>
+            )}
+
+            {/* Pre-query state: recent searches + browse shortcuts */}
+            {resultBranch === "pre-search" && (
+              <ScrollView
+                style={styles.preQueryContainer}
+                keyboardShouldPersistTaps="handled"
+              >
+                {/* Recent Searches */}
+                {recentSearches.length > 0 && (
+                  <View style={styles.recentContainer}>
+                    <View style={styles.sectionHeader}>
+                      <Text
+                        style={[
+                          styles.sectionTitle,
+                          { color: colors.textSecondary },
+                        ]}
+                      >
+                        RECENT SEARCHES
+                      </Text>
+                      <TouchableOpacity
+                        onPress={clearAllRecentSearches}
+                        hitSlop={{
+                          top: 8,
+                          bottom: 8,
+                          left: 8,
+                          right: 8,
+                        }}
+                      >
                         <Text
                           style={[
-                            styles.sectionTitle,
-                            { color: colors.textSecondary },
+                            styles.clearAllText,
+                            { color: colors.primary },
                           ]}
                         >
-                          RECENT SEARCHES
+                          Clear All
                         </Text>
+                      </TouchableOpacity>
+                    </View>
+                    {recentSearches.map((term, index) => (
+                      <TouchableOpacity
+                        key={`recent-${index}`}
+                        style={[
+                          styles.recentItem,
+                          { borderBottomColor: colors.border },
+                        ]}
+                        onPress={() => handleRecentTap(term)}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Search for ${term}`}
+                      >
+                        <View style={styles.recentItemLeft}>
+                          <MaterialCommunityIcons
+                            name="history"
+                            size={18}
+                            color={colors.textSecondary}
+                            style={styles.recentIcon}
+                          />
+                          <Text
+                            style={[styles.recentText, { color: colors.text }]}
+                            numberOfLines={1}
+                          >
+                            {term}
+                          </Text>
+                        </View>
                         <TouchableOpacity
-                          onPress={clearAllRecentSearches}
+                          onPress={() => removeRecentSearchItem(term)}
                           hitSlop={{
                             top: 8,
                             bottom: 8,
                             left: 8,
                             right: 8,
                           }}
+                          accessibilityLabel={`Remove ${term}`}
                         >
-                          <Text
-                            style={[
-                              styles.clearAllText,
-                              { color: colors.primary },
-                            ]}
-                          >
-                            Clear All
-                          </Text>
+                          <MaterialCommunityIcons
+                            name="close"
+                            size={16}
+                            color={colors.textSecondary}
+                          />
                         </TouchableOpacity>
-                      </View>
-                      {recentSearches.map((term, index) => (
-                        <TouchableOpacity
-                          key={`recent-${index}`}
-                          style={[
-                            styles.recentItem,
-                            { borderBottomColor: colors.border },
-                          ]}
-                          onPress={() => handleRecentTap(term)}
-                          accessibilityRole="button"
-                          accessibilityLabel={`Search for ${term}`}
-                        >
-                          <View style={styles.recentItemLeft}>
-                            <MaterialCommunityIcons
-                              name="history"
-                              size={18}
-                              color={colors.textSecondary}
-                              style={styles.recentIcon}
-                            />
-                            <Text
-                              style={[
-                                styles.recentText,
-                                { color: colors.text },
-                              ]}
-                              numberOfLines={1}
-                            >
-                              {term}
-                            </Text>
-                          </View>
-                          <TouchableOpacity
-                            onPress={() => removeRecentSearchItem(term)}
-                            hitSlop={{
-                              top: 8,
-                              bottom: 8,
-                              left: 8,
-                              right: 8,
-                            }}
-                            accessibilityLabel={`Remove ${term}`}
-                          >
-                            <MaterialCommunityIcons
-                              name="close"
-                              size={16}
-                              color={colors.textSecondary}
-                            />
-                          </TouchableOpacity>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  )}
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
 
-                  {/* Browse Shortcuts */}
-                  <View style={styles.browseSection}>
+                {/* Browse Shortcuts */}
+                <View style={styles.browseSection}>
+                  <Text
+                    style={[
+                      styles.sectionTitle,
+                      { color: colors.textSecondary },
+                    ]}
+                  >
+                    BROWSE
+                  </Text>
+                  <TouchableOpacity
+                    style={[
+                      styles.browseRow,
+                      { borderBottomColor: colors.border },
+                    ]}
+                    onPress={() => handleBrowseShortcut("media")}
+                  >
+                    <MaterialCommunityIcons
+                      name="image-multiple"
+                      size={20}
+                      color={colors.primary}
+                      style={styles.browseIcon}
+                    />
+                    <Text style={[styles.browseLabel, { color: colors.text }]}>
+                      All media
+                    </Text>
+                    <MaterialCommunityIcons
+                      name="chevron-right"
+                      size={20}
+                      color={colors.textSecondary}
+                    />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.browseRow,
+                      { borderBottomColor: colors.border },
+                    ]}
+                    onPress={() => handleBrowseShortcut("links")}
+                  >
+                    <MaterialCommunityIcons
+                      name="link"
+                      size={20}
+                      color={colors.primary}
+                      style={styles.browseIcon}
+                    />
+                    <Text style={[styles.browseLabel, { color: colors.text }]}>
+                      All links
+                    </Text>
+                    <MaterialCommunityIcons
+                      name="chevron-right"
+                      size={20}
+                      color={colors.textSecondary}
+                    />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.browseRow,
+                      { borderBottomColor: colors.border },
+                    ]}
+                    onPress={() => handleBrowseShortcut("files")}
+                  >
+                    <MaterialCommunityIcons
+                      name="file-document-outline"
+                      size={20}
+                      color={colors.primary}
+                      style={styles.browseIcon}
+                    />
+                    <Text style={[styles.browseLabel, { color: colors.text }]}>
+                      All files
+                    </Text>
+                    <MaterialCommunityIcons
+                      name="chevron-right"
+                      size={20}
+                      color={colors.textSecondary}
+                    />
+                  </TouchableOpacity>
+                </View>
+
+                {/* Tip */}
+                {recentSearches.length === 0 && (
+                  <View style={styles.tipContainer}>
+                    <MaterialCommunityIcons
+                      name="text-search"
+                      size={48}
+                      color={colors.textSecondary}
+                      style={{ opacity: 0.4 }}
+                    />
+                    <Text style={[styles.tipTitle, { color: colors.text }]}>
+                      Search your messages
+                    </Text>
                     <Text
                       style={[
-                        styles.sectionTitle,
+                        styles.tipSubtitle,
                         { color: colors.textSecondary },
                       ]}
                     >
-                      BROWSE
+                      Find messages across all your chats, or browse by content
+                      type using the shortcuts above
                     </Text>
-                    <TouchableOpacity
-                      style={[
-                        styles.browseRow,
-                        { borderBottomColor: colors.border },
-                      ]}
-                      onPress={() => handleBrowseShortcut("media")}
-                    >
-                      <MaterialCommunityIcons
-                        name="image-multiple"
-                        size={20}
-                        color={colors.primary}
-                        style={styles.browseIcon}
-                      />
-                      <Text
-                        style={[styles.browseLabel, { color: colors.text }]}
-                      >
-                        All media
-                      </Text>
-                      <MaterialCommunityIcons
-                        name="chevron-right"
-                        size={20}
-                        color={colors.textSecondary}
-                      />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[
-                        styles.browseRow,
-                        { borderBottomColor: colors.border },
-                      ]}
-                      onPress={() => handleBrowseShortcut("links")}
-                    >
-                      <MaterialCommunityIcons
-                        name="link"
-                        size={20}
-                        color={colors.primary}
-                        style={styles.browseIcon}
-                      />
-                      <Text
-                        style={[styles.browseLabel, { color: colors.text }]}
-                      >
-                        All links
-                      </Text>
-                      <MaterialCommunityIcons
-                        name="chevron-right"
-                        size={20}
-                        color={colors.textSecondary}
-                      />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[
-                        styles.browseRow,
-                        { borderBottomColor: colors.border },
-                      ]}
-                      onPress={() => handleBrowseShortcut("files")}
-                    >
-                      <MaterialCommunityIcons
-                        name="file-document-outline"
-                        size={20}
-                        color={colors.primary}
-                        style={styles.browseIcon}
-                      />
-                      <Text
-                        style={[styles.browseLabel, { color: colors.text }]}
-                      >
-                        All files
-                      </Text>
-                      <MaterialCommunityIcons
-                        name="chevron-right"
-                        size={20}
-                        color={colors.textSecondary}
-                      />
-                    </TouchableOpacity>
                   </View>
-
-                  {/* Tip */}
-                  {recentSearches.length === 0 && (
-                    <View style={styles.tipContainer}>
-                      <MaterialCommunityIcons
-                        name="text-search"
-                        size={48}
-                        color={colors.textSecondary}
-                        style={{ opacity: 0.4 }}
-                      />
-                      <Text style={[styles.tipTitle, { color: colors.text }]}>
-                        Search your messages
-                      </Text>
-                      <Text
-                        style={[
-                          styles.tipSubtitle,
-                          { color: colors.textSecondary },
-                        ]}
-                      >
-                        Find messages across all your chats, or browse by
-                        content type using the shortcuts above
-                      </Text>
-                    </View>
-                  )}
-                </ScrollView>
-              )}
-            </View>
-          )}
-
-          {/* --- FILTER MENU VIEW --- */}
-          {filterView === "menu" && (
-            <View style={styles.filterMenuContainer}>
-              {/* Back row */}
-              <TouchableOpacity
-                style={styles.filterBackRow}
-                onPress={() => setFilterView("none")}
-              >
-                <MaterialCommunityIcons
-                  name="arrow-left"
-                  size={20}
-                  color={colors.textSecondary}
-                />
-                <Text
-                  style={[
-                    styles.filterBackLabel,
-                    { color: colors.textSecondary },
-                  ]}
-                >
-                  Back to results
-                </Text>
-              </TouchableOpacity>
-
-              <ScrollView
-                style={styles.filterMenuScroll}
-                keyboardShouldPersistTaps="handled"
-                showsVerticalScrollIndicator={false}
-              >
-                {/* SCOPE */}
-                <Text
-                  style={[
-                    styles.filterSectionTitle,
-                    { color: colors.textSecondary },
-                  ]}
-                >
-                  SCOPE
-                </Text>
-                <FilterMenuItem
-                  icon="account"
-                  label="DMs only"
-                  active={scopeFilter === "dms"}
-                  colors={colors}
-                  onPress={() => handleScopeSelect("dms")}
-                />
-                <FilterMenuItem
-                  icon="account-group"
-                  label="Groups only"
-                  active={scopeFilter === "groups"}
-                  colors={colors}
-                  onPress={() => handleScopeSelect("groups")}
-                />
-
-                {/* CONTENT */}
-                <Text
-                  style={[
-                    styles.filterSectionTitle,
-                    { color: colors.textSecondary },
-                    { marginTop: 16 },
-                  ]}
-                >
-                  CONTENT
-                </Text>
-                <FilterMenuItem
-                  icon="image"
-                  label="Has: Media"
-                  active={contentFilter === "media"}
-                  colors={colors}
-                  onPress={() => handleContentSelect("media")}
-                />
-                <FilterMenuItem
-                  icon="link"
-                  label="Has: Links"
-                  active={contentFilter === "links"}
-                  colors={colors}
-                  onPress={() => handleContentSelect("links")}
-                />
-                <FilterMenuItem
-                  icon="file-document-outline"
-                  label="Has: Files"
-                  active={contentFilter === "files"}
-                  colors={colors}
-                  onPress={() => handleContentSelect("files")}
-                />
-
-                {/* FROM */}
-                <Text
-                  style={[
-                    styles.filterSectionTitle,
-                    { color: colors.textSecondary },
-                    { marginTop: 16 },
-                  ]}
-                >
-                  FROM
-                </Text>
-                <FilterMenuItem
-                  icon="account-search"
-                  label="From a person"
-                  value={personFilter?.displayName}
-                  active={!!personFilter}
-                  colors={colors}
-                  onPress={() => setFilterView("personPicker")}
-                />
-
-                {/* DATE */}
-                <Text
-                  style={[
-                    styles.filterSectionTitle,
-                    { color: colors.textSecondary },
-                    { marginTop: 16 },
-                  ]}
-                >
-                  DATE
-                </Text>
-                <FilterMenuItem
-                  icon="calendar-arrow-right"
-                  label="After a date"
-                  value={
-                    !sentOn && dateRange.after
-                      ? formatShortDate(dateRange.after)
-                      : undefined
-                  }
-                  active={!sentOn && !!dateRange.after}
-                  colors={colors}
-                  onPress={() => handleOpenDatePicker("after")}
-                />
-                <FilterMenuItem
-                  icon="calendar-arrow-left"
-                  label="Before a date"
-                  value={
-                    !sentOn && dateRange.before
-                      ? formatShortDate(dateRange.before)
-                      : undefined
-                  }
-                  active={!sentOn && !!dateRange.before}
-                  colors={colors}
-                  onPress={() => handleOpenDatePicker("before")}
-                />
-                <FilterMenuItem
-                  icon="calendar"
-                  label="Sent on a date"
-                  value={sentOn ? formatShortDate(dateRange.after!) : undefined}
-                  active={sentOn}
-                  colors={colors}
-                  onPress={() => handleOpenDatePicker("sentOn")}
-                />
-
-                {/* Clear all */}
-                {hasActiveFilters && (
-                  <TouchableOpacity
-                    style={styles.clearAllRow}
-                    onPress={handleClearAllFilters}
-                  >
-                    <MaterialCommunityIcons
-                      name="filter-remove"
-                      size={20}
-                      color={colors.error || "#ef4444"}
-                    />
-                    <Text
-                      style={[
-                        styles.clearAllFilterText,
-                        { color: colors.error || "#ef4444" },
-                      ]}
-                    >
-                      Clear all filters
-                    </Text>
-                  </TouchableOpacity>
                 )}
-
-                <View style={{ height: 32 }} />
               </ScrollView>
-            </View>
-          )}
+            )}
+          </View>
+        )}
 
-          {/* --- DATE PICKER VIEW --- */}
-          {filterView === "datePicker" && (
-            <View style={styles.datePickerContainer}>
-              {/* Header */}
-              <TouchableOpacity
-                style={styles.filterBackRow}
-                onPress={() => {
-                  setFilterView("menu");
-                  setShowAndroidPicker(false);
-                }}
-              >
-                <MaterialCommunityIcons
-                  name="arrow-left"
-                  size={20}
-                  color={colors.textSecondary}
-                />
-                <Text
-                  style={[
-                    styles.filterBackLabel,
-                    { color: colors.textSecondary },
-                  ]}
-                >
-                  Back to filters
-                </Text>
-              </TouchableOpacity>
-
-              <Text style={[styles.datePickerTitle, { color: colors.text }]}>
-                {datePickerMode === "after"
-                  ? "After a date"
-                  : datePickerMode === "before"
-                    ? "Before a date"
-                    : "Sent on a date"}
-              </Text>
-
+        {/* --- FILTER MENU VIEW --- */}
+        {filterView === "menu" && (
+          <View style={styles.filterMenuContainer}>
+            {/* Back row */}
+            <TouchableOpacity
+              style={styles.filterBackRow}
+              onPress={() => setFilterView("none")}
+            >
+              <MaterialCommunityIcons
+                name="arrow-left"
+                size={20}
+                color={colors.textSecondary}
+              />
               <Text
-                style={[styles.datePickerHint, { color: colors.textSecondary }]}
+                style={[
+                  styles.filterBackLabel,
+                  { color: colors.textSecondary },
+                ]}
               >
-                {datePickerMode === "after"
-                  ? "Show messages sent after this date"
-                  : datePickerMode === "before"
-                    ? "Show messages sent before this date"
-                    : "Show messages sent on this specific date"}
+                Back to results
               </Text>
+            </TouchableOpacity>
 
-              {/* iOS inline picker */}
-              {Platform.OS === "ios" && (
-                <View style={styles.datePickerIOS}>
-                  <DateTimePicker
-                    value={datePickerValue}
-                    mode="date"
-                    display="inline"
-                    onChange={handleDatePickerChange}
-                    maximumDate={new Date()}
-                    themeVariant={isDark ? "dark" : "light"}
+            <ScrollView
+              style={styles.filterMenuScroll}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
+              {/* SCOPE */}
+              <Text
+                style={[
+                  styles.filterSectionTitle,
+                  { color: colors.textSecondary },
+                ]}
+              >
+                SCOPE
+              </Text>
+              <FilterMenuItem
+                icon="account"
+                label="DMs only"
+                active={scopeFilter === "dms"}
+                colors={colors}
+                onPress={() => handleScopeSelect("dms")}
+              />
+              <FilterMenuItem
+                icon="account-group"
+                label="Groups only"
+                active={scopeFilter === "groups"}
+                colors={colors}
+                onPress={() => handleScopeSelect("groups")}
+              />
+
+              {/* CONTENT */}
+              <Text
+                style={[
+                  styles.filterSectionTitle,
+                  { color: colors.textSecondary },
+                  { marginTop: 16 },
+                ]}
+              >
+                CONTENT
+              </Text>
+              <FilterMenuItem
+                icon="image"
+                label="Has: Media"
+                active={contentFilter === "media"}
+                colors={colors}
+                onPress={() => handleContentSelect("media")}
+              />
+              <FilterMenuItem
+                icon="link"
+                label="Has: Links"
+                active={contentFilter === "links"}
+                colors={colors}
+                onPress={() => handleContentSelect("links")}
+              />
+              <FilterMenuItem
+                icon="file-document-outline"
+                label="Has: Files"
+                active={contentFilter === "files"}
+                colors={colors}
+                onPress={() => handleContentSelect("files")}
+              />
+
+              {/* FROM */}
+              <Text
+                style={[
+                  styles.filterSectionTitle,
+                  { color: colors.textSecondary },
+                  { marginTop: 16 },
+                ]}
+              >
+                FROM
+              </Text>
+              <FilterMenuItem
+                icon="account-search"
+                label="From a person"
+                value={personFilter?.displayName}
+                active={!!personFilter}
+                colors={colors}
+                onPress={() => setFilterView("personPicker")}
+              />
+
+              {/* DATE */}
+              <Text
+                style={[
+                  styles.filterSectionTitle,
+                  { color: colors.textSecondary },
+                  { marginTop: 16 },
+                ]}
+              >
+                DATE
+              </Text>
+              <FilterMenuItem
+                icon="calendar-arrow-right"
+                label="After a date"
+                value={
+                  !sentOn && dateRange.after
+                    ? formatShortDate(dateRange.after)
+                    : undefined
+                }
+                active={!sentOn && !!dateRange.after}
+                colors={colors}
+                onPress={() => handleOpenDatePicker("after")}
+              />
+              <FilterMenuItem
+                icon="calendar-arrow-left"
+                label="Before a date"
+                value={
+                  !sentOn && dateRange.before
+                    ? formatShortDate(dateRange.before)
+                    : undefined
+                }
+                active={!sentOn && !!dateRange.before}
+                colors={colors}
+                onPress={() => handleOpenDatePicker("before")}
+              />
+              <FilterMenuItem
+                icon="calendar"
+                label="Sent on a date"
+                value={sentOn ? formatShortDate(dateRange.after!) : undefined}
+                active={sentOn}
+                colors={colors}
+                onPress={() => handleOpenDatePicker("sentOn")}
+              />
+
+              {/* Clear all */}
+              {hasActiveFilters && (
+                <TouchableOpacity
+                  style={styles.clearAllRow}
+                  onPress={handleClearAllFilters}
+                >
+                  <MaterialCommunityIcons
+                    name="filter-remove"
+                    size={20}
+                    color={colors.error || "#ef4444"}
                   />
-                  <View style={styles.datePickerActions}>
-                    <TouchableOpacity
-                      style={[
-                        styles.datePickerBtn,
-                        { backgroundColor: colors.surfaceVariant },
-                      ]}
-                      onPress={() => setFilterView("menu")}
-                    >
-                      <Text
-                        style={[
-                          styles.datePickerBtnText,
-                          { color: colors.textSecondary },
-                        ]}
-                      >
-                        Cancel
-                      </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[
-                        styles.datePickerBtn,
-                        { backgroundColor: colors.primary },
-                      ]}
-                      onPress={() => handleDateConfirm(datePickerValue)}
-                    >
-                      <Text
-                        style={[styles.datePickerBtnText, { color: "#fff" }]}
-                      >
-                        Apply
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
+                  <Text
+                    style={[
+                      styles.clearAllFilterText,
+                      { color: colors.error || "#ef4444" },
+                    ]}
+                  >
+                    Clear all filters
+                  </Text>
+                </TouchableOpacity>
               )}
 
-              {/* Android modal picker */}
-              {Platform.OS === "android" && showAndroidPicker && (
+              <View style={{ height: 32 }} />
+            </ScrollView>
+          </View>
+        )}
+
+        {/* --- DATE PICKER VIEW --- */}
+        {filterView === "datePicker" && (
+          <View style={styles.datePickerContainer}>
+            {/* Header */}
+            <TouchableOpacity
+              style={styles.filterBackRow}
+              onPress={() => {
+                setFilterView("menu");
+                setShowAndroidPicker(false);
+              }}
+            >
+              <MaterialCommunityIcons
+                name="arrow-left"
+                size={20}
+                color={colors.textSecondary}
+              />
+              <Text
+                style={[
+                  styles.filterBackLabel,
+                  { color: colors.textSecondary },
+                ]}
+              >
+                Back to filters
+              </Text>
+            </TouchableOpacity>
+
+            <Text style={[styles.datePickerTitle, { color: colors.text }]}>
+              {datePickerMode === "after"
+                ? "After a date"
+                : datePickerMode === "before"
+                  ? "Before a date"
+                  : "Sent on a date"}
+            </Text>
+
+            <Text
+              style={[styles.datePickerHint, { color: colors.textSecondary }]}
+            >
+              {datePickerMode === "after"
+                ? "Show messages sent after this date"
+                : datePickerMode === "before"
+                  ? "Show messages sent before this date"
+                  : "Show messages sent on this specific date"}
+            </Text>
+
+            {/* iOS inline picker */}
+            {Platform.OS === "ios" && (
+              <View style={styles.datePickerIOS}>
                 <DateTimePicker
                   value={datePickerValue}
                   mode="date"
-                  display="default"
+                  display="inline"
                   onChange={handleDatePickerChange}
                   maximumDate={new Date()}
+                  themeVariant={isDark ? "dark" : "light"}
                 />
-              )}
-
-              {/* Android: show selected date + re-pick button */}
-              {Platform.OS === "android" && !showAndroidPicker && (
-                <View style={styles.androidDateDisplay}>
-                  <Text
-                    style={[styles.androidDateText, { color: colors.text }]}
+                <View style={styles.datePickerActions}>
+                  <TouchableOpacity
+                    style={[
+                      styles.datePickerBtn,
+                      { backgroundColor: colors.surfaceVariant },
+                    ]}
+                    onPress={() => setFilterView("menu")}
                   >
-                    {formatShortDate(datePickerValue.getTime())}
-                  </Text>
-                  <View style={styles.datePickerActions}>
-                    <TouchableOpacity
+                    <Text
                       style={[
-                        styles.datePickerBtn,
-                        { backgroundColor: colors.surfaceVariant },
+                        styles.datePickerBtnText,
+                        { color: colors.textSecondary },
                       ]}
-                      onPress={() => setShowAndroidPicker(true)}
                     >
-                      <Text
-                        style={[
-                          styles.datePickerBtnText,
-                          { color: colors.text },
-                        ]}
-                      >
-                        Change date
-                      </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[
-                        styles.datePickerBtn,
-                        { backgroundColor: colors.primary },
-                      ]}
-                      onPress={() => handleDateConfirm(datePickerValue)}
-                    >
-                      <Text
-                        style={[styles.datePickerBtnText, { color: "#fff" }]}
-                      >
-                        Apply
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
+                      Cancel
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.datePickerBtn,
+                      { backgroundColor: colors.primary },
+                    ]}
+                    onPress={() => handleDateConfirm(datePickerValue)}
+                  >
+                    <Text style={[styles.datePickerBtnText, { color: "#fff" }]}>
+                      Apply
+                    </Text>
+                  </TouchableOpacity>
                 </View>
-              )}
-            </View>
-          )}
+              </View>
+            )}
 
-          {/* --- PERSON PICKER VIEW --- */}
-          {filterView === "personPicker" && (
-            <View style={styles.personPickerContainer}>
-              {/* Header */}
+            {/* Android modal picker */}
+            {Platform.OS === "android" && showAndroidPicker && (
+              <DateTimePicker
+                value={datePickerValue}
+                mode="date"
+                display="default"
+                onChange={handleDatePickerChange}
+                maximumDate={new Date()}
+              />
+            )}
+
+            {/* Android: show selected date + re-pick button */}
+            {Platform.OS === "android" && !showAndroidPicker && (
+              <View style={styles.androidDateDisplay}>
+                <Text style={[styles.androidDateText, { color: colors.text }]}>
+                  {formatShortDate(datePickerValue.getTime())}
+                </Text>
+                <View style={styles.datePickerActions}>
+                  <TouchableOpacity
+                    style={[
+                      styles.datePickerBtn,
+                      { backgroundColor: colors.surfaceVariant },
+                    ]}
+                    onPress={() => setShowAndroidPicker(true)}
+                  >
+                    <Text
+                      style={[styles.datePickerBtnText, { color: colors.text }]}
+                    >
+                      Change date
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.datePickerBtn,
+                      { backgroundColor: colors.primary },
+                    ]}
+                    onPress={() => handleDateConfirm(datePickerValue)}
+                  >
+                    <Text style={[styles.datePickerBtnText, { color: "#fff" }]}>
+                      Apply
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* --- PERSON PICKER VIEW --- */}
+        {filterView === "personPicker" && (
+          <View style={styles.personPickerContainer}>
+            {/* Header */}
+            <TouchableOpacity
+              style={styles.filterBackRow}
+              onPress={() => setFilterView("menu")}
+            >
+              <MaterialCommunityIcons
+                name="arrow-left"
+                size={20}
+                color={colors.textSecondary}
+              />
+              <Text
+                style={[
+                  styles.filterBackLabel,
+                  { color: colors.textSecondary },
+                ]}
+              >
+                Back to filters
+              </Text>
+            </TouchableOpacity>
+
+            <Text style={[styles.personPickerTitle, { color: colors.text }]}>
+              From a person
+            </Text>
+
+            {/* Clear option */}
+            {personFilter && (
               <TouchableOpacity
-                style={styles.filterBackRow}
-                onPress={() => setFilterView("menu")}
+                style={[styles.personRow, { borderBottomColor: colors.border }]}
+                onPress={() => {
+                  setPersonFilter(null);
+                  setFilterView("none");
+                }}
               >
                 <MaterialCommunityIcons
-                  name="arrow-left"
-                  size={20}
-                  color={colors.textSecondary}
+                  name="account-remove"
+                  size={22}
+                  color={colors.error || "#ef4444"}
+                  style={styles.personIcon}
                 />
                 <Text
                   style={[
-                    styles.filterBackLabel,
-                    { color: colors.textSecondary },
+                    styles.personName,
+                    { color: colors.error || "#ef4444" },
                   ]}
                 >
-                  Back to filters
+                  Clear person filter
                 </Text>
               </TouchableOpacity>
+            )}
 
-              <Text style={[styles.personPickerTitle, { color: colors.text }]}>
-                From a person
-              </Text>
-
-              {/* Clear option */}
-              {personFilter && (
+            {/* Contact list */}
+            <FlatList
+              data={contacts}
+              keyExtractor={(item) => item.userId}
+              keyboardShouldPersistTaps="handled"
+              renderItem={({ item }) => (
                 <TouchableOpacity
                   style={[
                     styles.personRow,
                     { borderBottomColor: colors.border },
                   ]}
-                  onPress={() => {
-                    setPersonFilter(null);
-                    setFilterView("none");
-                  }}
+                  onPress={() =>
+                    handlePersonSelect(item.userId, item.displayName)
+                  }
                 >
-                  <MaterialCommunityIcons
-                    name="account-remove"
-                    size={22}
-                    color={colors.error || "#ef4444"}
-                    style={styles.personIcon}
-                  />
+                  <View style={styles.personAvatar}>
+                    <ProfilePictureWithDecoration
+                      pictureUrl={item.avatarUrl}
+                      name={item.displayName}
+                      decorationId={item.decorationId}
+                      size={32}
+                    />
+                  </View>
                   <Text
                     style={[
                       styles.personName,
-                      { color: colors.error || "#ef4444" },
+                      {
+                        color:
+                          personFilter?.userId === item.userId
+                            ? colors.primary
+                            : colors.text,
+                        fontWeight:
+                          personFilter?.userId === item.userId ? "600" : "400",
+                      },
                     ]}
+                    numberOfLines={1}
                   >
-                    Clear person filter
+                    {item.displayName}
                   </Text>
+                  {personFilter?.userId === item.userId && (
+                    <MaterialCommunityIcons
+                      name="check"
+                      size={18}
+                      color={colors.primary}
+                    />
+                  )}
                 </TouchableOpacity>
               )}
-
-              {/* Contact list */}
-              <FlatList
-                data={contacts}
-                keyExtractor={(item) => item.userId}
-                keyboardShouldPersistTaps="handled"
-                renderItem={({ item }) => (
-                  <TouchableOpacity
+              ListEmptyComponent={
+                <View style={styles.emptyContainer}>
+                  <Text
                     style={[
-                      styles.personRow,
-                      { borderBottomColor: colors.border },
+                      styles.emptySubtitle,
+                      { color: colors.textSecondary },
                     ]}
-                    onPress={() =>
-                      handlePersonSelect(item.userId, item.displayName)
-                    }
                   >
-                    <View style={styles.personAvatar}>
-                      <ProfilePictureWithDecoration
-                        pictureUrl={item.avatarUrl}
-                        name={item.displayName}
-                        decorationId={item.decorationId}
-                        size={32}
-                      />
-                    </View>
-                    <Text
-                      style={[
-                        styles.personName,
-                        {
-                          color:
-                            personFilter?.userId === item.userId
-                              ? colors.primary
-                              : colors.text,
-                          fontWeight:
-                            personFilter?.userId === item.userId
-                              ? "600"
-                              : "400",
-                        },
-                      ]}
-                      numberOfLines={1}
-                    >
-                      {item.displayName}
-                    </Text>
-                    {personFilter?.userId === item.userId && (
-                      <MaterialCommunityIcons
-                        name="check"
-                        size={18}
-                        color={colors.primary}
-                      />
-                    )}
-                  </TouchableOpacity>
-                )}
-                ListEmptyComponent={
-                  <View style={styles.emptyContainer}>
-                    <Text
-                      style={[
-                        styles.emptySubtitle,
-                        { color: colors.textSecondary },
-                      ]}
-                    >
-                      No contacts found
-                    </Text>
-                  </View>
-                }
-              />
-            </View>
-          )}
-        </Animated.View>
-      </GestureDetector>
+                    No contacts found
+                  </Text>
+                </View>
+              }
+            />
+          </View>
+        )}
+      </Animated.View>
     </Modal>
   );
 }
@@ -1715,15 +1999,32 @@ const styles = StyleSheet.create({
     elevation: 0,
     borderRadius: BorderRadius.lg,
     height: 44,
+    minHeight: 44,
     justifyContent: "center",
   },
   searchInput: {
     fontSize: 15,
-    alignSelf: "center",
+    height: 44,
+    minHeight: 44,
+    lineHeight: 20,
+    alignSelf: "stretch",
     textAlignVertical: "center",
     paddingTop: 0,
     paddingBottom: 0,
-    marginTop: -4,
+    paddingVertical: 0,
+    marginTop: -2,
+    includeFontPadding: false,
+  },
+  searchClearButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: -6,
+  },
+  searchClearButtonPressed: {
+    opacity: 0.55,
   },
 
   // Active filter tokens
@@ -1750,6 +2051,20 @@ const styles = StyleSheet.create({
 
   // Results
   resultsContainer: {
+    flex: 1,
+  },
+  pendingContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingHorizontal: Spacing.xl,
+  },
+  pendingText: {
+    fontSize: 14,
+    fontWeight: "500",
+  },
+  resultsListShell: {
     flex: 1,
   },
   loadingContainer: {

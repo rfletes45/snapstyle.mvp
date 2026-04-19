@@ -186,6 +186,77 @@ describe("normalizeMessage", () => {
     expect(normalized.serverReceivedAt).toBe(1_730_839_200_250);
   });
 
+  it("normalizes legacy firestore image messages into searchable media attachments", () => {
+    const normalized = normalizeMessageFromFirestoreDoc({
+      id: "legacy-image",
+      data: {
+        groupId: "group-1",
+        sender: "user-b",
+        senderDisplayName: "User B",
+        type: "image",
+        content: "trip photo",
+        imagePath: "https://cdn.example.com/photo.jpg",
+        createdAt: 1234,
+      },
+      scopeHint: "group",
+      conversationIdHint: "group-1",
+    });
+
+    expect(normalized.kind).toBe("media");
+    expect(normalized.text).toBe("trip photo");
+    expect(normalized.attachments?.[0]).toMatchObject({
+      kind: "image",
+      url: "https://cdn.example.com/photo.jpg",
+    });
+  });
+
+  it("normalizes firestore attachment maps into attachment arrays", () => {
+    const normalized = normalizeMessageFromFirestoreDoc({
+      id: "mapped-attachment",
+      data: buildServerData({
+        kind: "media",
+        attachments: {
+          a: {
+            type: "video",
+            downloadUrl: "https://cdn.example.com/video.mp4",
+            thumbnailUrl: "https://cdn.example.com/thumb.jpg",
+            caption: "launch clip",
+          },
+        },
+      }),
+      scopeHint: "dm",
+      conversationIdHint: "chat-1",
+    });
+
+    expect(normalized.kind).toBe("media");
+    expect(normalized.attachments?.[0]).toMatchObject({
+      kind: "video",
+      url: "https://cdn.example.com/video.mp4",
+      thumbUrl: "https://cdn.example.com/thumb.jpg",
+      caption: "launch clip",
+    });
+  });
+
+  it("normalizes a single firestore attachment object", () => {
+    const normalized = normalizeMessageFromFirestoreDoc({
+      id: "single-attachment",
+      data: buildServerData({
+        kind: "media",
+        attachments: {
+          kind: "image",
+          remoteUrl: "https://cdn.example.com/single.jpg",
+        },
+      }),
+      scopeHint: "dm",
+      conversationIdHint: "chat-1",
+    });
+
+    expect(normalized.attachments?.[0]).toMatchObject({
+      kind: "image",
+      url: "https://cdn.example.com/single.jpg",
+    });
+  });
+
   // ---------------------------------------------------------------------------
   // Burst-send ordering stability
   // ---------------------------------------------------------------------------

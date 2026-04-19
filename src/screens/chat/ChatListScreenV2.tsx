@@ -41,7 +41,7 @@ import {
   prefetchImages,
   usePrefetchProfileImages,
 } from "@/utils/imagePrefetch";
-import { log } from "@/utils/log";
+import { isDebugEnabled, log } from "@/utils/log";
 import { normalizeRemoteImageUrl } from "@/utils/remoteImageSource";
 import {
   useFocusEffect,
@@ -49,7 +49,7 @@ import {
   useNavigation,
   useRoute,
 } from "@react-navigation/native";
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import { FlatList, StyleSheet, View } from "react-native";
 import { Button, Text } from "react-native-paper";
 
@@ -91,6 +91,82 @@ interface ContextMenuState {
   position: { x: number; y: number };
   conversation: InboxConversation | null;
 }
+
+interface InboxConversationRowProps {
+  conversation: InboxConversation;
+  isTyping: boolean;
+  onTogglePin: (conversation: InboxConversation) => void;
+  onDeleteRequest: (conversation: InboxConversation) => void;
+  onMute: (conversation: InboxConversation) => void;
+  onConversationPress: (conversation: InboxConversation) => void;
+  onConversationPressIn: (conversation: InboxConversation) => void;
+  onAvatarPress: (conversation: InboxConversation) => void;
+  onLongPress: (
+    conversation: InboxConversation,
+    event?: { pageX: number; pageY: number },
+  ) => void;
+}
+
+const InboxConversationRow = React.memo(function InboxConversationRow({
+  conversation,
+  isTyping,
+  onTogglePin,
+  onDeleteRequest,
+  onMute,
+  onConversationPress,
+  onConversationPressIn,
+  onAvatarPress,
+  onLongPress,
+}: InboxConversationRowProps) {
+  const handlePin = useCallback(
+    () => onTogglePin(conversation),
+    [conversation, onTogglePin],
+  );
+  const handleDelete = useCallback(
+    () => onDeleteRequest(conversation),
+    [conversation, onDeleteRequest],
+  );
+  const handleMute = useCallback(
+    () => onMute(conversation),
+    [conversation, onMute],
+  );
+  const handlePress = useCallback(
+    () => onConversationPress(conversation),
+    [conversation, onConversationPress],
+  );
+  const handlePressIn = useCallback(
+    () => onConversationPressIn(conversation),
+    [conversation, onConversationPressIn],
+  );
+  const handleAvatarPress = useCallback(
+    () => onAvatarPress(conversation),
+    [conversation, onAvatarPress],
+  );
+  const handleLongPress = useCallback(
+    (event?: { pageX: number; pageY: number }) =>
+      onLongPress(conversation, event),
+    [conversation, onLongPress],
+  );
+
+  return (
+    <SwipeableConversation
+      conversation={conversation}
+      onPin={handlePin}
+      onDelete={handleDelete}
+      onMute={handleMute}
+      onLongPress={handleLongPress}
+    >
+      <ConversationItem
+        conversation={conversation}
+        isTyping={isTyping}
+        onPress={handlePress}
+        onPressIn={handlePressIn}
+        onAvatarPress={handleAvatarPress}
+        onLongPress={handleLongPress}
+      />
+    </SwipeableConversation>
+  );
+});
 
 // =============================================================================
 // Component
@@ -226,6 +302,14 @@ export default function ChatListScreen() {
   // Actions from useConversationActions hook
   // Pass refresh callback to trigger UI update after actions
   const actions = useConversationActions(uid, { onActionComplete: refresh });
+  const {
+    togglePin: togglePinAction,
+    mute: muteAction,
+    unmute: unmuteAction,
+    deleteConversation: deleteConversationAction,
+    markUnread: markUnreadAction,
+    markRead: markReadAction,
+  } = actions;
 
   // Context menu state
   const [contextMenu, setContextMenu] = useState<ContextMenuState>({
@@ -233,6 +317,13 @@ export default function ChatListScreen() {
     position: { x: 0, y: 0 },
     conversation: null,
   });
+  const suppressPressAfterLongPressRef = useRef<{
+    key: string;
+    expiresAt: number;
+  } | null>(null);
+  const suppressPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
 
   // Mute sheet state
   const [muteSheetVisible, setMuteSheetVisible] = useState(false);
@@ -249,7 +340,7 @@ export default function ChatListScreen() {
   const [searchSheetVisible, setSearchSheetVisible] = useState(false);
 
   React.useEffect(() => {
-    if (!__DEV__) return;
+    if (!isDebugEnabled("CHAT")) return;
     interactionLog.debug("overlay state changed", {
       data: {
         contextMenuVisible: contextMenu.visible,
@@ -273,9 +364,77 @@ export default function ChatListScreen() {
     searchSheetVisible,
   ]);
 
+  React.useEffect(() => {
+    return () => {
+      if (suppressPressTimerRef.current) {
+        clearTimeout(suppressPressTimerRef.current);
+        suppressPressTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  const getConversationInteractionKey = useCallback(
+    (conversation: InboxConversation) =>
+      `${conversation.type}:${conversation.id}`,
+    [],
+  );
+
+  const armSuppressPressAfterLongPress = useCallback(
+    (conversation: InboxConversation) => {
+      const key = getConversationInteractionKey(conversation);
+      suppressPressAfterLongPressRef.current = {
+        key,
+        expiresAt: Date.now() + 900,
+      };
+      if (suppressPressTimerRef.current) {
+        clearTimeout(suppressPressTimerRef.current);
+      }
+      suppressPressTimerRef.current = setTimeout(() => {
+        if (suppressPressAfterLongPressRef.current?.key === key) {
+          suppressPressAfterLongPressRef.current = null;
+        }
+        suppressPressTimerRef.current = null;
+      }, 900);
+    },
+    [getConversationInteractionKey],
+  );
+
+  const consumeSuppressedPress = useCallback(
+    (conversation: InboxConversation, source: "row" | "avatar") => {
+      const pending = suppressPressAfterLongPressRef.current;
+      if (!pending) return false;
+
+      const isMatch =
+        pending.key === getConversationInteractionKey(conversation);
+      const isFresh = Date.now() <= pending.expiresAt;
+      if (!isMatch || !isFresh) {
+        if (!isFresh) suppressPressAfterLongPressRef.current = null;
+        return false;
+      }
+
+      suppressPressAfterLongPressRef.current = null;
+      if (suppressPressTimerRef.current) {
+        clearTimeout(suppressPressTimerRef.current);
+        suppressPressTimerRef.current = null;
+      }
+
+      if (__DEV__) {
+        interactionLog.debug("press suppressed after long-press", {
+          data: {
+            conversationId: conversation.id,
+            type: conversation.type,
+            source,
+          },
+        });
+      }
+      return true;
+    },
+    [getConversationInteractionKey],
+  );
+
   useFocusEffect(
     useCallback(() => {
-      if (__DEV__) {
+      if (isDebugEnabled("CHAT")) {
         interactionLog.debug("Messages screen focused", {
           data: {
             filter,
@@ -290,7 +449,7 @@ export default function ChatListScreen() {
       }
 
       return () => {
-        if (__DEV__) {
+        if (isDebugEnabled("CHAT")) {
           interactionLog.debug("Messages screen blurred", {
             data: { filter },
           });
@@ -505,6 +664,10 @@ export default function ChatListScreen() {
 
   const handleConversationPress = useCallback(
     (conversation: InboxConversation) => {
+      if (consumeSuppressedPress(conversation, "row")) {
+        return;
+      }
+
       if (__DEV__) {
         interactionLog.debug("tap callback received", {
           data: {
@@ -520,7 +683,7 @@ export default function ChatListScreen() {
         markConversationReadOptimistic(conversation.id, conversation.type);
 
         // Also persist to Firestore (background operation)
-        void actions.markRead(conversation).catch((error) => {
+        void markReadAction(conversation).catch((error) => {
           interactionLog.warn("mark-read failed after tap", {
             data: {
               conversationId: conversation.id,
@@ -649,18 +812,27 @@ export default function ChatListScreen() {
         throw error;
       }
     },
-    [navigation, actions, markConversationReadOptimistic],
+    [
+      consumeSuppressedPress,
+      navigation,
+      markReadAction,
+      markConversationReadOptimistic,
+    ],
   );
 
   const handleAvatarPress = useCallback(
     (conversation: InboxConversation) => {
+      if (consumeSuppressedPress(conversation, "avatar")) {
+        return;
+      }
+
       if (conversation.type === "dm" && conversation.otherUserId) {
         navigation.navigate("UserProfile", {
           userId: conversation.otherUserId,
         });
       }
     },
-    [navigation],
+    [consumeSuppressedPress, navigation],
   );
 
   const handleLongPress = useCallback(
@@ -679,6 +851,8 @@ export default function ChatListScreen() {
           },
         });
       }
+
+      armSuppressPressAfterLongPress(conversation);
 
       // Show context menu at touch position
       const position = event
@@ -702,7 +876,7 @@ export default function ChatListScreen() {
         conversation,
       });
     },
-    [],
+    [armSuppressPressAfterLongPress],
   );
 
   const handleCloseContextMenu = useCallback(() => {
@@ -831,24 +1005,24 @@ export default function ChatListScreen() {
     (conversation: InboxConversation) => {
       // If already muted, unmute. Otherwise show mute options sheet.
       if (conversation.memberState.mutedUntil) {
-        actions.unmute(conversation);
+        unmuteAction(conversation);
       } else {
         setMuteTargetConversation(conversation);
         setMuteSheetVisible(true);
       }
     },
-    [actions],
+    [unmuteAction],
   );
 
   const handleMuteDurationSelect = useCallback(
     (duration: MuteDuration) => {
       if (muteTargetConversation) {
-        actions.mute(muteTargetConversation, duration);
+        muteAction(muteTargetConversation, duration);
       }
       setMuteSheetVisible(false);
       setMuteTargetConversation(null);
     },
-    [muteTargetConversation, actions],
+    [muteTargetConversation, muteAction],
   );
 
   const handleCloseMuteSheet = useCallback(() => {
@@ -870,13 +1044,13 @@ export default function ChatListScreen() {
 
     setDeleteLoading(true);
     try {
-      await actions.deleteConversation(deleteTargetConversation);
+      await deleteConversationAction(deleteTargetConversation);
     } finally {
       setDeleteLoading(false);
       setDeleteDialogVisible(false);
       setDeleteTargetConversation(null);
     }
-  }, [deleteTargetConversation, actions]);
+  }, [deleteTargetConversation, deleteConversationAction]);
 
   const handleCloseDeleteDialog = useCallback(() => {
     setDeleteDialogVisible(false);
@@ -893,21 +1067,56 @@ export default function ChatListScreen() {
   // Context Menu Action Handlers
   // =============================================================================
 
+  const handlePinToggleRequest = useCallback(
+    (conversation: InboxConversation, source: "context-menu" | "swipe") => {
+      const wasPinned = !!conversation.memberState.pinnedAt;
+      if (__DEV__) {
+        interactionLog.debug("pin toggle requested", {
+          data: {
+            conversationId: conversation.id,
+            type: conversation.type,
+            source,
+            fromPinned: wasPinned,
+          },
+        });
+      }
+
+      togglePinOptimistic(conversation.id, conversation.type);
+      void togglePinAction(conversation)
+        .then(() => {
+          if (__DEV__) {
+            interactionLog.debug("pin toggle completed", {
+              data: {
+                conversationId: conversation.id,
+                type: conversation.type,
+                source,
+                toPinned: !wasPinned,
+              },
+            });
+          }
+        })
+        .catch((error) => {
+          interactionLog.error("pin toggle failed; rolling back optimistic UI", {
+            data: {
+              conversationId: conversation.id,
+              type: conversation.type,
+              source,
+              error,
+            },
+          });
+          togglePinOptimistic(conversation.id, conversation.type);
+        });
+    },
+    [togglePinAction, togglePinOptimistic],
+  );
+
   const handleContextMenuPin = useCallback(() => {
-    if (contextMenu.conversation) {
-      togglePinOptimistic(
-        contextMenu.conversation.id,
-        contextMenu.conversation.type,
-      );
-      actions.togglePin(contextMenu.conversation);
-    }
+    const conversation = contextMenu.conversation;
     handleCloseContextMenu();
-  }, [
-    actions,
-    contextMenu.conversation,
-    handleCloseContextMenu,
-    togglePinOptimistic,
-  ]);
+    if (conversation) {
+      handlePinToggleRequest(conversation, "context-menu");
+    }
+  }, [contextMenu.conversation, handleCloseContextMenu, handlePinToggleRequest]);
 
   const handleContextMenuMute = useCallback(() => {
     const conversation = contextMenu.conversation;
@@ -922,10 +1131,10 @@ export default function ChatListScreen() {
 
   const handleContextMenuMarkUnread = useCallback(() => {
     if (contextMenu.conversation) {
-      actions.markUnread(contextMenu.conversation);
+      markUnreadAction(contextMenu.conversation);
     }
     handleCloseContextMenu();
-  }, [actions, contextMenu.conversation, handleCloseContextMenu]);
+  }, [markUnreadAction, contextMenu.conversation, handleCloseContextMenu]);
 
   const handleContextMenuViewProfile = useCallback(() => {
     const conversation = contextMenu.conversation;
@@ -989,32 +1198,29 @@ export default function ChatListScreen() {
   // Render Functions
   // =============================================================================
 
+  const handleTogglePin = useCallback(
+    (conversation: InboxConversation) => {
+      handlePinToggleRequest(conversation, "swipe");
+    },
+    [handlePinToggleRequest],
+  );
+
   const renderConversationItem = useCallback(
     ({ item }: { item: InboxConversation }) => (
-      <SwipeableConversation
+      <InboxConversationRow
         conversation={item}
-        onPin={() => {
-          togglePinOptimistic(item.id, item.type);
-          actions.togglePin(item);
-        }}
-        onDelete={() => handleDeleteRequest(item)}
-        onMute={() => handleMute(item)}
-      >
-        <ConversationItem
-          conversation={item}
-          isTyping={inboxTyping.get(item.id)?.isTyping || false}
-          onPress={() => handleConversationPress(item)}
-          onPressIn={() => handleConversationPressIn(item)}
-          onAvatarPress={() => handleAvatarPress(item)}
-          onLongPress={(event?: { pageX: number; pageY: number }) =>
-            handleLongPress(item, event)
-          }
-        />
-      </SwipeableConversation>
+        isTyping={inboxTyping.get(item.id)?.isTyping || false}
+        onTogglePin={handleTogglePin}
+        onDeleteRequest={handleDeleteRequest}
+        onMute={handleMute}
+        onConversationPress={handleConversationPress}
+        onConversationPressIn={handleConversationPressIn}
+        onAvatarPress={handleAvatarPress}
+        onLongPress={handleLongPress}
+      />
     ),
     [
-      actions,
-      togglePinOptimistic,
+      handleTogglePin,
       inboxTyping,
       handleConversationPress,
       handleConversationPressIn,
@@ -1022,6 +1228,31 @@ export default function ChatListScreen() {
       handleLongPress,
       handleMute,
       handleDeleteRequest,
+    ],
+  );
+
+  const renderPinnedConversationRow = useCallback(
+    (conversation: InboxConversation, isTyping: boolean) => (
+      <InboxConversationRow
+        conversation={conversation}
+        isTyping={isTyping}
+        onTogglePin={handleTogglePin}
+        onDeleteRequest={handleDeleteRequest}
+        onMute={handleMute}
+        onConversationPress={handleConversationPress}
+        onConversationPressIn={handleConversationPressIn}
+        onAvatarPress={handleAvatarPress}
+        onLongPress={handleLongPress}
+      />
+    ),
+    [
+      handleTogglePin,
+      handleDeleteRequest,
+      handleMute,
+      handleConversationPress,
+      handleConversationPressIn,
+      handleAvatarPress,
+      handleLongPress,
     ],
   );
 
@@ -1055,6 +1286,7 @@ export default function ChatListScreen() {
             onConversationPressIn={handleConversationPressIn}
             onAvatarPress={handleAvatarPress}
             onLongPress={handleLongPress}
+            renderConversationRow={renderPinnedConversationRow}
           />
         )}
       </View>
@@ -1072,6 +1304,7 @@ export default function ChatListScreen() {
     handleConversationPressIn,
     handleAvatarPress,
     handleLongPress,
+    renderPinnedConversationRow,
   ]);
 
   const ListEmptyComponent = useCallback(
@@ -1284,6 +1517,7 @@ export default function ChatListScreen() {
         visible={searchSheetVisible}
         onDismiss={handleSearchDismiss}
         allConversations={allConversations}
+        inboxReady={!loading}
       />
     </View>
   );

@@ -47,6 +47,11 @@ export interface PinnedSectionProps {
     conversation: InboxConversation,
     event?: { pageX: number; pageY: number },
   ) => void;
+  /** Optional shared row renderer so pinned rows use the same interaction stack. */
+  renderConversationRow?: (
+    conversation: InboxConversation,
+    isTyping: boolean,
+  ) => React.ReactNode;
 }
 
 // =============================================================================
@@ -60,6 +65,7 @@ export const PinnedSection = memo(function PinnedSection({
   onConversationPressIn,
   onAvatarPress,
   onLongPress,
+  renderConversationRow,
 }: PinnedSectionProps) {
   const { colors } = useAppTheme();
   const [collapsed, setCollapsed] = useState(false);
@@ -107,17 +113,27 @@ export const PinnedSection = memo(function PinnedSection({
       {/* Pinned Conversations */}
       {!collapsed && (
         <View style={styles.list}>
-          {conversations.map((conversation) => (
-            <ConversationItem
-              key={`${conversation.type}-${conversation.id}`}
-              conversation={conversation}
-              isTyping={typingMap?.get(conversation.id)?.isTyping || false}
-              onPress={() => onConversationPress(conversation)}
-              onPressIn={() => onConversationPressIn?.(conversation)}
-              onAvatarPress={() => onAvatarPress(conversation)}
-              onLongPress={(event) => onLongPress?.(conversation, event)}
-            />
-          ))}
+          {conversations.map((conversation) => {
+            const isTyping = typingMap?.get(conversation.id)?.isTyping || false;
+            const key = `${conversation.type}-${conversation.id}`;
+
+            return (
+              <React.Fragment key={key}>
+                {renderConversationRow ? (
+                  renderConversationRow(conversation, isTyping)
+                ) : (
+                  <ConversationItem
+                    conversation={conversation}
+                    isTyping={isTyping}
+                    onPress={() => onConversationPress(conversation)}
+                    onPressIn={() => onConversationPressIn?.(conversation)}
+                    onAvatarPress={() => onAvatarPress(conversation)}
+                    onLongPress={(event) => onLongPress?.(conversation, event)}
+                  />
+                )}
+              </React.Fragment>
+            );
+          })}
         </View>
       )}
 

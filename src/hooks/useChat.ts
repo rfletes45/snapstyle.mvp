@@ -54,6 +54,10 @@ import {
   dedupeAndSortMessages,
   getMessageStatusFromSync,
 } from "@/services/chat/normalizeMessage";
+import {
+  buildOptimisticPreviewText,
+  emitOptimisticInboxUpdate,
+} from "@/services/chat/inboxOptimisticUpdates";
 import { updateReadWatermark as updateDMReadWatermark } from "@/services/chatMembers";
 import {
   getOrCreateDMConversation,
@@ -656,6 +660,20 @@ export function useChat(config: UseChatConfig): UseChatReturn {
             },
           });
 
+          emitOptimisticInboxUpdate({
+            scope,
+            conversationId,
+            messageId: messageRow.id,
+            messageKind: kind,
+            previewText: buildOptimisticPreviewText(
+              kind,
+              kind === "animal" && animalId ? animalId : text.trim(),
+            ),
+            senderId: currentUid,
+            senderName: currentUserName,
+            timestamp: messageRow.created_at,
+          });
+
           if (clearReplyOnSend) {
             clearReplyTo();
           }
@@ -692,6 +710,20 @@ export function useChat(config: UseChatConfig): UseChatReturn {
             kind,
             elapsedMs: Date.now() - sendStartMs,
           },
+        });
+
+        emitOptimisticInboxUpdate({
+          scope,
+          conversationId,
+          messageId: outboxItem.messageId,
+          messageKind: kind,
+          previewText: buildOptimisticPreviewText(
+            kind,
+            kind === "animal" && animalId ? animalId : text.trim(),
+          ),
+          senderId: currentUid,
+          senderName: currentUserName,
+          timestamp: outboxItem.createdAt,
         });
 
         const result = await sendPromise;

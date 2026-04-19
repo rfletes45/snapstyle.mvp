@@ -4,7 +4,13 @@ import type {
   MessageSyncStatus,
 } from "@/types/database";
 import { intToBool, parseJsonColumn } from "@/types/database";
-import type { MessageV2, ReplyToMetadata } from "@/types/messaging";
+import type {
+  AttachmentKind,
+  AttachmentV2,
+  MessageKind,
+  MessageV2,
+  ReplyToMetadata,
+} from "@/types/messaging";
 
 // Keep this as a shared, explicit rule so all runtimes (SQLite-first and
 // Firestore-first) produce stable ordering.
@@ -176,6 +182,177 @@ function toMillis(value: unknown): number | undefined {
   return undefined;
 }
 
+function normalizeFirestoreMessageKind(
+  data: Record<string, unknown>,
+): MessageKind {
+  const raw = (
+    (data.kind as string | undefined) ||
+    (data.type as string | undefined) ||
+    "text"
+  ).toLowerCase();
+
+  switch (raw) {
+    case "image":
+    case "photo":
+    case "video":
+      return "media";
+    case "audio":
+      return "voice";
+    case "media":
+    case "voice":
+    case "file":
+    case "system":
+    case "animal":
+    case "text":
+      return raw;
+    default:
+      return "text";
+  }
+}
+
+function normalizeFirestoreAttachmentKind(raw: unknown): AttachmentKind | null {
+  const value = typeof raw === "string" ? raw.toLowerCase() : "";
+  switch (value) {
+    case "image":
+    case "photo":
+      return "image";
+    case "video":
+      return "video";
+    case "audio":
+    case "voice":
+      return "audio";
+    case "file":
+      return "file";
+    default:
+      return null;
+  }
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+function normalizeFirestoreAttachment(
+  raw: Record<string, unknown>,
+  fallbackId: string,
+): AttachmentV2 | null {
+  const kind =
+    normalizeFirestoreAttachmentKind(raw.kind) ||
+    normalizeFirestoreAttachmentKind(raw.type) ||
+    normalizeFirestoreAttachmentKind(raw.mediaType);
+
+  const url =
+    stringValue(raw.url) ||
+    stringValue(raw.remoteUrl) ||
+    stringValue(raw.remote_url) ||
+    stringValue(raw.downloadURL) ||
+    stringValue(raw.downloadUrl) ||
+    stringValue(raw.imagePath) ||
+    stringValue(raw.imageUrl) ||
+    stringValue(raw.mediaUrl);
+
+  if (!kind || !url) return null;
+
+  return {
+    id: stringValue(raw.id) || fallbackId,
+    kind,
+    mime: stringValue(raw.mime) || stringValue(raw.contentType) || "",
+    url,
+    path: stringValue(raw.path) || stringValue(raw.remotePath) || url,
+    sizeBytes: typeof raw.sizeBytes === "number" ? raw.sizeBytes : 0,
+    width: typeof raw.width === "number" ? raw.width : undefined,
+    height: typeof raw.height === "number" ? raw.height : undefined,
+    durationMs: typeof raw.durationMs === "number" ? raw.durationMs : undefined,
+    thumbUrl:
+      stringValue(raw.thumbUrl) ||
+      stringValue(raw.thumbnailUrl) ||
+      stringValue(raw.thumb_remote_url),
+    thumbPath: stringValue(raw.thumbPath),
+    caption: stringValue(raw.caption),
+    viewOnce: !!raw.viewOnce,
+    expiresAt: typeof raw.expiresAt === "number" ? raw.expiresAt : undefined,
+  };
+}
+
+function normalizeFirestoreAttachments(
+  id: string,
+  data: Record<string, unknown>,
+  kind: MessageKind,
+): AttachmentV2[] | undefined {
+  const out: AttachmentV2[] = [];
+  const rawAttachments = data.attachments;
+  const rawAttachmentObject =
+    rawAttachments && typeof rawAttachments === "object"
+      ? (rawAttachments as Record<string, unknown>)
+      : null;
+  const rawList = Array.isArray(rawAttachments)
+    ? rawAttachments
+    : rawAttachmentObject &&
+        (rawAttachmentObject.kind ||
+          rawAttachmentObject.type ||
+          rawAttachmentObject.url ||
+          rawAttachmentObject.remoteUrl ||
+          rawAttachmentObject.downloadUrl)
+      ? [rawAttachmentObject]
+      : rawAttachmentObject
+        ? Object.values(rawAttachments as Record<string, unknown>)
+        : [];
+
+  rawList.forEach((raw, index) => {
+    if (!raw || typeof raw !== "object") return;
+    const attachment = normalizeFirestoreAttachment(
+      raw as Record<string, unknown>,
+      `${id}-att-${index}`,
+    );
+    if (attachment) out.push(attachment);
+  });
+
+  const imageUrl =
+    stringValue(data.imagePath) ||
+    stringValue(data.imageUrl) ||
+    stringValue(data.mediaUrl);
+  if (imageUrl && !out.some((attachment) => attachment.url === imageUrl)) {
+    const rawType = (data.type as string | undefined)?.toLowerCase();
+    const attachmentKind: AttachmentKind =
+      rawType === "video" ? "video" : "image";
+    out.push({
+      id: `${id}-media`,
+      kind: attachmentKind,
+      mime: attachmentKind === "video" ? "video/mp4" : "image/jpeg",
+      url: imageUrl,
+      path: imageUrl,
+      sizeBytes: 0,
+      caption: stringValue(data.caption),
+    });
+  }
+
+  if (
+    kind === "voice" &&
+    data.voiceMetadata &&
+    typeof data.voiceMetadata === "object"
+  ) {
+    const voice = data.voiceMetadata as Record<string, unknown>;
+    const voiceUrl =
+      stringValue(voice.url) ||
+      stringValue(voice.storagePath) ||
+      stringValue(voice.path);
+    if (voiceUrl && !out.some((attachment) => attachment.url === voiceUrl)) {
+      out.push({
+        id: `${id}-voice`,
+        kind: "audio",
+        mime: "audio/m4a",
+        url: voiceUrl,
+        path: voiceUrl,
+        sizeBytes: typeof voice.sizeBytes === "number" ? voice.sizeBytes : 0,
+        durationMs:
+          typeof voice.durationMs === "number" ? voice.durationMs : undefined,
+      });
+    }
+  }
+
+  return out.length > 0 ? out : undefined;
+}
+
 export interface FirestoreMessageNormalizationInput {
   id: string;
   data: Record<string, unknown>;
@@ -187,7 +364,12 @@ export function normalizeMessageFromFirestoreDoc(
   input: FirestoreMessageNormalizationInput,
 ): MessageV2 {
   const { id, data, scopeHint, conversationIdHint } = input;
-  const createdAt = toMillis(data.createdAt) || Date.now();
+  const kind = normalizeFirestoreMessageKind(data);
+  const createdAt =
+    toMillis(data.createdAt) ||
+    toMillis(data.timestamp) ||
+    toMillis(data.sentAt) ||
+    Date.now();
   const serverReceivedAt = toMillis(data.serverReceivedAt) || createdAt;
   const editedAt = toMillis(data.editedAt);
 
@@ -204,10 +386,7 @@ export function normalizeMessageFromFirestoreDoc(
       undefined,
     senderAvatarConfig:
       data.senderAvatarConfig as MessageV2["senderAvatarConfig"],
-    kind:
-      (data.kind as MessageV2["kind"] | undefined) ||
-      (data.type as MessageV2["kind"] | undefined) ||
-      "text",
+    kind,
     text:
       (data.text as string | undefined) ||
       (data.content as string | undefined) ||
@@ -222,7 +401,7 @@ export function normalizeMessageFromFirestoreDoc(
     threadRootId: data.threadRootId as string | undefined,
     replyCount: data.replyCount as number | undefined,
     lastReplyAt: toMillis(data.lastReplyAt),
-    attachments: data.attachments as MessageV2["attachments"],
+    attachments: normalizeFirestoreAttachments(id, data, kind),
     mentionUids: data.mentionUids as string[] | undefined,
     mentionSpans: data.mentionSpans as MessageV2["mentionSpans"],
     reactionsSummary: data.reactionsSummary as

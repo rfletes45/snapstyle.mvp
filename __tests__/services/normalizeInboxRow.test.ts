@@ -37,14 +37,14 @@ describe("normalizeInboxRow", () => {
     ).toBe(1);
   });
 
-  it("falls back to unread hint when watermark is missing", () => {
+  it("uses the server unread hint when watermark is missing", () => {
     expect(
       computeUnreadCount({
         lastActivityAt: 0,
         memberState: getDefaultMemberState("user-a"),
         unreadHintCount: 4,
       }),
-    ).toBe(1);
+    ).toBe(4);
   });
 
   it("uses optimistic read timestamp override", () => {

@@ -3,6 +3,9 @@ import type {
   InboxEntry,
   MemberStatePrivate,
 } from "@/types/messaging";
+import { createLogger, isDebugEnabled } from "@/utils/log";
+
+const log = createLogger("normalizeInboxRow");
 
 export const UNREAD_TOLERANCE_MS = 5000;
 export const RECENTLY_READ_TTL_MS = 30000;
@@ -163,10 +166,10 @@ export function normalizeConversationRow(
     currentUserId,
   });
 
-  if (__DEV__ && unreadCount > 0) {
-    console.log(
-      `[normalizeInboxRow] ${id} unread=${unreadCount} (hint=${unreadHintCount ?? 0})`,
-    );
+  if (unreadCount > 0 && isDebugEnabled("CHAT")) {
+    log.debug("unread row", {
+      data: { id, unreadCount, unreadHintCount: unreadHintCount ?? 0 },
+    });
   }
 
   return {

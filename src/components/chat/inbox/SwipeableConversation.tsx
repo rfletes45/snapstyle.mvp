@@ -15,11 +15,15 @@ import { Spacing } from "@/constants/theme";
 import { useAppTheme } from "@/store/ThemeContext";
 import type { InboxConversation } from "@/types/messaging";
 import * as haptics from "@/utils/haptics";
-import { createLogger } from "@/utils/log";
+import { createLogger, isDebugEnabled } from "@/utils/log";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import React, { memo, useCallback, useEffect, useRef } from "react";
+import React, { memo, useCallback, useEffect, useMemo, useRef } from "react";
 import { StyleSheet, View } from "react-native";
-import { RectButton } from "react-native-gesture-handler";
+import {
+  Gesture,
+  GestureDetector,
+  RectButton,
+} from "react-native-gesture-handler";
 import ReanimatedSwipeable, {
   type SwipeableMethods,
 } from "react-native-gesture-handler/ReanimatedSwipeable";
@@ -29,6 +33,7 @@ import Animated, {
   type SharedValue,
   useAnimatedStyle,
 } from "react-native-reanimated";
+import { scheduleOnRN } from "react-native-worklets";
 
 const interactionLog = createLogger("InboxInteraction");
 
@@ -47,6 +52,8 @@ export interface SwipeableConversationProps {
   onMute: () => void;
   /** Whether swipe actions are enabled */
   enabled?: boolean;
+  /** Called when the row is long-pressed. Owned here so it coexists with swipe gestures. */
+  onLongPress?: (event?: { pageX: number; pageY: number }) => void;
   /** The content to render (ConversationItem) */
   children: React.ReactNode;
 }
@@ -201,6 +208,7 @@ export function SwipeableConversation({
   onDelete,
   onMute,
   enabled = true,
+  onLongPress,
   children,
 }: SwipeableConversationProps) {
   const { colors } = useAppTheme();
@@ -223,7 +231,7 @@ export function SwipeableConversation({
   const isMuted = !!conversation.memberState.mutedUntil;
 
   useEffect(() => {
-    if (!__DEV__) return;
+    if (!isDebugEnabled("CHAT")) return;
     interactionLog.debug("swipe wrapper render", {
       data: {
         conversationId: conversation.id,
@@ -389,11 +397,43 @@ export function SwipeableConversation({
     [conversation.id, conversation.type],
   );
 
+  const handleGestureLongPress = useCallback(
+    (position: { pageX: number; pageY: number }) => {
+      if (__DEV__) {
+        interactionLog.debug("swipe wrapper long-press fired", {
+          data: {
+            conversationId: conversation.id,
+            type: conversation.type,
+            pageX: position.pageX,
+            pageY: position.pageY,
+          },
+        });
+      }
+      onLongPress?.(position);
+    },
+    [conversation.id, conversation.type, onLongPress],
+  );
+
+  const longPressGesture = useMemo(
+    () =>
+      Gesture.LongPress()
+        .enabled(!!onLongPress)
+        .minDuration(450)
+        .maxDistance(14)
+        .onStart((event) => {
+          scheduleOnRN(handleGestureLongPress, {
+            pageX: event.absoluteX,
+            pageY: event.absoluteY,
+          });
+        }),
+    [handleGestureLongPress, onLongPress],
+  );
+
   if (!enabled) {
     return <>{children}</>;
   }
 
-  return (
+  const swipeable = (
     <ReanimatedSwipeable
       ref={swipeableRef}
       friction={2}
@@ -411,6 +451,16 @@ export function SwipeableConversation({
     >
       {children}
     </ReanimatedSwipeable>
+  );
+
+  if (!onLongPress) {
+    return swipeable;
+  }
+
+  return (
+    <GestureDetector gesture={longPressGesture}>
+      <View collapsable={false}>{swipeable}</View>
+    </GestureDetector>
   );
 }
 

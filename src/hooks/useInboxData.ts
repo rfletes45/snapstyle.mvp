@@ -19,6 +19,11 @@ import {
   normalizeFanoutDMConversation,
   normalizeFanoutGroupConversation,
 } from "@/services/chat/fanoutInboxNormalization";
+import {
+  applyOptimisticInboxUpdate,
+  subscribeToOptimisticInboxUpdates,
+  type OptimisticInboxUpdate,
+} from "@/services/chat/inboxOptimisticUpdates";
 import { compareInboxParity } from "@/services/chat/inboxParityTelemetry";
 import {
   getDefaultMemberState,
@@ -51,6 +56,7 @@ const log = createLogger("useInboxData");
 
 const INBOX_CACHE_KEY = "@inbox_cache:";
 const INBOX_CACHE_TTL = 5 * 60 * 1000; // 5 minutes cache validity
+const OPTIMISTIC_ACTIVITY_TTL_MS = 60_000;
 
 interface InboxCacheData {
   dmConversations: InboxConversation[];
@@ -348,8 +354,37 @@ export function useInboxData(uid: string): UseInboxDataResult {
   // resetting the optimistic unread state before the watermark write propagates.
   // Entries expire after 30 seconds (more than enough for the write to land).
   const recentlyReadRef = useRef<Map<string, number>>(new Map());
+  const optimisticActivityRef = useRef<Map<string, OptimisticInboxUpdate>>(
+    new Map(),
+  );
 
   // ── Commit functions ──────────────────────────────────────────────────
+
+  const pruneOptimisticActivity = useCallback(() => {
+    const now = Date.now();
+    for (const [key, update] of optimisticActivityRef.current) {
+      if (now - update.timestamp > OPTIMISTIC_ACTIVITY_TTL_MS) {
+        optimisticActivityRef.current.delete(key);
+      }
+    }
+  }, []);
+
+  const applyOptimisticActivity = useCallback(
+    (conversations: InboxConversation[]) => {
+      pruneOptimisticActivity();
+      if (optimisticActivityRef.current.size === 0) return conversations;
+
+      return conversations.map((conversation) => {
+        const update = optimisticActivityRef.current.get(
+          `${conversation.type}:${conversation.id}`,
+        );
+        return update
+          ? applyOptimisticInboxUpdate(conversation, update, uid)
+          : conversation;
+      });
+    },
+    [pruneOptimisticActivity, uid],
+  );
 
   /**
    * Push staged DM + Group data to state in a single synchronous call.
@@ -545,6 +580,35 @@ export function useInboxData(uid: string): UseInboxDataResult {
     [aggregation, useAggregatedInbox],
   );
 
+  useEffect(() => {
+    if (useAggregatedInbox || !uid) return;
+
+    return subscribeToOptimisticInboxUpdates((update) => {
+      const key = `${update.scope}:${update.conversationId}`;
+      optimisticActivityRef.current.set(key, update);
+      pruneOptimisticActivity();
+
+      log.debug("[sort-pipeline] optimistic activity received", {
+        data: {
+          scope: update.scope,
+          conversationId: update.conversationId,
+          timestamp: update.timestamp,
+        },
+      });
+
+      const applyUpdate = (conversation: InboxConversation) =>
+        applyOptimisticInboxUpdate(conversation, update, uid);
+
+      if (update.scope === "dm") {
+        dmStagedRef.current = dmStagedRef.current.map(applyUpdate);
+        setDmConversations((prev) => prev.map(applyUpdate));
+      } else {
+        groupStagedRef.current = groupStagedRef.current.map(applyUpdate);
+        setGroupConversations((prev) => prev.map(applyUpdate));
+      }
+    });
+  }, [pruneOptimisticActivity, uid, useAggregatedInbox]);
+
   // =============================================================================
   // DM Subscription (OPTIMIZED - Parallel fetching)
   // =============================================================================
@@ -688,7 +752,7 @@ export function useInboxData(uid: string): UseInboxDataResult {
           }
 
           if (!cancelled && version === dmVersionRef.current) {
-            dmStagedRef.current = conversations;
+            dmStagedRef.current = applyOptimisticActivity(conversations);
             setDmLoading(false);
             dmReadyRef.current = true;
 
@@ -752,7 +816,13 @@ export function useInboxData(uid: string): UseInboxDataResult {
         commitTimerRef.current = null;
       }
     };
-  }, [uid, useAggregatedInbox, commitStagedData, scheduleCommit]);
+  }, [
+    uid,
+    useAggregatedInbox,
+    commitStagedData,
+    scheduleCommit,
+    applyOptimisticActivity,
+  ]);
 
   // =============================================================================
   // Group Subscription (OPTIMIZED - Parallel fetching)
@@ -871,7 +941,7 @@ export function useInboxData(uid: string): UseInboxDataResult {
           }
 
           if (!cancelled && version === groupVersionRef.current) {
-            groupStagedRef.current = conversations;
+            groupStagedRef.current = applyOptimisticActivity(conversations);
             setGroupLoading(false);
             groupReadyRef.current = true;
 
@@ -926,7 +996,13 @@ export function useInboxData(uid: string): UseInboxDataResult {
       cancelled = true;
       unsubscribe();
     };
-  }, [uid, useAggregatedInbox, commitStagedData, scheduleCommit]);
+  }, [
+    uid,
+    useAggregatedInbox,
+    commitStagedData,
+    scheduleCommit,
+    applyOptimisticActivity,
+  ]);
 
   // =============================================================================
   // Combined & Filtered List

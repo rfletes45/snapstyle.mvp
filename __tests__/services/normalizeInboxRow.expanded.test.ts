@@ -152,14 +152,14 @@ describe("computeUnreadCount", () => {
       ).toBe(0);
     });
 
-    it("handles unreadHintCount with zero watermark", () => {
+    it("uses unreadHintCount with zero watermark", () => {
       expect(
         computeUnreadCount({
           lastActivityAt: 500,
           memberState: getDefaultMemberState("u-x"),
           unreadHintCount: 3,
         }),
-      ).toBe(1);
+      ).toBe(3);
     });
 
     it("returns 0 when unreadHintCount is 0 with no watermark", () => {

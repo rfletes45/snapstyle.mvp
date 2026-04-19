@@ -21,6 +21,11 @@ import {
 } from "@/services/cache/profileCache";
 import { rememberPreparedGroupChatData } from "@/services/chat/groupWallpaperDebug";
 import {
+  applyOptimisticInboxUpdate,
+  subscribeToOptimisticInboxUpdates,
+  type OptimisticInboxUpdate,
+} from "@/services/chat/inboxOptimisticUpdates";
+import {
   getDefaultMemberState,
   normalizeConversationFromInboxEntry,
   RECENTLY_READ_TTL_MS,
@@ -54,6 +59,7 @@ const log = createLogger("useInboxAggregation");
 
 const AGG_CACHE_KEY = "@agg_inbox_cache:";
 const AGG_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const OPTIMISTIC_ACTIVITY_TTL_MS = 60_000;
 
 interface AggCacheData {
   conversations: InboxConversation[];
@@ -202,8 +208,8 @@ async function getMemberPrivateStateForEntry(
         ...getDefaultMemberState(uid),
         archived: entry.archived ?? false,
         notifyLevel: entry.notifyLevel ?? "all",
-        pinnedAt: entry.pinnedAt ?? null,
-        mutedUntil: entry.mutedUntil ?? null,
+        pinnedAt: toMillisLike(entry.pinnedAt) ?? null,
+        mutedUntil: toMillisLike(entry.mutedUntil) ?? null,
       };
     }
     const data = snap.data();
@@ -230,7 +236,15 @@ async function getMemberPrivateStateForEntry(
         error: e,
       },
     });
-    return getDefaultMemberState(uid);
+    return {
+      ...getDefaultMemberState(uid),
+      archived: entry.archived ?? false,
+      notifyLevel: entry.notifyLevel ?? "all",
+      pinnedAt: toMillisLike(entry.pinnedAt) ?? null,
+      mutedUntil: toMillisLike(entry.mutedUntil) ?? null,
+      deletedAt: toMillisLike(entry.deletedAt) ?? null,
+      hiddenUntilNewMessage: entry.hiddenUntilNewMessage ?? false,
+    };
   }
 }
 
@@ -252,6 +266,9 @@ export function useInboxAggregation(uid: string): UseInboxAggregationResult {
   const [showArchived, setShowArchived] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const recentlyReadRef = useRef<Map<string, number>>(new Map());
+  const optimisticActivityRef = useRef<Map<string, OptimisticInboxUpdate>>(
+    new Map(),
+  );
 
   // ── Blocked users tracking ──────────────────────────────────────────
   const blockedUserIdsRef = useRef<Set<string>>(new Set());
@@ -277,6 +294,58 @@ export function useInboxAggregation(uid: string): UseInboxAggregationResult {
   // In dev mode, always subscribe so parity telemetry can compare
   // fan-out vs aggregated results even when the flag is off.
   const enabled = CHAT_FEATURES.CHAT_INBOX_AGGREGATION || __DEV__;
+
+  const pruneOptimisticActivity = useCallback(() => {
+    const now = Date.now();
+    for (const [key, update] of optimisticActivityRef.current) {
+      if (now - update.timestamp > OPTIMISTIC_ACTIVITY_TTL_MS) {
+        optimisticActivityRef.current.delete(key);
+      }
+    }
+  }, []);
+
+  const applyOptimisticActivity = useCallback(
+    (conversations: InboxConversation[]) => {
+      pruneOptimisticActivity();
+      if (optimisticActivityRef.current.size === 0) return conversations;
+
+      return conversations.map((conversation) => {
+        const update = optimisticActivityRef.current.get(
+          `${conversation.type}:${conversation.id}`,
+        );
+        return update
+          ? applyOptimisticInboxUpdate(conversation, update, uid)
+          : conversation;
+      });
+    },
+    [pruneOptimisticActivity, uid],
+  );
+
+  useEffect(() => {
+    if (!uid || !enabled) return;
+
+    return subscribeToOptimisticInboxUpdates((update) => {
+      const key = `${update.scope}:${update.conversationId}`;
+      optimisticActivityRef.current.set(key, update);
+      pruneOptimisticActivity();
+
+      log.debug("optimistic activity received", {
+        data: {
+          scope: update.scope,
+          conversationId: update.conversationId,
+          timestamp: update.timestamp,
+        },
+      });
+
+      setEntries((prev) =>
+        sortInboxConversations(
+          prev.map((conversation) =>
+            applyOptimisticInboxUpdate(conversation, update, uid),
+          ),
+        ),
+      );
+    });
+  }, [enabled, pruneOptimisticActivity, uid]);
 
   // -------------------------------------------------------
   // Subscribe to Users/{uid}/Inbox ordered by lastActivityAt
@@ -320,11 +389,7 @@ export function useInboxAggregation(uid: string): UseInboxAggregationResult {
           // (zero Firestore reads). Fall back to MembersPrivate fetch for
           // entries that haven't had their read watermark synced yet.
           const memberStates = await Promise.all(
-            inboxEntries.map((entry) => {
-              const fromEntry = buildMemberStateFromEntry(uid, entry);
-              if (fromEntry) return Promise.resolve(fromEntry);
-              return getMemberPrivateStateForEntry(uid, entry);
-            }),
+            inboxEntries.map((entry) => getMemberPrivateStateForEntry(uid, entry)),
           );
 
           // ── Visibility filtering (Blocker #1) ──
@@ -420,7 +485,9 @@ export function useInboxAggregation(uid: string): UseInboxAggregationResult {
             return convo;
           });
 
-          const sorted = sortInboxConversations(convos);
+          const sorted = sortInboxConversations(
+            applyOptimisticActivity(convos),
+          );
           if (!isCancelled) {
             setEntries(sorted);
             setError(null);
@@ -449,7 +516,7 @@ export function useInboxAggregation(uid: string): UseInboxAggregationResult {
       isCancelled = true;
       unsub();
     };
-  }, [uid, enabled, refreshKey]);
+  }, [uid, enabled, refreshKey, applyOptimisticActivity]);
 
   // -------------------------------------------------------
   // Memoised derived lists

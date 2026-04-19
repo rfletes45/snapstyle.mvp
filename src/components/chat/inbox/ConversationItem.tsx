@@ -18,7 +18,7 @@ import { Spacing } from "@/constants/theme";
 import { useAppTheme } from "@/store/ThemeContext";
 import type { InboxConversation } from "@/types/messaging";
 import { formatRelativeTime, toTimestamp } from "@/utils/dates";
-import { createLogger } from "@/utils/log";
+import { createLogger, isDebugEnabled } from "@/utils/log";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { memo, useCallback, useEffect, useMemo, useRef } from "react";
 import {
@@ -105,7 +105,7 @@ export interface ConversationItemProps {
   /** Callback when avatar is pressed (opens profile preview for DMs) */
   onAvatarPress: () => void;
   /** Callback when long pressed (opens context menu) - receives position for menu placement */
-  onLongPress: (event?: { pageX: number; pageY: number }) => void;
+  onLongPress?: (event?: { pageX: number; pageY: number }) => void;
   /** Callback on finger-down (for early warmup before tap completes) */
   onPressIn?: () => void;
   /** Optional search text to highlight in name and preview */
@@ -147,7 +147,7 @@ export const ConversationItem = memo(function ConversationItem({
   const unreadBadgeText = formatUnreadBadge(unreadCount);
 
   useEffect(() => {
-    if (!__DEV__) return;
+    if (!isDebugEnabled("CHAT")) return;
     interactionLog.debug("row render", {
       data: {
         conversationId: conversation.id,
@@ -201,24 +201,69 @@ export const ConversationItem = memo(function ConversationItem({
   // Keep a fallback coordinate from press-in in case a platform omits the
   // long-press event payload.
   const lastTouchPos = useRef(DEFAULT_TOUCH_POSITION);
+  const longPressFiredRef = useRef(false);
+  const longPressSuppressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+
+  const clearLongPressSuppression = useCallback(() => {
+    longPressFiredRef.current = false;
+    if (longPressSuppressTimerRef.current) {
+      clearTimeout(longPressSuppressTimerRef.current);
+      longPressSuppressTimerRef.current = null;
+    }
+  }, []);
+
+  const armLongPressSuppression = useCallback(() => {
+    longPressFiredRef.current = true;
+    if (longPressSuppressTimerRef.current) {
+      clearTimeout(longPressSuppressTimerRef.current);
+    }
+    longPressSuppressTimerRef.current = setTimeout(() => {
+      longPressFiredRef.current = false;
+      longPressSuppressTimerRef.current = null;
+    }, 900);
+  }, []);
+
+  useEffect(() => clearLongPressSuppression, [clearLongPressSuppression]);
 
   const handlePress = useCallback(() => {
+    if (longPressFiredRef.current) {
+      clearLongPressSuppression();
+      if (__DEV__) {
+        interactionLog.debug("row tap suppressed after long-press", {
+          data: { conversationId: conversation.id, type },
+        });
+      }
+      return;
+    }
+
     if (__DEV__) {
       interactionLog.debug("row tap fired", {
         data: { conversationId: conversation.id, type },
       });
     }
     onPress();
-  }, [conversation.id, onPress, type]);
+  }, [clearLongPressSuppression, conversation.id, onPress, type]);
 
   const handleAvatarPress = useCallback(() => {
+    if (longPressFiredRef.current) {
+      clearLongPressSuppression();
+      if (__DEV__) {
+        interactionLog.debug("avatar tap suppressed after long-press", {
+          data: { conversationId: conversation.id, type },
+        });
+      }
+      return;
+    }
+
     if (__DEV__) {
       interactionLog.debug("avatar tap fired", {
         data: { conversationId: conversation.id, type },
       });
     }
     onAvatarPress();
-  }, [conversation.id, onAvatarPress, type]);
+  }, [clearLongPressSuppression, conversation.id, onAvatarPress, type]);
 
   const handlePressIn = useCallback(
     (event: GestureResponderEvent) => {
@@ -244,6 +289,8 @@ export const ConversationItem = memo(function ConversationItem({
 
   const handleLongPress = useCallback(
     (event: GestureResponderEvent) => {
+      if (!onLongPress) return;
+      armLongPressSuppression();
       const eventPosition = getTouchPosition(event);
       const position = eventPosition ?? lastTouchPos.current;
       if (__DEV__) {
@@ -259,7 +306,7 @@ export const ConversationItem = memo(function ConversationItem({
       }
       onLongPress(position);
     },
-    [conversation.id, onLongPress, type],
+    [armLongPressSuppression, conversation.id, onLongPress, type],
   );
 
   return (
@@ -271,7 +318,7 @@ export const ConversationItem = memo(function ConversationItem({
       ]}
       onPress={handlePress}
       onPressIn={handlePressIn}
-      onLongPress={handleLongPress}
+      onLongPress={onLongPress ? handleLongPress : undefined}
       activeOpacity={0.7}
       accessibilityRole="button"
       accessibilityLabel={`${name}${isUnread ? `, ${unreadCount > 99 ? "99 plus" : unreadCount} unread` : ""}${isPinned ? ", pinned" : ""}`}
@@ -279,6 +326,8 @@ export const ConversationItem = memo(function ConversationItem({
       {/* Avatar */}
       <TouchableOpacity
         onPress={handleAvatarPress}
+        onPressIn={handlePressIn}
+        onLongPress={onLongPress ? handleLongPress : undefined}
         style={styles.avatarContainer}
         accessibilityLabel={`View ${type === "dm" ? "profile" : "group info"}`}
       >

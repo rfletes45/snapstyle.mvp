@@ -684,7 +684,7 @@ export async function fullSyncConversation(
     let count = 0;
     let maxTimestamp = 0;
 
-    logger.info(
+    logger.debug(
       "[SyncEngine] fullSyncConversation v2 running for:",
       conversationId,
     );
@@ -702,7 +702,7 @@ export async function fullSyncConversation(
 
       // Debug: log first message conversion to verify timestamps
       if (count === 0) {
-        logger.info("[SyncEngine] First message timestamp conversion:", {
+        logger.debug("[SyncEngine] First message timestamp conversion:", {
           rawCreatedAt: data.createdAt,
           rawServerReceivedAt: data.serverReceivedAt,
           convertedCreatedAt: createdAtNum,
@@ -774,7 +774,7 @@ export async function fullSyncConversation(
       );
     }
 
-    logger.info(
+    logger.debug(
       `[SyncEngine] Full sync pulled ${count} messages for ${conversationId}`,
     );
     return count;
