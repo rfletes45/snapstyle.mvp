@@ -6,7 +6,7 @@
  * mode and logs any divergences in conversation count, unread state, sort
  * order, and pin/archive/mute parity.
  *
- * Enable via: `__DEV__` or explicit `INBOX_PARITY_DEBUG = true`
+ * Enable by flipping the runtime `PERF` debug flag.
  *
  * This does NOT affect the displayed UI — it only logs diagnostic data.
  *
@@ -14,11 +14,9 @@
  */
 
 import type { InboxConversation } from "@/types/messaging";
-import { createLogger } from "@/utils/log";
+import { createLogger, isDebugEnabled } from "@/utils/log";
 
 const log = createLogger("inboxParity");
-
-const INBOX_PARITY_DEBUG = __DEV__;
 
 interface ParityReport {
   fanoutCount: number;
@@ -60,7 +58,7 @@ export function compareInboxParity(
   fanout: InboxConversation[],
   aggregated: InboxConversation[],
 ): ParityReport | null {
-  if (!INBOX_PARITY_DEBUG) return null;
+  if (!isDebugEnabled("PERF")) return null;
 
   const fanoutMap = new Map(fanout.map((c) => [c.id, c]));
   const aggregatedMap = new Map(aggregated.map((c) => [c.id, c]));

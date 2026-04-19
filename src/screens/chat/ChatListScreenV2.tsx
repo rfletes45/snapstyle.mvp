@@ -244,9 +244,9 @@ export default function ChatListScreen() {
   useFocusEffect(
     useCallback(() => {
       if (contactsPerm.ready) {
-        contactsPerm.refreshPermission();
+        void contactsPerm.refreshPermission();
       }
-    }, [contactsPerm]),
+    }, [contactsPerm.ready, contactsPerm.refreshPermission]),
   );
 
   // In-app notifications context (for tracking last viewed chat)
@@ -278,16 +278,24 @@ export default function ChatListScreen() {
     }
   }, [route.params?.initialFilter, filter, navigation, setFilter]);
 
-  // Warm image cache for conversation avatars
-  usePrefetchProfileImages(
-    [...(pinnedConversations || []), ...(regularConversations || [])].map(
-      (c) =>
-        ({
-          avatarUrl: c.avatarUrl,
-          profilePictureUrl: c.profilePictureUrl,
-        }) as { avatarUrl?: string | null; profilePictureUrl?: string | null },
-    ),
+  // Warm image cache for conversation avatars. Memoize the input so the
+  // prefetch hook does not need to diff freshly-created arrays on unrelated
+  // screen renders.
+  const avatarPrefetchProfiles = useMemo(
+    () =>
+      [...(pinnedConversations || []), ...(regularConversations || [])].map(
+        (c) =>
+          ({
+            avatarUrl: c.avatarUrl,
+            profilePictureUrl: c.profilePictureUrl,
+          }) as {
+            avatarUrl?: string | null;
+            profilePictureUrl?: string | null;
+          },
+      ),
+    [pinnedConversations, regularConversations],
   );
+  usePrefetchProfileImages(avatarPrefetchProfiles);
 
   // Per-conversation typing indicators for inbox rows
   const inboxConvSpecs = useMemo(
@@ -434,7 +442,7 @@ export default function ChatListScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      if (isDebugEnabled("CHAT")) {
+      if (isDebugEnabled("PERF")) {
         interactionLog.debug("Messages screen focused", {
           data: {
             filter,
@@ -449,21 +457,13 @@ export default function ChatListScreen() {
       }
 
       return () => {
-        if (isDebugEnabled("CHAT")) {
+        if (isDebugEnabled("PERF")) {
           interactionLog.debug("Messages screen blurred", {
             data: { filter },
           });
         }
       };
-    }, [
-      contextMenu.visible,
-      deleteDialogVisible,
-      filter,
-      muteSheetVisible,
-      pinnedConversations.length,
-      regularConversations.length,
-      searchSheetVisible,
-    ]),
+    }, [filter]),
   );
 
   // Unified inbox requests (friend requests + group invites + message requests)

@@ -34,7 +34,7 @@ import { isDMVisible } from "@/services/chatMembers";
 import { getFirestoreInstance } from "@/services/firebase";
 import { isGroupVisible } from "@/services/groupMembers";
 import { InboxConversation, MemberStatePrivate } from "@/types/messaging";
-import { createLogger } from "@/utils/log";
+import { createLogger, isDebugEnabled } from "@/utils/log";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   collection,
@@ -49,6 +49,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useInboxAggregation } from "./useInboxAggregation";
 
 const log = createLogger("useInboxData");
+const shouldLogInboxPerf = () =>
+  isDebugEnabled("CHAT") || isDebugEnabled("PERF");
 
 // =============================================================================
 // AsyncStorage Cache Keys & Config
@@ -304,7 +306,7 @@ export function useInboxData(uid: string): UseInboxDataResult {
   const blockedUserIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
-    if (!uid) return;
+    if (!uid || useAggregatedInbox) return;
     const db = getFirestoreInstance();
     const blockedRef = collection(db, "Users", uid, "blockedUsers");
     const unsubscribe = onSnapshot(
@@ -319,7 +321,7 @@ export function useInboxData(uid: string): UseInboxDataResult {
       },
     );
     return unsubscribe;
-  }, [uid]);
+  }, [uid, useAggregatedInbox]);
 
   // ── Staging infrastructure ────────────────────────────────────────────
   // Snapshot handlers store processed results HERE first.
@@ -395,12 +397,14 @@ export function useInboxData(uid: string): UseInboxDataResult {
       clearTimeout(commitTimerRef.current);
       commitTimerRef.current = null;
     }
-    log.debug("[sort-pipeline] commitStagedData", {
-      data: {
-        dmCount: dmStagedRef.current.length,
-        groupCount: groupStagedRef.current.length,
-      },
-    });
+    if (shouldLogInboxPerf()) {
+      log.debug("[sort-pipeline] commitStagedData", {
+        data: {
+          dmCount: dmStagedRef.current.length,
+          groupCount: groupStagedRef.current.length,
+        },
+      });
+    }
     setDmConversations(dmStagedRef.current);
     setGroupConversations(groupStagedRef.current);
   }, []);
@@ -462,12 +466,14 @@ export function useInboxData(uid: string): UseInboxDataResult {
       }
 
       if (cached) {
-        log.debug("[sort-pipeline] Loaded inbox from cache", {
-          data: {
-            dmCount: cached.dmConversations.length,
-            groupCount: cached.groupConversations.length,
-          },
-        });
+        if (shouldLogInboxPerf()) {
+          log.debug("[sort-pipeline] Loaded inbox from cache", {
+            data: {
+              dmCount: cached.dmConversations.length,
+              groupCount: cached.groupConversations.length,
+            },
+          });
+        }
         // Populate staging refs AND set state directly (immediate display).
         dmStagedRef.current = cached.dmConversations;
         groupStagedRef.current = cached.groupConversations;
@@ -588,13 +594,15 @@ export function useInboxData(uid: string): UseInboxDataResult {
       optimisticActivityRef.current.set(key, update);
       pruneOptimisticActivity();
 
-      log.debug("[sort-pipeline] optimistic activity received", {
-        data: {
-          scope: update.scope,
-          conversationId: update.conversationId,
-          timestamp: update.timestamp,
-        },
-      });
+      if (shouldLogInboxPerf()) {
+        log.debug("[sort-pipeline] optimistic activity received", {
+          data: {
+            scope: update.scope,
+            conversationId: update.conversationId,
+            timestamp: update.timestamp,
+          },
+        });
+      }
 
       const applyUpdate = (conversation: InboxConversation) =>
         applyOptimisticInboxUpdate(conversation, update, uid);
@@ -768,17 +776,21 @@ export function useInboxData(uid: string): UseInboxDataResult {
               scheduleCommit();
             }
 
-            log.debug("[sort-pipeline] DM snapshot committed", {
-              data: {
-                count: conversations.length,
-                version,
-                groupReady: groupReadyRef.current,
-              },
-            });
+            if (shouldLogInboxPerf()) {
+              log.debug("[sort-pipeline] DM snapshot committed", {
+                data: {
+                  count: conversations.length,
+                  version,
+                  groupReady: groupReadyRef.current,
+                },
+              });
+            }
           } else if (!cancelled) {
-            log.debug("[sort-pipeline] DM snapshot discarded (stale)", {
-              data: { version, current: dmVersionRef.current },
-            });
+            if (shouldLogInboxPerf()) {
+              log.debug("[sort-pipeline] DM snapshot discarded (stale)", {
+                data: { version, current: dmVersionRef.current },
+              });
+            }
           }
         } catch (e) {
           log.error("Error processing DM conversations", { error: e });
@@ -953,17 +965,21 @@ export function useInboxData(uid: string): UseInboxDataResult {
               scheduleCommit();
             }
 
-            log.debug("[sort-pipeline] Group snapshot committed", {
-              data: {
-                count: conversations.length,
-                version,
-                dmReady: dmReadyRef.current,
-              },
-            });
+            if (shouldLogInboxPerf()) {
+              log.debug("[sort-pipeline] Group snapshot committed", {
+                data: {
+                  count: conversations.length,
+                  version,
+                  dmReady: dmReadyRef.current,
+                },
+              });
+            }
           } else if (!cancelled) {
-            log.debug("[sort-pipeline] Group snapshot discarded (stale)", {
-              data: { version, current: groupVersionRef.current },
-            });
+            if (shouldLogInboxPerf()) {
+              log.debug("[sort-pipeline] Group snapshot discarded (stale)", {
+                data: { version, current: groupVersionRef.current },
+              });
+            }
           }
         } catch (e) {
           log.error("Error processing group conversations", { error: e });
@@ -1080,7 +1096,7 @@ export function useInboxData(uid: string): UseInboxDataResult {
   // =============================================================================
 
   useEffect(() => {
-    if (!__DEV__ || useAggregatedInbox) return;
+    if (!__DEV__ || useAggregatedInbox || !isDebugEnabled("PERF")) return;
     if (dmLoading || groupLoading || aggregation.loading) return;
     if (
       allConversations.length === 0 &&

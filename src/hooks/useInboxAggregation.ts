@@ -39,7 +39,7 @@ import {
   InboxEntry,
   MemberStatePrivate,
 } from "@/types/messaging";
-import { createLogger } from "@/utils/log";
+import { createLogger, isDebugEnabled } from "@/utils/log";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   collection,
@@ -52,6 +52,8 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 const log = createLogger("useInboxAggregation");
+const shouldLogInboxPerf = () =>
+  isDebugEnabled("CHAT") || isDebugEnabled("PERF");
 
 // =============================================================================
 // AsyncStorage Cold-Start Cache
@@ -60,6 +62,15 @@ const log = createLogger("useInboxAggregation");
 const AGG_CACHE_KEY = "@agg_inbox_cache:";
 const AGG_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 const OPTIMISTIC_ACTIVITY_TTL_MS = 60_000;
+const GROUP_VISUAL_CACHE_TTL_MS = 5 * 60 * 1000;
+
+interface GroupVisuals {
+  avatarUrl: string | null;
+  backgroundUrl: string | null;
+  fetchedAt: number;
+}
+
+const groupVisualCache = new Map<string, GroupVisuals>();
 
 interface AggCacheData {
   conversations: InboxConversation[];
@@ -269,12 +280,17 @@ export function useInboxAggregation(uid: string): UseInboxAggregationResult {
   const optimisticActivityRef = useRef<Map<string, OptimisticInboxUpdate>>(
     new Map(),
   );
+  // Keep the expensive shadow aggregation path opt-in. The active production
+  // path is controlled by CHAT_INBOX_AGGREGATION; PERF can temporarily enable
+  // it for diagnostics when fan-out is active.
+  const enabled =
+    CHAT_FEATURES.CHAT_INBOX_AGGREGATION || isDebugEnabled("PERF");
 
   // ── Blocked users tracking ──────────────────────────────────────────
   const blockedUserIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
-    if (!uid) return;
+    if (!uid || !enabled) return;
     const db = getFirestoreInstance();
     const blockedRef = collection(db, "Users", uid, "blockedUsers");
     const unsubscribe = onSnapshot(
@@ -289,11 +305,7 @@ export function useInboxAggregation(uid: string): UseInboxAggregationResult {
       },
     );
     return unsubscribe;
-  }, [uid]);
-
-  // In dev mode, always subscribe so parity telemetry can compare
-  // fan-out vs aggregated results even when the flag is off.
-  const enabled = CHAT_FEATURES.CHAT_INBOX_AGGREGATION || __DEV__;
+  }, [uid, enabled]);
 
   const pruneOptimisticActivity = useCallback(() => {
     const now = Date.now();
@@ -329,13 +341,15 @@ export function useInboxAggregation(uid: string): UseInboxAggregationResult {
       optimisticActivityRef.current.set(key, update);
       pruneOptimisticActivity();
 
-      log.debug("optimistic activity received", {
-        data: {
-          scope: update.scope,
-          conversationId: update.conversationId,
-          timestamp: update.timestamp,
-        },
-      });
+      if (shouldLogInboxPerf()) {
+        log.debug("optimistic activity received", {
+          data: {
+            scope: update.scope,
+            conversationId: update.conversationId,
+            timestamp: update.timestamp,
+          },
+        });
+      }
 
       setEntries((prev) =>
         sortInboxConversations(
@@ -369,10 +383,16 @@ export function useInboxAggregation(uid: string): UseInboxAggregationResult {
     const db = getFirestoreInstance();
     const inboxRef = collection(db, "Users", uid, "Inbox");
     const q = query(inboxRef, orderBy("lastActivityAt", "desc"));
+    if (shouldLogInboxPerf()) {
+      log.debug("inbox listener attached", { data: { uid } });
+    }
 
     const unsub = onSnapshot(
       q,
       async (snapshot) => {
+        const startedAt = performance.now();
+        let memberFallbackReads = 0;
+        let groupVisualFetches = 0;
         try {
           // Convert Firestore Timestamps to millis at the boundary so
           // all downstream code sees plain numbers.
@@ -389,7 +409,12 @@ export function useInboxAggregation(uid: string): UseInboxAggregationResult {
           // (zero Firestore reads). Fall back to MembersPrivate fetch for
           // entries that haven't had their read watermark synced yet.
           const memberStates = await Promise.all(
-            inboxEntries.map((entry) => getMemberPrivateStateForEntry(uid, entry)),
+            inboxEntries.map((entry) => {
+              const fromEntry = buildMemberStateFromEntry(uid, entry);
+              if (fromEntry) return Promise.resolve(fromEntry);
+              memberFallbackReads += 1;
+              return getMemberPrivateStateForEntry(uid, entry);
+            }),
           );
 
           // ── Visibility filtering (Blocker #1) ──
@@ -425,20 +450,31 @@ export function useInboxAggregation(uid: string): UseInboxAggregationResult {
           const groupEntryIds = visibleEntries
             .filter((v) => v.entry.scope === "group")
             .map((v) => v.entry.conversationId);
-          const groupVisualsMap = new Map<
-            string,
-            { avatarUrl: string | null; backgroundUrl: string | null }
-          >();
+          const groupVisualsMap = new Map<string, GroupVisuals>();
           if (groupEntryIds.length > 0) {
+            const now = Date.now();
+            const groupIdsToFetch: string[] = [];
+            for (const groupId of groupEntryIds) {
+              const cached = groupVisualCache.get(groupId);
+              if (cached && now - cached.fetchedAt < GROUP_VISUAL_CACHE_TTL_MS) {
+                groupVisualsMap.set(groupId, cached);
+              } else {
+                groupIdsToFetch.push(groupId);
+              }
+            }
+            groupVisualFetches = groupIdsToFetch.length;
             await Promise.all(
-              groupEntryIds.map(async (groupId) => {
+              groupIdsToFetch.map(async (groupId) => {
                 try {
                   const groupSnap = await getDoc(doc(db, "Groups", groupId));
                   if (groupSnap.exists()) {
-                    groupVisualsMap.set(groupId, {
+                    const visuals: GroupVisuals = {
                       avatarUrl: groupSnap.data()?.avatarUrl || null,
                       backgroundUrl: groupSnap.data()?.backgroundUrl || null,
-                    });
+                      fetchedAt: Date.now(),
+                    };
+                    groupVisualCache.set(groupId, visuals);
+                    groupVisualsMap.set(groupId, visuals);
                   }
                 } catch {
                   // non-critical — group will show generic icon
@@ -470,13 +506,14 @@ export function useInboxAggregation(uid: string): UseInboxAggregationResult {
             if (entry.scope === "group") {
               const visuals = groupVisualsMap.get(entry.conversationId);
               convo.avatarUrl = visuals?.avatarUrl ?? null;
-              convo.backgroundUrl = visuals?.backgroundUrl ?? null;
+              convo.backgroundUrl =
+                visuals?.backgroundUrl ?? convo.backgroundUrl ?? null;
               rememberPreparedGroupChatData(
                 entry.conversationId,
                 {
                   name: convo.name,
                   avatarUrl: visuals?.avatarUrl ?? null,
-                  backgroundUrl: visuals?.backgroundUrl ?? null,
+                  backgroundUrl: convo.backgroundUrl ?? null,
                 },
                 "use-inbox-aggregation-group-visuals",
               );
@@ -493,6 +530,17 @@ export function useInboxAggregation(uid: string): UseInboxAggregationResult {
             setError(null);
             // Persist for cold-start
             saveAggCache(uid, sorted);
+            if (shouldLogInboxPerf()) {
+              log.debug("inbox snapshot processed", {
+                data: {
+                  entryCount: inboxEntries.length,
+                  visibleCount: visibleEntries.length,
+                  memberFallbackReads,
+                  groupVisualFetches,
+                  durationMs: Math.round(performance.now() - startedAt),
+                },
+              });
+            }
           }
         } catch (e) {
           log.error("Error processing inbox snapshot", { data: { error: e } });
@@ -515,6 +563,9 @@ export function useInboxAggregation(uid: string): UseInboxAggregationResult {
     return () => {
       isCancelled = true;
       unsub();
+      if (shouldLogInboxPerf()) {
+        log.debug("inbox listener detached", { data: { uid } });
+      }
     };
   }, [uid, enabled, refreshKey, applyOptimisticActivity]);
 

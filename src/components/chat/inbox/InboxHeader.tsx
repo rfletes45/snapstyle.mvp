@@ -1,14 +1,12 @@
 /**
- * InboxHeader Component (Redesigned — Messages)
+ * InboxHeader Component (Messages)
  *
  * Snapchat-inspired header for the Messages screen with:
- * - User avatar (tappable → Profile)
+ * - User avatar (tappable to Profile)
  * - Title ("Messages")
  * - Search button
- * - Games button (navigates to GamesHub)
- * - Friends button (opens Friends screen)
- *
- * Unified background color for visual cohesion with the rest of the Messages screen.
+ * - Games button
+ * - Friends button
  *
  * @module components/chat/inbox/InboxHeader
  */
@@ -18,6 +16,7 @@ import { Spacing } from "@/constants/theme";
 import { useAppTheme } from "@/store/ThemeContext";
 import { useUser } from "@/store/UserContext";
 import * as haptics from "@/utils/haptics";
+import { createLogger, isDebugEnabled } from "@/utils/log";
 import { CommonActions, useNavigation } from "@react-navigation/native";
 import React, { useCallback, useEffect, useRef } from "react";
 import { StyleSheet, TouchableOpacity, View } from "react-native";
@@ -33,6 +32,8 @@ export interface InboxHeaderProps {
   onSearchPress: () => void;
 }
 
+const perfLog = createLogger("InboxHeaderPerf");
+
 // =============================================================================
 // Component
 // =============================================================================
@@ -45,17 +46,19 @@ export const InboxHeader = React.memo(function InboxHeader({
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
 
-  // ── DEV diagnostics: trace when the avatar URL becomes available ──
+  // Guarded diagnostics: trace avatar readiness changes without logging on
+  // every render.
   const mountTimeRef = useRef(performance.now());
   useEffect(() => {
-    if (__DEV__) {
-      const url = profile?.profilePicture?.url;
-      const elapsed = (performance.now() - mountTimeRef.current).toFixed(1);
-      console.log(
-        `[InboxHeader] render — avatar URL ${url ? "READY" : "null"} (${elapsed}ms since mount)`,
-      );
-    }
-  });
+    if (!isDebugEnabled("PERF")) return;
+    const url = profile?.profilePicture?.url;
+    perfLog.debug("avatar readiness changed", {
+      data: {
+        ready: !!url,
+        elapsedMs: Math.round(performance.now() - mountTimeRef.current),
+      },
+    });
+  }, [profile?.profilePicture?.url]);
 
   const handleAvatarPress = useCallback(() => {
     haptics.buttonPress();

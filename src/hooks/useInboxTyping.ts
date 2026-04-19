@@ -6,10 +6,11 @@
  * typing indicators so that conversation rows can show "typing..." in
  * the preview area.
  *
- * **Performance**: Only subscribes to the conversations rendered on
- * screen (max ~20). Each subscription is a single Firestore onSnapshot
- * on the Members subcollection (same listener used by the chat screen).
- * When conversations scroll off-screen, subscriptions are cleaned up.
+ * **Performance**: Subscribes to a visible-screen-sized leading window
+ * (max 12). Each subscription is a single Firestore onSnapshot on the
+ * Members subcollection (same listener used by the chat screen). The hook
+ * diffs subscriptions across updates so normal inbox rerenders do not
+ * tear down and recreate every listener.
  *
  * @module hooks/useInboxTyping
  */
@@ -19,13 +20,13 @@ import { subscribeToGroupTyping } from "@/services/groupMembers";
 import { subscribeToInboxSettings } from "@/services/inboxSettings";
 import { resolveFromInboxSettings } from "@/services/messaging/resolveChatSettings";
 import { DEFAULT_INBOX_SETTINGS, InboxSettings } from "@/types/messaging";
-import { createLogger } from "@/utils/log";
+import { createLogger, isDebugEnabled } from "@/utils/log";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 const log = createLogger("useInboxTyping");
 
 /** Max conversations to track typing for simultaneously */
-const MAX_SUBSCRIPTIONS = 25;
+const MAX_SUBSCRIPTIONS = 12;
 
 export interface ConversationTypingInfo {
   /** Whether anyone is typing in this conversation */
@@ -43,8 +44,8 @@ interface ConversationSpec {
  * Subscribe to typing state for visible inbox conversations.
  *
  * @param currentUid - Authenticated user's UID
- * @param conversations - Array of { id, type } for conversations currently visible.
- *                        Pass a stable reference (memoized) to avoid re-subscribing.
+ * @param conversations - Array of { id, type } ordered by inbox visibility.
+ *                        Pass a stable reference (memoized) to avoid extra diff work.
  * @returns Map from conversationId → ConversationTypingInfo
  */
 export function useInboxTyping(
@@ -71,26 +72,43 @@ export function useInboxTyping(
 
   // Track active subscriptions
   const unsubMapRef = useRef<Map<string, () => void>>(new Map());
+  const ownerUidRef = useRef<string | undefined>(undefined);
+
+  const clearSubscriptions = () => {
+    const count = unsubMapRef.current.size;
+    unsubMapRef.current.forEach((unsub) => unsub());
+    unsubMapRef.current.clear();
+    if (count > 0 && isDebugEnabled("PERF")) {
+      log.debug("typing subscriptions cleared", { data: { count } });
+    }
+  };
 
   useEffect(() => {
+    if (ownerUidRef.current !== currentUid) {
+      clearSubscriptions();
+      ownerUidRef.current = currentUid;
+      setTypingMap(new Map());
+    }
+
     if (!currentUid || !effective.publishTyping) {
       // Clean up all subscriptions if disabled
-      unsubMapRef.current.forEach((unsub) => unsub());
-      unsubMapRef.current.clear();
+      clearSubscriptions();
       setTypingMap(new Map());
       return;
     }
 
-    const desired = new Set(
-      conversations.slice(0, MAX_SUBSCRIPTIONS).map((c) => c.id),
-    );
+    const trackedConversations = conversations.slice(0, MAX_SUBSCRIPTIONS);
+    const desired = new Set(trackedConversations.map((c) => c.id));
     const current = unsubMapRef.current;
+    let attached = 0;
+    let detached = 0;
 
     // Unsubscribe from conversations no longer visible
     for (const [id, unsub] of current) {
       if (!desired.has(id)) {
         unsub();
         current.delete(id);
+        detached += 1;
         setTypingMap((prev) => {
           const next = new Map(prev);
           next.delete(id);
@@ -100,7 +118,7 @@ export function useInboxTyping(
     }
 
     // Subscribe to new conversations
-    for (const conv of conversations.slice(0, MAX_SUBSCRIPTIONS)) {
+    for (const conv of trackedConversations) {
       if (current.has(conv.id)) continue;
 
       const handleUpdate = (typingUids: string[]) => {
@@ -130,14 +148,23 @@ export function useInboxTyping(
         unsub = subscribeToGroupTyping(conv.id, currentUid, handleUpdate);
       }
       current.set(conv.id, unsub);
+      attached += 1;
     }
 
-    // Cleanup all on unmount
-    return () => {
-      current.forEach((unsub) => unsub());
-      current.clear();
-    };
+    if ((attached > 0 || detached > 0) && isDebugEnabled("PERF")) {
+      log.debug("typing subscription diff", {
+        data: {
+          attached,
+          detached,
+          active: current.size,
+          requested: conversations.length,
+          tracked: trackedConversations.length,
+        },
+      });
+    }
   }, [currentUid, conversations, effective.publishTyping]);
+
+  useEffect(() => clearSubscriptions, []);
 
   return typingMap;
 }

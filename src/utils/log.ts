@@ -73,6 +73,8 @@ export const DEBUG_FLAGS = {
   MESSAGES: false,
   /** Chat & inbox subscription lifecycle logs */
   CHAT: false,
+  /** Performance lifecycle/timing diagnostics */
+  PERF: false,
   /** Group invite step-by-step logs */
   INVITES: false,
   /** InAppNotifications listener setup & suppression logs */

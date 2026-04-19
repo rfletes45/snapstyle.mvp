@@ -99,8 +99,8 @@ export function usePrefetchProfileImages(
   useEffect(() => {
     if (!key || key === prevWarmKey.current) return;
     prevWarmKey.current = key;
-    void warmIdentityImageUrls(urls);
-  }, [key, urls]);
+    void warmIdentityImageUrls(key.split("|"));
+  }, [key]);
 }
 
 /**
