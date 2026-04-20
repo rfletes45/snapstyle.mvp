@@ -89,6 +89,7 @@ export type MainStackParamList = {
   Friends:
     | {
         tab?: "all" | "requests";
+        openAddFriends?: boolean;
       }
     | undefined;
   UserProfile: { userId: string };

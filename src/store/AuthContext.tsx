@@ -19,6 +19,7 @@ import {
   setPresenceOnline,
 } from "@/services/presence";
 import { markUserNotificationRead } from "@/services/userNotifications";
+import { backfillUserEmailIfMissing } from "@/services/users";
 import * as Notifications from "expo-notifications";
 import { User as FirebaseUser } from "firebase/auth";
 import React, {
@@ -448,6 +449,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             // Initialize presence as soon as we know the UID
             try {
               initializePresence(user.uid);
+            } catch {
+              // non-critical
+            }
+
+            // Backfill `email` on the user's Firestore doc if it's missing.
+            // Required for Add-Friends email lookup to work for accounts
+            // that predate email-being-persisted-on-the-profile-doc. Safe
+            // to call on every sign-in — becomes a no-op once written.
+            try {
+              void backfillUserEmailIfMissing(user.uid, user.email ?? null);
             } catch {
               // non-critical
             }

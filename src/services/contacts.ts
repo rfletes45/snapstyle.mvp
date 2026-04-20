@@ -12,6 +12,7 @@
  */
 
 import { createLogger } from "@/utils/log";
+import { normalizePhoneE164 } from "@/utils/phone";
 import * as Contacts from "expo-contacts";
 import {
   collection,
@@ -469,12 +470,11 @@ export async function lookupUserByPhone(
   currentUid: string,
 ): Promise<MatchedUser | null> {
   const db = getFirestoreInstance();
-  let normalized = phone.replace(/[^\d+]/g, "");
-  if (!normalized.startsWith("+")) {
-    if (normalized.length === 10) normalized = "+1" + normalized;
-    else if (normalized.length === 11 && normalized.startsWith("1"))
-      normalized = "+" + normalized;
-  }
+  // Centralized normalization — returns `null` if the input can't be
+  // coerced to a plausible E.164 number, in which case we short-circuit
+  // before hitting Firestore.
+  const normalized = normalizePhoneE164(phone);
+  if (!normalized) return null;
 
   const q = query(collection(db, "Users"), where("phone", "==", normalized));
   const snap = await getDocs(q);
@@ -506,6 +506,7 @@ export async function lookupUserByEmail(
 ): Promise<MatchedUser | null> {
   const db = getFirestoreInstance();
   const normalized = email.trim().toLowerCase();
+  if (!normalized || !normalized.includes("@")) return null;
 
   const q = query(collection(db, "Users"), where("email", "==", normalized));
   const snap = await getDocs(q);

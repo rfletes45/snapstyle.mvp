@@ -38,6 +38,7 @@ import { submitReport } from "@/services/reporting";
 import { markNotificationsReadByTypes } from "@/services/userNotifications";
 import { useAuth } from "@/store/AuthContext";
 import { useInAppNotifications } from "@/store/InAppNotificationsContext";
+import { useIsDark } from "@/store/ThemeContext";
 import {
   AvatarConfig,
   Friend,
@@ -528,7 +529,27 @@ export default function FriendsScreen({ navigation }: any) {
   const route = useRoute<any>();
   const uid = currentFirebaseUser?.uid;
   const theme = useTheme();
-  const { colors } = theme;
+  const isDark = useIsDark();
+  // ── Friends-screen surface swap ───────────────────────────────
+  // In LIGHT mode we invert the page vs card relationship so the page
+  // reads as a soft grey and the header + friend islands read as clean
+  // white elevated surfaces. In DARK mode the default "dark page, lighter
+  // island" relationship is already correct, so we leave it untouched.
+  // The swap is done locally on the `colors` object so every descendant
+  // that reads `colors.background` / `colors.surface` (including sticky
+  // section headers, cards, menu popovers) picks it up automatically
+  // without touching the global theme tokens.
+  const colors = useMemo(
+    () =>
+      isDark
+        ? theme.colors
+        : {
+            ...theme.colors,
+            background: theme.colors.surface,
+            surface: theme.colors.background,
+          },
+    [theme.colors, isDark],
+  );
   const sectionListRef = useRef<SectionList>(null);
   const insets = useSafeAreaInsets();
 
@@ -693,6 +714,14 @@ export default function FriendsScreen({ navigation }: any) {
       navigation.setParams({ tab: undefined });
     }
   }, [route.params?.tab, navigation]);
+
+  // ── Auto-open Add Friends sheet from nav params ────────────────
+  useEffect(() => {
+    if (route.params?.openAddFriends) {
+      setAddFriendsOpen(true);
+      navigation.setParams({ openAddFriends: undefined });
+    }
+  }, [route.params?.openAddFriends, navigation]);
 
   // ── Mark notifications read ────────────────────────────────────
   useFocusEffect(

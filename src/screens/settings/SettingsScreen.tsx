@@ -19,12 +19,18 @@ import {
   reauthenticateUser,
 } from "@/services/accountDeletion";
 import { logout } from "@/services/auth";
-import { equipTheme, updateDisplayName } from "@/services/profileService";
+import {
+  clearPhoneNumber,
+  equipTheme,
+  updateDisplayName,
+  updatePhoneNumber,
+} from "@/services/profileService";
 import { useAuth } from "@/store/AuthContext";
 import { useConversationDisplayMode } from "@/store/ConversationDisplayModeContext";
 import { useSnackbar } from "@/store/SnackbarContext";
 import { useAppTheme } from "@/store/ThemeContext";
 import { useUser } from "@/store/UserContext";
+import { formatPhoneDisplay, isValidPhoneInput } from "@/utils/phone";
 import { isValidDisplayName } from "@/utils/validators";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import Constants from "expo-constants";
@@ -81,6 +87,11 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
     profile?.displayName || "",
   );
   const [savingName, setSavingName] = useState(false);
+
+  // Edit phone number state
+  const [showEditPhone, setShowEditPhone] = useState(false);
+  const [editPhone, setEditPhone] = useState("");
+  const [savingPhone, setSavingPhone] = useState(false);
 
   // Delete account state
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
@@ -146,6 +157,54 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
     showSuccess,
     showError,
   ]);
+
+  const handleSavePhone = useCallback(async () => {
+    if (!currentFirebaseUser) {
+      showError("User not authenticated");
+      return;
+    }
+
+    const trimmed = editPhone.trim();
+
+    // Empty input \u2192 treat as "remove phone number".
+    if (!trimmed) {
+      setSavingPhone(true);
+      try {
+        await clearPhoneNumber(currentFirebaseUser.uid);
+        await refreshProfile();
+        showSuccess("Phone number removed");
+        setShowEditPhone(false);
+      } catch (err: any) {
+        logger.error("Clear phone error:", err);
+        showError(err.message || "Failed to remove phone number");
+      } finally {
+        setSavingPhone(false);
+      }
+      return;
+    }
+
+    if (!isValidPhoneInput(trimmed)) {
+      showError("Enter a valid phone number (with country code)");
+      return;
+    }
+
+    setSavingPhone(true);
+    try {
+      await updatePhoneNumber(currentFirebaseUser.uid, trimmed);
+      await refreshProfile();
+      showSuccess("Phone number updated");
+      setShowEditPhone(false);
+    } catch (err: any) {
+      logger.error("Phone update error:", err);
+      if (err?.message === "INVALID_PHONE") {
+        showError("Enter a valid phone number (with country code)");
+      } else {
+        showError(err?.message || "Failed to update phone number");
+      }
+    } finally {
+      setSavingPhone(false);
+    }
+  }, [editPhone, currentFirebaseUser, refreshProfile, showSuccess, showError]);
 
   const handleSignOut = useCallback(async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -331,6 +390,23 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
             title="Email"
             description={currentFirebaseUser?.email || "Not set"}
             left={(props) => <List.Icon {...props} icon="email" />}
+          />
+
+          <List.Item
+            title="Phone Number"
+            description={
+              profile?.phoneDisplay ||
+              (profile?.phone ? formatPhoneDisplay(profile.phone) : "Not set")
+            }
+            left={(props) => <List.Icon {...props} icon="phone" />}
+            right={(props) => <List.Icon {...props} icon="pencil" />}
+            onPress={() => {
+              setEditPhone(
+                profile?.phoneDisplay ||
+                  (profile?.phone ? formatPhoneDisplay(profile.phone) : ""),
+              );
+              setShowEditPhone(true);
+            }}
           />
 
           <List.Item
@@ -605,6 +681,54 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
                 onPress={handleSaveDisplayName}
                 loading={savingName}
                 disabled={savingName}
+              >
+                Save
+              </Button>
+            </Dialog.Actions>
+          </Dialog>
+        </Portal>
+
+        {/* Edit Phone Number Dialog */}
+        <Portal>
+          <Dialog
+            visible={showEditPhone}
+            onDismiss={() => !savingPhone && setShowEditPhone(false)}
+          >
+            <Dialog.Title>Phone Number</Dialog.Title>
+            <Dialog.Content>
+              <TextInput
+                label="Phone Number"
+                value={editPhone}
+                onChangeText={setEditPhone}
+                mode="outlined"
+                keyboardType="phone-pad"
+                autoComplete="tel"
+                textContentType="telephoneNumber"
+                placeholder="+1 (555) 123-4567"
+                maxLength={32}
+              />
+              <Text
+                variant="bodySmall"
+                style={{
+                  marginTop: 12,
+                  color: theme.colors.onSurfaceVariant,
+                }}
+              >
+                Friends can find you by phone number in Add Friends. Include
+                your country code. Leave blank and save to remove.
+              </Text>
+            </Dialog.Content>
+            <Dialog.Actions>
+              <Button
+                onPress={() => setShowEditPhone(false)}
+                disabled={savingPhone}
+              >
+                Cancel
+              </Button>
+              <Button
+                onPress={handleSavePhone}
+                loading={savingPhone}
+                disabled={savingPhone}
               >
                 Save
               </Button>

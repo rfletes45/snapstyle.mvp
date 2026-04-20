@@ -782,6 +782,24 @@ export interface UserProfileData {
   lastProfileUpdate: number;
   profileViews?: number;
   expoPushToken?: string;
+
+  // Contact fields (optional, backfilled/edited via Settings)
+  /** Lowercased email mirrored from Firebase Auth \u2014 powers Add-Friends email search. */
+  email?: string;
+  /** Canonical E.164 phone (e.g. "+14155551234") used as the lookup key. */
+  phone?: string;
+  /** Pretty-printed phone for display only \u2014 never used as a lookup key. */
+  phoneDisplay?: string;
+  /** Reserved for a future phone-auth linking phase. */
+  phoneVerified?: boolean;
+  phoneUpdatedAt?: number;
+
+  // Per-field discoverability overrides honoured by contacts lookup.
+  // `false` opts out; missing / `true` \u2192 discoverable.
+  discoverability?: {
+    phone?: boolean;
+    email?: boolean;
+  };
 }
 
 /**

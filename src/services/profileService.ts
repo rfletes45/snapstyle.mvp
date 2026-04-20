@@ -444,6 +444,61 @@ export async function updateDisplayName(
 }
 
 /**
+ * Update (or set) the user's phone number.
+ *
+ * Writes the canonical E.164 form to `phone` (used as the lookup key by
+ * Add-Friends phone search and Contacts Discovery) plus a pretty-printed
+ * `phoneDisplay` for UI. Throws if the input can't be coerced to a valid
+ * number so the caller can surface the error.
+ *
+ * Call `clearPhoneNumber` to remove the value entirely.
+ */
+export async function updatePhoneNumber(
+  userId: string,
+  rawInput: string,
+): Promise<{ phone: string; phoneDisplay: string }> {
+  const { normalizePhoneE164, formatPhoneDisplay } =
+    await import("@/utils/phone");
+  const phone = normalizePhoneE164(rawInput);
+  if (!phone) {
+    throw new Error("INVALID_PHONE");
+  }
+  const phoneDisplay = formatPhoneDisplay(phone);
+
+  const db = getFirestoreInstance();
+  const userRef = doc(db, "Users", userId);
+
+  await updateDoc(userRef, {
+    phone,
+    phoneDisplay,
+    phoneUpdatedAt: Date.now(),
+    lastProfileUpdate: Date.now(),
+  });
+
+  log.info("Phone number updated");
+  return { phone, phoneDisplay };
+}
+
+/**
+ * Remove the user's phone number so they no longer appear in phone-based
+ * lookups. Uses a sentinel delete via Firestore's `deleteField`.
+ */
+export async function clearPhoneNumber(userId: string): Promise<void> {
+  const { deleteField } = await import("firebase/firestore");
+  const db = getFirestoreInstance();
+  const userRef = doc(db, "Users", userId);
+
+  await updateDoc(userRef, {
+    phone: deleteField(),
+    phoneDisplay: deleteField(),
+    phoneUpdatedAt: Date.now(),
+    lastProfileUpdate: Date.now(),
+  });
+
+  log.info("Phone number cleared");
+}
+
+/**
  * Update legacy avatar config fields used by profile header/avatar rendering.
  */
 export async function updateAvatarConfig(

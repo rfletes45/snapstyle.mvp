@@ -14,6 +14,33 @@ export interface User {
   createdAt: number;
   lastActive: number;
 
+  /** Normalized, lowercased email used for Add-Friends email lookup.
+   *  Mirrors Firebase Auth email and is backfilled on sign-in if missing. */
+  email?: string;
+
+  /** Canonical E.164 phone number (e.g. "+14155551234") used for
+   *  Add-Friends phone lookup and contacts discovery.
+   *  Set/cleared via Settings → Account → Phone Number. */
+  phone?: string;
+
+  /** Pretty-printed form of `phone` for display in Settings.
+   *  E.g. "+1 (415) 555-1234". Never used as a lookup key. */
+  phoneDisplay?: string;
+
+  /** Reserved for a future phone-auth linking phase. `undefined` today. */
+  phoneVerified?: boolean;
+
+  /** Timestamp (ms) of the last phone update. */
+  phoneUpdatedAt?: number;
+
+  /** Per-field discoverability overrides honoured by the contacts-lookup
+   *  service. `false` explicitly opts the field out of discovery; missing
+   *  / `true` → discoverable. */
+  discoverability?: {
+    phone?: boolean;
+    email?: boolean;
+  };
+
   /** Profile picture (url + thumbnail) — present in the Firestore doc */
   profilePicture?: ProfilePicture;
 

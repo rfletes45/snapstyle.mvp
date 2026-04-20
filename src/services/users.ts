@@ -128,6 +128,7 @@ async function createUserProfile(
   username: string,
   displayName: string,
   baseColor?: string,
+  email?: string,
 ): Promise<User> {
   const db = getFirestoreInstance();
   const userDocRef = doc(db, "Users", uid);
@@ -168,6 +169,7 @@ async function createUserProfile(
   }
 
   const now = Date.now();
+  const normalizedEmail = email?.trim().toLowerCase();
   const user: User = {
     uid,
     username,
@@ -178,6 +180,7 @@ async function createUserProfile(
     },
     createdAt: now,
     lastActive: now,
+    ...(normalizedEmail ? { email: normalizedEmail } : {}),
   };
 
   try {
@@ -211,6 +214,37 @@ export async function updateProfile(
   } catch (error) {
     logger.error("Error updating user profile:", error);
     return false;
+  }
+}
+
+/**
+ * Backfill the `email` field on a user's Firestore doc if it is missing or
+ * stale. Used on sign-in to upgrade accounts that predate the email-search
+ * feature so that Add-Friends email lookup works without requiring the user
+ * to manually re-save their profile.
+ *
+ * Safe to call repeatedly — writes only when the stored value differs from
+ * the provided (normalized) email. Silently no-ops on permission errors.
+ */
+export async function backfillUserEmailIfMissing(
+  uid: string,
+  rawEmail: string | null | undefined,
+): Promise<void> {
+  if (!uid || !rawEmail) return;
+  const email = rawEmail.trim().toLowerCase();
+  if (!email) return;
+
+  const db = getFirestoreInstance();
+  const userDocRef = doc(db, "Users", uid);
+  try {
+    const snap = await getDoc(userDocRef);
+    if (!snap.exists()) return; // Onboarding hasn't created the doc yet.
+    const existing = (snap.data() as Partial<User>).email;
+    if (existing === email) return;
+    await updateDoc(userDocRef, { email });
+  } catch (error) {
+    // Non-fatal. Most commonly a transient permission/network error.
+    logger.warn("[users] backfillUserEmailIfMissing skipped:", error);
   }
 }
 
@@ -263,7 +297,13 @@ export async function setupNewUser(
     }
 
     // Create user profile first
-    const user = await createUserProfile(uid, username, displayName, baseColor);
+    const user = await createUserProfile(
+      uid,
+      username,
+      displayName,
+      baseColor,
+      email,
+    );
 
     // Then reserve the username (separate operation)
     const reserved = await reserveUsername(username, uid);

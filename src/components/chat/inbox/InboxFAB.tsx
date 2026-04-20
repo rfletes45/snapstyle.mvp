@@ -16,7 +16,7 @@ import type { MainStackParamList } from "@/types/navigation";
 import * as haptics from "@/utils/haptics";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import React, { memo, useCallback, useState } from "react";
+import React, { memo, useCallback, useRef, useState } from "react";
 import { StyleSheet } from "react-native";
 import { FAB, Portal } from "react-native-paper";
 
@@ -35,11 +35,15 @@ interface FABAction {
   icon: string;
   label: string;
   onPress: () => void;
+  accessibilityLabel?: string;
 }
 
 // =============================================================================
 // Component
 // =============================================================================
+
+/** Guard window (ms) to prevent double-tap navigation. */
+const NAV_DEBOUNCE_MS = 500;
 
 export const InboxFAB = memo(function InboxFAB({
   visible = true,
@@ -49,6 +53,7 @@ export const InboxFAB = memo(function InboxFAB({
   const navigation =
     useNavigation<NativeStackNavigationProp<MainStackParamList>>();
   const [open, setOpen] = useState(false);
+  const lastNavRef = useRef(0);
 
   const onStateChange = useCallback(({ open }: { open: boolean }) => {
     setOpen(open);
@@ -57,23 +62,37 @@ export const InboxFAB = memo(function InboxFAB({
     }
   }, []);
 
+  /** Close the FAB menu and navigate, with double-tap guard. */
+  const navigateOnce = useCallback((action: () => void) => {
+    const now = Date.now();
+    if (now - lastNavRef.current < NAV_DEBOUNCE_MS) return;
+    lastNavRef.current = now;
+    setOpen(false);
+    action();
+  }, []);
+
   const handleNewMessage = useCallback(() => {
     haptics.buttonPress();
-    // Navigate to Friends screen where users can start a new conversation
-    navigation.navigate("Friends");
-  }, [navigation]);
+    navigateOnce(() => {
+      // Open Friends list so the user can pick a friend to message
+      navigation.navigate("Friends", { tab: "all" });
+    });
+  }, [navigation, navigateOnce]);
 
   const handleNewGroup = useCallback(() => {
     haptics.buttonPress();
-    // Navigate to group creation screen - this is within InboxStack
-    navigation.navigate("GroupChatCreate");
-  }, [navigation]);
+    navigateOnce(() => {
+      navigation.navigate("GroupChatCreate");
+    });
+  }, [navigation, navigateOnce]);
 
   const handleAddFriend = useCallback(() => {
     haptics.buttonPress();
-    // Navigate to Friends screen for finding friends
-    navigation.navigate("Friends");
-  }, [navigation]);
+    navigateOnce(() => {
+      // Navigate to Friends with the Add Friends sheet auto-opened
+      navigation.navigate("Friends", { openAddFriends: true });
+    });
+  }, [navigation, navigateOnce]);
 
   // Default actions
   const defaultActions: FABAction[] = [
@@ -81,16 +100,19 @@ export const InboxFAB = memo(function InboxFAB({
       icon: "message-plus",
       label: "New Message",
       onPress: handleNewMessage,
+      accessibilityLabel: "New Message — pick a friend to start a conversation",
     },
     {
       icon: "account-group-outline",
       label: "New Group",
       onPress: handleNewGroup,
+      accessibilityLabel: "New Group — create a new group chat",
     },
     {
       icon: "account-plus",
       label: "Add Friend",
       onPress: handleAddFriend,
+      accessibilityLabel: "Add Friend — find and add new friends",
     },
   ];
 
@@ -107,6 +129,7 @@ export const InboxFAB = memo(function InboxFAB({
             icon: action.icon,
             label: action.label,
             onPress: action.onPress,
+            accessibilityLabel: action.accessibilityLabel,
             style: {
               backgroundColor: colors.surfaceElevated ?? colors.surface,
               elevation: 3,

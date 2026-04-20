@@ -315,6 +315,12 @@ export function hydrateProfileData(
     lastProfileUpdate: source.lastProfileUpdate || now,
     profileViews: source.profileViews,
     expoPushToken: source.expoPushToken,
+    email: source.email,
+    phone: source.phone,
+    phoneDisplay: source.phoneDisplay,
+    phoneVerified: source.phoneVerified,
+    phoneUpdatedAt: source.phoneUpdatedAt,
+    discoverability: source.discoverability,
   };
 
   validateEquippedCosmetics(userId, hydrated);
