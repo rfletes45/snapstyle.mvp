@@ -42,8 +42,8 @@ export declare const markInboxRead: functions.HttpsFunction & functions.Runnable
 /**
  * Sync DM member state changes to the user's Inbox entry.
  */
-export declare const onDMMemberStateChanged: functions.CloudFunction<functions.Change<functions.firestore.QueryDocumentSnapshot>>;
+export declare const onDMMemberStateChanged: functions.CloudFunction<functions.Change<functions.firestore.DocumentSnapshot>>;
 /**
  * Sync group member state changes to the user's Inbox entry.
  */
-export declare const onGroupMemberStateChanged: functions.CloudFunction<functions.Change<functions.firestore.QueryDocumentSnapshot>>;
+export declare const onGroupMemberStateChanged: functions.CloudFunction<functions.Change<functions.firestore.DocumentSnapshot>>;

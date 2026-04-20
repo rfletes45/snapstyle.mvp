@@ -1,13 +1,14 @@
 /**
  * Group Cleanup Cloud Function
  *
- * Firestore trigger that fires when a Groups/{groupId} document is deleted.
+ * Firestore triggers for group cleanup.
  * Performs cascading cleanup of:
  *   - Members subcollection
  *   - MembersPrivate subcollection
  *   - Messages subcollection
  *   - AuditLog subcollection
  *   - Firebase Storage files (avatars, message media, voice messages)
+ *   - Group background Storage files when backgroundUrl is removed
  *   - Per-user inbox entries referencing this group
  *
  * Safety:
@@ -18,4 +19,5 @@
  * @module functions/groupCleanup
  */
 import * as functions from "firebase-functions";
+export declare const onGroupBackgroundRemoved: functions.CloudFunction<functions.Change<functions.firestore.QueryDocumentSnapshot>>;
 export declare const onGroupDeleted: functions.CloudFunction<functions.firestore.QueryDocumentSnapshot>;

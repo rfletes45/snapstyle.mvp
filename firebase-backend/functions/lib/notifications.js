@@ -226,6 +226,13 @@ exports.onNewMessage = functions.firestore
     const recipientUid = members.find((uid) => uid !== senderId);
     if (!recipientUid)
         return null;
+    // Defense in depth: refuse to notify the sender, even if the member list
+    // is somehow malformed and returns them.
+    if (recipientUid === senderId)
+        return null;
+    const senderDeviceId = typeof message.senderDeviceId === "string" && message.senderDeviceId
+        ? message.senderDeviceId
+        : null;
     const notifyLevel = await getDmNotifyLevel(chatId, recipientUid);
     // Always update streak tracking regardless of notification preferences.
     // Streak logic runs in its own try/catch so notification failures don't
@@ -279,6 +286,7 @@ exports.onNewMessage = functions.firestore
         },
         respectConversationMute: true,
         excludeTokens: senderTokens,
+        excludeDeviceIds: senderDeviceId ? [senderDeviceId] : [],
     });
     return null;
 });
@@ -312,6 +320,9 @@ exports.onNewGroupMessageV2 = functions.firestore
     const previewText = buildMessagePreview(String(message.kind || message.type || "text"), message.text || message.content);
     // Collect sender's push tokens so we can exclude them from delivery.
     const senderTokens = await getUserPushTokens(senderId);
+    const senderDeviceId = typeof message.senderDeviceId === "string" && message.senderDeviceId
+        ? message.senderDeviceId
+        : null;
     await Promise.all(memberIds
         .filter((uid) => uid !== senderId)
         .map(async (recipientUid) => {
@@ -358,6 +369,7 @@ exports.onNewGroupMessageV2 = functions.firestore
             },
             respectConversationMute: true,
             excludeTokens: senderTokens,
+            excludeDeviceIds: senderDeviceId ? [senderDeviceId] : [],
         });
     }));
     return null;
@@ -384,12 +396,9 @@ exports.onMessageRequestCreatedNotification = functions.firestore
         route: {
             screen: "MainTabs",
             params: {
-                screen: "Messages",
+                screen: "Friends",
                 params: {
-                    screen: "ChatList",
-                    params: {
-                        initialFilter: "requests",
-                    },
+                    tab: "requests",
                 },
             },
         },

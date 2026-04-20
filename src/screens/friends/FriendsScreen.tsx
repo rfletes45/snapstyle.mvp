@@ -12,9 +12,9 @@
 
 import BlockUserModal from "@/components/BlockUserModal";
 import {
-  QRCodeSheet,
-  QuickAddSheet,
-  SectionHeader,
+    QRCodeSheet,
+    QuickAddSheet,
+    SectionHeader,
 } from "@/components/friends";
 import AddFriendsSheet from "@/components/friends/AddFriendsSheet";
 import { ProfilePictureWithDecoration } from "@/components/profile/ProfilePicture";
@@ -24,14 +24,14 @@ import { BorderRadius, Spacing } from "@/constants/theme";
 import { blockUser } from "@/services/blocking";
 import { getFirestoreInstance } from "@/services/firebase";
 import {
-  acceptFriendRequest,
-  cancelFriendRequest,
-  declineFriendRequest,
-  getFriends,
-  getPendingRequests,
-  getUserProfileByUid,
-  removeFriend,
-  sendFriendRequest,
+    acceptFriendRequest,
+    cancelFriendRequest,
+    declineFriendRequest,
+    getFriends,
+    getPendingRequests,
+    getUserProfileByUid,
+    removeFriend,
+    sendFriendRequest,
 } from "@/services/friends";
 import { shareInviteLink, shareProfileLink } from "@/services/invites";
 import { submitReport } from "@/services/reporting";
@@ -40,59 +40,59 @@ import { useAuth } from "@/store/AuthContext";
 import { useInAppNotifications } from "@/store/InAppNotificationsContext";
 import { useIsDark } from "@/store/ThemeContext";
 import {
-  AvatarConfig,
-  Friend,
-  FriendRequest,
-  ReportReason,
+    AvatarConfig,
+    Friend,
+    FriendRequest,
+    ReportReason,
 } from "@/types/models";
 import * as haptics from "@/utils/haptics";
 import { createLogger } from "@/utils/log";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useFocusEffect, useRoute } from "@react-navigation/native";
 import {
-  collection,
-  getDocs,
-  onSnapshot,
-  query,
-  where,
+    collection,
+    getDocs,
+    onSnapshot,
+    query,
+    where,
 } from "firebase/firestore";
 import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
+    useCallback,
+    useEffect,
+    useMemo,
+    useRef,
+    useState,
 } from "react";
 import {
-  ActivityIndicator,
-  Alert,
-  Dimensions,
-  LayoutAnimation,
-  Platform,
-  RefreshControl,
-  SectionList,
-  StyleSheet,
-  TouchableOpacity,
-  UIManager,
-  View,
+    ActivityIndicator,
+    Alert,
+    Dimensions,
+    LayoutAnimation,
+    Platform,
+    RefreshControl,
+    SectionList,
+    StyleSheet,
+    TouchableOpacity,
+    UIManager,
+    View,
 } from "react-native";
 import {
-  Button,
-  Divider,
-  IconButton,
-  Menu,
-  Searchbar,
-  Snackbar,
-  Text,
-  useTheme,
+    Button,
+    Divider,
+    IconButton,
+    Menu,
+    Searchbar,
+    Snackbar,
+    Text,
+    useTheme,
 } from "react-native-paper";
 // Appbar removed — header is now custom Animated.View with safe area insets
 import Animated, {
-  Extrapolation,
-  interpolate,
-  useAnimatedScrollHandler,
-  useAnimatedStyle,
-  useSharedValue,
+    Extrapolation,
+    interpolate,
+    useAnimatedScrollHandler,
+    useAnimatedStyle,
+    useSharedValue,
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -1274,15 +1274,19 @@ export default function FriendsScreen({ navigation }: any) {
           ]}
         />
         <View style={styles.headerContainer}>
-          {/* Top row: back arrow | title | add friend */}
+          {/* Top row: back arrow (if navigable) | title | add friend */}
           <View style={styles.headerTopRow}>
-            <IconButton
-              icon="arrow-left"
-              size={24}
-              onPress={() => navigation.goBack()}
-              style={styles.headerBtn}
-              accessibilityLabel="Go back"
-            />
+            {navigation.canGoBack() ? (
+              <IconButton
+                icon="arrow-left"
+                size={24}
+                onPress={() => navigation.goBack()}
+                style={styles.headerBtn}
+                accessibilityLabel="Go back"
+              />
+            ) : (
+              <View style={{ width: ICON_BTN_WIDTH }} />
+            )}
             <Animated.View style={[styles.titleContainer, titleAnimStyle]}>
               <Text
                 variant="titleLarge"

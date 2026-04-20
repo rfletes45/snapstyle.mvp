@@ -323,31 +323,6 @@ export async function getPictureReceipts(snapId: string): Promise<SnapView[]> {
 }
 
 /**
- * Share picture to story
- */
-export async function shareToStory(
-  picture: Picture,
-  userId: string,
-  duration: number = 86400000,
-): Promise<void> {
-  try {
-    picture.storyVisible = true;
-    picture.storyExpiresAt = Date.now() + duration; // Default 24 hours
-
-    const pictureRef = doc(getFirestoreInstance(), "Pictures", picture.id);
-    await updateDoc(pictureRef, {
-      storyVisible: true,
-      storyExpiresAt: picture.storyExpiresAt,
-    });
-
-    logger.info("[Snap Service] Picture shared to story");
-  } catch (error) {
-    logger.error("[Snap Service] Failed to share to story:", error);
-    throw error;
-  }
-}
-
-/**
  * ============================================================================
  * DRAFT MANAGEMENT
  * ============================================================================
@@ -523,28 +498,6 @@ export async function getReceivedPictures(
       .slice(0, limit);
   } catch (error) {
     logger.error("[Snap Service] Failed to get received pictures:", error);
-    return [];
-  }
-}
-
-/**
- * Get story snaps visible to user
- */
-export async function getVisibleStorySnaps(userId: string): Promise<Snap[]> {
-  try {
-    const snapsRef = collection(getFirestoreInstance(), "Pictures");
-    const now = Date.now();
-
-    const q = query(
-      snapsRef,
-      where("storyVisible", "==", true),
-      where("storyExpiresAt", ">", now),
-    );
-
-    const snapshot = await getDocs(q);
-    return snapshot.docs.map((doc) => doc.data() as Snap);
-  } catch (error) {
-    logger.error("[Snap Service] Failed to get story pictures:", error);
     return [];
   }
 }

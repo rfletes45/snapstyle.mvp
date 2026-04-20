@@ -274,7 +274,12 @@ export interface Picture {
 
   // Visibility
   recipients: PictureRecipient[];
-  storyVisible: boolean;
+  /**
+   * @deprecated Stories feature removed (2026-04-20). Retained as optional
+   * field for Firestore schema compatibility with pre-existing documents.
+   */
+  storyVisible?: boolean;
+  /** @deprecated Stories feature removed. See `storyVisible`. */
   storyExpiresAt?: number;
 
   // Editing

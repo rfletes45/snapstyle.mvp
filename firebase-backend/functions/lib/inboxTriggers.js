@@ -332,12 +332,15 @@ exports.markInboxRead = functions.https.onCall(async (data, context) => {
  */
 exports.onDMMemberStateChanged = functions.firestore
     .document("Chats/{chatId}/MembersPrivate/{uid}")
-    .onUpdate(async (change, context) => {
+    .onWrite(async (change, context) => {
     const { chatId, uid } = context.params;
-    const before = change.before.data();
-    const after = change.after.data();
+    if (!change.after.exists)
+        return;
+    const before = change.before.exists ? change.before.data() || {} : {};
+    const after = change.after.data() || {};
     // Sync all fields that affect inbox display + unread computation
-    const changed = before.pinnedAt !== after.pinnedAt ||
+    const changed = !change.before.exists ||
+        before.pinnedAt !== after.pinnedAt ||
         before.archived !== after.archived ||
         before.mutedUntil !== after.mutedUntil ||
         before.notifyLevel !== after.notifyLevel ||
@@ -379,11 +382,14 @@ exports.onDMMemberStateChanged = functions.firestore
  */
 exports.onGroupMemberStateChanged = functions.firestore
     .document("Groups/{groupId}/MembersPrivate/{uid}")
-    .onUpdate(async (change, context) => {
+    .onWrite(async (change, context) => {
     const { groupId, uid } = context.params;
-    const before = change.before.data();
-    const after = change.after.data();
-    const changed = before.pinnedAt !== after.pinnedAt ||
+    if (!change.after.exists)
+        return;
+    const before = change.before.exists ? change.before.data() || {} : {};
+    const after = change.after.data() || {};
+    const changed = !change.before.exists ||
+        before.pinnedAt !== after.pinnedAt ||
         before.archived !== after.archived ||
         before.mutedUntil !== after.mutedUntil ||
         before.notifyLevel !== after.notifyLevel ||

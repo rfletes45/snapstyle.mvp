@@ -39,7 +39,14 @@ const admin = __importStar(require("firebase-admin"));
 const functions = __importStar(require("firebase-functions"));
 const utils_1 = require("./utils");
 const db = admin.firestore();
-const NOTIFICATION_SESSION_STALE_MS = 90_000;
+// Tightened from 90s → 45s.  Client heartbeat is 15s, so 45s gives three
+// heartbeat windows of tolerance before a session is considered stale.
+const NOTIFICATION_SESSION_STALE_MS = 45_000;
+// AppState values that mean the user is actively using the app.  iOS emits
+// "inactive" for transitional states (Control Center, Face ID prompt, split
+// view, incoming call UI) — treating it as backgrounded causes push delivery
+// for users who are clearly still using the app.
+const FOREGROUND_APP_STATES = new Set(["active", "inactive"]);
 const DEFAULT_NOTIFICATION_PREFERENCES = {
     notificationsEnabled: true,
     inAppNotificationsEnabled: true,
@@ -253,6 +260,13 @@ async function getPushDevices(uid) {
     return devices;
 }
 async function chooseNotificationDecision(request, prefs) {
+    // Absolute self-suppression: never deliver a notification to the actor of
+    // the event.  This is defense in depth — upstream triggers already filter
+    // the sender out of the recipient list, but we do not trust that invariant.
+    if (request.actorUid &&
+        request.actorUid === request.recipientUid) {
+        return { channel: "none", reason: "actor_is_recipient" };
+    }
     if (!prefs.notificationsEnabled) {
         return { channel: "none", reason: "global_notifications_disabled" };
     }
@@ -267,19 +281,31 @@ async function chooseNotificationDecision(request, prefs) {
             return { channel: "none", reason: "conversation_muted" };
         }
     }
+    const excludeDeviceIdSet = new Set(request.excludeDeviceIds ?? []);
+    const excludeTokenSet = new Set(request.excludeTokens ?? []);
     const sessions = await getFreshNotificationSessions(request.recipientUid);
-    const activeSessions = sessions.filter((session) => session.appState === "active");
-    if (activeSessions.some((session) => isRecipientViewingEquivalentSurface(session, request))) {
+    // Treat both "active" and "inactive" (iOS transitional) as foreground.
+    // Also exclude sessions whose device belongs to the actor so we never pick
+    // the sender's own device as the in-app toast target.
+    const foregroundSessions = sessions.filter((session) => FOREGROUND_APP_STATES.has(session.appState) &&
+        !excludeDeviceIdSet.has(session.deviceId));
+    if (foregroundSessions.some((session) => isRecipientViewingEquivalentSurface(session, request))) {
         return { channel: "none", reason: "already_viewing_target" };
     }
-    if (activeSessions.length > 0) {
+    if (foregroundSessions.length > 0) {
         if (!prefs.inAppNotificationsEnabled) {
             return {
                 channel: "none",
                 reason: "active_session_but_in_app_disabled",
             };
         }
-        const targetSession = activeSessions.find((session) => session.inAppEnabled);
+        // Prefer a truly-active session over an inactive/transitional one when
+        // choosing the device to target.
+        const activeForeground = foregroundSessions.filter((s) => s.appState === "active");
+        const targetPool = activeForeground.length
+            ? activeForeground
+            : foregroundSessions;
+        const targetSession = targetPool.find((session) => session.inAppEnabled);
         if (!targetSession) {
             return {
                 channel: "none",
@@ -293,13 +319,12 @@ async function chooseNotificationDecision(request, prefs) {
         };
     }
     const pushDevices = await getPushDevices(request.recipientUid);
-    // Filter out the sender's device tokens to prevent self-notifications.
-    // This handles the case where a device was previously logged into the
-    // recipient's account and the push token wasn't fully cleaned up on logout.
-    const excludeSet = new Set(request.excludeTokens ?? []);
-    const filteredDevices = excludeSet.size > 0
-        ? pushDevices.filter((d) => !excludeSet.has(d.expoPushToken))
-        : pushDevices;
+    // Double-layer filter: drop devices whose deviceId OR expoPushToken matches
+    // the sender's.  deviceId is the primary guard (stable across token
+    // rotation); token is the legacy fallback for clients that didn't send a
+    // senderDeviceId.
+    const filteredDevices = pushDevices.filter((d) => !excludeDeviceIdSet.has(d.deviceId) &&
+        !excludeTokenSet.has(d.expoPushToken));
     if (filteredDevices.length === 0) {
         return { channel: "none", reason: "no_push_devices" };
     }
@@ -542,9 +567,15 @@ async function notifyUser(request) {
     const decision = await chooseNotificationDecision(request, prefs);
     functions.logger.info("[notificationCenter] Decision", {
         recipientUid: request.recipientUid,
+        actorUid: request.actorUid ?? null,
         type: request.type,
         channel: decision.channel,
         reason: decision.reason,
+        targetDeviceId: decision.targetDeviceId ?? null,
+        pushDeviceCount: decision.pushDevices?.length ?? 0,
+        excludeDeviceIds: request.excludeDeviceIds ?? [],
+        excludeTokenCount: request.excludeTokens?.length ?? 0,
+        conversationId: request.conversationId ?? null,
     });
     if (decision.channel === "none") {
         return {

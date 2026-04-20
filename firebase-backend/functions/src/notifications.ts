@@ -440,12 +440,9 @@ export const onMessageRequestCreatedNotification = functions.firestore
       route: {
         screen: "MainTabs",
         params: {
-          screen: "Messages",
+          screen: "Friends",
           params: {
-            screen: "ChatList",
-            params: {
-              initialFilter: "requests",
-            },
+            tab: "requests",
           },
         },
       },

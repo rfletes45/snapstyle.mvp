@@ -19,7 +19,7 @@ import * as haptics from "@/utils/haptics";
 import { createLogger, isDebugEnabled } from "@/utils/log";
 import { CommonActions, useNavigation } from "@react-navigation/native";
 import React, { useCallback, useEffect, useRef } from "react";
-import { StyleSheet, TouchableOpacity, View } from "react-native";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Appbar, IconButton } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -30,6 +30,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 export interface InboxHeaderProps {
   /** Callback when search button is pressed */
   onSearchPress: () => void;
+  /** Number of pending incoming friend requests — drives the badge on the Friends button */
+  pendingFriendRequestCount?: number;
 }
 
 const perfLog = createLogger("InboxHeaderPerf");
@@ -40,6 +42,7 @@ const perfLog = createLogger("InboxHeaderPerf");
 
 export const InboxHeader = React.memo(function InboxHeader({
   onSearchPress,
+  pendingFriendRequestCount = 0,
 }: InboxHeaderProps) {
   const { colors, isDark } = useAppTheme();
   const { profile } = useUser();
@@ -160,15 +163,24 @@ export const InboxHeader = React.memo(function InboxHeader({
           accessibilityLabel="Games"
           style={styles.headerBtn}
         />
-        <IconButton
-          icon="account-group-outline"
-          iconColor={colors.textSecondary}
-          containerColor={iconBtnBg}
-          size={24}
-          onPress={handleFriendsPress}
-          accessibilityLabel="Friends"
-          style={styles.headerBtn}
-        />
+        <View style={styles.friendsBtnWrapper}>
+          <IconButton
+            icon="account-group-outline"
+            iconColor={colors.textSecondary}
+            containerColor={iconBtnBg}
+            size={24}
+            onPress={handleFriendsPress}
+            accessibilityLabel="Friends"
+            style={styles.headerBtn}
+          />
+          {pendingFriendRequestCount > 0 && (
+            <View
+              style={[styles.friendsBadge, { backgroundColor: colors.error }]}
+            >
+              <Text style={styles.friendsBadgeText}>!</Text>
+            </View>
+          )}
+        </View>
       </View>
     </View>
   );
@@ -210,6 +222,26 @@ const styles = StyleSheet.create({
   },
   headerBtn: {
     margin: 0,
+  },
+  friendsBtnWrapper: {
+    position: "relative",
+  },
+  friendsBadge: {
+    position: "absolute",
+    top: 2,
+    right: 2,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 2,
+  },
+  friendsBadgeText: {
+    color: "#fff",
+    fontSize: 9,
+    fontWeight: "800",
+    lineHeight: 14,
   },
   titleOverlay: {
     position: "absolute",

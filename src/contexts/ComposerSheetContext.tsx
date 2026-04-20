@@ -36,6 +36,10 @@ const SCREEN_HEIGHT = Dimensions.get("window").height;
 /** Sensible default keyboard height per platform (used when no keyboard has been opened yet) */
 const DEFAULT_KEYBOARD_HEIGHT = Platform.select({ ios: 336, default: 280 });
 
+// Toggle for handoff diagnostics — set to true to trace the full
+// sheet→keyboard transition timeline in dev builds.
+const ENABLE_HANDOFF_DIAGNOSTICS = __DEV__ && false;
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export interface ComposerSheetContextValue {
@@ -248,21 +252,43 @@ export function ComposerSheetProvider({
         sheetVisible,
         Math.max(0, initialSnapHeight.value),
       );
-      handoffFloor.value = Math.max(0, clamped);
+      const capturedFloor = Math.max(0, clamped);
+      handoffFloor.value = capturedFloor;
       handoffPendingRef.current = false;
+
+      if (ENABLE_HANDOFF_DIAGNOSTICS) {
+        // eslint-disable-next-line no-console
+        console.log("[HandoffDiag] floor captured", {
+          sheetVisible,
+          initialSnapHeight: initialSnapHeight.value,
+          clamped,
+          capturedFloor,
+          sheetExtraPadding: sheetExtraPadding.value,
+          liveKeyboardHeight: liveKeyboardHeight.value,
+        });
+      }
     }
 
     activeCloseRef.current = null;
     isSheetActive.value = 0;
     sheetTranslateY.value = SCREEN_HEIGHT;
     initialSnapHeight.value = 0;
-    sheetExtraPadding.value = 0;
+    // NOTE: sheetExtraPadding is NOT reset here.  The animated reaction in
+    // ChatFooterWrapper is the sole owner of this shared value.  During a
+    // sheet→keyboard handoff the reaction's derived input (unifiedFooterOffset
+    // − kbH) stays constant (handoffFloor), so the value naturally persists
+    // at the correct height until the keyboard catches up.  A direct reset
+    // to 0 here would race with the animated reaction and win (because the
+    // reaction doesn't re-fire when its input hasn't changed), causing KCSV
+    // extraContentPadding to drop to 0 for multiple frames while the footer
+    // stays elevated — producing the visible "list teleport" during handoff.
   }, [
     isSheetActive,
     sheetTranslateY,
     initialSnapHeight,
-    sheetExtraPadding,
     handoffFloor,
+    sheetExtraPadding,
+    liveKeyboardHeight,
   ]);
 
   const dismissActiveSheet = useCallback(() => {
@@ -282,16 +308,43 @@ export function ComposerSheetProvider({
   const beginKeyboardHandoff = useCallback(() => {
     handoffPendingRef.current = true;
 
+    if (ENABLE_HANDOFF_DIAGNOSTICS) {
+      // eslint-disable-next-line no-console
+      console.log("[HandoffDiag] beginKeyboardHandoff", {
+        isSheetActive: isSheetActive.value,
+        sheetTranslateY: sheetTranslateY.value,
+        initialSnapHeight: initialSnapHeight.value,
+        liveKeyboardHeight: liveKeyboardHeight.value,
+        sheetExtraPadding: sheetExtraPadding.value,
+        handoffFloor: handoffFloor.value,
+        lastKeyboardHeight,
+      });
+    }
+
     // Safety: if the keyboard never opens (e.g. hardware keyboard, edge
     // case), smoothly decay the floor after 600 ms so the UI isn't stuck.
     if (handoffTimerRef.current) clearTimeout(handoffTimerRef.current);
     handoffTimerRef.current = setTimeout(() => {
       handoffTimerRef.current = null;
       if (handoffFloor.value > 0) {
+        if (ENABLE_HANDOFF_DIAGNOSTICS) {
+          // eslint-disable-next-line no-console
+          console.log("[HandoffDiag] safety timer clearing floor", {
+            floor: handoffFloor.value,
+          });
+        }
         handoffFloor.value = withTiming(0, { duration: 200 });
       }
     }, 600);
-  }, [handoffFloor]);
+  }, [
+    handoffFloor,
+    isSheetActive,
+    sheetTranslateY,
+    initialSnapHeight,
+    liveKeyboardHeight,
+    sheetExtraPadding,
+    lastKeyboardHeight,
+  ]);
 
   // ── Unified collapse path ───────────────────────────────────────────────
   // Single canonical function that tears down ALL transient chat overlay UI:

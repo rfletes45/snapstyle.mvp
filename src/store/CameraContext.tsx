@@ -1,8 +1,14 @@
 /**
  * CAMERA CONTEXT
- * Unified React Context for camera, editor, and snap sharing state.
- * Replaces the orphaned Redux slices (cameraSlice, editorSlice, snapSlice)
- * to match the project's React Context + Hooks architecture.
+ * Unified React Context for camera + editor state (chat-capture flow).
+ *
+ * NOTE (2026-04-20 stabilization pass):
+ *   The legacy snap/share ("SnapShareState") slice was removed along with the
+ *   stories feature.  The app's camera is now exclusively used as a chat
+ *   capture helper — there is no story share, no full-share recipient
+ *   selection, no upload state carried in context.  Removing that slice
+ *   substantially reduces global-state churn during camera startup, which
+ *   was one of the contributing factors to the TestFlight preview freeze.
  */
 
 import type {
@@ -15,7 +21,6 @@ import type {
   FlashMode,
   OverlayElement,
   RecordingState,
-  Snap,
   VideoQuality,
 } from "@/types/camera";
 import React, {
@@ -50,24 +55,9 @@ export interface EditorState {
   zoom: number;
 }
 
-export interface SnapShareState {
-  snaps: Snap[];
-  drafts: Record<string, Snap>;
-  currentShareSnap?: Snap;
-  selectedRecipients: string[];
-  shareToStory: boolean;
-  caption: string;
-  allowReplies: boolean;
-  allowReactions: boolean;
-  uploading: boolean;
-  uploadProgress: number;
-  error?: string;
-}
-
 interface CombinedState {
   camera: CameraState;
   editor: EditorState;
-  snap: SnapShareState;
 }
 
 // ============================================================================
@@ -108,22 +98,9 @@ const initialEditorState: EditorState = {
   zoom: 1,
 };
 
-const initialSnapState: SnapShareState = {
-  snaps: [],
-  drafts: {},
-  selectedRecipients: [],
-  shareToStory: false,
-  caption: "",
-  allowReplies: true,
-  allowReactions: true,
-  uploading: false,
-  uploadProgress: 0,
-};
-
 const initialState: CombinedState = {
   camera: initialCameraState,
   editor: initialEditorState,
-  snap: initialSnapState,
 };
 
 // ============================================================================
@@ -170,29 +147,7 @@ type CameraAction =
   | { type: "SET_EDITOR_ZOOM"; payload: number }
   | { type: "UNDO" }
   | { type: "REDO" }
-  | { type: "RESET_EDITOR" }
-  // Snap sharing
-  | { type: "SET_SHARE_SNAP"; payload: Snap }
-  | { type: "CLEAR_SHARE_SNAP" }
-  | { type: "ADD_RECIPIENT"; payload: string }
-  | { type: "REMOVE_RECIPIENT"; payload: string }
-  | { type: "CLEAR_RECIPIENTS" }
-  | { type: "SET_RECIPIENTS"; payload: string[] }
-  | { type: "SET_SHARE_TO_STORY"; payload: boolean }
-  | { type: "SET_CAPTION"; payload: string }
-  | { type: "SET_ALLOW_REPLIES"; payload: boolean }
-  | { type: "SET_ALLOW_REACTIONS"; payload: boolean }
-  | { type: "START_UPLOAD" }
-  | { type: "SET_UPLOAD_PROGRESS"; payload: number }
-  | { type: "UPLOAD_SUCCESS"; payload: Snap }
-  | { type: "UPLOAD_ERROR"; payload: string }
-  | { type: "SAVE_DRAFT"; payload: { draftId: string; snap: Snap } }
-  | { type: "LOAD_DRAFT"; payload: string }
-  | { type: "DELETE_DRAFT"; payload: string }
-  | { type: "ADD_SNAP"; payload: Snap }
-  | { type: "REMOVE_SNAP"; payload: string }
-  | { type: "UPDATE_SNAP"; payload: Snap }
-  | { type: "RESET_SNAP" };
+  | { type: "RESET_EDITOR" };
 
 // ============================================================================
 // REDUCER
@@ -296,10 +251,7 @@ function cameraReducer(
         ...state,
         camera: {
           ...state.camera,
-          recordingState: {
-            ...state.camera.recordingState,
-            isPaused: true,
-          },
+          recordingState: { ...state.camera.recordingState, isPaused: true },
         },
       };
     case "RESUME_RECORDING":
@@ -307,10 +259,7 @@ function cameraReducer(
         ...state,
         camera: {
           ...state.camera,
-          recordingState: {
-            ...state.camera.recordingState,
-            isPaused: false,
-          },
+          recordingState: { ...state.camera.recordingState, isPaused: false },
         },
       };
     case "SET_RECORDING_DURATION":
@@ -350,6 +299,10 @@ function cameraReducer(
         camera: { ...state.camera, isPermissionGranted: action.payload },
       };
     case "SET_CAMERA_READY":
+      // Short-circuit no-op dispatches so consumers don't re-render on
+      // idempotent ready/not-ready transitions (important during camera
+      // startup, when many effects can try to sync this flag).
+      if (state.camera.cameraReady === action.payload) return state;
       return {
         ...state,
         camera: { ...state.camera, cameraReady: action.payload },
@@ -366,10 +319,7 @@ function cameraReducer(
     case "SET_CURRENT_SNAP":
       return {
         ...state,
-        editor: {
-          ...initialEditorState,
-          currentSnap: action.payload,
-        },
+        editor: { ...initialEditorState, currentSnap: action.payload },
       };
     case "CLEAR_CURRENT_SNAP":
       return { ...state, editor: initialEditorState };
@@ -461,7 +411,6 @@ function cameraReducer(
         },
       };
     case "CLEAR_ALL_FILTERS": {
-      // Record a remove_filter action for each active filter so undo can restore them
       const clearFilterActions: EditorAction[] =
         state.editor.appliedFilters.map((f: AppliedFilter) => ({
           type: "remove_filter" as const,
@@ -491,7 +440,6 @@ function cameraReducer(
       const lastAction = undoStack.pop()!;
       const redoStack = [...state.editor.redoStack, lastAction];
 
-      // Replay remaining actions to reconstruct state
       const replayElements: OverlayElement[] = [];
       const replayFilters: AppliedFilter[] = [];
       for (const act of undoStack) {
@@ -576,169 +524,6 @@ function cameraReducer(
     case "RESET_EDITOR":
       return { ...state, editor: initialEditorState };
 
-    // ── Snap sharing ─────────────────────────────────────────────────────
-    case "SET_SHARE_SNAP":
-      return {
-        ...state,
-        snap: {
-          ...state.snap,
-          currentShareSnap: action.payload,
-          selectedRecipients: [],
-          shareToStory: false,
-          caption: "",
-        },
-      };
-    case "CLEAR_SHARE_SNAP":
-      return {
-        ...state,
-        snap: {
-          ...state.snap,
-          currentShareSnap: undefined,
-          selectedRecipients: [],
-          shareToStory: false,
-          caption: "",
-        },
-      };
-    case "ADD_RECIPIENT":
-      return {
-        ...state,
-        snap: {
-          ...state.snap,
-          selectedRecipients: state.snap.selectedRecipients.includes(
-            action.payload,
-          )
-            ? state.snap.selectedRecipients
-            : [...state.snap.selectedRecipients, action.payload],
-        },
-      };
-    case "REMOVE_RECIPIENT":
-      return {
-        ...state,
-        snap: {
-          ...state.snap,
-          selectedRecipients: state.snap.selectedRecipients.filter(
-            (id: string) => id !== action.payload,
-          ),
-        },
-      };
-    case "CLEAR_RECIPIENTS":
-      return {
-        ...state,
-        snap: { ...state.snap, selectedRecipients: [] },
-      };
-    case "SET_RECIPIENTS":
-      return {
-        ...state,
-        snap: { ...state.snap, selectedRecipients: action.payload },
-      };
-    case "SET_SHARE_TO_STORY":
-      return {
-        ...state,
-        snap: { ...state.snap, shareToStory: action.payload },
-      };
-    case "SET_CAPTION":
-      return {
-        ...state,
-        snap: { ...state.snap, caption: action.payload },
-      };
-    case "SET_ALLOW_REPLIES":
-      return {
-        ...state,
-        snap: { ...state.snap, allowReplies: action.payload },
-      };
-    case "SET_ALLOW_REACTIONS":
-      return {
-        ...state,
-        snap: { ...state.snap, allowReactions: action.payload },
-      };
-    case "START_UPLOAD":
-      return {
-        ...state,
-        snap: {
-          ...state.snap,
-          uploading: true,
-          uploadProgress: 0,
-          error: undefined,
-        },
-      };
-    case "SET_UPLOAD_PROGRESS":
-      return {
-        ...state,
-        snap: {
-          ...state.snap,
-          uploadProgress: Math.max(0, Math.min(100, action.payload)),
-        },
-      };
-    case "UPLOAD_SUCCESS":
-      return {
-        ...state,
-        snap: {
-          ...state.snap,
-          snaps: [action.payload, ...state.snap.snaps],
-          uploading: false,
-          uploadProgress: 100,
-        },
-      };
-    case "UPLOAD_ERROR":
-      return {
-        ...state,
-        snap: {
-          ...state.snap,
-          uploading: false,
-          error: action.payload,
-        },
-      };
-    case "SAVE_DRAFT":
-      return {
-        ...state,
-        snap: {
-          ...state.snap,
-          drafts: {
-            ...state.snap.drafts,
-            [action.payload.draftId]: action.payload.snap,
-          },
-        },
-      };
-    case "LOAD_DRAFT": {
-      const draft = state.snap.drafts[action.payload];
-      if (!draft) return state;
-      return {
-        ...state,
-        snap: { ...state.snap, currentShareSnap: draft },
-      };
-    }
-    case "DELETE_DRAFT": {
-      const { [action.payload]: _, ...remaining } = state.snap.drafts;
-      return {
-        ...state,
-        snap: { ...state.snap, drafts: remaining },
-      };
-    }
-    case "ADD_SNAP":
-      return {
-        ...state,
-        snap: {
-          ...state.snap,
-          snaps: [action.payload, ...state.snap.snaps],
-        },
-      };
-    case "REMOVE_SNAP":
-      return {
-        ...state,
-        snap: {
-          ...state.snap,
-          snaps: state.snap.snaps.filter((s: Snap) => s.id !== action.payload),
-        },
-      };
-    case "UPDATE_SNAP": {
-      const snaps = state.snap.snaps.map((s: Snap) =>
-        s.id === action.payload.id ? action.payload : s,
-      );
-      return { ...state, snap: { ...state.snap, snaps } };
-    }
-    case "RESET_SNAP":
-      return { ...state, snap: initialSnapState };
-
     default:
       return state;
   }
@@ -761,9 +546,7 @@ const CameraContext = createContext<CameraContextValue | undefined>(undefined);
 
 export function CameraProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(cameraReducer, initialState);
-
   const value = useMemo(() => ({ state, dispatch }), [state]);
-
   return (
     <CameraContext.Provider value={value}>{children}</CameraContext.Provider>
   );
@@ -773,9 +556,6 @@ export function CameraProvider({ children }: { children: React.ReactNode }) {
 // HOOKS
 // ============================================================================
 
-/**
- * Raw context access — throws if used outside CameraProvider.
- */
 export function useCameraContext(): CameraContextValue {
   const ctx = useContext(CameraContext);
   if (!ctx) {
@@ -784,9 +564,6 @@ export function useCameraContext(): CameraContextValue {
   return ctx;
 }
 
-/**
- * Camera settings & recording state
- */
 export function useCameraState() {
   const { state, dispatch } = useCameraContext();
   const camera = state.camera;
@@ -891,9 +668,6 @@ export function useCameraState() {
   };
 }
 
-/**
- * Editor state (overlays, filters, undo/redo)
- */
 export function useEditorState() {
   const { state, dispatch } = useCameraContext();
   const editor = state.editor;
@@ -969,93 +743,5 @@ export function useEditorState() {
     undo,
     redo,
     resetEditor,
-  };
-}
-
-/**
- * Snap sharing state (recipients, upload, drafts)
- */
-export function useSnapState() {
-  const { state, dispatch } = useCameraContext();
-  const snap = state.snap;
-
-  const setShareSnap = useCallback(
-    (s: Snap) => dispatch({ type: "SET_SHARE_SNAP", payload: s }),
-    [dispatch],
-  );
-  const clearShareSnap = useCallback(
-    () => dispatch({ type: "CLEAR_SHARE_SNAP" }),
-    [dispatch],
-  );
-  const addRecipient = useCallback(
-    (id: string) => dispatch({ type: "ADD_RECIPIENT", payload: id }),
-    [dispatch],
-  );
-  const removeRecipient = useCallback(
-    (id: string) => dispatch({ type: "REMOVE_RECIPIENT", payload: id }),
-    [dispatch],
-  );
-  const clearRecipients = useCallback(
-    () => dispatch({ type: "CLEAR_RECIPIENTS" }),
-    [dispatch],
-  );
-  const setRecipients = useCallback(
-    (ids: string[]) => dispatch({ type: "SET_RECIPIENTS", payload: ids }),
-    [dispatch],
-  );
-  const setShareToStory = useCallback(
-    (v: boolean) => dispatch({ type: "SET_SHARE_TO_STORY", payload: v }),
-    [dispatch],
-  );
-  const setCaption = useCallback(
-    (c: string) => dispatch({ type: "SET_CAPTION", payload: c }),
-    [dispatch],
-  );
-  const setAllowReplies = useCallback(
-    (v: boolean) => dispatch({ type: "SET_ALLOW_REPLIES", payload: v }),
-    [dispatch],
-  );
-  const setAllowReactions = useCallback(
-    (v: boolean) => dispatch({ type: "SET_ALLOW_REACTIONS", payload: v }),
-    [dispatch],
-  );
-  const startUpload = useCallback(
-    () => dispatch({ type: "START_UPLOAD" }),
-    [dispatch],
-  );
-  const setUploadProgress = useCallback(
-    (p: number) => dispatch({ type: "SET_UPLOAD_PROGRESS", payload: p }),
-    [dispatch],
-  );
-  const uploadSuccess = useCallback(
-    (s: Snap) => dispatch({ type: "UPLOAD_SUCCESS", payload: s }),
-    [dispatch],
-  );
-  const uploadError = useCallback(
-    (e: string) => dispatch({ type: "UPLOAD_ERROR", payload: e }),
-    [dispatch],
-  );
-  const resetSnap = useCallback(
-    () => dispatch({ type: "RESET_SNAP" }),
-    [dispatch],
-  );
-
-  return {
-    ...snap,
-    setShareSnap,
-    clearShareSnap,
-    addRecipient,
-    removeRecipient,
-    clearRecipients,
-    setRecipients,
-    setShareToStory,
-    setCaption,
-    setAllowReplies,
-    setAllowReactions,
-    startUpload,
-    setUploadProgress,
-    uploadSuccess,
-    uploadError,
-    resetSnap,
   };
 }

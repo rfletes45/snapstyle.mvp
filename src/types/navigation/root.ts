@@ -15,7 +15,7 @@ export type AuthStackParamList = {
 export type InboxStackParamList = {
   ChatList:
     | {
-        initialFilter?: "all" | "unread" | "groups" | "dms" | "requests";
+        initialFilter?: "all" | "unread" | "groups" | "dms" | "archived";
       }
     | undefined;
   ScheduledMessages: undefined;
@@ -46,6 +46,12 @@ export type AppTabsParamList = {
 
 export type MainStackParamList = {
   MainTabs: NavigatorScreenParams<AppTabsParamList> | undefined;
+  Friends:
+    | {
+        tab?: "all" | "requests";
+        openAddFriends?: boolean;
+      }
+    | undefined;
   ChatDetail:
     | {
         friendUid: string;
@@ -73,7 +79,6 @@ export type MainStackParamList = {
   InboxSettings: undefined;
   SnapViewer: OptionalRouteParams;
   Camera: OptionalRouteParams;
-  CameraShare: OptionalRouteParams;
   DirectCall: {
     callId: string;
     recipientName: string;
@@ -86,12 +91,6 @@ export type MainStackParamList = {
     groupId: string;
   };
   CallSettings: undefined;
-  Friends:
-    | {
-        tab?: "all" | "requests";
-        openAddFriends?: boolean;
-      }
-    | undefined;
   UserProfile: { userId: string };
   SetStatus: undefined;
   MutualFriendsList:

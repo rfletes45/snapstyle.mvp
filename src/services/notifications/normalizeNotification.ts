@@ -134,12 +134,9 @@ export function normalizeNotificationPayload(
         ({
           screen: "MainTabs",
           params: {
-            screen: "Messages",
+            screen: "Friends",
             params: {
-              screen: "ChatList",
-              params: {
-                initialFilter: "requests",
-              },
+              tab: "requests",
             },
           },
         } satisfies CanonicalNotificationRoute),
@@ -154,9 +151,12 @@ export function normalizeNotificationPayload(
       route:
         routeFromPayload ??
         ({
-          screen: "Friends",
+          screen: "MainTabs",
           params: {
-            tab: "requests",
+            screen: "Friends",
+            params: {
+              tab: "requests",
+            },
           },
         } satisfies CanonicalNotificationRoute),
     };

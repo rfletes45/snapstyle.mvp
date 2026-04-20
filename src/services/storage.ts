@@ -419,6 +419,28 @@ export async function uploadGroupBackgroundImage(
   }
 }
 
+export async function deleteGroupBackgroundImage(
+  groupId: string,
+): Promise<void> {
+  try {
+    const storagePath = `groups/${groupId}/background/picture.jpg`;
+    const storage = getStorage();
+    const storageRef = ref(storage, storagePath);
+    await deleteObject(storageRef);
+    logger.info(
+      `[deleteGroupBackgroundImage] Deleted group background: ${storagePath}`,
+    );
+  } catch (error: any) {
+    if (error.code !== "storage/object-not-found") {
+      logger.error(
+        "[deleteGroupBackgroundImage] Failed to delete group background:",
+        error,
+      );
+      throw error;
+    }
+  }
+}
+
 // =============================================================================
 // H10: Multi-Attachment Upload Support
 // =============================================================================

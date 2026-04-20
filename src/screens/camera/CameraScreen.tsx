@@ -38,17 +38,12 @@ import {
 } from "@/hooks/camera/useCameraHooks";
 import * as CameraService from "@/services/camera/cameraService";
 import { FILTER_LIBRARY } from "@/services/camera/filterService";
-import {
-  useCameraState,
-  useEditorState,
-  useSnapState,
-} from "@/store/CameraContext";
+import { useCameraState, useEditorState } from "@/store/CameraContext";
 import type {
   CapturedMedia,
   FilterConfig,
   OverlayElement,
   PollElement,
-  Snap,
   StickerElement,
   TextElement,
 } from "@/types/camera";
@@ -146,7 +141,7 @@ const logger = createLogger("screens/camera/CameraScreen");
 // TYPES & CONSTANTS
 // =============================================================================
 
-export type CameraMode = "full" | "chat";
+export type CameraMode = "chat";
 
 export interface CameraScreenParams {
   mode?: CameraMode;
@@ -398,14 +393,19 @@ const CameraScreen: React.FC = () => {
   const route = useRoute<any>();
 
   const params = (route.params || {}) as CameraScreenParams;
-  const mode: CameraMode = params.mode || "full";
 
   // -- Focus & app-state – camera must only be active when visible ------------
   const isFocused = useIsFocused();
-  const [appActive, setAppActive] = useState(true);
+  const [appActive, setAppActive] = useState(
+    () => AppState.currentState === "active",
+  );
   useEffect(() => {
     const sub = AppState.addEventListener("change", (status) => {
-      setAppActive(status === "active");
+      const nextActive = status === "active";
+      // Idempotent guard — avoid re-rendering consumers on no-op transitions
+      // (React 18+ bails out of identical setState anyway, but this keeps
+      // the camera startup window quiet).
+      setAppActive((prev) => (prev === nextActive ? prev : nextActive));
     });
     return () => sub.remove();
   }, []);
@@ -413,10 +413,8 @@ const CameraScreen: React.FC = () => {
   // -- Context state ----------------------------------------------------------
   const {
     setCameraFacing,
-    setCameraReady,
     setFlashMode,
     setZoom,
-    selectFilter,
     setExposure,
   } = useCameraState();
   const {
@@ -433,7 +431,6 @@ const CameraScreen: React.FC = () => {
     setCurrentSnap,
     setEditMode: setEditorEditMode,
   } = useEditorState();
-  const { setShareSnap } = useSnapState();
 
   // -- Permissions ------------------------------------------------------------
   const { isPermissionGranted, permissionError, requestPermissions } =
@@ -475,13 +472,15 @@ const CameraScreen: React.FC = () => {
   // the foreground, and we are NOT in editor mode (viewing a captured image).
   const isActive = isFocused && appActive && !isEditorMode;
 
-  // Reset camera-ready when the session becomes inactive so onInitialized
-  // fires again when the camera restarts.
-  useEffect(() => {
-    if (!isActive) {
-      setCameraReady(false);
-    }
-  }, [isActive, setCameraReady]);
+  // NOTE (2026-04-20 freeze fix): the previous implementation dispatched
+  // `setCameraReady(false)` via global context whenever `isActive` toggled
+  // off.  That caused a global re-render during camera startup, which in
+  // turn fed new props back into LiveFilterCamera and contributed to the
+  // TestFlight preview freeze.  We now rely solely on VisionCamera's
+  // `onInitialized` callback — which will re-fire whenever the native
+  // session restarts — to flip `cameraReady` back on.  The reducer short-
+  // circuits no-op SET_CAMERA_READY dispatches so a stale `true` value
+  // remaining after backgrounding is harmless.
 
   // Video recording timer display (seconds)
   const [recordingSeconds, setRecordingSeconds] = useState(0);
@@ -565,9 +564,12 @@ const CameraScreen: React.FC = () => {
     return f && f.id !== "none" ? f : null;
   }, [selectedFilterIndex]);
 
-  useEffect(() => {
-    selectFilter(activeFilter?.id);
-  }, [activeFilter, selectFilter]);
+  // NOTE (2026-04-20 freeze fix): we intentionally do NOT mirror
+  // `activeFilter` into CameraContext (`selectFilter(...)`) anymore.  That
+  // global dispatch re-rendered every consumer of the camera context on
+  // every filter tap, cascading new props into LiveFilterCamera.  The
+  // active filter is already passed directly into LiveFilterCamera via
+  // prop, so the mirror was pure duplicate state.
 
   // -- Haptic helpers ---------------------------------------------------------
   const triggerHaptic = useCallback(
@@ -1178,46 +1180,20 @@ const CameraScreen: React.FC = () => {
         }
       }
 
-      if (mode === "chat") {
-        const { returnRoute, returnData } = params;
-        if (returnRoute) {
-          navigation.goBack();
-          setTimeout(() => {
-            navigation.navigate(returnRoute, {
-              ...returnData,
-              capturedImageUri: finalUri,
-            });
-          }, 50);
-        } else {
-          navigation.goBack();
-        }
+      // Chat-return flow: hand the captured image back to the calling screen.
+      // Full-share ("CameraShare"/"ShareScreen") was removed with the stories
+      // deprecation \u2014 the camera is now exclusively a chat capture helper.
+      const { returnRoute, returnData } = params;
+      if (returnRoute) {
+        navigation.goBack();
+        setTimeout(() => {
+          navigation.navigate(returnRoute, {
+            ...returnData,
+            capturedImageUri: finalUri,
+          });
+        }, 50);
       } else {
-        // Build Snap for share screen
-        const createdSnap: Snap = {
-          id: generateUUID(),
-          senderId: "",
-          senderDisplayName: "",
-          mediaType: capturedMedia.type,
-          mediaUrl: finalUri,
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-          recipients: [],
-          storyVisible: false,
-          caption: "",
-          filters: appliedFilters,
-          overlayElements,
-          viewedBy: [],
-          reactions: [],
-          replies: [],
-          allowReplies: true,
-          allowReactions: true,
-          viewOnceOnly: false,
-          screenshotNotification: true,
-          uploadStatus: "pending",
-          uploadProgress: 0,
-        };
-        setShareSnap(createdSnap);
-        navigation.navigate("CameraShare");
+        navigation.goBack();
       }
     } finally {
       setIsExporting(false);
@@ -1225,11 +1201,7 @@ const CameraScreen: React.FC = () => {
   }, [
     capturedMedia,
     isExporting,
-    mode,
     params,
-    appliedFilters,
-    overlayElements,
-    setShareSnap,
     navigation,
   ]);
 
@@ -1954,11 +1926,9 @@ const CameraScreen: React.FC = () => {
               <ActivityIndicator color="#fff" size="small" />
             ) : (
               <>
-                <Text style={styles.doneBtnText}>
-                  {mode === "chat" ? "Send" : "Next"}
-                </Text>
+                <Text style={styles.doneBtnText}>Send</Text>
                 <Ionicons
-                  name={mode === "chat" ? "send" : "arrow-forward"}
+                  name="send"
                   size={18}
                   color="#fff"
                   style={{ marginLeft: 6 }}

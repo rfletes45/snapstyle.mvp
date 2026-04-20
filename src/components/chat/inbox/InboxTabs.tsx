@@ -6,7 +6,6 @@
  * - Unread: Conversations with unread messages (with badge)
  * - Groups: Group conversations only
  * - DMs: Direct messages only
- * - Requests: Friend requests (with badge)
  *
  * Unified background color matching the Messages screen for visual cohesion.
  * Clean pill-style tabs with subtle active state.
@@ -40,8 +39,6 @@ export interface InboxTabsProps {
   onTabChange: (tab: InboxFilter) => void;
   /** Total unread count for badge */
   unreadCount: number;
-  /** Friend requests count for badge */
-  requestsCount: number;
 }
 
 // =============================================================================
@@ -52,7 +49,6 @@ export const InboxTabs = memo(function InboxTabs({
   activeTab,
   onTabChange,
   unreadCount,
-  requestsCount,
 }: InboxTabsProps) {
   const { colors, isDark } = useAppTheme();
   const inactiveTabBg = isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.05)";
@@ -76,11 +72,6 @@ export const InboxTabs = memo(function InboxTabs({
     },
     { key: "groups", label: "Groups" },
     { key: "dms", label: "DMs" },
-    {
-      key: "requests",
-      label: "Requests",
-      badge: requestsCount > 0 ? requestsCount : undefined,
-    },
     { key: "archived", label: "Archived" },
   ];
 

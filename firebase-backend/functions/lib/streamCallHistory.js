@@ -55,19 +55,23 @@ exports.streamCallWebhook = functions.https.onRequest(async (req, res) => {
     }
     const apiSecret = process.env.STREAM_API_SECRET;
     const signature = req.headers["x-signature"];
-    if (apiSecret && signature) {
-        const expectedSignature = crypto
-            .createHmac("sha256", apiSecret)
-            .update(req.rawBody)
-            .digest("hex");
-        if (signature !== expectedSignature) {
-            functions.logger.warn("Stream webhook: invalid X-Signature");
-            res.status(401).send("Unauthorized");
-            return;
-        }
+    if (!apiSecret) {
+        functions.logger.error("Stream webhook: STREAM_API_SECRET not configured — rejecting request. " +
+            "Set it in firebase-backend/functions/.env");
+        res.status(500).send("Server misconfiguration");
+        return;
     }
-    else if (apiSecret && !signature) {
+    if (!signature) {
         functions.logger.warn("Stream webhook: missing X-Signature header");
+        res.status(401).send("Unauthorized");
+        return;
+    }
+    const expectedSignature = crypto
+        .createHmac("sha256", apiSecret)
+        .update(req.rawBody)
+        .digest("hex");
+    if (signature !== expectedSignature) {
+        functions.logger.warn("Stream webhook: invalid X-Signature");
         res.status(401).send("Unauthorized");
         return;
     }
@@ -258,8 +262,7 @@ function writeMissedEntries(batch, call, event) {
     const startedAt = toMillis(call.created_at, undefined);
     const endedAt = toMillis(event.created_at, undefined);
     const createdAt = endedAt ?? Date.now();
-    const caller = getDirectParticipants(call).find((member) => member.user_id === createdBy) ??
-        normalizeUser(call.created_by);
+    const caller = getDirectParticipants(call).find((member) => member.user_id === createdBy) ?? normalizeUser(call.created_by);
     const missedMembers = Array.isArray(event.members)
         ? event.members.map(normalizeUser)
         : [];
@@ -311,8 +314,8 @@ function writeHistoryEntry(batch, entry) {
     batch.set(docRef, entry, { merge: true });
 }
 function isVoiceRoomCall(call) {
-    return (typeof call?.id === "string" &&
-        call.id.startsWith("voice_channel_")) || Boolean(call?.custom?.groupId || call?.custom?.groupName);
+    return ((typeof call?.id === "string" && call.id.startsWith("voice_channel_")) ||
+        Boolean(call?.custom?.groupId || call?.custom?.groupName));
 }
 function getDirectParticipants(call) {
     const fromMembers = Array.isArray(call?.members)

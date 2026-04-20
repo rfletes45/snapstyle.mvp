@@ -34,6 +34,15 @@ import {
 import { useGroupPermissions } from "@/hooks/useGroupPermissions";
 import { useVoiceRoomOccupancy } from "@/hooks/useVoiceRoomOccupancy";
 import { GroupPermission } from "@/permissions/groupPermissions";
+import {
+  commitGroupBackgroundState,
+  setSessionGroupBackgroundState,
+} from "@/services/chat/groupBackgroundState";
+import {
+  describeRemoteUrlForLog,
+  traceGroupWallpaper,
+} from "@/services/chat/groupWallpaperDebug";
+import { clearCachedBackgroundRef } from "@/services/chat/threadIdentityWarmup";
 import { getFriends, getUserProfileByUid } from "@/services/friends";
 import {
   changeMemberRole,
@@ -541,12 +550,39 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
         logger.debug("[GroupInfo] Uploading group background", { groupId });
 
         const imageUri = result.assets[0].uri;
+        const previousBackgroundUrl = group?.backgroundUrl ?? null;
         const downloadUrl = await uploadGroupBackgroundImage(groupId, imageUri);
 
         logger.debug("[GroupInfo] Background upload complete, updating doc", {
           groupId,
         });
         await updateGroupBackground(groupId, uid!, downloadUrl);
+        if (previousBackgroundUrl && previousBackgroundUrl !== downloadUrl) {
+          clearCachedBackgroundRef(previousBackgroundUrl);
+        }
+        if (__DEV__) {
+          traceGroupWallpaper(groupId, "group-chat-info-background-uploaded", {
+            previousBackgroundKey: describeRemoteUrlForLog(
+              previousBackgroundUrl,
+            ).key,
+            nextBackgroundKey: describeRemoteUrlForLog(downloadUrl).key,
+          });
+        }
+        commitGroupBackgroundState({
+          uid,
+          groupId,
+          backgroundUrl: downloadUrl,
+          source: "group-chat-info-background-updated",
+          authority: "authoritative",
+        });
+        setGroup((current) =>
+          current
+            ? {
+                ...current,
+                backgroundUrl: downloadUrl,
+              }
+            : current,
+        );
 
         showSuccess("Chat background updated");
       } catch (err: any) {
@@ -563,7 +599,7 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
         actionLockRef.current = false;
       }
     },
-    [uid, groupId, showSuccess, showErrorWithRetry],
+    [uid, group?.backgroundUrl, groupId, showSuccess, showErrorWithRetry],
   );
 
   /** Change group background — permission-gated, popup to choose camera or library */
@@ -610,12 +646,84 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
         text: "Remove Background",
         style: "destructive",
         onPress: async () => {
+          const previousBackgroundUrl = group.backgroundUrl ?? null;
           try {
             actionLockRef.current = true;
             setUploadingBackground(true);
+            if (__DEV__) {
+              traceGroupWallpaper(
+                groupId,
+                "group-chat-info-background-remove-optimistic",
+                {
+                  previousBackgroundKey: describeRemoteUrlForLog(
+                    previousBackgroundUrl,
+                  ).key,
+                },
+              );
+            }
+            setSessionGroupBackgroundState({
+              groupId,
+              backgroundUrl: null,
+              source: "group-chat-info-background-remove-optimistic",
+              authority: "optimistic-delete",
+            });
+            if (previousBackgroundUrl) {
+              clearCachedBackgroundRef(previousBackgroundUrl);
+            }
+            setGroup((current) =>
+              current
+                ? {
+                    ...current,
+                    backgroundUrl: null,
+                  }
+                : current,
+            );
             await removeGroupBackground(groupId, uid!);
+            commitGroupBackgroundState({
+              uid,
+              groupId,
+              backgroundUrl: null,
+              source: "group-chat-info-background-removed",
+              authority: "authoritative",
+            });
+            if (__DEV__) {
+              traceGroupWallpaper(
+                groupId,
+                "group-chat-info-background-remove-commit",
+                {
+                  previousBackgroundKey: describeRemoteUrlForLog(
+                    previousBackgroundUrl,
+                  ).key,
+                },
+              );
+            }
             showSuccess("Chat background removed");
           } catch (err: any) {
+            setSessionGroupBackgroundState({
+              groupId,
+              backgroundUrl: previousBackgroundUrl,
+              source: "group-chat-info-background-remove-rollback",
+              authority: "authoritative",
+            });
+            if (__DEV__) {
+              traceGroupWallpaper(
+                groupId,
+                "group-chat-info-background-remove-rollback",
+                {
+                  restoredBackgroundKey: describeRemoteUrlForLog(
+                    previousBackgroundUrl,
+                  ).key,
+                },
+              );
+            }
+            setGroup((current) =>
+              current
+                ? {
+                    ...current,
+                    backgroundUrl: previousBackgroundUrl,
+                  }
+                : current,
+            );
             showError(err.message || "Failed to remove background");
           } finally {
             setUploadingBackground(false);
@@ -1502,7 +1610,8 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
                       ]}
                     >
                       {voiceRoom.error
-                        ? voiceRoom.errorMessage || "Live room status unavailable right now"
+                        ? voiceRoom.errorMessage ||
+                          "Live room status unavailable right now"
                         : "No one is in the voice room right now"}
                     </Text>
                     <TouchableOpacity

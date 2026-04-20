@@ -1,13 +1,14 @@
 /**
  * Group Cleanup Cloud Function
  *
- * Firestore trigger that fires when a Groups/{groupId} document is deleted.
+ * Firestore triggers for group cleanup.
  * Performs cascading cleanup of:
  *   - Members subcollection
  *   - MembersPrivate subcollection
  *   - Messages subcollection
  *   - AuditLog subcollection
  *   - Firebase Storage files (avatars, message media, voice messages)
+ *   - Group background Storage files when backgroundUrl is removed
  *   - Per-user inbox entries referencing this group
  *
  * Safety:
@@ -123,7 +124,40 @@ async function cleanupMemberInboxEntries(
   return cleaned;
 }
 
-// ─── Main trigger ───────────────────────────────────────────────────────────
+// ─── Main triggers ──────────────────────────────────────────────────────────
+
+export const onGroupBackgroundRemoved = functions.firestore
+  .document("Groups/{groupId}")
+  .onUpdate(async (change, context) => {
+    const { groupId } = context.params;
+    const beforeBackgroundUrl = change.before.data()?.backgroundUrl ?? null;
+    const afterBackgroundUrl = change.after.data()?.backgroundUrl ?? null;
+
+    if (!beforeBackgroundUrl || afterBackgroundUrl !== null) {
+      return;
+    }
+
+    try {
+      const deletedCount = await deleteStoragePrefix(
+        `groups/${groupId}/background/`,
+      );
+      functions.logger.info(
+        `[groupCleanup] Removed group background storage after background clear`,
+        {
+          groupId,
+          deletedCount,
+        },
+      );
+    } catch (err: any) {
+      functions.logger.error(
+        `[groupCleanup] Failed to remove group background storage after background clear`,
+        {
+          groupId,
+          error: err.message,
+        },
+      );
+    }
+  });
 
 export const onGroupDeleted = functions.firestore
   .document("Groups/{groupId}")

@@ -144,6 +144,12 @@ import {
 } from "@/chat/sendDraft";
 import { playAnimalSound } from "@/services/chat/animalSoundService";
 import {
+  commitGroupBackgroundState,
+  getGroupBackgroundStateSnapshot,
+  resolveGroupBackgroundUrl,
+  subscribeToGroupBackgroundState,
+} from "@/services/chat/groupBackgroundState";
+import {
   describeRemoteUrlForLog,
   getPreparedGroupChatData,
   rememberPreparedGroupChatData,
@@ -152,6 +158,7 @@ import {
 import { safeSystemText } from "@/services/chat/normalizeMessage";
 import {
   cachePreparedGroupMembers,
+  clearCachedBackgroundRef,
   getCachedBackgroundRef,
   getPreparedGroupMembers,
   prepareGroupThreadEntry,
@@ -288,6 +295,11 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     [groupId],
   );
   const seededGroupIdentity = useMemo(() => {
+    const hasInitialBackground =
+      !!initialGroupData &&
+      Object.prototype.hasOwnProperty.call(initialGroupData, "backgroundUrl");
+    const initialBackgroundTrusted =
+      initialGroupData?.backgroundTrusted === true;
     const name =
       initialGroupData?.name ||
       preparedGroupData?.name ||
@@ -297,10 +309,18 @@ export default function GroupChatScreen({ route, navigation }: Props) {
       normalizeRemoteImageUrl(
         initialGroupData?.avatarUrl ?? preparedGroupData?.avatarUrl,
       ) ?? null;
-    const backgroundUrl =
-      normalizeRemoteImageUrl(
-        initialGroupData?.backgroundUrl ?? preparedGroupData?.backgroundUrl,
-      ) ?? null;
+    const backgroundUrl = resolveGroupBackgroundUrl(
+      groupId,
+      hasInitialBackground ? initialGroupData?.backgroundUrl : null,
+      {
+        source: initialBackgroundTrusted
+          ? "group-chat-screen-initial-background"
+          : "group-chat-screen-initial-helper-background",
+        candidateAuthority: initialBackgroundTrusted
+          ? "authoritative"
+          : "helper",
+      },
+    );
 
     if (!name && !avatarUrl && !backgroundUrl) return null;
 
@@ -310,12 +330,13 @@ export default function GroupChatScreen({ route, navigation }: Props) {
       backgroundUrl,
     };
   }, [
+    groupId,
     initialGroupData?.avatarUrl,
     initialGroupData?.backgroundUrl,
+    initialGroupData?.backgroundTrusted,
     initialGroupData?.name,
     initialGroupName,
     preparedGroupData?.avatarUrl,
-    preparedGroupData?.backgroundUrl,
     preparedGroupData?.name,
   ]);
 
@@ -487,6 +508,9 @@ export default function GroupChatScreen({ route, navigation }: Props) {
 
   // Show/hide other members' custom chat styles (viewer preference)
   const [showMemberChatStyles, setShowMemberChatStyles] = useState(true);
+  const latestGroupBackgroundRef = useRef<string | null>(
+    seededGroupIdentity?.backgroundUrl ?? null,
+  );
 
   useEffect(() => {
     rememberPreparedGroupChatData(
@@ -507,6 +531,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
 
     if (__DEV__) {
       traceGroupWallpaper(groupId, "group-chat-screen-seed", {
+        initialBackgroundTrusted: initialGroupData?.backgroundTrusted === true,
         routeBackgroundKey: describeRemoteUrlForLog(
           initialGroupData?.backgroundUrl,
         ).key,
@@ -521,6 +546,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   }, [
     groupId,
     initialGroupData?.backgroundUrl,
+    initialGroupData?.backgroundTrusted,
     preparedGroupData?.backgroundUrl,
     seededGroupIdentity?.avatarUrl,
     seededGroupIdentity?.backgroundUrl,
@@ -646,10 +672,27 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   // stale seed, keeping a removed background visible.
   const resolvedGroupBackgroundUrl = useMemo(
     () =>
-      normalizeRemoteImageUrl(
+      resolveGroupBackgroundUrl(
+        groupId,
         group ? group.backgroundUrl : seededGroupIdentity?.backgroundUrl,
-      ) ?? null,
-    [group, group?.backgroundUrl, seededGroupIdentity?.backgroundUrl],
+        {
+          source: groupLoading
+            ? "group-chat-screen-seeded-background"
+            : "group-chat-screen-live-background",
+          candidateAuthority:
+            !groupLoading || initialGroupData?.backgroundTrusted === true
+              ? "authoritative"
+              : "helper",
+        },
+      ),
+    [
+      group,
+      group?.backgroundUrl,
+      groupId,
+      groupLoading,
+      initialGroupData?.backgroundTrusted,
+      seededGroupIdentity?.backgroundUrl,
+    ],
   );
   const groupBackgroundUrls = useMemo(() => {
     return resolvedGroupBackgroundUrl
@@ -967,6 +1010,36 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   // ==========================================================================
 
   useEffect(() => {
+    if (!groupId) return;
+
+    return subscribeToGroupBackgroundState((update) => {
+      if (update.groupId !== groupId) return;
+      if (__DEV__) {
+        traceGroupWallpaper(
+          groupId,
+          "group-chat-screen-background-state-update",
+          {
+            source: update.source,
+            authority: update.authority,
+            backgroundKey: describeRemoteUrlForLog(update.backgroundUrl).key,
+          },
+        );
+      }
+      latestGroupBackgroundRef.current = update.backgroundUrl;
+      setGroup((current) => {
+        if (!current) return current;
+        if ((current.backgroundUrl ?? null) === update.backgroundUrl) {
+          return current;
+        }
+        return {
+          ...current,
+          backgroundUrl: update.backgroundUrl,
+        } as Group;
+      });
+    });
+  }, [groupId]);
+
+  useEffect(() => {
     if (!groupId || !uid) return;
 
     let cancelled = false;
@@ -991,6 +1064,31 @@ export default function GroupChatScreen({ route, navigation }: Props) {
             return;
           }
 
+          const nextBackgroundUrl =
+            normalizeRemoteImageUrl(groupData.backgroundUrl) ?? null;
+          const previousBackgroundUrl = latestGroupBackgroundRef.current;
+          const trustedBackgroundState =
+            getGroupBackgroundStateSnapshot(groupId);
+
+          latestGroupBackgroundRef.current = nextBackgroundUrl;
+
+          if (
+            !trustedBackgroundState ||
+            trustedBackgroundState.backgroundUrl !== nextBackgroundUrl ||
+            trustedBackgroundState.authority !== "authoritative"
+          ) {
+            commitGroupBackgroundState({
+              uid,
+              groupId,
+              backgroundUrl: nextBackgroundUrl,
+              source: "group-chat-screen-subscription",
+              authority: "authoritative",
+            });
+            if (!nextBackgroundUrl && previousBackgroundUrl) {
+              clearCachedBackgroundRef(previousBackgroundUrl);
+            }
+          }
+
           rememberPreparedGroupChatData(
             groupId,
             {
@@ -1013,6 +1111,9 @@ export default function GroupChatScreen({ route, navigation }: Props) {
                   nextBackgroundKey: describeRemoteUrlForLog(
                     groupData.backgroundUrl,
                   ).key,
+                  authoritativeBackgroundState: nextBackgroundUrl
+                    ? "non-null"
+                    : "null",
                 },
               );
             }

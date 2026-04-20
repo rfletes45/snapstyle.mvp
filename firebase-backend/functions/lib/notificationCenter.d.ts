@@ -40,6 +40,12 @@ export interface NotificationRequest {
      * notification even if a stale device entry exists under the recipient.
      */
     excludeTokens?: string[];
+    /**
+     * Device IDs to exclude from both in-app and push delivery.  Use this
+     * when you know the sender's device identifier (preferred over
+     * excludeTokens because it works even if the token value drifts).
+     */
+    excludeDeviceIds?: string[];
 }
 export interface NotificationDispatchResult {
     channel: "in_app" | "push" | "none";

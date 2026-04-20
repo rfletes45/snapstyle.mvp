@@ -695,6 +695,16 @@ async function step_deleteAnalytics(uid) {
         .where("userId", "==", uid);
     await deleteQueryBatched(qCallQuality, "CallQualityReports");
 }
+async function step_deleteSuggestionDismissals(uid) {
+    // Delete the deleted user's own dismissals subcollection
+    const ownerRef = db.collection("SuggestionDismissals").doc(uid);
+    await deleteSubcollection(ownerRef, "dismissed");
+    const ownerSnap = await ownerRef.get();
+    if (ownerSnap.exists) {
+        await ownerRef.delete();
+        functions.logger.info(`[deleteAccount] Deleted SuggestionDismissals/${uid}`);
+    }
+}
 async function step_cleanupGroupChatsLegacy(uid) {
     // Legacy GroupChats collection
     for (const field of ["memberIds", "members", "adminIds"]) {
@@ -941,6 +951,10 @@ exports.deleteAccountFunction = functions
         {
             name: "deleteAnalytics",
             fn: () => step_deleteAnalytics(uid),
+        },
+        {
+            name: "deleteSuggestionDismissals",
+            fn: () => step_deleteSuggestionDismissals(uid),
         },
         {
             name: "deleteStorage",

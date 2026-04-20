@@ -20,6 +20,11 @@ import {
   normalizeFanoutGroupConversation,
 } from "@/services/chat/fanoutInboxNormalization";
 import {
+  applyGroupBackgroundStateToConversation,
+  setSessionGroupBackgroundState,
+  subscribeToGroupBackgroundState,
+} from "@/services/chat/groupBackgroundState";
+import {
   applyOptimisticInboxUpdate,
   subscribeToOptimisticInboxUpdates,
   type OptimisticInboxUpdate,
@@ -113,13 +118,7 @@ async function saveInboxCache(
 // =============================================================================
 
 /** Filter options for inbox */
-export type InboxFilter =
-  | "all"
-  | "unread"
-  | "groups"
-  | "dms"
-  | "requests"
-  | "archived";
+export type InboxFilter = "all" | "unread" | "groups" | "dms" | "archived";
 
 /** Sort options for inbox */
 export type InboxSort = "recent" | "unread" | "alphabetical";
@@ -617,6 +616,18 @@ export function useInboxData(uid: string): UseInboxDataResult {
     });
   }, [pruneOptimisticActivity, uid, useAggregatedInbox]);
 
+  useEffect(() => {
+    if (useAggregatedInbox || !uid) return;
+
+    return subscribeToGroupBackgroundState((update) => {
+      const applyUpdate = (conversation: InboxConversation) =>
+        applyGroupBackgroundStateToConversation(conversation, update);
+
+      groupStagedRef.current = groupStagedRef.current.map(applyUpdate);
+      setGroupConversations((prev) => prev.map(applyUpdate));
+    });
+  }, [uid, useAggregatedInbox]);
+
   // =============================================================================
   // DM Subscription (OPTIMIZED - Parallel fetching)
   // =============================================================================
@@ -929,6 +940,12 @@ export function useInboxData(uid: string): UseInboxDataResult {
 
             const lastMessageAt = toMillis(groupData.lastMessageAt);
             const recentlyReadAt = recentlyReadRef.current.get(groupId);
+            setSessionGroupBackgroundState({
+              groupId,
+              backgroundUrl: groupData.backgroundUrl ?? null,
+              source: "use-inbox-data-group-snapshot",
+              authority: "authoritative",
+            });
             conversations.push(
               normalizeFanoutGroupConversation({
                 groupId,

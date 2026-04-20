@@ -6,12 +6,46 @@
  * center so foreground in-app delivery and background push delivery remain
  * mutually exclusive.
  */
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.notifyInviteCreated = notifyInviteCreated;
 exports.notifyTurn = notifyTurn;
 exports.notifyResolved = notifyResolved;
 exports.notifyPlayerJoinedLobby = notifyPlayerJoinedLobby;
 exports.notifyAchievementUnlocked = notifyAchievementUnlocked;
+const functions = __importStar(require("firebase-functions"));
 const notificationCenter_1 = require("../notificationCenter");
 const GAME_DISPLAY_NAMES = {
     bounce_blitz: "Bounce Blitz",
@@ -45,9 +79,16 @@ function gameName(gameId) {
     return GAME_DISPLAY_NAMES[gameId] || gameId;
 }
 async function notifyInviteCreated(invite, senderDisplayName, recipientUids) {
-    await Promise.all(recipientUids
-        .filter((uid) => uid !== invite.createdBy)
-        .map((uid) => (0, notificationCenter_1.notifyUser)({
+    const targets = recipientUids.filter((uid) => uid !== invite.createdBy);
+    functions.logger.info("[gamesV4:notify] notifyInviteCreated", {
+        inviteId: invite.inviteId,
+        gameId: invite.gameId,
+        scope: invite.conversationScope,
+        conversationId: invite.conversationId,
+        sender: invite.createdBy,
+        recipientCount: targets.length,
+    });
+    const results = await Promise.allSettled(targets.map((uid) => (0, notificationCenter_1.notifyUser)({
         recipientUid: uid,
         type: "game_invite",
         category: "games",
@@ -74,6 +115,22 @@ async function notifyInviteCreated(invite, senderDisplayName, recipientUids) {
         },
         respectConversationMute: true,
     })));
+    const failed = results.filter((r) => r.status === "rejected");
+    if (failed.length > 0) {
+        functions.logger.warn("[gamesV4:notify] Some invite notifications failed", {
+            inviteId: invite.inviteId,
+            total: targets.length,
+            failed: failed.length,
+            errors: failed.map((r) => r.status === "rejected" ? String(r.reason) : ""),
+        });
+    }
+    else {
+        functions.logger.info("[gamesV4:notify] All invite notifications dispatched", {
+            inviteId: invite.inviteId,
+            total: targets.length,
+            channels: results.map((r) => r.status === "fulfilled" ? r.value.channel : "error"),
+        });
+    }
 }
 async function notifyTurn(session, turnPlayerUid, lastActorName, versionToken) {
     if (!turnPlayerUid || session.runtimeType !== "turnBased") {
@@ -148,6 +205,7 @@ async function notifyResolved(result, conversationScope, resolverUid) {
             sessionId: result.sessionId,
             inviteId: result.inviteId,
             conversationId: result.conversationId,
+            conversationScope,
             gameId: result.gameId,
             resolutionType: result.resolutionType,
         },
@@ -157,6 +215,10 @@ async function notifyResolved(result, conversationScope, resolverUid) {
 async function notifyPlayerJoinedLobby(invite, joinerDisplayName) {
     if (!invite.hostId)
         return;
+    // Resolve the joiner's uid from the invite's participant list — the joiner
+    // is the most-recently-added participant who isn't the host.
+    const joinerUid = [...invite.participantIds].reverse().find((p) => p !== invite.hostId) ??
+        null;
     await (0, notificationCenter_1.notifyUser)({
         recipientUid: invite.hostId,
         type: "game_lobby_ready",
@@ -166,6 +228,7 @@ async function notifyPlayerJoinedLobby(invite, joinerDisplayName) {
         title: `${joinerDisplayName} joined your lobby`,
         subtitle: gameName(invite.gameId),
         body: "Your game is ready to start!",
+        actorUid: joinerUid,
         actorName: joinerDisplayName,
         conversationId: invite.conversationId,
         conversationScope: invite.conversationScope,

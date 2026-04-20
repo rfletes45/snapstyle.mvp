@@ -1,20 +1,24 @@
 /**
- * Contacts Matching Cloud Function
+ * Contacts Cloud Functions
  *
- * Accepts normalized contact identifiers (phones/emails) and returns
- * categorized match results. Privacy-conscious:
- * - Requires authentication
- * - Respects user discoverability settings
- * - Rate-limited
- * - Never returns raw contact data to other users
+ * Privacy-conscious contact sync & recommendation pipeline:
+ * - syncContacts: Upload normalized identifiers, match against app users,
+ *   store hashed identifiers, record reciprocal relationships.
+ * - getContactRecommendations: Ranked recommendations with explanation tags.
+ * - removeSyncedContacts: Delete all synced contact data for a user.
+ * - updateContactDiscoverySettings: Privacy toggle persistence.
+ * - matchContacts: Legacy callable for quick client-side matching.
+ *
+ * Data model:
+ *   Users/{uid}.contactDiscovery        — settings & sync metadata
+ *   Users/{uid}/syncedContactHashes/{h} — hashed contact identifiers
+ *   Users/{uid}/contactedBy/{otherUid}  — reverse index (who has me)
  *
  * @module functions/contacts
  */
 import * as functions from "firebase-functions";
-/**
- * matchContacts — Callable function for contact-based friend discovery.
- *
- * Input: { phones: string[], emails: string[] }
- * Output: { onAppUsers, alreadyFriendUids, pendingSentUids, pendingReceivedUids }
- */
+export declare const syncContacts: functions.HttpsFunction & functions.Runnable<any>;
+export declare const getContactRecommendations: functions.HttpsFunction & functions.Runnable<any>;
+export declare const removeSyncedContacts: functions.HttpsFunction & functions.Runnable<any>;
+export declare const updateContactDiscoverySettings: functions.HttpsFunction & functions.Runnable<any>;
 export declare const matchContacts: functions.HttpsFunction & functions.Runnable<any>;

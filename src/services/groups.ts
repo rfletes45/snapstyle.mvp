@@ -1452,6 +1452,8 @@ export async function updateGroupBackground(
 /**
  * Remove group chat background image (sets to null).
  * Reuses EDIT_GROUP_PHOTO permission (owner/admin).
+ * Storage cleanup is handled server-side by a Firestore trigger so the
+ * client does not need direct delete permissions on the Storage object.
  */
 export async function removeGroupBackground(
   groupId: string,

@@ -3,11 +3,10 @@
  *
  * Snapchat-inspired Messages screen with:
  * - MessagesHeader with avatar, search, games, settings
- * - InboxTabs for filtering (All/Unread/Groups/DMs/Requests)
+ * - InboxTabs for filtering (All/Unread/Groups/DMs/Archived)
  * - Pinned conversations section
  * - Swipeable conversation items
  * - Long-press context menu
- * - Friend requests in Requests tab
  * - FAB with multiple actions
  */
 
@@ -15,10 +14,13 @@ import {
   useConversationActions,
   type MuteDuration,
 } from "@/hooks/useConversationActions";
-import type { FriendRequestWithUser } from "@/hooks/useFriendRequests";
 import { useInboxData } from "@/hooks/useInboxData";
 import { useInboxTyping } from "@/hooks/useInboxTyping";
-import { useUnifiedInboxRequests } from "@/hooks/useUnifiedInboxRequests";
+import { usePendingFriendRequestCount } from "@/hooks/usePendingFriendRequestCount";
+import {
+  getGroupBackgroundStateSnapshot,
+  resolveGroupBackgroundUrl,
+} from "@/services/chat/groupBackgroundState";
 import {
   describeRemoteUrlForLog,
   getPreparedGroupChatData,
@@ -31,12 +33,10 @@ import {
 } from "@/services/chat/threadIdentityWarmup";
 import { setArchived } from "@/services/chatMembers";
 import { setGroupArchived } from "@/services/groupMembers";
-import { markNotificationsReadByTypes } from "@/services/userNotifications";
 import { useAuth } from "@/store/AuthContext";
 import { useInAppNotifications } from "@/store/InAppNotificationsContext";
 import { useAppTheme } from "@/store/ThemeContext";
 import type { InboxConversation } from "@/types/messaging";
-import type { GroupInvite } from "@/types/models";
 import {
   prefetchImages,
   usePrefetchProfileImages,
@@ -51,7 +51,6 @@ import {
 } from "@react-navigation/native";
 import React, { useCallback, useMemo, useRef, useState } from "react";
 import { FlatList, StyleSheet, View } from "react-native";
-import { Button, Text } from "react-native-paper";
 
 // Components
 import {
@@ -59,8 +58,6 @@ import {
   ConversationItem,
   DeleteConfirmDialog,
   EmptyState,
-  FriendRequestItem,
-  GroupInviteItem,
   InboxFAB,
   InboxHeader,
   InboxTabs,
@@ -74,10 +71,6 @@ import { ContactsEnablementBanner } from "@/components/ui/ContactsEnablementBann
 import { CONTACTS_DISCOVERY_ENABLED } from "@/constants/featureFlags";
 import { useContactsDiscovery } from "@/hooks/useContactsDiscovery";
 import { useContactsPermission } from "@/hooks/useContactsPermission";
-import {
-  getUnifiedRequestsCount,
-  isRequestsTabEmpty,
-} from "./requestsTabUtils";
 // Theme
 
 const interactionLog = log.child("InboxInteraction");
@@ -179,6 +172,7 @@ export default function ChatListScreen() {
   const route = useRoute<any>();
   const uid = currentFirebaseUser?.uid ?? "";
   const isFocused = useIsFocused();
+  const pendingFriendRequestCount = usePendingFriendRequestCount(uid);
 
   // ── Contacts enablement banner state ────────────────────────────────
   const contactsPerm = useContactsPermission();
@@ -466,23 +460,6 @@ export default function ChatListScreen() {
     }, [filter]),
   );
 
-  // Unified inbox requests (friend requests + group invites + message requests)
-  const {
-    items: requestItems,
-    loading: requestsLoading,
-    error: requestsError,
-    friendRequests,
-    groupInvites,
-    messageRequests,
-    refresh: refreshUnifiedRequests,
-    acceptFriendRequest,
-    declineFriendRequest,
-    acceptGroupInviteRequest,
-    declineGroupInviteRequest,
-    acceptMessageRequest,
-    declineMessageRequest,
-  } = useUnifiedInboxRequests(uid);
-
   // =============================================================================
   // Register Notification Press Handler
   // =============================================================================
@@ -513,17 +490,6 @@ export default function ChatListScreen() {
       setCurrentScreen("ChatList");
       return () => setCurrentScreen(null);
     }, [setCurrentScreen]),
-  );
-
-  useFocusEffect(
-    useCallback(() => {
-      if (!uid || filter !== "requests") return;
-      markNotificationsReadByTypes(uid, ["message_request"]).catch((error) => {
-        log.warn("[Inbox] Failed to mark message request notifications read", {
-          data: { error },
-        });
-      });
-    }, [uid, filter]),
   );
 
   // =============================================================================
@@ -587,10 +553,20 @@ export default function ChatListScreen() {
           conversation.id,
           "chat-list-press-in",
         );
-        const resolvedBackgroundUrl = normalizeRemoteImageUrl(
-          conversation.backgroundUrl !== undefined
-            ? conversation.backgroundUrl
-            : prepared?.backgroundUrl,
+        const trustedBackgroundState = getGroupBackgroundStateSnapshot(
+          conversation.id,
+        );
+        const hasConversationBackground = Object.prototype.hasOwnProperty.call(
+          conversation,
+          "backgroundUrl",
+        );
+        const resolvedBackgroundUrl = resolveGroupBackgroundUrl(
+          conversation.id,
+          hasConversationBackground ? conversation.backgroundUrl : null,
+          {
+            source: "chat-list-press-in",
+            candidateAuthority: "helper",
+          },
         );
         const resolvedAvatarUrl = normalizeRemoteImageUrl(
           conversation.avatarUrl ?? prepared?.avatarUrl,
@@ -601,7 +577,7 @@ export default function ChatListScreen() {
           {
             name: conversation.name,
             avatarUrl: resolvedAvatarUrl ?? undefined,
-            backgroundUrl: resolvedBackgroundUrl ?? undefined,
+            backgroundUrl: resolvedBackgroundUrl ?? null,
           },
           "chat-list-press-in",
         );
@@ -609,10 +585,13 @@ export default function ChatListScreen() {
         if (__DEV__) {
           traceGroupWallpaper(conversation.id, "chat-list-press-in", {
             hasConversationBackground: !!conversation.backgroundUrl,
+            hasTrustedBackgroundState: !!trustedBackgroundState,
             preparedBackground: !!prepared?.backgroundUrl,
             resolvedBackgroundKey: describeRemoteUrlForLog(
               resolvedBackgroundUrl,
             ).key,
+            helperBackgroundBlocked:
+              !!conversation.backgroundUrl && !resolvedBackgroundUrl,
           });
         }
 
@@ -733,31 +712,46 @@ export default function ChatListScreen() {
             conversation.id,
             "chat-list-press",
           );
+          const trustedBackgroundState = getGroupBackgroundStateSnapshot(
+            conversation.id,
+          );
+          const hasConversationBackground =
+            Object.prototype.hasOwnProperty.call(conversation, "backgroundUrl");
           const initialGroupData = {
             name: conversation.name || prepared?.name || "",
             avatarUrl:
               normalizeRemoteImageUrl(
                 conversation.avatarUrl ?? prepared?.avatarUrl,
               ) ?? null,
-            backgroundUrl:
-              normalizeRemoteImageUrl(
-                conversation.backgroundUrl !== undefined
-                  ? conversation.backgroundUrl
-                  : prepared?.backgroundUrl,
-              ) ?? null,
+            backgroundUrl: resolveGroupBackgroundUrl(
+              conversation.id,
+              hasConversationBackground ? conversation.backgroundUrl : null,
+              {
+                source: "chat-list-press",
+                candidateAuthority: "helper",
+              },
+            ),
+            backgroundTrusted: !!trustedBackgroundState,
           };
 
           rememberPreparedGroupChatData(
             conversation.id,
-            initialGroupData,
+            {
+              name: initialGroupData.name,
+              avatarUrl: initialGroupData.avatarUrl,
+              backgroundUrl: initialGroupData.backgroundUrl,
+            },
             "chat-list-press",
           );
 
           if (__DEV__) {
             traceGroupWallpaper(conversation.id, "chat-list-press", {
               hasConversationBackground: !!conversation.backgroundUrl,
+              hasTrustedBackgroundState: !!trustedBackgroundState,
               preparedBackground: !!prepared?.backgroundUrl,
               navigatedBackground: !!initialGroupData.backgroundUrl,
+              helperBackgroundBlocked:
+                !!conversation.backgroundUrl && !initialGroupData.backgroundUrl,
             });
           }
 
@@ -772,6 +766,7 @@ export default function ChatListScreen() {
               name: string;
               avatarUrl: string | null;
               backgroundUrl: string | null;
+              backgroundTrusted: boolean;
             };
           } = {
             groupId: conversation.id,
@@ -910,94 +905,6 @@ export default function ChatListScreen() {
   }, []);
 
   // =============================================================================
-  // Friend Request Handlers
-  // =============================================================================
-
-  const handleAcceptRequest = useCallback(
-    async (requestId: string) => {
-      try {
-        await acceptFriendRequest(requestId);
-      } catch (e) {
-        log.error("Failed to accept friend request", e);
-      }
-    },
-    [acceptFriendRequest],
-  );
-
-  const handleDeclineRequest = useCallback(
-    async (requestId: string) => {
-      try {
-        await declineFriendRequest(requestId);
-      } catch (e) {
-        log.error("Failed to decline friend request", e);
-      }
-    },
-    [declineFriendRequest],
-  );
-
-  const handleRequestPress = useCallback(
-    (request: FriendRequestWithUser) => {
-      // Navigate to the requesting user's full profile
-      navigation.navigate("UserProfile", { userId: request.fromUserId });
-    },
-    [navigation],
-  );
-
-  // =============================================================================
-  // Group Invite Handlers
-  // =============================================================================
-
-  const handleAcceptGroupInvite = useCallback(
-    async (invite: GroupInvite) => {
-      try {
-        await acceptGroupInviteRequest(invite);
-        // Navigate to the group with warmed background
-        const navParams = await prepareGroupChatNavigation({
-          groupId: invite.groupId,
-          groupName: invite.groupName,
-        });
-        navigation.navigate("GroupChat", navParams);
-      } catch (e) {
-        log.error("Failed to accept group invite", e);
-      }
-    },
-    [acceptGroupInviteRequest, navigation],
-  );
-
-  const handleDeclineGroupInvite = useCallback(
-    async (invite: GroupInvite) => {
-      try {
-        await declineGroupInviteRequest(invite);
-      } catch (e) {
-        log.error("Failed to decline group invite", e);
-      }
-    },
-    [declineGroupInviteRequest],
-  );
-
-  const handleAcceptMessageRequest = useCallback(
-    async (chatId: string) => {
-      try {
-        await acceptMessageRequest(chatId);
-      } catch (e) {
-        log.error("Failed to accept message request", e);
-      }
-    },
-    [acceptMessageRequest],
-  );
-
-  const handleDeclineMessageRequest = useCallback(
-    async (chatId: string) => {
-      try {
-        await declineMessageRequest(chatId, false);
-      } catch (e) {
-        log.error("Failed to decline message request", e);
-      }
-    },
-    [declineMessageRequest],
-  );
-
-  // =============================================================================
   // Swipe Action Handlers
   // =============================================================================
 
@@ -1057,12 +964,6 @@ export default function ChatListScreen() {
     setDeleteTargetConversation(null);
   }, []);
 
-  const handleRequestsRefresh = useCallback(() => {
-    refreshUnifiedRequests().catch((e) => {
-      log.error("Failed to refresh inbox requests", e);
-    });
-  }, [refreshUnifiedRequests]);
-
   // =============================================================================
   // Context Menu Action Handlers
   // =============================================================================
@@ -1096,14 +997,17 @@ export default function ChatListScreen() {
           }
         })
         .catch((error) => {
-          interactionLog.error("pin toggle failed; rolling back optimistic UI", {
-            data: {
-              conversationId: conversation.id,
-              type: conversation.type,
-              source,
-              error,
+          interactionLog.error(
+            "pin toggle failed; rolling back optimistic UI",
+            {
+              data: {
+                conversationId: conversation.id,
+                type: conversation.type,
+                source,
+                error,
+              },
             },
-          });
+          );
           togglePinOptimistic(conversation.id, conversation.type);
         });
     },
@@ -1116,7 +1020,11 @@ export default function ChatListScreen() {
     if (conversation) {
       handlePinToggleRequest(conversation, "context-menu");
     }
-  }, [contextMenu.conversation, handleCloseContextMenu, handlePinToggleRequest]);
+  }, [
+    contextMenu.conversation,
+    handleCloseContextMenu,
+    handlePinToggleRequest,
+  ]);
 
   const handleContextMenuMute = useCallback(() => {
     const conversation = contextMenu.conversation;
@@ -1185,8 +1093,6 @@ export default function ChatListScreen() {
         return "noGroups";
       case "dms":
         return "noDMs";
-      case "requests":
-        return "noRequests";
       case "archived":
         return "noArchived";
       default:
@@ -1341,139 +1247,36 @@ export default function ChatListScreen() {
   // Main Render
   // =============================================================================
 
-  // Determine if we're showing requests tab
-  const showRequestsTab = filter === "requests";
-  const requestsRefreshing = requestsLoading;
-
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Header */}
-      <InboxHeader onSearchPress={handleSearchPress} />
+      <InboxHeader
+        onSearchPress={handleSearchPress}
+        pendingFriendRequestCount={pendingFriendRequestCount}
+      />
 
       {/* Tabs */}
       <InboxTabs
         activeTab={filter}
         onTabChange={setFilter}
         unreadCount={totalUnread}
-        requestsCount={getUnifiedRequestsCount({
-          friendRequestsCount: friendRequests.length,
-          groupInvitesCount: groupInvites.length,
-          messageRequestsCount: messageRequests.length,
-        })}
       />
 
-      {/* Requests List (friend + group + message requests) */}
-      {showRequestsTab ? (
-        requestsLoading && requestItems.length === 0 ? (
-          <LoadingState message="Loading requests..." />
-        ) : requestsError && requestItems.length === 0 ? (
-          <ErrorState
-            title="Could not load requests"
-            message={requestsError.message}
-            onRetry={handleRequestsRefresh}
-          />
-        ) : isRequestsTabEmpty(requestItems.length) ? (
-          <View style={styles.emptyContainer}>
-            <EmptyState
-              type="noRequests"
-              showAction={true}
-              onAction={() => navigation.navigate("Friends")}
-              actionLabel="Find Friends"
-            />
-          </View>
-        ) : (
-          <FlatList
-            data={requestItems}
-            renderItem={({ item }) => {
-              if (item.kind === "group_invite") {
-                return (
-                  <GroupInviteItem
-                    invite={item.groupInvite}
-                    onAccept={() => handleAcceptGroupInvite(item.groupInvite)}
-                    onDecline={() => handleDeclineGroupInvite(item.groupInvite)}
-                  />
-                );
-              }
-
-              if (item.kind === "friend_request") {
-                return (
-                  <FriendRequestItem
-                    request={item.friendRequest}
-                    onAccept={() => handleAcceptRequest(item.friendRequest.id)}
-                    onDecline={() =>
-                      handleDeclineRequest(item.friendRequest.id)
-                    }
-                    onPress={() => handleRequestPress(item.friendRequest)}
-                  />
-                );
-              }
-
-              const request = item.messageRequest;
-              return (
-                <View
-                  style={[
-                    styles.requestRow,
-                    { backgroundColor: colors.background },
-                  ]}
-                >
-                  <View style={styles.requestRowContent}>
-                    <Text style={[styles.requestTitle, { color: colors.text }]}>
-                      {request.requesterName}
-                    </Text>
-                    <Text
-                      style={[
-                        styles.requestSubtitle,
-                        { color: colors.textSecondary },
-                      ]}
-                      numberOfLines={2}
-                    >
-                      {request.messagePreview || "Sent you a message request"}
-                    </Text>
-                  </View>
-                  <View style={styles.requestActions}>
-                    <Button
-                      mode="contained"
-                      compact
-                      onPress={() => handleAcceptMessageRequest(request.chatId)}
-                    >
-                      Accept
-                    </Button>
-                    <Button
-                      mode="outlined"
-                      compact
-                      onPress={() =>
-                        handleDeclineMessageRequest(request.chatId)
-                      }
-                    >
-                      Decline
-                    </Button>
-                  </View>
-                </View>
-              );
-            }}
-            keyExtractor={(item) => `${item.kind}:${item.id}`}
-            refreshing={requestsRefreshing}
-            onRefresh={handleRequestsRefresh}
-          />
-        )
-      ) : (
-        /* Conversation List */
-        <FlatList
-          data={regularConversations}
-          renderItem={renderConversationItem}
-          ListHeaderComponent={listHeaderElement}
-          ListEmptyComponent={ListEmptyComponent}
-          keyExtractor={(item) => `${item.type}-${item.id}`}
-          contentContainerStyle={
-            regularConversations.length === 0 &&
-            pinnedConversations.length === 0
-              ? styles.emptyContainer
-              : undefined
-          }
-          refreshing={false}
-          onRefresh={refresh}
-        />
-      )}
+      {/* Conversation List */}
+      <FlatList
+        data={regularConversations}
+        renderItem={renderConversationItem}
+        ListHeaderComponent={listHeaderElement}
+        ListEmptyComponent={ListEmptyComponent}
+        keyExtractor={(item) => `${item.type}-${item.id}`}
+        contentContainerStyle={
+          regularConversations.length === 0 && pinnedConversations.length === 0
+            ? styles.emptyContainer
+            : undefined
+        }
+        refreshing={false}
+        onRefresh={refresh}
+      />
 
       {/* FAB */}
       <InboxFAB visible={isFocused} />
@@ -1533,25 +1336,5 @@ const styles = StyleSheet.create({
   },
   emptyContainer: {
     flex: 1,
-  },
-  requestRow: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  requestRowContent: {
-    marginBottom: 10,
-  },
-  requestTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    marginBottom: 4,
-  },
-  requestSubtitle: {
-    fontSize: 14,
-    lineHeight: 18,
-  },
-  requestActions: {
-    flexDirection: "row",
-    gap: 8,
   },
 });

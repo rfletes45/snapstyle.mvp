@@ -1,8 +1,4 @@
 import { mergeUnifiedInboxRequests } from "../../src/services/chat/unifiedInboxRequests";
-import {
-  getUnifiedRequestsCount,
-  isRequestsTabEmpty,
-} from "../../src/screens/chat/requestsTabUtils";
 
 describe("useUnifiedInboxRequests helpers", () => {
   it("merges/sorts/dedupes request items across all sources", () => {
@@ -52,19 +48,8 @@ describe("useUnifiedInboxRequests helpers", () => {
       "message_request",
       "friend_request",
     ]);
-    expect(new Set(merged.map((item) => `${item.kind}:${item.id}`)).size).toBe(3);
-  });
-
-  it("computes requests tab counts and empty-state correctly", () => {
-    expect(
-      getUnifiedRequestsCount({
-        friendRequestsCount: 2,
-        groupInvitesCount: 1,
-        messageRequestsCount: 3,
-      }),
-    ).toBe(6);
-
-    expect(isRequestsTabEmpty(0)).toBe(true);
-    expect(isRequestsTabEmpty(2)).toBe(false);
+    expect(new Set(merged.map((item) => `${item.kind}:${item.id}`)).size).toBe(
+      3,
+    );
   });
 });

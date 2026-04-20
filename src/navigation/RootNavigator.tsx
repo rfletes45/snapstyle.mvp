@@ -128,11 +128,6 @@ function CameraScreen(props: any) {
   return <Screen {...props} />;
 }
 
-function CameraShareScreen(props: any) {
-  const Screen = require("@/screens/camera/ShareScreen").default;
-  return <Screen {...props} />;
-}
-
 const AuthStack_Nav = createNativeStackNavigator<AuthStackParamList>();
 const InboxStack_Nav = createNativeStackNavigator<InboxStackParamList>();
 const ProfileStack_Nav = createNativeStackNavigator<ProfileTabStackParamList>();
@@ -306,7 +301,7 @@ function ProfileStack() {
 
 /**
  * Main App Tabs
- * Profile | Messages | Calls
+ * Messages | Calls | Profile
  */
 function AppTabs() {
   const { colors } = useAppTheme();
@@ -462,6 +457,11 @@ function MainStack() {
         component={AppTabs}
         options={{ headerShown: false }}
       />
+      <MainStack_Nav.Screen
+        name="Friends"
+        component={FriendsScreen}
+        options={{ headerShown: false }}
+      />
 
       <MainStack_Nav.Screen
         name="ChatDetail"
@@ -550,15 +550,6 @@ function MainStack() {
         }}
       />
 
-      <MainStack_Nav.Screen
-        name="CameraShare"
-        component={CameraShareScreen}
-        options={{
-          headerShown: false,
-          animation: "slide_from_right",
-        }}
-      />
-
       {CALL_FEATURES.CALLS_ENABLED && (
         <>
           <MainStack_Nav.Screen
@@ -592,12 +583,6 @@ function MainStack() {
           />
         </>
       )}
-
-      <MainStack_Nav.Screen
-        name="Friends"
-        component={FriendsScreen}
-        options={{ headerShown: false }}
-      />
 
       <MainStack_Nav.Screen
         name="UserProfile"

@@ -46,6 +46,11 @@ const KEYBOARD_BACKDROP_Z_INDEX = 10;
 const CHAT_FOOTER_Z_INDEX = 20;
 const ENABLE_KEYBOARD_BACKDROP_DEBUG = false;
 
+// Toggle for handoff transition diagnostics — mirrors the flag in
+// ComposerSheetContext.  Set to true when debugging sheet→keyboard
+// handoff timing in native/TestFlight builds.
+const ENABLE_HANDOFF_DIAGNOSTICS = __DEV__ && false;
+
 let kcsvAvailable = false;
 let KeyboardChatScrollView: any = null;
 type KeyboardChatScrollViewProps = { keyboardLiftBehavior?: string };
@@ -248,6 +253,32 @@ export function KeyboardBackdropLayer({
   );
 }
 
+// ── Handoff diagnostic helpers (called from worklets via runOnJS) ─────────
+
+function logHandoffFloorCleared(floor: number, kbH: number) {
+  // eslint-disable-next-line no-console
+  console.log("[HandoffDiag] floor cleared", {
+    floor: Math.round(floor),
+    kbH: Math.round(kbH),
+    ratio: (kbH / floor).toFixed(3),
+  });
+}
+
+function logSheetExtraPaddingChange(
+  previous: number,
+  current: number,
+  kbH: number,
+  floor: number,
+) {
+  // eslint-disable-next-line no-console
+  console.log("[HandoffDiag] sheetExtraPadding", {
+    from: Math.round(previous),
+    to: Math.round(current),
+    kbH: Math.round(kbH),
+    floor: Math.round(floor),
+  });
+}
+
 export function ChatFooterWrapper({ children }: { children: React.ReactNode }) {
   const {
     sheetTranslateY,
@@ -306,13 +337,19 @@ export function ChatFooterWrapper({ children }: { children: React.ReactNode }) {
   // Clear the handoff floor once the keyboard height has caught up.
   // This keeps the floor alive only during the brief gap and removes it
   // the instant the keyboard is tall enough, so it never lingers.
+  // Threshold 0.98 (was 0.85) — higher threshold eliminates the visible
+  // jump when the floor clears: at 0.85 there was a ~15% height drop on
+  // the frame the floor was zeroed; at 0.98 the drop is ~2%, imperceptible.
   useAnimatedReaction(
     () => ({
       floor: handoffFloor.value,
       kbH: Math.abs(keyboardHeight.value),
     }),
     (current) => {
-      if (current.floor > 0 && current.kbH >= current.floor * 0.85) {
+      if (current.floor > 0 && current.kbH >= current.floor * 0.98) {
+        if (ENABLE_HANDOFF_DIAGNOSTICS) {
+          runOnJS(logHandoffFloorCleared)(current.floor, current.kbH);
+        }
         handoffFloor.value = 0;
       }
     },
@@ -327,10 +364,23 @@ export function ChatFooterWrapper({ children }: { children: React.ReactNode }) {
       const kbH = Math.abs(keyboardHeight.value);
       return Math.max(0, unifiedFooterOffset.value - kbH);
     },
-    (current) => {
+    (current, previous) => {
       sheetExtraPadding.value = current;
+      if (
+        ENABLE_HANDOFF_DIAGNOSTICS &&
+        previous !== null &&
+        Math.abs(current - previous) > 1
+      ) {
+        const kbH = Math.abs(keyboardHeight.value);
+        runOnJS(logSheetExtraPaddingChange)(
+          previous,
+          current,
+          kbH,
+          handoffFloor.value,
+        );
+      }
     },
-    [sheetExtraPadding, keyboardHeight],
+    [sheetExtraPadding, keyboardHeight, handoffFloor],
   );
 
   const unifiedOffsetStyle = useAnimatedStyle(() => ({

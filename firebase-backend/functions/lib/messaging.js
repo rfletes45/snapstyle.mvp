@@ -456,7 +456,7 @@ exports.sendMessageV2 = functions.https.onCall(async (data, context) => {
         throw new functions.https.HttpsError("unauthenticated", "Must be logged in to send messages");
     }
     const senderId = context.auth.uid;
-    const { conversationId, scope, kind, text, replyTo, threadRootId, mentionUids, mentionSpans, attachments, stagedAttachments, clientId, messageId, createdAt, traceId, senderStyle, animalId, } = data;
+    const { conversationId, scope, kind, text, replyTo, threadRootId, mentionUids, mentionSpans, attachments, stagedAttachments, clientId, messageId, createdAt, traceId, senderStyle, animalId, senderDeviceId, } = data;
     // Segment 8: Log traceId if present (for cross-system correlation)
     const logTraceId = traceId || `srv-${messageId?.substring(0, 12) || "unknown"}`;
     console.log(`[sendMessageV2] Request from ${senderId.substring(0, 8)}:`, sanitizeForLog({
@@ -658,6 +658,9 @@ exports.sendMessageV2 = functions.https.onCall(async (data, context) => {
         clientId,
         // Segment 8: Include traceId in message doc for debugging/correlation
         ...(traceId ? { traceId: logTraceId } : {}),
+        // Stamp the sender's stable device ID so notification triggers can
+        // exclude the sender's device from push and in-app delivery.
+        ...(senderDeviceId ? { senderDeviceId } : {}),
     };
     // Add optional fields
     if (replyTo) {

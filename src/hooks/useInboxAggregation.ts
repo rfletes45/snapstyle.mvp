@@ -19,7 +19,21 @@ import {
   batchFetchProfiles,
   getCachedProfileSync,
 } from "@/services/cache/profileCache";
-import { rememberPreparedGroupChatData } from "@/services/chat/groupWallpaperDebug";
+import {
+  applyGroupBackgroundStateToConversation,
+  setSessionGroupBackgroundState,
+  subscribeToGroupBackgroundState,
+} from "@/services/chat/groupBackgroundState";
+import {
+  getCachedGroupVisuals,
+  setCachedGroupVisuals,
+  type GroupVisuals,
+} from "@/services/chat/groupVisualCache";
+import {
+  describeRemoteUrlForLog,
+  rememberPreparedGroupChatData,
+  traceGroupWallpaper,
+} from "@/services/chat/groupWallpaperDebug";
 import {
   applyOptimisticInboxUpdate,
   subscribeToOptimisticInboxUpdates,
@@ -62,15 +76,6 @@ const shouldLogInboxPerf = () =>
 const AGG_CACHE_KEY = "@agg_inbox_cache:";
 const AGG_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 const OPTIMISTIC_ACTIVITY_TTL_MS = 60_000;
-const GROUP_VISUAL_CACHE_TTL_MS = 5 * 60 * 1000;
-
-interface GroupVisuals {
-  avatarUrl: string | null;
-  backgroundUrl: string | null;
-  fetchedAt: number;
-}
-
-const groupVisualCache = new Map<string, GroupVisuals>();
 
 interface AggCacheData {
   conversations: InboxConversation[];
@@ -361,6 +366,18 @@ export function useInboxAggregation(uid: string): UseInboxAggregationResult {
     });
   }, [enabled, pruneOptimisticActivity, uid]);
 
+  useEffect(() => {
+    if (!uid || !enabled) return;
+
+    return subscribeToGroupBackgroundState((update) => {
+      setEntries((prev) =>
+        prev.map((conversation) =>
+          applyGroupBackgroundStateToConversation(conversation, update),
+        ),
+      );
+    });
+  }, [enabled, uid]);
+
   // -------------------------------------------------------
   // Subscribe to Users/{uid}/Inbox ordered by lastActivityAt
   // -------------------------------------------------------
@@ -451,13 +468,14 @@ export function useInboxAggregation(uid: string): UseInboxAggregationResult {
             .filter((v) => v.entry.scope === "group")
             .map((v) => v.entry.conversationId);
           const groupVisualsMap = new Map<string, GroupVisuals>();
+          const groupVisualSourceMap = new Map<string, "cache" | "fetch">();
           if (groupEntryIds.length > 0) {
-            const now = Date.now();
             const groupIdsToFetch: string[] = [];
             for (const groupId of groupEntryIds) {
-              const cached = groupVisualCache.get(groupId);
-              if (cached && now - cached.fetchedAt < GROUP_VISUAL_CACHE_TTL_MS) {
+              const cached = getCachedGroupVisuals(groupId);
+              if (cached) {
                 groupVisualsMap.set(groupId, cached);
+                groupVisualSourceMap.set(groupId, "cache");
               } else {
                 groupIdsToFetch.push(groupId);
               }
@@ -468,13 +486,14 @@ export function useInboxAggregation(uid: string): UseInboxAggregationResult {
                 try {
                   const groupSnap = await getDoc(doc(db, "Groups", groupId));
                   if (groupSnap.exists()) {
-                    const visuals: GroupVisuals = {
+                    const visuals = setCachedGroupVisuals(groupId, {
                       avatarUrl: groupSnap.data()?.avatarUrl || null,
                       backgroundUrl: groupSnap.data()?.backgroundUrl || null,
-                      fetchedAt: Date.now(),
-                    };
-                    groupVisualCache.set(groupId, visuals);
-                    groupVisualsMap.set(groupId, visuals);
+                    });
+                    if (visuals) {
+                      groupVisualsMap.set(groupId, visuals);
+                      groupVisualSourceMap.set(groupId, "fetch");
+                    }
                   }
                 } catch {
                   // non-critical — group will show generic icon
@@ -505,17 +524,59 @@ export function useInboxAggregation(uid: string): UseInboxAggregationResult {
             // Hydrate group avatar from fetched Group doc
             if (entry.scope === "group") {
               const visuals = groupVisualsMap.get(entry.conversationId);
+              const visualsSource = groupVisualSourceMap.get(
+                entry.conversationId,
+              );
+              const entryBackgroundUrl = convo.backgroundUrl ?? null;
               convo.avatarUrl = visuals?.avatarUrl ?? null;
-              convo.backgroundUrl =
-                visuals?.backgroundUrl ?? convo.backgroundUrl ?? null;
+              convo.backgroundUrl = visuals ? visuals.backgroundUrl : null;
+
+              if (__DEV__) {
+                traceGroupWallpaper(
+                  entry.conversationId,
+                  "use-inbox-aggregation-group-background-proposal",
+                  {
+                    visualsSource: visualsSource ?? "none",
+                    visualsPresent: !!visuals,
+                    entryBackgroundKey:
+                      describeRemoteUrlForLog(entryBackgroundUrl).key,
+                    visualsBackgroundKey: describeRemoteUrlForLog(
+                      visuals?.backgroundUrl,
+                    ).key,
+                    acceptedBackgroundKey: describeRemoteUrlForLog(
+                      convo.backgroundUrl,
+                    ).key,
+                    staleHelperBlocked:
+                      !!entryBackgroundUrl &&
+                      entryBackgroundUrl !== convo.backgroundUrl,
+                  },
+                );
+              }
+
+              if (visuals) {
+                setSessionGroupBackgroundState({
+                  groupId: entry.conversationId,
+                  backgroundUrl: visuals.backgroundUrl,
+                  source:
+                    visualsSource === "cache"
+                      ? "use-inbox-aggregation-group-visual-cache"
+                      : "use-inbox-aggregation-group-doc",
+                  authority: "authoritative",
+                });
+              }
+
               rememberPreparedGroupChatData(
                 entry.conversationId,
                 {
                   name: convo.name,
                   avatarUrl: visuals?.avatarUrl ?? null,
-                  backgroundUrl: convo.backgroundUrl ?? null,
+                  backgroundUrl: convo.backgroundUrl,
                 },
-                "use-inbox-aggregation-group-visuals",
+                visualsSource === "cache"
+                  ? "use-inbox-aggregation-group-visual-cache"
+                  : visualsSource === "fetch"
+                    ? "use-inbox-aggregation-group-doc"
+                    : "use-inbox-aggregation-no-authoritative-background",
               );
             }
 

@@ -1,9 +1,14 @@
-import { prefetchCriticalProfileAssets } from "@/services/cosmeticsAssetCache";
+import {
+  getGroupBackgroundStateSnapshot,
+  resolveGroupBackgroundUrl,
+  setSessionGroupBackgroundState,
+} from "@/services/chat/groupBackgroundState";
 import {
   describeRemoteUrlForLog,
   rememberPreparedGroupChatData,
   traceGroupWallpaper,
 } from "@/services/chat/groupWallpaperDebug";
+import { prefetchCriticalProfileAssets } from "@/services/cosmeticsAssetCache";
 import { getGroup, getGroupMembersForDisplay } from "@/services/groups";
 import type { GroupMember } from "@/types/models";
 import { createLogger } from "@/utils/log";
@@ -89,6 +94,12 @@ export function getCachedBackgroundRef(
   const normalized = normalizeRemoteImageUrl(url);
   if (!normalized) return null;
   return bgRefCache.get(normalized) ?? null;
+}
+
+export function clearCachedBackgroundRef(url: string | null | undefined): void {
+  const normalized = normalizeRemoteImageUrl(url);
+  if (!normalized) return;
+  bgRefCache.delete(normalized);
 }
 
 async function warmRemoteImage(url: string): Promise<ImageRef | null> {
@@ -213,7 +224,13 @@ export async function warmGroupIdentityAssets(params: {
   // and decoration warmup. warmRemoteImage deduplicates via imageWarmPromises,
   // so the call inside warmIdentityImageUrls for the same URL returns this
   // exact promise — no double Image.loadAsync.
-  const bgNormalized = normalizeRemoteImageUrl(params.backgroundUrl);
+  const resolvedBackgroundUrl = params.groupId
+    ? resolveGroupBackgroundUrl(params.groupId, params.backgroundUrl, {
+        source: "warm-group-identity-assets",
+        candidateAuthority: "helper",
+      })
+    : normalizeRemoteImageUrl(params.backgroundUrl);
+  const bgNormalized = normalizeRemoteImageUrl(resolvedBackgroundUrl);
   if (__DEV__ && params.groupId) {
     traceGroupWallpaper(params.groupId, "warm-group-assets-start", {
       avatarKey: describeRemoteUrlForLog(params.groupAvatarUrl).key,
@@ -225,10 +242,14 @@ export async function warmGroupIdentityAssets(params: {
     ? warmRemoteImage(bgNormalized).then((ref) => {
         if (ref) retainBackgroundRef(bgNormalized, ref);
         if (__DEV__ && params.groupId) {
-          traceGroupWallpaper(params.groupId, "warm-group-assets-background-ready", {
-            backgroundKey: describeRemoteUrlForLog(bgNormalized).key,
-            retained: !!ref,
-          });
+          traceGroupWallpaper(
+            params.groupId,
+            "warm-group-assets-background-ready",
+            {
+              backgroundKey: describeRemoteUrlForLog(bgNormalized).key,
+              retained: !!ref,
+            },
+          );
         }
       })
     : null;
@@ -236,7 +257,7 @@ export async function warmGroupIdentityAssets(params: {
   await Promise.all([
     warmIdentityImageUrls([
       params.groupAvatarUrl,
-      params.backgroundUrl,
+      resolvedBackgroundUrl,
       ...(params.members?.map((member) => member.profilePictureUrl) ?? []),
     ]),
     bgRefPromise,
@@ -253,13 +274,23 @@ export async function prepareGroupThreadEntry(
     backgroundUrl?: string | null;
   },
 ): Promise<GroupMember[]> {
+  const hasBackgroundParam =
+    !!params && Object.prototype.hasOwnProperty.call(params, "backgroundUrl");
+  const resolvedBackgroundUrl = hasBackgroundParam
+    ? resolveGroupBackgroundUrl(groupId, params?.backgroundUrl, {
+        source: "prepare-group-thread-entry",
+        candidateAuthority: "helper",
+      })
+    : undefined;
+
   rememberPreparedGroupChatData(
     groupId,
     {
       avatarUrl:
-        params?.groupAvatarUrl === undefined ? undefined : params.groupAvatarUrl,
-      backgroundUrl:
-        params?.backgroundUrl === undefined ? undefined : params.backgroundUrl,
+        params?.groupAvatarUrl === undefined
+          ? undefined
+          : params.groupAvatarUrl,
+      backgroundUrl: hasBackgroundParam ? resolvedBackgroundUrl : undefined,
     },
     "prepare-group-thread-entry",
   );
@@ -268,7 +299,7 @@ export async function prepareGroupThreadEntry(
     traceGroupWallpaper(groupId, "prepare-group-thread-entry-start", {
       cachedMembers: !!getPreparedGroupMembers(groupId)?.length,
       avatarKey: describeRemoteUrlForLog(params?.groupAvatarUrl).key,
-      backgroundKey: describeRemoteUrlForLog(params?.backgroundUrl).key,
+      backgroundKey: describeRemoteUrlForLog(resolvedBackgroundUrl).key,
     });
   }
 
@@ -277,7 +308,7 @@ export async function prepareGroupThreadEntry(
     await warmGroupIdentityAssets({
       groupId,
       groupAvatarUrl: params?.groupAvatarUrl,
-      backgroundUrl: params?.backgroundUrl,
+      backgroundUrl: resolvedBackgroundUrl,
       members: cached.members,
     });
     if (__DEV__) {
@@ -294,15 +325,19 @@ export async function prepareGroupThreadEntry(
   // expo-image's memory cache as early as possible.
   // Retain the background ImageRef as soon as it resolves — this is the
   // earliest possible moment to pin the decoded bitmap in native memory.
-  const bgNormalized = normalizeRemoteImageUrl(params?.backgroundUrl);
+  const bgNormalized = normalizeRemoteImageUrl(resolvedBackgroundUrl);
   const bgRetainPromise = bgNormalized
     ? warmRemoteImage(bgNormalized).then((ref) => {
         if (ref) retainBackgroundRef(bgNormalized, ref);
         if (__DEV__) {
-          traceGroupWallpaper(groupId, "prepare-group-thread-entry-background-ready", {
-            backgroundKey: describeRemoteUrlForLog(bgNormalized).key,
-            retained: !!ref,
-          });
+          traceGroupWallpaper(
+            groupId,
+            "prepare-group-thread-entry-background-ready",
+            {
+              backgroundKey: describeRemoteUrlForLog(bgNormalized).key,
+              retained: !!ref,
+            },
+          );
         }
       })
     : null;
@@ -326,7 +361,7 @@ export async function prepareGroupThreadEntry(
     warmGroupIdentityAssets({
       groupId,
       groupAvatarUrl: params?.groupAvatarUrl,
-      backgroundUrl: params?.backgroundUrl,
+      backgroundUrl: resolvedBackgroundUrl,
       members,
     }),
   ]);
@@ -356,6 +391,7 @@ export interface GroupChatNavParams {
     name: string;
     avatarUrl: string | null;
     backgroundUrl: string | null;
+    backgroundTrusted: boolean;
   };
 }
 
@@ -376,7 +412,23 @@ export async function prepareGroupChatNavigation(params: {
   targetMessageId?: string;
   jumpRequestId?: string;
 }): Promise<GroupChatNavParams> {
-  let { groupName, groupAvatarUrl, backgroundUrl } = params;
+  const hadBackgroundParam = Object.prototype.hasOwnProperty.call(
+    params,
+    "backgroundUrl",
+  );
+  const trustedBackgroundState = getGroupBackgroundStateSnapshot(
+    params.groupId,
+  );
+  let { groupName, groupAvatarUrl } = params;
+  let hasTrustedBackgroundSnapshot = !!trustedBackgroundState;
+  let backgroundUrl = trustedBackgroundState
+    ? trustedBackgroundState.backgroundUrl
+    : hadBackgroundParam
+      ? resolveGroupBackgroundUrl(params.groupId, params.backgroundUrl, {
+          source: "prepare-group-chat-navigation-input",
+          candidateAuthority: "helper",
+        })
+      : null;
 
   rememberPreparedGroupChatData(
     params.groupId,
@@ -394,6 +446,7 @@ export async function prepareGroupChatNavigation(params: {
     traceGroupWallpaper(params.groupId, "prepare-group-chat-navigation-start", {
       avatarKey: describeRemoteUrlForLog(groupAvatarUrl).key,
       backgroundKey: describeRemoteUrlForLog(backgroundUrl).key,
+      backgroundTrusted: hasTrustedBackgroundSnapshot,
       hasBackgroundUrl: backgroundUrl !== undefined && backgroundUrl !== null,
       targetMessageId: !!params.targetMessageId,
       jumpRequestId: !!params.jumpRequestId,
@@ -401,13 +454,20 @@ export async function prepareGroupChatNavigation(params: {
   }
 
   // If background URL is unknown, do a lightweight group-doc fetch
-  if (backgroundUrl === undefined || backgroundUrl === null) {
+  if (!hasTrustedBackgroundSnapshot && backgroundUrl == null) {
     try {
       const group = await getGroup(params.groupId);
       if (group) {
         groupName = groupName || group.name;
         groupAvatarUrl = groupAvatarUrl ?? group.avatarUrl ?? null;
-        backgroundUrl = group.backgroundUrl ?? null;
+        backgroundUrl = normalizeRemoteImageUrl(group.backgroundUrl) ?? null;
+        hasTrustedBackgroundSnapshot = true;
+        setSessionGroupBackgroundState({
+          groupId: params.groupId,
+          backgroundUrl,
+          source: "prepare-group-chat-navigation-fetch",
+          authority: "authoritative",
+        });
         rememberPreparedGroupChatData(
           params.groupId,
           {
@@ -418,10 +478,14 @@ export async function prepareGroupChatNavigation(params: {
           "prepare-group-chat-navigation-fetch",
         );
         if (__DEV__) {
-          traceGroupWallpaper(params.groupId, "prepare-group-chat-navigation-fetched-group", {
-            avatarKey: describeRemoteUrlForLog(groupAvatarUrl).key,
-            backgroundKey: describeRemoteUrlForLog(backgroundUrl).key,
-          });
+          traceGroupWallpaper(
+            params.groupId,
+            "prepare-group-chat-navigation-fetched-group",
+            {
+              avatarKey: describeRemoteUrlForLog(groupAvatarUrl).key,
+              backgroundKey: describeRemoteUrlForLog(backgroundUrl).key,
+            },
+          );
         }
       }
     } catch {
@@ -454,10 +518,14 @@ export async function prepareGroupChatNavigation(params: {
   );
 
   if (__DEV__) {
-    traceGroupWallpaper(params.groupId, "prepare-group-chat-navigation-finish", {
-      avatarKey: describeRemoteUrlForLog(groupAvatarUrl).key,
-      backgroundKey: describeRemoteUrlForLog(backgroundUrl).key,
-    });
+    traceGroupWallpaper(
+      params.groupId,
+      "prepare-group-chat-navigation-finish",
+      {
+        avatarKey: describeRemoteUrlForLog(groupAvatarUrl).key,
+        backgroundKey: describeRemoteUrlForLog(backgroundUrl).key,
+      },
+    );
   }
 
   return {
@@ -471,6 +539,7 @@ export async function prepareGroupChatNavigation(params: {
       name: groupName || "",
       avatarUrl: groupAvatarUrl ?? null,
       backgroundUrl: backgroundUrl ?? null,
+      backgroundTrusted: hasTrustedBackgroundSnapshot,
     },
   };
 }

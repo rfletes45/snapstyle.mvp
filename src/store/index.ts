@@ -8,7 +8,6 @@ export {
   CameraProvider,
   useCameraState,
   useEditorState,
-  useSnapState,
 } from "./CameraContext";
 export {
   InAppNotificationsProvider,
