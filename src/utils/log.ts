@@ -81,6 +81,8 @@ export const DEBUG_FLAGS = {
   NOTIFS: false,
   /** Badge subscription logs */
   BADGES: false,
+  /** Chat composer picker module/data preload timing */
+  PICKER_PRELOAD: false,
 } as const;
 
 export type DebugFlagKey = keyof typeof DEBUG_FLAGS;

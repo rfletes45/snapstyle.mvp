@@ -34,6 +34,8 @@ import { ButtonLoadingOverlay } from "./PickerLoadingFallback";
 import {
   getResolvedStickerPicker,
   getStickerPickerImport,
+  preloadPickerById,
+  usePickerPreloadStatus,
 } from "./pickerPreload";
 
 const LazyStickerPicker = React.lazy(() => getStickerPickerImport());
@@ -66,6 +68,7 @@ function StickerButtonBase({
     lastKeyboardHeight,
     sheetTranslateY,
   } = useComposerSheet();
+  const preloadStatus = usePickerPreloadStatus("sticker");
 
   const pickerOpenRef = useRef(false);
   pickerOpenRef.current = pickerOpen;
@@ -80,15 +83,25 @@ function StickerButtonBase({
   }, [deactivateSheet]);
 
   const handleClose = useCallback(() => {
+    pickerOpenRef.current = false;
     setPickerOpen(false);
     deactivateSheet();
   }, [deactivateSheet]);
 
   const handlePress = useCallback(() => {
+    if (pickerOpenRef.current) return;
+    pickerOpenRef.current = true;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    void preloadPickerById("sticker")?.catch(() => {});
     activateSheet(undefined, handleClose);
     setPickerOpen(true);
   }, [activateSheet, handleClose]);
+
+  useEffect(() => {
+    if (pickerOpen && preloadStatus.status === "failed") {
+      handleClose();
+    }
+  }, [handleClose, pickerOpen, preloadStatus.status]);
 
   const handleStickerSelected = useCallback(
     (sticker: StickerItem) => {
@@ -99,7 +112,8 @@ function StickerButtonBase({
   );
 
   const ResolvedPicker = pickerOpen ? getResolvedStickerPicker() : null;
-  const isLoading = pickerOpen && !ResolvedPicker;
+  const isLoading =
+    pickerOpen && !ResolvedPicker && preloadStatus.status !== "failed";
 
   return (
     <>
@@ -125,7 +139,7 @@ function StickerButtonBase({
             keyboardHeight={lastKeyboardHeight}
             sharedTranslateY={sheetTranslateY}
           />
-        ) : (
+        ) : preloadStatus.status !== "failed" ? (
           <Suspense fallback={null}>
             <LazyStickerPicker
               ref={sheetRef}
@@ -136,7 +150,7 @@ function StickerButtonBase({
               sharedTranslateY={sheetTranslateY}
             />
           </Suspense>
-        ))}
+        ) : null)}
     </>
   );
 }

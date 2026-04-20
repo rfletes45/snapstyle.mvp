@@ -23,7 +23,12 @@ import { VoiceRecording } from "@/hooks/useVoiceRecorder";
 import { isNativeComposerAvailable } from "@/modules/nativeKeyboard";
 import { useAppTheme } from "@/store/ThemeContext";
 import { ReplyToMetadata } from "@/types/messaging";
-import React, { useCallback, useEffect, useMemo, useRef } from "react";
+import React, {
+  useCallback,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+} from "react";
 import {
   ActivityIndicator,
   Platform,
@@ -35,7 +40,6 @@ import {
   ViewStyle,
 } from "react-native";
 import { IconButton, Text, useTheme } from "react-native-paper";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AnimalLongPressButton } from "./AnimalLongPressButton";
 import { ComposerCustomizeToolbar } from "./ComposerToolbar/ComposerCustomizeToolbar";
 import { ComposerItemPicker } from "./ComposerToolbar/ComposerItemPicker";
@@ -52,7 +56,7 @@ import {
   NativeComposerInput,
   type NativeComposerInputRef,
 } from "./NativeComposerInput";
-import { preloadPickersForToolbar } from "./pickerPreload";
+import { preloadPickerById, preloadPickersForToolbar } from "./pickerPreload";
 import { ReplyPreviewBar } from "./ReplyPreviewBar";
 import { SendButton } from "./SendButton";
 import { StickerButton } from "./StickerButton";
@@ -245,8 +249,6 @@ export function ChatComposer({
 }: ChatComposerProps): React.JSX.Element {
   const theme = useTheme();
   const { colors, isDark } = useAppTheme();
-  const insets = useSafeAreaInsets();
-  const safeAreaBottom = insets.bottom;
 
   // Dismiss active composer-attached sheet when main input gains focus.
   // Picker search fields do NOT trigger this because they are separate
@@ -369,7 +371,7 @@ export function ChatComposer({
   const activeToolbarItems = toolbarItems ?? DEFAULT_TOOLBAR_ITEMS;
 
   // Preload picker bundles for equipped toolbar items on mount / layout change
-  useEffect(() => {
+  useLayoutEffect(() => {
     preloadPickersForToolbar(activeToolbarItems.map((i) => i.id));
   }, [activeToolbarItems]);
 
@@ -567,6 +569,7 @@ export function ChatComposer({
       toolbarEditing,
       canSend,
       handleSend,
+      handleMainInputFocus,
       textInputProps,
       showVoiceButton,
       normalizedVoiceButtonComponent,
@@ -591,6 +594,7 @@ export function ChatComposer({
       onImagesPicked,
       imagePickerDisabled,
       inputRef,
+      scope,
       useNative,
     ],
   );
@@ -666,6 +670,7 @@ export function ChatComposer({
           visible={itemPickerVisible}
           currentItemIds={activeToolbarItems.map((i) => i.id)}
           onAddItem={(itemId) => {
+            preloadPickerById(itemId);
             onToolbarAddItem(itemId);
             setItemPickerVisible(false);
           }}

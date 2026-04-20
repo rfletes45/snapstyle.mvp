@@ -34,6 +34,8 @@ import { ButtonLoadingOverlay } from "./PickerLoadingFallback";
 import {
   getGifStickerPickerImport,
   getResolvedGifStickerPicker,
+  preloadPickerById,
+  usePickerPreloadStatus,
 } from "./pickerPreload";
 
 const LazyGifStickerPicker = React.lazy(() => getGifStickerPickerImport());
@@ -69,6 +71,7 @@ function GifStickerButtonBase({
     lastKeyboardHeight,
     sheetTranslateY,
   } = useComposerSheet();
+  const preloadStatus = usePickerPreloadStatus("gif-sticker");
 
   // Track open state in a ref so the unmount cleanup can access it
   const pickerOpenRef = useRef(false);
@@ -84,16 +87,25 @@ function GifStickerButtonBase({
   }, [deactivateSheet]);
 
   const handleClose = useCallback(() => {
+    pickerOpenRef.current = false;
     setPickerOpen(false);
     deactivateSheet();
   }, [deactivateSheet]);
 
   const handlePress = useCallback(() => {
     if (pickerOpenRef.current) return;
+    pickerOpenRef.current = true;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    void preloadPickerById("gif-sticker")?.catch(() => {});
     activateSheet(undefined, handleClose);
     setPickerOpen(true);
   }, [activateSheet, handleClose]);
+
+  useEffect(() => {
+    if (pickerOpen && preloadStatus.status === "failed") {
+      handleClose();
+    }
+  }, [handleClose, pickerOpen, preloadStatus.status]);
 
   const handleGifSelected = useCallback(
     (gif: GifItem) => {
@@ -110,7 +122,8 @@ function GifStickerButtonBase({
   );
 
   const ResolvedPicker = pickerOpen ? getResolvedGifStickerPicker() : null;
-  const isLoading = pickerOpen && !ResolvedPicker;
+  const isLoading =
+    pickerOpen && !ResolvedPicker && preloadStatus.status !== "failed";
 
   return (
     <>
@@ -137,7 +150,7 @@ function GifStickerButtonBase({
             keyboardHeight={lastKeyboardHeight}
             sharedTranslateY={sheetTranslateY}
           />
-        ) : (
+        ) : preloadStatus.status !== "failed" ? (
           <Suspense fallback={null}>
             <LazyGifStickerPicker
               ref={sheetRef}
@@ -149,7 +162,7 @@ function GifStickerButtonBase({
               sharedTranslateY={sheetTranslateY}
             />
           </Suspense>
-        ))}
+        ) : null)}
     </>
   );
 }

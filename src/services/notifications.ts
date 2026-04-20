@@ -6,7 +6,7 @@ import Constants from "expo-constants";
 import * as Crypto from "expo-crypto";
 import * as Device from "expo-device";
 import * as Notifications from "expo-notifications";
-import { doc, serverTimestamp, setDoc } from "firebase/firestore";
+import { deleteDoc, doc, serverTimestamp, setDoc } from "firebase/firestore";
 import { Platform } from "react-native";
 import { getFirestoreInstance } from "./firebase";
 
@@ -288,23 +288,40 @@ export async function syncNotificationSession(
 export async function clearNotificationSession(userId: string): Promise<void> {
   const db = getFirestoreInstance();
   const deviceId = await getNotificationDeviceId();
+  const ref = doc(db, "Users", userId, "NotificationSessions", deviceId);
 
-  await setDoc(
-    doc(db, "Users", userId, "NotificationSessions", deviceId),
-    {
-      deviceId,
-      appState: "inactive",
-      currentScreen: null,
-      currentChatId: null,
-      currentConversationScope: null,
-      currentGameSessionId: null,
-      currentGameInviteId: null,
-      currentGameRuntimeType: null,
-      updatedAt: serverTimestamp(),
-      lastHeartbeatAt: serverTimestamp(),
-    },
-    { merge: true },
-  );
+  // Hard delete the session doc on logout / unmount.  Previously we wrote
+  // appState:"inactive" which kept the session row alive with a fresh
+  // updatedAt — the backend would still read it as a "recent" session and
+  // could incorrectly believe the user was foregrounded from that device.
+  try {
+    await deleteDoc(ref);
+  } catch (err) {
+    // Fallback: if delete fails (rules edge-case), blank the row and mark
+    // background so the staleness filter excludes it quickly.
+    logger.warn(
+      "Failed to delete notification session (falling back to blank write)",
+      err,
+    );
+    await setDoc(
+      ref,
+      {
+        deviceId,
+        appState: "background",
+        currentScreen: null,
+        currentChatId: null,
+        currentConversationScope: null,
+        currentGameSessionId: null,
+        currentGameInviteId: null,
+        currentGameRuntimeType: null,
+        inAppEnabled: false,
+        pushEnabled: false,
+        updatedAt: serverTimestamp(),
+        lastHeartbeatAt: serverTimestamp(),
+      },
+      { merge: true },
+    );
+  }
 }
 
 export async function scheduleLocalNotification(

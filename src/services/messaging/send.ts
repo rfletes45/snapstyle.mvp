@@ -17,6 +17,7 @@
 
 import type { SenderStyle } from "@/cosmetics/types";
 import { getAppInstance } from "@/services/firebase";
+import { getNotificationDeviceId } from "@/services/notifications";
 import {
   enqueueMessage,
   generateMessageId,
@@ -145,6 +146,7 @@ interface SendMessageV2Params {
   messageId: string;
   createdAt?: number;
   traceId?: string;
+  senderDeviceId?: string;
   senderStyle?: {
     bubbleColorId?: string | null;
     bubbleColorHex?: string | null;
@@ -172,6 +174,19 @@ function getFunctionsInstance() {
     functionsInstance = getFunctions(getAppInstance());
   }
   return functionsInstance;
+}
+
+/**
+ * Resolve the stable per-device identifier for self-notification suppression.
+ * Failures are swallowed: delivery should never block on this, and the
+ * backend has a token-level fallback filter.
+ */
+async function safeGetSenderDeviceId(): Promise<string | undefined> {
+  try {
+    return await getNotificationDeviceId();
+  } catch {
+    return undefined;
+  }
 }
 
 async function sendMessageV2(
@@ -207,6 +222,7 @@ export async function sendMessage(
   });
 
   const clientId = await getClientId();
+  const senderDeviceId = await safeGetSenderDeviceId();
 
   const sendPromise = (async (): Promise<{
     success: boolean;
@@ -230,6 +246,7 @@ export async function sendMessage(
         createdAt: outboxItem.createdAt,
         traceId: outboxItem.traceId,
         senderStyle: params.senderStyle,
+        senderDeviceId,
       });
 
       if (!result.success) {
@@ -262,6 +279,7 @@ export async function sendMessage(
  */
 export async function retryMessage(messageId: string): Promise<boolean> {
   const clientId = await getClientId();
+  const senderDeviceId = await safeGetSenderDeviceId();
 
   return retryItem(messageId, async (item) => {
     const result = await sendMessageV2({
@@ -277,6 +295,7 @@ export async function retryMessage(messageId: string): Promise<boolean> {
       messageId: item.messageId,
       createdAt: item.createdAt,
       traceId: item.traceId,
+      senderDeviceId,
     });
 
     return result.success;
@@ -292,6 +311,7 @@ export async function processPendingMessages(): Promise<{
   skipped: number;
 }> {
   const clientId = await getClientId();
+  const senderDeviceId = await safeGetSenderDeviceId();
 
   return processOutbox(async (item) => {
     const result = await sendMessageV2({
@@ -307,6 +327,7 @@ export async function processPendingMessages(): Promise<{
       messageId: item.messageId,
       createdAt: item.createdAt,
       traceId: item.traceId,
+      senderDeviceId,
     });
 
     return result.success;

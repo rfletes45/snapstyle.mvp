@@ -34,7 +34,7 @@ export function PickerLoadingFallback() {
 export function ButtonLoadingOverlay() {
   const { colors } = useTheme();
   return (
-    <View style={styles.overlay}>
+    <View style={styles.overlay} pointerEvents="none">
       <ActivityIndicator size="small" color={colors.primary} />
     </View>
   );

@@ -10,7 +10,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   },
   orientation: "default",
   userInterfaceStyle: "automatic",
-  icon: "./assets/images/icon.png",
+  icon: "./assets/images/Filler_App_Icon.png",
   ios: {
     supportsTablet: true,
     bundleIdentifier: "com.vibeapp.mobile",

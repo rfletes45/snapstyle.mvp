@@ -42,6 +42,8 @@ const trendingCache: { current: CacheEntry<GifPage> | null } = {
 const categoriesCache: { current: CacheEntry<GifCategory[]> | null } = {
   current: null,
 };
+let trendingFirstPagePromise: Promise<GifPage> | null = null;
+let categoriesPromise: Promise<GifCategory[]> | null = null;
 
 function isCacheValid<T>(entry: CacheEntry<T> | null): entry is CacheEntry<T> {
   return entry !== null && Date.now() - entry.timestamp < CACHE_TTL_MS;
@@ -63,13 +65,25 @@ export async function fetchTrending(params?: {
     return trendingCache.current.data;
   }
 
-  const result = await getProvider().trending(params ?? {});
-
-  // Cache first page
   if (!params?.cursor) {
-    trendingCache.current = { data: result, timestamp: Date.now() };
+    if (trendingFirstPagePromise) {
+      return trendingFirstPagePromise;
+    }
+
+    trendingFirstPagePromise = getProvider()
+      .trending(params ?? {})
+      .then((result) => {
+        trendingCache.current = { data: result, timestamp: Date.now() };
+        return result;
+      })
+      .finally(() => {
+        trendingFirstPagePromise = null;
+      });
+
+    return trendingFirstPagePromise;
   }
 
+  const result = await getProvider().trending(params ?? {});
   return result;
 }
 
@@ -109,9 +123,21 @@ export async function getCategories(): Promise<GifCategory[]> {
     return categoriesCache.current.data;
   }
 
-  const result = await getProvider().categories();
-  categoriesCache.current = { data: result, timestamp: Date.now() };
-  return result;
+  if (categoriesPromise) {
+    return categoriesPromise;
+  }
+
+  categoriesPromise = getProvider()
+    .categories()
+    .then((result) => {
+      categoriesCache.current = { data: result, timestamp: Date.now() };
+      return result;
+    })
+    .finally(() => {
+      categoriesPromise = null;
+    });
+
+  return categoriesPromise;
 }
 
 /**

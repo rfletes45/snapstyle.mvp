@@ -102,7 +102,10 @@ import { useComposerToolbarLayout } from "@/hooks/useComposerToolbarLayout";
 import { ChatHeader } from "@/components/chat/ChatHeader";
 import { ChatMessageRenderer } from "@/components/chat/ChatMessageRenderer";
 import { createCardCornerWidthStore } from "@/components/chat/useGroupedCardLayout";
-import { useComposerSheet } from "@/contexts/ComposerSheetContext";
+import {
+  useComposerSheet,
+  useDismissTransientUiOnBlur,
+} from "@/contexts/ComposerSheetContext";
 import { PinnedInviteBar } from "@/gamesV4/components/PinnedInviteBar";
 import { createGameInvite } from "@/gamesV4/services/gameServiceV4";
 import type { GameId } from "@/gamesV4/types";
@@ -493,8 +496,17 @@ export default function ChatScreen({
   });
 
   // Keep ComposerSheetContext aware of the latest keyboard height
-  const { setLastKeyboardHeight, sheetExtraPadding, dismissActiveSheet } =
-    useComposerSheet();
+  const {
+    setLastKeyboardHeight,
+    sheetExtraPadding,
+    dismissActiveSheet,
+    dismissAllTransientUi,
+  } = useComposerSheet();
+
+  // Dismiss all transient chat UI (sheets, keyboard) on navigation blur.
+  // This ensures no Portal-based sheet survives into the destination screen.
+  useDismissTransientUiOnBlur();
+
   useEffect(() => {
     if (screen.keyboard.finalKeyboardHeight > 0) {
       setLastKeyboardHeight(screen.keyboard.finalKeyboardHeight);
@@ -1651,6 +1663,7 @@ export default function ChatScreen({
               renderScrollComponent={renderScrollComponent}
               pillBottomOffset={12}
               isKeyboardOpen={screen.keyboard.isKeyboardOpen}
+              onDismissTransientUi={dismissAllTransientUi}
               ListHeaderComponent={
                 screen.chat.pagination.isLoadingOlder ? (
                   <View style={styles.loadMoreContainer}>

@@ -193,7 +193,10 @@ import { AnimalBubble } from "@/components/chat/AnimalBubble";
 import { DateDivider } from "@/components/chat/DateDivider";
 import { GroupStackedMessageRenderer } from "@/components/chat/GroupStackedMessageRenderer";
 import { createCardCornerWidthStore } from "@/components/chat/useGroupedCardLayout";
-import { useComposerSheet } from "@/contexts/ComposerSheetContext";
+import {
+  useComposerSheet,
+  useDismissTransientUiOnBlur,
+} from "@/contexts/ComposerSheetContext";
 import { useAnimalEntitlement } from "@/hooks/useAnimalEntitlement";
 import { useConversationDisplayMode } from "@/store/ConversationDisplayModeContext";
 
@@ -588,8 +591,17 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   const messages = screen.messages;
 
   // Keep ComposerSheetContext aware of the latest keyboard height
-  const { setLastKeyboardHeight, sheetExtraPadding, dismissActiveSheet } =
-    useComposerSheet();
+  const {
+    setLastKeyboardHeight,
+    sheetExtraPadding,
+    dismissActiveSheet,
+    dismissAllTransientUi,
+  } = useComposerSheet();
+
+  // Dismiss all transient chat UI (sheets, keyboard) on navigation blur.
+  // This ensures no Portal-based sheet survives into the destination screen.
+  useDismissTransientUiOnBlur();
+
   useEffect(() => {
     if (screen.keyboard.finalKeyboardHeight > 0) {
       setLastKeyboardHeight(screen.keyboard.finalKeyboardHeight);
@@ -2410,6 +2422,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
               renderScrollComponent={renderScrollComponent}
               pillBottomOffset={12}
               isKeyboardOpen={screen.keyboard.isKeyboardOpen}
+              onDismissTransientUi={dismissAllTransientUi}
               ListHeaderComponent={
                 screen.chat.pagination.isLoadingOlder ? (
                   <View style={styles.loadMoreContainer}>
@@ -2701,8 +2714,8 @@ const styles = StyleSheet.create({
     marginLeft: 10,
   },
   messageBubble: { padding: 10, borderRadius: 20 },
-  ownMessage: { borderBottomRightRadius: 6 },
-  otherMessage: { borderBottomLeftRadius: 6 },
+  ownMessage: { borderBottomRightRadius: 6, alignSelf: "flex-end" },
+  otherMessage: { borderBottomLeftRadius: 6, alignSelf: "flex-start" },
   imageOnlyBubble: {
     padding: 0,
     backgroundColor: "transparent",

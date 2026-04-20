@@ -587,6 +587,12 @@ interface SendMessageV2Input {
   threadRootId?: string;
   /** Client-generated trace ID for cross-system log correlation (Segment 8) */
   traceId?: string;
+  /**
+   * Stable per-device identifier (matches Users/{uid}/NotificationDevices doc id).
+   * Stamped on the message doc so the notification trigger can exclude the
+   * sender's own device from push and in-app targeting.
+   */
+  senderDeviceId?: string;
   /** Sender's chat style snapshot (bubble color, font, animal theme) */
   senderStyle?: {
     bubbleColorId?: string | null;
@@ -651,6 +657,7 @@ export const sendMessageV2 = functions.https.onCall(
       traceId,
       senderStyle,
       animalId,
+      senderDeviceId,
     } = data;
 
     // Segment 8: Log traceId if present (for cross-system correlation)
@@ -968,6 +975,9 @@ export const sendMessageV2 = functions.https.onCall(
       clientId,
       // Segment 8: Include traceId in message doc for debugging/correlation
       ...(traceId ? { traceId: logTraceId } : {}),
+      // Stamp the sender's stable device ID so notification triggers can
+      // exclude the sender's device from push and in-app delivery.
+      ...(senderDeviceId ? { senderDeviceId } : {}),
     };
 
     // Add optional fields

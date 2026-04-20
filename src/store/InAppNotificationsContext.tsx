@@ -38,7 +38,17 @@ const MAX_VISIBLE_NOTIFICATIONS = 2;
 const AUTO_DISMISS_MS = 5000;
 const DEBOUNCE_WINDOW_MS = 3000;
 const INITIAL_STALE_NOTIFICATION_MS = 15_000;
-const SESSION_HEARTBEAT_MS = 25_000;
+// Tightened from 25s → 15s so backend sees fresher foreground signal and
+// the 45s stale window always contains 3 heartbeat opportunities.
+const SESSION_HEARTBEAT_MS = 15_000;
+
+// AppState values that should be considered "foreground" for the purposes of
+// silencing in-app toasts.  iOS emits "inactive" during transitional UI
+// (Control Center, Face ID, modal over the app) — the user is still using
+// the app and should see the in-app toast.  Only true "background" silences.
+function isForegroundAppState(state: AppStateStatus): boolean {
+  return state === "active" || state === "inactive";
+}
 
 export type NotificationType =
   | "dm_message"
@@ -430,7 +440,7 @@ export function InAppNotificationsProvider({ children }: ProviderProps) {
   }, [syncSession]);
 
   useEffect(() => {
-    if (!uid || appState !== "active") return;
+    if (!uid || !isForegroundAppState(appState)) return;
 
     const interval = setInterval(() => {
       syncSession().catch(() => {});
@@ -480,10 +490,21 @@ export function InAppNotificationsProvider({ children }: ProviderProps) {
         if (item.presentedAtMs || item.archivedAtMs) {
           continue;
         }
+        // Defense in depth: never surface a notification whose actor is the
+        // current user.  Backend already filters, but this guarantees the
+        // user never sees a toast for their own action even if a malformed
+        // record somehow reaches this subscription.
+        if (item.actorUid && item.actorUid === uid) {
+          log.warn(
+            `[InApp] Suppressed self-actor notification id=${item.id} type=${item.type}`,
+          );
+          markUserNotificationPresented(uid, item.id).catch(() => {});
+          continue;
+        }
 
         const shouldSilence =
           !enabled ||
-          appState !== "active" ||
+          !isForegroundAppState(appState) ||
           (firstSnapshot &&
             item.createdAtMs > 0 &&
             now - item.createdAtMs > INITIAL_STALE_NOTIFICATION_MS);
@@ -492,7 +513,7 @@ export function InAppNotificationsProvider({ children }: ProviderProps) {
           if (__DEV__ && item.type?.startsWith("game_")) {
             log.info(
               `[InApp] Game notification silenced: type=${item.type} id=${item.id} ` +
-                `reason=${!enabled ? "disabled" : appState !== "active" ? "inactive" : "stale_on_hydrate"}`,
+                `reason=${!enabled ? "disabled" : !isForegroundAppState(appState) ? "backgrounded" : "stale_on_hydrate"}`,
             );
           }
           markUserNotificationPresented(uid, item.id).catch((error) => {

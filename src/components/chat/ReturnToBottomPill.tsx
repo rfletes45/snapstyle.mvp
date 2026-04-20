@@ -12,7 +12,7 @@
 import { BorderRadius, Spacing } from "@/constants/theme";
 import { useColors } from "@/store/ThemeContext";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import React from "react";
+import React, { useCallback } from "react";
 import {
   Platform,
   Pressable,
@@ -59,6 +59,15 @@ export function ReturnToBottomPill({
 }: ReturnToBottomPillProps): React.JSX.Element | null {
   const colors = useColors();
 
+  // Stop touch propagation so SheetDismissLayer (wrapping the message list)
+  // does not interpret a pill tap as a "dismiss sheet" gesture.  Without
+  // this, tapping the pill both scrolls AND accidentally dismisses any
+  // active keyboard-replacement sheet via the parent's onTouchEnd handler.
+  const stopPropagation = useCallback(
+    (e: { stopPropagation: () => void }) => e.stopPropagation(),
+    [],
+  );
+
   if (!visible) {
     return null;
   }
@@ -76,6 +85,9 @@ export function ReturnToBottomPill({
       exiting={FadeOut.duration(120)}
       style={[styles.container, { bottom: bottomOffset }, style]}
       pointerEvents="box-none"
+      // Prevent touches from bubbling to SheetDismissLayer
+      onTouchStart={stopPropagation}
+      onTouchEnd={stopPropagation}
     >
       <Pressable
         onPress={onPress}

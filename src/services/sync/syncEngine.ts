@@ -45,6 +45,7 @@ import {
   fromGroupMessage,
   isLegacyGroupMessage,
 } from "@/services/messaging/adapters/groupAdapter";
+import { getNotificationDeviceId } from "@/services/notifications";
 import { LocalAttachment, uploadMultipleAttachments } from "@/services/storage";
 import { AttachmentV2, MessageV2, ReplyToMetadata } from "@/types/messaging";
 import type { GroupMessage } from "@/types/models";
@@ -83,6 +84,8 @@ interface SendMessagePayload {
   threadRootId?: string;
   mentionUids?: string[];
   createdAt?: number;
+  /** Stable per-device ID — lets the server exclude sender's device from push. */
+  senderDeviceId?: string;
 }
 
 interface SendMessageResponse {
@@ -253,8 +256,23 @@ export async function syncPendingMessages(): Promise<void> {
     for (const message of pendingMessages) {
       try {
         await syncSingleMessage(message);
-      } catch (error) {
-        // Continue with other messages even if one fails
+      } catch (error: any) {
+        const code = error?.code || error?.message || "";
+        // If the Cloud Functions endpoint is unreachable, every subsequent
+        // message in this batch will also fail. Bail out early and let
+        // the next background-sync interval retry with a fresh connection.
+        if (
+          code.includes("unavailable") ||
+          code.includes("UNAVAILABLE") ||
+          code.includes("deadline-exceeded") ||
+          code.includes("DEADLINE_EXCEEDED")
+        ) {
+          logger.warn(
+            `[SyncEngine] Functions endpoint unavailable — aborting batch, will retry next cycle`,
+          );
+          break;
+        }
+        // Non-connectivity failures: continue with remaining messages
         logger.error(
           `[SyncEngine] Failed to sync message ${message.id}:`,
           error,
@@ -440,6 +458,14 @@ async function syncSingleMessage(
       };
     }
 
+    // Resolve device ID for self-notification suppression (best-effort).
+    let senderDeviceId: string | undefined;
+    try {
+      senderDeviceId = await getNotificationDeviceId();
+    } catch {
+      senderDeviceId = undefined;
+    }
+
     // Build payload for Cloud Function
     const payload: SendMessagePayload = {
       messageId: message.id,
@@ -460,6 +486,7 @@ async function syncSingleMessage(
         ? JSON.parse(message.mentions_json)
         : undefined,
       createdAt: message.created_at,
+      senderDeviceId,
     };
 
     // Guard: block send if animal message has no animalId
@@ -503,10 +530,15 @@ async function syncSingleMessage(
       serverReceivedAt: serverData.serverReceivedAt,
     });
   } catch (error: any) {
-    logger.error("[SendPipeline] Sync failed:", message.id, error);
+    const errorCode = error?.code || "";
+    const errorMessage = error.message || "Unknown error";
+    logger.error("[SendPipeline] Sync failed:", message.id, {
+      code: errorCode,
+      message: errorMessage,
+      retryCount: message.retry_count,
+    });
 
     // Detect permanent errors that should NOT be retried
-    const errorMessage = error.message || "Unknown error";
     const isPermanentError =
       errorMessage.includes("Not a member") ||
       errorMessage.includes("permission-denied") ||
@@ -517,7 +549,10 @@ async function syncSingleMessage(
       errorMessage.includes("UNAUTHENTICATED") ||
       errorMessage.includes("without a conversation ID") ||
       errorMessage.includes("Invalid message kind") ||
-      errorMessage.includes("Animal messages must include");
+      errorMessage.includes("Animal messages must include") ||
+      errorCode === "functions/permission-denied" ||
+      errorCode === "functions/unauthenticated" ||
+      errorCode === "functions/not-found";
 
     if (isPermanentError) {
       logger.warn(

@@ -44,6 +44,8 @@ const trendingCache: { current: CacheEntry<StickerPage> | null } = {
 const categoriesCache: { current: CacheEntry<StickerCategory[]> | null } = {
   current: null,
 };
+let trendingFirstPagePromise: Promise<StickerPage> | null = null;
+let categoriesPromise: Promise<StickerCategory[]> | null = null;
 
 function isCacheValid<T>(entry: CacheEntry<T> | null): entry is CacheEntry<T> {
   return entry !== null && Date.now() - entry.timestamp < CACHE_TTL_MS;
@@ -60,21 +62,32 @@ export async function fetchTrendingStickers(params?: {
   limit?: number;
   page?: number;
 }): Promise<StickerPage> {
+  const isFirstPage = !params?.page || params.page === 1;
+
   // Return cache for first page only
-  if (
-    (!params?.page || params.page === 1) &&
-    isCacheValid(trendingCache.current)
-  ) {
+  if (isFirstPage && isCacheValid(trendingCache.current)) {
     return trendingCache.current.data;
   }
 
-  const result = await getProvider().trending(params ?? {});
+  if (isFirstPage) {
+    if (trendingFirstPagePromise) {
+      return trendingFirstPagePromise;
+    }
 
-  // Cache first page
-  if (!params?.page || params.page === 1) {
-    trendingCache.current = { data: result, timestamp: Date.now() };
+    trendingFirstPagePromise = getProvider()
+      .trending(params ?? {})
+      .then((result) => {
+        trendingCache.current = { data: result, timestamp: Date.now() };
+        return result;
+      })
+      .finally(() => {
+        trendingFirstPagePromise = null;
+      });
+
+    return trendingFirstPagePromise;
   }
 
+  const result = await getProvider().trending(params ?? {});
   return result;
 }
 
@@ -97,9 +110,21 @@ export async function getStickerCategories(): Promise<StickerCategory[]> {
     return categoriesCache.current.data;
   }
 
-  const result = await getProvider().categories();
-  categoriesCache.current = { data: result, timestamp: Date.now() };
-  return result;
+  if (categoriesPromise) {
+    return categoriesPromise;
+  }
+
+  categoriesPromise = getProvider()
+    .categories()
+    .then((result) => {
+      categoriesCache.current = { data: result, timestamp: Date.now() };
+      return result;
+    })
+    .finally(() => {
+      categoriesPromise = null;
+    });
+
+  return categoriesPromise;
 }
 
 /**

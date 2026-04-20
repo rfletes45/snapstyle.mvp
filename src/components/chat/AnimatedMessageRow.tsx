@@ -29,7 +29,6 @@
  *   translateY transitions on the UI thread.
  */
 
-import { createLogger } from "@/utils/log";
 import React, { useEffect, useRef } from "react";
 import Animated, {
   Easing,
@@ -38,8 +37,6 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from "react-native-reanimated";
-
-const log = createLogger("AnimatedMessageRow");
 
 /** Subtle slide distance in pixels — start below, animate up */
 const SLIDE_PX = 8;
@@ -75,21 +72,6 @@ export function AnimatedMessageRow({
   // cannot flip it.
   const shouldAnimate = useRef(shouldAnimateOnMount(messageId)).current;
 
-  if (__DEV__) {
-    // eslint-disable-next-line react-hooks/rules-of-hooks
-    const didLog = useRef(false);
-    if (!didLog.current) {
-      didLog.current = true;
-      log.debug("AnimatedMessageRow mount", {
-        operation: "mount",
-        data: {
-          messageId: messageId.substring(0, 8),
-          shouldAnimate,
-        },
-      });
-    }
-  }
-
   if (!shouldAnimate) {
     return <>{children}</>;
   }
@@ -115,13 +97,6 @@ function SlideInAnimator({
   const opacity = useSharedValue(0);
 
   useEffect(() => {
-    if (__DEV__) {
-      log.debug("SlideInAnimator effect — dispatching animation", {
-        operation: "animationStart",
-        data: { messageId: messageId.substring(0, 8) },
-      });
-    }
-
     // Use requestAnimationFrame to ensure the native view is laid out
     // and visible in the hierarchy before Reanimated dispatches the
     // transitions on the UI thread. Without this, removeClippedSubviews

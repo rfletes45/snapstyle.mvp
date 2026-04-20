@@ -31,7 +31,7 @@ import {
   TextInput,
   TextInputProps,
   TextInputSelectionChangeEventData,
-  ViewStyle,
+  TextStyle,
 } from "react-native";
 
 export interface NativeComposerInputRef {
@@ -56,7 +56,7 @@ interface Props {
   editable?: boolean;
   maxLength?: number;
   multiline?: boolean;
-  style?: StyleProp<ViewStyle>;
+  style?: StyleProp<TextStyle>;
   /** Additional TextInput props for the fallback path (Android) */
   textInputProps?: Partial<TextInputProps>;
   /** Whether to use native keyboard (iOS only). Pass false to force standard TextInput. */

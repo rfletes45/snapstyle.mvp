@@ -81,6 +81,12 @@ export interface ChatMessageListProps<T> {
   contentContainerStyle?: StyleProp<ViewStyle>;
   /** Extra FlatList props */
   flatListProps?: Partial<FlatListProps<T>>;
+  /**
+   * Called when the return-to-bottom pill is pressed, BEFORE scrolling.
+   * Used to dismiss all transient chat overlay UI (sheets, keyboard)
+   * through the unified collapse path.
+   */
+  onDismissTransientUi?: () => void;
 }
 
 export interface ChatMessageListRef {
@@ -114,6 +120,7 @@ function ChatMessageListInner<T>(
     style,
     contentContainerStyle,
     flatListProps,
+    onDismissTransientUi,
   } = props;
 
   const flatListRef = useRef<FlatList<T>>(null);
@@ -269,6 +276,17 @@ function ChatMessageListInner<T>(
     ...flatListProps,
   };
 
+  // Unified return-to-bottom handler: dismiss all transient overlay UI
+  // (sheets, keyboard) through the canonical collapse path, then scroll.
+  const handleReturnToBottom = useCallback(() => {
+    if (__DEV__) {
+      // eslint-disable-next-line no-console
+      console.log("[ChatTransientUi] return-to-bottom pressed");
+    }
+    onDismissTransientUi?.();
+    scrollState.scrollToLatest();
+  }, [onDismissTransientUi, scrollState]);
+
   return (
     <View style={[styles.container, style]}>
       <FlatList
@@ -281,7 +299,7 @@ function ChatMessageListInner<T>(
       <ReturnToBottomPill
         visible={scrollState.showJumpPill}
         unreadCount={scrollState.newMessagesWhileAway}
-        onPress={scrollState.scrollToLatest}
+        onPress={handleReturnToBottom}
         bottomOffset={pillBottomOffset}
       />
     </View>

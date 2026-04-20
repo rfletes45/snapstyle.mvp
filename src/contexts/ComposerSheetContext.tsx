@@ -15,6 +15,7 @@
  */
 
 import { getKeyboardReplacementSheetHeight } from "@/components/chat/bottomSheetLayout";
+import { useFocusEffect } from "@react-navigation/native";
 import React, {
   createContext,
   useCallback,
@@ -94,6 +95,11 @@ export interface ComposerSheetContextValue {
   /** Signal that the next deactivateSheet should capture a handoff floor
    *  because the keyboard is about to open (composer focus). */
   beginKeyboardHandoff: () => void;
+
+  /** Dismiss ALL transient chat overlay UI: active sheet + keyboard.
+   *  This is the single canonical "collapse everything" path.
+   *  Used by return-to-bottom, navigation blur, and screen unmount. */
+  dismissAllTransientUi: () => void;
 }
 
 // ─── Context ─────────────────────────────────────────────────────────────────
@@ -141,6 +147,12 @@ export function ComposerSheetProvider({
 
   const activateSheet = useCallback(
     (currentKbHeight?: number, closeCallback?: () => void) => {
+      if (__DEV__) {
+        // eslint-disable-next-line no-console
+        console.log("[ChatTransientUi] activateSheet", {
+          hasExistingSheet: !!activeCloseRef.current,
+        });
+      }
       // If another sheet is already open, dismiss it — but delay the
       // teardown to the next frame so both Portals overlap briefly.
       // React Native Paper's Portal uses componentDidMount/componentWillUnmount
@@ -211,6 +223,13 @@ export function ComposerSheetProvider({
   );
 
   const deactivateSheet = useCallback(() => {
+    if (__DEV__) {
+      // eslint-disable-next-line no-console
+      console.log("[ChatTransientUi] deactivateSheet", {
+        switching: switchingRef.current,
+        handoffPending: handoffPendingRef.current,
+      });
+    }
     // When switching between sheets, skip ALL teardown — the new sheet's
     // close callback is already stored in activeCloseRef by activateSheet(),
     // and clearing it here would break future switches. The animated values
@@ -247,6 +266,12 @@ export function ComposerSheetProvider({
   ]);
 
   const dismissActiveSheet = useCallback(() => {
+    if (__DEV__) {
+      // eslint-disable-next-line no-console
+      console.log("[ChatTransientUi] dismissActiveSheet", {
+        hasActiveSheet: !!activeCloseRef.current,
+      });
+    }
     if (activeCloseRef.current) {
       const close = activeCloseRef.current;
       activeCloseRef.current = null;
@@ -268,6 +293,42 @@ export function ComposerSheetProvider({
     }, 600);
   }, [handoffFloor]);
 
+  // ── Unified collapse path ───────────────────────────────────────────────
+  // Single canonical function that tears down ALL transient chat overlay UI:
+  // active sheet + keyboard + handoff state.  Every dismiss path (return-to-
+  // bottom, navigation blur, screen unmount, tab switch) should funnel
+  // through this instead of calling dismiss/deactivate individually.
+  const dismissAllTransientUi = useCallback(() => {
+    if (__DEV__) {
+      // eslint-disable-next-line no-console
+      console.log("[ChatTransientUi] dismissAllTransientUi");
+    }
+
+    // 1. Dismiss active sheet (if any) via its close callback.
+    //    The close callback calls deactivateSheet() internally,
+    //    which resets all sheet-related shared values.
+    if (activeCloseRef.current) {
+      const close = activeCloseRef.current;
+      activeCloseRef.current = null;
+      close();
+    } else {
+      // No active sheet — still reset shared values defensively
+      // in case of stale state from a previous incomplete teardown.
+      deactivateSheet();
+    }
+
+    // 2. Clear any pending handoff floor to prevent stale offsets.
+    if (handoffTimerRef.current) {
+      clearTimeout(handoffTimerRef.current);
+      handoffTimerRef.current = null;
+    }
+    handoffFloor.value = 0;
+    handoffPendingRef.current = false;
+
+    // 3. Dismiss the keyboard so no overlay remains.
+    Keyboard.dismiss();
+  }, [deactivateSheet, handoffFloor]);
+
   const value = useMemo<ComposerSheetContextValue>(
     () => ({
       sheetTranslateY,
@@ -282,6 +343,7 @@ export function ComposerSheetProvider({
       setLastKeyboardHeight,
       handoffFloor,
       beginKeyboardHandoff,
+      dismissAllTransientUi,
     }),
     [
       sheetTranslateY,
@@ -296,6 +358,7 @@ export function ComposerSheetProvider({
       setLastKeyboardHeight,
       handoffFloor,
       beginKeyboardHandoff,
+      dismissAllTransientUi,
     ],
   );
 
@@ -331,5 +394,34 @@ export function useComposerSheet(): ComposerSheetContextValue {
     setLastKeyboardHeight: NOOP,
     handoffFloor: STUB_SHARED_VALUE,
     beginKeyboardHandoff: NOOP,
+    dismissAllTransientUi: NOOP,
   };
+}
+
+// ─── Navigation Lifecycle Hook ───────────────────────────────────────────────
+
+/**
+ * Dismiss all chat-owned transient UI (sheets, keyboard) when the owning
+ * screen loses focus.  Works with `freezeOnBlur: true` because the blur
+ * event fires BEFORE the screen is frozen.
+ *
+ * Call this hook in every chat screen (DM, GroupChat, Thread) to enforce
+ * the invariant: navigating away always dismisses chat-owned overlays.
+ */
+export function useDismissTransientUiOnBlur(): void {
+  const { dismissAllTransientUi } = useComposerSheet();
+
+  useFocusEffect(
+    useCallback(() => {
+      // Focus callback — nothing to do on focus.
+      return () => {
+        // Blur callback — dismiss everything.
+        if (__DEV__) {
+          // eslint-disable-next-line no-console
+          console.log("[ChatTransientUi] screen blur → dismissAllTransientUi");
+        }
+        dismissAllTransientUi();
+      };
+    }, [dismissAllTransientUi]),
+  );
 }

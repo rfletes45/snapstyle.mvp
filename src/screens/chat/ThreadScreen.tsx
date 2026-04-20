@@ -69,6 +69,7 @@ import {
 } from "@/services/sync/syncEngine";
 
 // Hooks & Context
+import { useDismissTransientUiOnBlur } from "@/contexts/ComposerSheetContext";
 import { useAuth } from "@/store/AuthContext";
 import { useConversationDisplayMode } from "@/store/ConversationDisplayModeContext";
 import { useAppTheme } from "@/store/ThemeContext";
@@ -106,6 +107,10 @@ export default function ThreadScreen({ navigation, route }: Props) {
   const displayName = currentFirebaseUser?.displayName ?? "";
   const chatAppearance = profile?.chatAppearance ?? null;
   const isGroupChat = scope === "group";
+
+  // Dismiss all transient chat UI on navigation blur — ensures no
+  // Portal-based sheet survives into the destination screen.
+  useDismissTransientUiOnBlur();
 
   // ---------------------------------------------------------------------------
   // State

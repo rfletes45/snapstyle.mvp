@@ -31,14 +31,7 @@ export function shouldAnimateQueuedMessage(
   state: Set<string>,
   id: string,
 ): boolean {
-  const result = state.has(id);
-  if (__DEV__) {
-    log.debug("shouldAnimateOnMount", {
-      operation: "check",
-      data: { messageId: id.substring(0, 8), result, queueSize: state.size },
-    });
-  }
-  return result;
+  return state.has(id);
 }
 
 export function consumeQueuedMessageEnterAnimation(

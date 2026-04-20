@@ -30,7 +30,12 @@ import { IconButton, useTheme } from "react-native-paper";
 
 import type { DraggableBottomSheetHandle } from "./DraggableBottomSheet";
 import { ButtonLoadingOverlay } from "./PickerLoadingFallback";
-import { getGamePickerImport, getResolvedGamePicker } from "./pickerPreload";
+import {
+  getGamePickerImport,
+  getResolvedGamePicker,
+  preloadPickerById,
+  usePickerPreloadStatus,
+} from "./pickerPreload";
 
 const LazyGamePickerModal = React.lazy(() => getGamePickerImport());
 
@@ -65,6 +70,7 @@ function GameButtonBase({
     lastKeyboardHeight,
     sheetTranslateY,
   } = useComposerSheet();
+  const preloadStatus = usePickerPreloadStatus("game");
 
   // Track open state in a ref for unmount cleanup.
   const pickerOpenRef = useRef(false);
@@ -80,16 +86,25 @@ function GameButtonBase({
   }, [deactivateSheet]);
 
   const handleClose = useCallback(() => {
+    pickerOpenRef.current = false;
     setPickerOpen(false);
     deactivateSheet();
   }, [deactivateSheet]);
 
   const handlePress = useCallback(() => {
     if (pickerOpenRef.current) return;
+    pickerOpenRef.current = true;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    void preloadPickerById("game")?.catch(() => {});
     activateSheet(undefined, handleClose);
     setPickerOpen(true);
   }, [activateSheet, handleClose]);
+
+  useEffect(() => {
+    if (pickerOpen && preloadStatus.status === "failed") {
+      handleClose();
+    }
+  }, [handleClose, pickerOpen, preloadStatus.status]);
 
   const handleGameSelected = useCallback(
     (gameId: GameId) => {
@@ -100,7 +115,8 @@ function GameButtonBase({
   );
 
   const ResolvedPicker = pickerOpen ? getResolvedGamePicker() : null;
-  const isLoading = pickerOpen && !ResolvedPicker;
+  const isLoading =
+    pickerOpen && !ResolvedPicker && preloadStatus.status !== "failed";
 
   return (
     <>
@@ -127,7 +143,7 @@ function GameButtonBase({
             keyboardHeight={lastKeyboardHeight}
             sharedTranslateY={sheetTranslateY}
           />
-        ) : (
+        ) : preloadStatus.status !== "failed" ? (
           <Suspense fallback={null}>
             <LazyGamePickerModal
               ref={sheetRef}
@@ -139,7 +155,7 @@ function GameButtonBase({
               sharedTranslateY={sheetTranslateY}
             />
           </Suspense>
-        ))}
+        ) : null)}
     </>
   );
 }

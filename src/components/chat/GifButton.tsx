@@ -31,7 +31,12 @@ import { IconButton, useTheme } from "react-native-paper";
 
 import type { DraggableBottomSheetHandle } from "./DraggableBottomSheet";
 import { ButtonLoadingOverlay } from "./PickerLoadingFallback";
-import { getGifPickerImport, getResolvedGifPicker } from "./pickerPreload";
+import {
+  getGifPickerImport,
+  getResolvedGifPicker,
+  preloadPickerById,
+  usePickerPreloadStatus,
+} from "./pickerPreload";
 
 const LazyGifPicker = React.lazy(() => getGifPickerImport());
 
@@ -60,6 +65,7 @@ function GifButtonBase({ onGifSelected, size = 24 }: GifButtonProps) {
     lastKeyboardHeight,
     sheetTranslateY,
   } = useComposerSheet();
+  const preloadStatus = usePickerPreloadStatus("gif");
 
   // Track open state in a ref so the unmount cleanup can access it
   // without adding pickerOpen to the effect's dependency array.
@@ -78,16 +84,25 @@ function GifButtonBase({ onGifSelected, size = 24 }: GifButtonProps) {
   }, [deactivateSheet]);
 
   const handleClose = useCallback(() => {
+    pickerOpenRef.current = false;
     setPickerOpen(false);
     deactivateSheet();
   }, [deactivateSheet]);
 
   const handlePress = useCallback(() => {
     if (pickerOpenRef.current) return;
+    pickerOpenRef.current = true;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    void preloadPickerById("gif")?.catch(() => {});
     activateSheet(undefined, handleClose);
     setPickerOpen(true);
   }, [activateSheet, handleClose]);
+
+  useEffect(() => {
+    if (pickerOpen && preloadStatus.status === "failed") {
+      handleClose();
+    }
+  }, [handleClose, pickerOpen, preloadStatus.status]);
 
   const handleGifSelected = useCallback(
     (gif: GifItem) => {
@@ -102,7 +117,8 @@ function GifButtonBase({ onGifSelected, size = 24 }: GifButtonProps) {
   // promise is settled, producing a 1-frame fallback flash. Reading the
   // resolved ref synchronously eliminates that flash entirely.
   const ResolvedPicker = pickerOpen ? getResolvedGifPicker() : null;
-  const isLoading = pickerOpen && !ResolvedPicker;
+  const isLoading =
+    pickerOpen && !ResolvedPicker && preloadStatus.status !== "failed";
 
   return (
     <>
@@ -128,7 +144,7 @@ function GifButtonBase({ onGifSelected, size = 24 }: GifButtonProps) {
             keyboardHeight={lastKeyboardHeight}
             sharedTranslateY={sheetTranslateY}
           />
-        ) : (
+        ) : preloadStatus.status !== "failed" ? (
           <Suspense fallback={null}>
             <LazyGifPicker
               ref={sheetRef}
@@ -139,7 +155,7 @@ function GifButtonBase({ onGifSelected, size = 24 }: GifButtonProps) {
               sharedTranslateY={sheetTranslateY}
             />
           </Suspense>
-        ))}
+        ) : null)}
     </>
   );
 }

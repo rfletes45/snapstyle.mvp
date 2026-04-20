@@ -239,6 +239,14 @@ export const onNewMessage = functions.firestore
     const members: string[] = chatDoc.data()?.members || [];
     const recipientUid = members.find((uid) => uid !== senderId);
     if (!recipientUid) return null;
+    // Defense in depth: refuse to notify the sender, even if the member list
+    // is somehow malformed and returns them.
+    if (recipientUid === senderId) return null;
+
+    const senderDeviceId: string | null =
+      typeof message.senderDeviceId === "string" && message.senderDeviceId
+        ? message.senderDeviceId
+        : null;
 
     const notifyLevel = await getDmNotifyLevel(chatId, recipientUid);
 
@@ -301,6 +309,7 @@ export const onNewMessage = functions.firestore
       },
       respectConversationMute: true,
       excludeTokens: senderTokens,
+      excludeDeviceIds: senderDeviceId ? [senderDeviceId] : [],
     });
 
     return null;
@@ -344,6 +353,10 @@ export const onNewGroupMessageV2 = functions.firestore
 
     // Collect sender's push tokens so we can exclude them from delivery.
     const senderTokens = await getUserPushTokens(senderId);
+    const senderDeviceId: string | null =
+      typeof message.senderDeviceId === "string" && message.senderDeviceId
+        ? message.senderDeviceId
+        : null;
 
     await Promise.all(
       memberIds
@@ -393,6 +406,7 @@ export const onNewGroupMessageV2 = functions.firestore
             },
             respectConversationMute: true,
             excludeTokens: senderTokens,
+            excludeDeviceIds: senderDeviceId ? [senderDeviceId] : [],
           });
         }),
     );

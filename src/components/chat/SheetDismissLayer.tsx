@@ -94,6 +94,12 @@ export function SheetDismissLayer({ children }: SheetDismissLayerProps) {
 
     const duration = Date.now() - t.time;
     if (duration < TAP_MAX_MS) {
+      if (__DEV__) {
+        // eslint-disable-next-line no-console
+        console.log("[ChatTransientUi] SheetDismissLayer tap-to-dismiss", {
+          durationMs: duration,
+        });
+      }
       dismissActiveSheet();
     }
     t.time = 0;

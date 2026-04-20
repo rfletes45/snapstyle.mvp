@@ -97,6 +97,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       try {
         const data = response.notification.request.content.data;
+        // Defense in depth: if a notification somehow arrives whose actorUid
+        // matches the current user, refuse to act on it.  This can only
+        // happen if the backend or an upstream trigger misrouted, but we
+        // never want to navigate the sender back to their own message.
+        const rawActorUid =
+          data && typeof (data as any).actorUid === "string"
+            ? (data as any).actorUid
+            : null;
+        const activeUidBeforeNormalize = currentUserIdRef.current;
+        if (
+          rawActorUid &&
+          activeUidBeforeNormalize &&
+          rawActorUid === activeUidBeforeNormalize
+        ) {
+          logStartupEvent("Notification response ignored", {
+            source,
+            reason: "self_actor",
+            actorUid: rawActorUid,
+          });
+          logger.warn(
+            "[AuthContext] Ignoring self-actor notification response",
+            {
+              data: {
+                source,
+                startupSessionId: getStartupSessionId(),
+                actorUid: rawActorUid,
+              },
+            },
+          );
+          return;
+        }
+
         const normalized = normalizeNotificationPayload(data);
         if (!normalized) {
           logStartupEvent("Notification response ignored", {

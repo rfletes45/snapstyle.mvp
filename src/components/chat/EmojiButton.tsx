@@ -26,7 +26,12 @@ import { IconButton, useTheme } from "react-native-paper";
 
 import type { DraggableBottomSheetHandle } from "./DraggableBottomSheet";
 import { ButtonLoadingOverlay } from "./PickerLoadingFallback";
-import { getEmojiPickerImport, getResolvedEmojiPicker } from "./pickerPreload";
+import {
+  getEmojiPickerImport,
+  getResolvedEmojiPicker,
+  preloadPickerById,
+  usePickerPreloadStatus,
+} from "./pickerPreload";
 
 const LazyFullEmojiPicker = React.lazy(() => getEmojiPickerImport());
 
@@ -55,6 +60,7 @@ function EmojiButtonBase({ onEmojiSelected, size = 24 }: EmojiButtonProps) {
     lastKeyboardHeight,
     sheetTranslateY,
   } = useComposerSheet();
+  const preloadStatus = usePickerPreloadStatus("emoji");
 
   const pickerOpenRef = useRef(false);
   pickerOpenRef.current = pickerOpen;
@@ -69,16 +75,25 @@ function EmojiButtonBase({ onEmojiSelected, size = 24 }: EmojiButtonProps) {
   }, [deactivateSheet]);
 
   const handleClose = useCallback(() => {
+    pickerOpenRef.current = false;
     setPickerOpen(false);
     deactivateSheet();
   }, [deactivateSheet]);
 
   const handlePress = useCallback(() => {
     if (pickerOpenRef.current) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    pickerOpenRef.current = true;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    void preloadPickerById("emoji")?.catch(() => {});
     activateSheet(undefined, handleClose);
     setPickerOpen(true);
   }, [activateSheet, handleClose]);
+
+  useEffect(() => {
+    if (pickerOpen && preloadStatus.status === "failed") {
+      handleClose();
+    }
+  }, [handleClose, pickerOpen, preloadStatus.status]);
 
   const handleEmojiSelected = useCallback(
     (emoji: string) => {
@@ -89,7 +104,8 @@ function EmojiButtonBase({ onEmojiSelected, size = 24 }: EmojiButtonProps) {
   );
 
   const ResolvedPicker = pickerOpen ? getResolvedEmojiPicker() : null;
-  const isLoading = pickerOpen && !ResolvedPicker;
+  const isLoading =
+    pickerOpen && !ResolvedPicker && preloadStatus.status !== "failed";
 
   return (
     <>
@@ -115,7 +131,7 @@ function EmojiButtonBase({ onEmojiSelected, size = 24 }: EmojiButtonProps) {
             keyboardHeight={lastKeyboardHeight}
             sharedTranslateY={sheetTranslateY}
           />
-        ) : (
+        ) : preloadStatus.status !== "failed" ? (
           <Suspense fallback={null}>
             <LazyFullEmojiPicker
               ref={sheetRef}
@@ -126,7 +142,7 @@ function EmojiButtonBase({ onEmojiSelected, size = 24 }: EmojiButtonProps) {
               sharedTranslateY={sheetTranslateY}
             />
           </Suspense>
-        ))}
+        ) : null)}
     </>
   );
 }
