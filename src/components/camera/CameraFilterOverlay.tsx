@@ -48,6 +48,49 @@ interface Props {
   intensity?: number;
 }
 
+const OVERLAY_COLOR_CACHE = new Map<string, string | null>();
+
+function getOverlayColorCacheKey(filterId: string, intensity: number): string {
+  return `${filterId}:${intensity.toFixed(3)}`;
+}
+
+export function getCachedFilterOverlayColor(
+  filter: FilterConfig,
+  intensity: number = 1,
+): string | null | undefined {
+  return OVERLAY_COLOR_CACHE.get(getOverlayColorCacheKey(filter.id, intensity));
+}
+
+export function getOrCreateFilterOverlayColor(
+  filter: FilterConfig,
+  intensity: number = 1,
+): string | null {
+  const cacheKey = getOverlayColorCacheKey(filter.id, intensity);
+  const cached = OVERLAY_COLOR_CACHE.get(cacheKey);
+  if (cached !== undefined) {
+    return cached;
+  }
+
+  const computed = filterToOverlayColor(filter, intensity);
+  OVERLAY_COLOR_CACHE.set(cacheKey, computed);
+  return computed;
+}
+
+export function getFilterOverlayColorCacheCount(intensity?: number): number {
+  if (intensity === undefined) {
+    return OVERLAY_COLOR_CACHE.size;
+  }
+
+  const suffix = `:${intensity.toFixed(3)}`;
+  let count = 0;
+  for (const cacheKey of OVERLAY_COLOR_CACHE.keys()) {
+    if (cacheKey.endsWith(suffix)) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
 // =============================================================================
 // Helpers
 // =============================================================================
@@ -203,7 +246,7 @@ const CameraFilterOverlay: React.FC<Props> = React.memo(
   ({ filter, intensity = 1 }) => {
     const overlayColor = useMemo(() => {
       if (!filter) return null;
-      return filterToOverlayColor(filter, intensity);
+      return getOrCreateFilterOverlayColor(filter, intensity);
     }, [filter, intensity]);
 
     const blendMode = useMemo(() => {

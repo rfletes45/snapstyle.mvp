@@ -18,7 +18,14 @@ import { filterConfigToColorMatrix } from "@/services/camera/filterService";
 import type { FilterConfig } from "@/types/camera";
 import { createLogger } from "@/utils/log";
 import { Skia } from "@shopify/react-native-skia";
-import React, { forwardRef, useImperativeHandle, useMemo, useRef } from "react";
+import React, {
+  forwardRef,
+  memo,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+} from "react";
 import type { StyleProp, ViewStyle } from "react-native";
 import {
   Camera,
@@ -74,11 +81,35 @@ export interface LiveFilterCameraRef {
   stopRecording(): void;
 }
 
+function nowMs(): number {
+  const perfNow = globalThis.performance?.now;
+  return typeof perfNow === "function"
+    ? perfNow.call(globalThis.performance)
+    : Date.now();
+}
+
+function areLiveFilterCameraPropsEqual(
+  prev: LiveFilterCameraProps,
+  next: LiveFilterCameraProps,
+): boolean {
+  return (
+    prev.facing === next.facing &&
+    (prev.filter?.id ?? null) === (next.filter?.id ?? null) &&
+    prev.flashMode === next.flashMode &&
+    prev.zoom === next.zoom &&
+    prev.exposure === next.exposure &&
+    prev.isActive === next.isActive &&
+    prev.style === next.style &&
+    prev.onInitialized === next.onInitialized &&
+    prev.onError === next.onError
+  );
+}
+
 // =============================================================================
 // Component
 // =============================================================================
 
-export const LiveFilterCamera = forwardRef<
+const LiveFilterCameraComponent = forwardRef<
   LiveFilterCameraRef,
   LiveFilterCameraProps
 >(function LiveFilterCamera(
@@ -103,6 +134,23 @@ export const LiveFilterCamera = forwardRef<
   const flashModeRef = useRef(flashMode);
   flashModeRef.current = flashMode;
 
+  const propSignatureRef = useRef<string | null>(null);
+  const filterId = filter?.id ?? null;
+  const propSignature = `${facing}|${flashMode}|${isActive ? 1 : 0}|${filterId ?? "none"}`;
+
+  useEffect(() => {
+    if (propSignatureRef.current === null) {
+      logger.warn(
+        `[Camera Filter Perf] LiveFilterCamera mount ${propSignature}`,
+      );
+    } else if (propSignatureRef.current !== propSignature) {
+      logger.warn(
+        `[Camera Filter Perf] LiveFilterCamera props ${propSignatureRef.current} -> ${propSignature}`,
+      );
+    }
+    propSignatureRef.current = propSignature;
+  }, [propSignature]);
+
   // ──────────────────────────────────────────────────────────────────────
   // Skia Paint with the filter's 4×5 ColorMatrix
   //
@@ -110,12 +158,21 @@ export const LiveFilterCamera = forwardRef<
   // (not by filter object identity) so that parent re-renders with a new
   // filter object that represents the same filter don't thrash Skia.
   // ──────────────────────────────────────────────────────────────────────
-  const filterId = filter?.id ?? null;
   const filterPaint = useMemo(() => {
     if (!filter || filter.id === "none") return undefined;
+
+    const startedAt = nowMs();
     const matrix = filterConfigToColorMatrix(filter);
     const paint = Skia.Paint();
     paint.setColorFilter(Skia.ColorFilter.MakeMatrix(matrix));
+
+    const buildDuration = nowMs() - startedAt;
+    if (buildDuration > 4) {
+      logger.warn(
+        `[Camera Filter Perf] filter paint ${filter.id} built in ${buildDuration.toFixed(1)}ms`,
+      );
+    }
+
     return paint;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterId]);
@@ -147,6 +204,12 @@ export const LiveFilterCamera = forwardRef<
     [filterPaint],
   );
   const hasActiveFilter = filterPaint != null;
+
+  useEffect(() => {
+    logger.warn(
+      `[Camera Filter Perf] frame processor ${hasActiveFilter ? "attached" : "detached"} (${filterId ?? "none"})`,
+    );
+  }, [filterId, hasActiveFilter]);
 
   // ──────────────────────────────────────────────────────────────────────
   // Expose ref methods for CameraService compatibility
@@ -226,5 +289,10 @@ export const LiveFilterCamera = forwardRef<
     />
   );
 });
+
+export const LiveFilterCamera = memo(
+  LiveFilterCameraComponent,
+  areLiveFilterCameraPropsEqual,
+);
 
 LiveFilterCamera.displayName = "LiveFilterCamera";

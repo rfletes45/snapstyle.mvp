@@ -7,6 +7,21 @@ import { AppliedFilter, FilterCategory, FilterConfig } from "@/types/camera";
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("services/camera/filterService");
+
+const FILTER_COLOR_MATRIX_CACHE = new Map<string, number[]>();
+
+function getFilterColorMatrixCacheKey(filter: FilterConfig): string {
+  return [
+    filter.id,
+    filter.brightness,
+    filter.contrast,
+    filter.saturation,
+    filter.hue,
+    filter.sepia ?? 0,
+    filter.invert ?? 0,
+    filter.fade ?? 0,
+  ].join("|");
+}
 /**
  * Complete filter library (25+ filters)
  */
@@ -937,6 +952,12 @@ export function generateColorMatrix(
  * and the new fade (lifted blacks) effect.
  */
 export function filterConfigToColorMatrix(filter: FilterConfig): number[] {
+  const cacheKey = getFilterColorMatrixCacheKey(filter);
+  const cachedMatrix = FILTER_COLOR_MATRIX_CACHE.get(cacheKey);
+  if (cachedMatrix) {
+    return cachedMatrix;
+  }
+
   let m = generateColorMatrix(
     filter.brightness,
     filter.contrast,
@@ -974,6 +995,7 @@ export function filterConfigToColorMatrix(filter: FilterConfig): number[] {
     ]);
   }
 
+  FILTER_COLOR_MATRIX_CACHE.set(cacheKey, m);
   return m;
 }
 

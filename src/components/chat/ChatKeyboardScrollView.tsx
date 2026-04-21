@@ -19,7 +19,6 @@ import { useComposerSheet } from "@/contexts/ComposerSheetContext";
 import { useAppTheme } from "@/store/ThemeContext";
 import {
   isKeyboardControllerAvailable,
-  KeyboardStickyView,
   KeyboardChatScrollView as OptionalKeyboardChatScrollView,
   useReanimatedKeyboardAnimationCompat,
 } from "@/utils/optionalKeyboardController";
@@ -371,13 +370,28 @@ export function ChatFooterWrapper({ children }: { children: React.ReactNode }) {
       floor: handoffFloor.value,
       kbH: Math.abs(keyboardHeight.value),
       sheetVisible: getSheetVisibleHeight(sheetTranslateY.value),
+      sheetActive: isSheetActive.value,
     }),
     (current) => {
       if (current.floor > 0) {
-        const caughtUp =
-          current.kbH >= current.floor * 0.98 ||
+        // Rule:
+        //   • Sheet active (KB→sheet handoff): clear when EITHER the
+        //     returning keyboard OR the opening sheet catches up to the
+        //     lock height.
+        //   • Sheet INACTIVE (sheet→KB handoff): clear ONLY when the
+        //     keyboard catches up.  The picker's internal translateY
+        //     is still at the old snap for several frames after
+        //     deactivateSheet until its close-spring begins, so
+        //     `sheetVisible` would falsely satisfy the clear threshold
+        //     on the very first frame of the handoff — releasing the
+        //     floor before the keyboard has even started rising and
+        //     causing the footer to crash to baseline for ~100ms
+        //     (the visible downward teleport during sheet→KB).
+        const kbCaughtUp = current.kbH >= current.floor * 0.98;
+        const sheetCaughtUp =
+          current.sheetActive === 1 &&
           current.sheetVisible >= current.floor * 0.98;
-        if (caughtUp) {
+        if (kbCaughtUp || sheetCaughtUp) {
           if (ENABLE_HANDOFF_DIAGNOSTICS) {
             runOnJS(logHandoffFloorCleared)(current.floor, current.kbH);
           }
@@ -385,7 +399,7 @@ export function ChatFooterWrapper({ children }: { children: React.ReactNode }) {
         }
       }
     },
-    [handoffFloor, keyboardHeight, sheetTranslateY],
+    [handoffFloor, keyboardHeight, sheetTranslateY, isSheetActive],
   );
 
   // Pipe the sheet's extra contribution → sheetExtraPadding so KCSV shifts
@@ -415,57 +429,36 @@ export function ChatFooterWrapper({ children }: { children: React.ReactNode }) {
     [sheetExtraPadding, keyboardHeight, handoffFloor],
   );
 
-  // Sheet-overlay delta — the portion of the unified footer offset that
-  // exceeds the current keyboard height.  This is applied on top of
-  // KeyboardStickyView's native keyboard-frame tracking.
+  // Single-driver composer translate.
   //
-  //   • Cold keyboard open (no sheet, no floor):
-  //       unifiedFooterOffset = kbH → delta = 0
-  //       → Only KSV moves the footer.  KSV is frame-synced to the iOS
-  //         keyboard animation at the CADisplayLink level, so the composer
-  //         sits exactly on the keyboard's top edge throughout the opening
-  //         animation — no visible gap ahead of the rising keyboard.
+  // Earlier iterations wrapped the footer in KeyboardStickyView (native
+  // CADisplayLink lift by the keyboard frame) and an inner Reanimated
+  // overlay (sheet/floor delta).  On paper the two transforms summed to
+  // `-regionHeight`, but in practice KSV's native CAAnimation commit and
+  // Reanimated's own commit are in different pipelines — during sheet↔KB
+  // transitions and interactive keyboard drags the two drivers would be
+  // ~1 frame out of phase, producing a visible upward teleport on
+  // KB→sheet and a torn seam between the composer and the keyboard
+  // backdrop during interactive dismiss.
   //
-  //   • Sheet active / handoff lock engaged:
-  //       delta = max(0, regionHeight - kbH)
-  //       KSV lift (kbH) + overlay translateY (delta) = regionHeight.
-  //       The Step-A region lock holds regionHeight constant during
-  //       transitions, so any 1-frame desynchronization between KSV and
-  //       the Reanimated overlay is bounded to the frame-to-frame change
-  //       in kbH, which is visually imperceptible when the sum is locked.
-  const sheetOverlayStyle = useAnimatedStyle(() => {
-    const kbH = Math.abs(keyboardHeight.value);
-    const delta = Math.max(0, unifiedFooterOffset.value - kbH);
-    return { transform: [{ translateY: -delta }] };
-  });
+  // Using a single Reanimated driver that reads the same keyboardHeight
+  // SharedValue that drives the backdrop guarantees composer and backdrop
+  // commit in the same frame.  `useReanimatedKeyboardAnimation` is backed
+  // by RKBC's native CADisplayLink hook and updates the SharedValue every
+  // frame, so the single-driver path is still frame-synced to the iOS
+  // keyboard animation.
+  const footerTranslateStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: -unifiedFooterOffset.value }],
+  }));
 
   if (kcsvAvailable) {
-    // KCSV path: two-layer composition.
-    //
-    //   [outer] KeyboardStickyView — native iOS keyboard-frame tracking
-    //           (CADisplayLink-synced lift by the current keyboard height).
-    //           Drives the composer's position during a pure keyboard
-    //           open/close, eliminating the "composer-ahead-of-keyboard"
-    //           gap that occurs when only a Reanimated shared value drives
-    //           the translate (the Reanimated pipeline commits slightly
-    //           after the keyboard's own animation on some devices).
-    //
-    //   [inner] Reanimated overlay — adds ONLY the sheet/handoff-floor
-    //           delta above the keyboard.  On cold keyboard open this
-    //           delta is 0, so the overlay is a no-op and KSV alone
-    //           positions the composer.  During sheet transitions the
-    //           Step-A region lock holds (KSV.lift + overlay.delta) at
-    //           a constant sum, so the composer is stable even if the
-    //           two drivers are 1 frame out of phase.
     return (
-      <KeyboardStickyView
-        offset={{ closed: 0, opened: 0 }}
-        style={styles.footerLayer}
+      <Animated.View
+        pointerEvents="box-none"
+        style={[styles.footerLayer, footerTranslateStyle]}
       >
-        <Animated.View style={sheetOverlayStyle} pointerEvents="box-none">
-          {children}
-        </Animated.View>
-      </KeyboardStickyView>
+        {children}
+      </Animated.View>
     );
   }
 

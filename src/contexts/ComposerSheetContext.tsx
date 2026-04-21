@@ -304,15 +304,24 @@ export function ComposerSheetProvider({
     isSheetActive.value = 0;
     sheetTranslateY.value = SCREEN_HEIGHT;
     initialSnapHeight.value = 0;
-    // NOTE: sheetExtraPadding is NOT reset here.  The animated reaction in
-    // ChatFooterWrapper is the sole owner of this shared value.  During a
-    // sheet→keyboard handoff the reaction's derived input (unifiedFooterOffset
-    // − kbH) stays constant (handoffFloor), so the value naturally persists
-    // at the correct height until the keyboard catches up.  A direct reset
-    // to 0 here would race with the animated reaction and win (because the
-    // reaction doesn't re-fire when its input hasn't changed), causing KCSV
-    // extraContentPadding to drop to 0 for multiple frames while the footer
-    // stays elevated — producing the visible "list teleport" during handoff.
+    // When this dismiss is NOT part of a sheet→keyboard handoff (e.g. tap-
+    // to-dismiss, drag-to-dismiss, swipe-close, backdrop-tap), there is no
+    // reason to keep any residual sheet state alive.  Explicitly zero out
+    // sheetExtraPadding and handoffFloor so the footer/list/backdrop all
+    // collapse cleanly to baseline in the same frame that isSheetActive
+    // flips to 0, eliminating the "toolbar stays elevated with empty space
+    // below it" race that can occur if the owning reaction in
+    // ChatFooterWrapper does not re-fire for multiple frames.
+    //
+    // During an actual handoff (handoffPendingRef was true above) we do
+    // NOT reset these values — the floor captured above is what keeps the
+    // footer stable until the keyboard catches up.
+    if (!handoffPendingRef.current) {
+      sheetExtraPadding.value = 0;
+      if (handoffFloor.value !== 0) {
+        handoffFloor.value = 0;
+      }
+    }
   }, [
     isSheetActive,
     sheetTranslateY,

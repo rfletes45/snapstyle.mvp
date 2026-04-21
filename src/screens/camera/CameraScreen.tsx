@@ -19,7 +19,9 @@
  */
 
 import CameraFilterOverlay, {
-  filterToOverlayColor,
+  getCachedFilterOverlayColor,
+  getFilterOverlayColorCacheCount,
+  getOrCreateFilterOverlayColor,
 } from "@/components/camera/CameraFilterOverlay";
 import DrawingCanvas, {
   type DrawnPath,
@@ -57,6 +59,7 @@ import {
 } from "@react-navigation/native";
 import * as Haptics from "expo-haptics";
 import React, {
+  startTransition,
   useCallback,
   useEffect,
   useMemo,
@@ -68,6 +71,7 @@ import {
   AppState,
   Dimensions,
   FlatList,
+  InteractionManager,
   KeyboardAvoidingView,
   Linking,
   Modal,
@@ -165,21 +169,21 @@ const NONE_FILTER: FilterConfig = {
 
 const ALL_FILTERS: FilterConfig[] = [NONE_FILTER, ...FILTER_LIBRARY];
 
-// Lazily compute overlay colors for the filter carousel.  filterToOverlayColor()
-// does expensive color matrix math (7 matrix multiplications per filter).
-// Computing all filters eagerly at module load blocked the main thread for
-// 300-500 ms right when VisionCamera's GPU pipeline needed to deliver its
-// first frames — a leading cause of the ~2 s camera freeze in TestFlight.
-// Now each color is computed on first access and cached thereafter.
-const FILTER_OVERLAY_COLORS = new Map<string, string | null>();
-function getFilterOverlayColor(f: FilterConfig): string | null {
-  if (f.id === "none") return null;
-  let cached = FILTER_OVERLAY_COLORS.get(f.id);
-  if (cached === undefined) {
-    cached = filterToOverlayColor(f, 1.0);
-    FILTER_OVERLAY_COLORS.set(f.id, cached);
-  }
-  return cached;
+// Filter picker tuning: swatches are warmed in tiny background chunks and the
+// list only mounts the visible strip up front. This keeps filter opening off
+// the camera preview's critical path in native iOS builds.
+const FILTER_PICKER_INITIAL_NUM_TO_RENDER = 5;
+const FILTER_PICKER_MAX_TO_RENDER_PER_BATCH = 2;
+const FILTER_PICKER_WINDOW_SIZE = 3;
+const FILTER_PICKER_SWATCH_WARMUP_BATCH_SIZE = 2;
+const FILTER_PICKER_SWATCH_WARN_MS = 12;
+const FILTER_PICKER_STALL_WARN_MS = 120;
+
+function nowMs(): number {
+  const perfNow = globalThis.performance?.now;
+  return typeof perfNow === "function"
+    ? perfNow.call(globalThis.performance)
+    : Date.now();
 }
 
 const TIMER_OPTIONS = [0, 3, 10] as const;
@@ -411,12 +415,8 @@ const CameraScreen: React.FC = () => {
   }, []);
 
   // -- Context state ----------------------------------------------------------
-  const {
-    setCameraFacing,
-    setFlashMode,
-    setZoom,
-    setExposure,
-  } = useCameraState();
+  const { setCameraFacing, setFlashMode, setZoom, setExposure } =
+    useCameraState();
   const {
     overlayElements,
     appliedFilters,
@@ -457,6 +457,15 @@ const CameraScreen: React.FC = () => {
   const [countdown, setCountdown] = useState<number | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [showFilterPicker, setShowFilterPicker] = useState(false);
+  const [filterPickerCacheVersion, setFilterPickerCacheVersion] = useState(0);
+
+  const showFilterPickerRef = useRef(false);
+  const filterPickerOpenStartedAtRef = useRef<number | null>(null);
+  const filterPickerCachedAtOpenRef = useRef(0);
+  const filterPickerLoggedVisibleItemsRef = useRef(false);
+  const filterPickerWarmupStartedRef = useRef(false);
+  const filterPickerWarmupDoneRef = useRef(false);
+  const filterPickerWarmupRafRef = useRef<number | null>(null);
 
   // ==========================================================================
   // LOCAL STATE - Editor mode
@@ -581,6 +590,141 @@ const CameraScreen: React.FC = () => {
     [],
   );
   const haptic = triggerHaptic;
+
+  useEffect(() => {
+    showFilterPickerRef.current = showFilterPicker;
+    if (showFilterPicker) {
+      filterPickerLoggedVisibleItemsRef.current = false;
+    }
+  }, [showFilterPicker]);
+
+  const scheduleFilterPickerStallProbe = useCallback((label: string) => {
+    const startedAt = nowMs();
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const duration = nowMs() - startedAt;
+        if (duration > FILTER_PICKER_STALL_WARN_MS) {
+          logger.warn(
+            `[Camera Filter Perf] ${label} stalled for ${duration.toFixed(1)}ms`,
+          );
+        }
+      });
+    });
+  }, []);
+
+  const filterPickerViewabilityConfig = useRef({
+    itemVisiblePercentThreshold: 60,
+  }).current;
+
+  const handleFilterPickerViewableItemsChanged = useRef(
+    ({ viewableItems }: { viewableItems: { item?: FilterConfig }[] }) => {
+      if (
+        !showFilterPickerRef.current ||
+        filterPickerLoggedVisibleItemsRef.current
+      ) {
+        return;
+      }
+
+      const visibleIds = viewableItems
+        .map((entry) => entry.item?.id)
+        .filter((id): id is string => Boolean(id));
+
+      if (!visibleIds.length) {
+        return;
+      }
+
+      filterPickerLoggedVisibleItemsRef.current = true;
+      logger.warn(
+        `[Camera Filter Perf] picker visible swatches ${visibleIds.length}/${ALL_FILTERS.length}: ${visibleIds.join(", ")}`,
+      );
+    },
+  ).current;
+
+  useEffect(() => {
+    if (
+      !cameraReady ||
+      filterPickerWarmupStartedRef.current ||
+      filterPickerWarmupDoneRef.current
+    ) {
+      return;
+    }
+
+    const pendingFilters = ALL_FILTERS.filter(
+      (filter) =>
+        filter.id !== "none" &&
+        getCachedFilterOverlayColor(filter, 1.0) === undefined,
+    );
+
+    if (!pendingFilters.length) {
+      filterPickerWarmupDoneRef.current = true;
+      return;
+    }
+
+    filterPickerWarmupStartedRef.current = true;
+    let cancelled = false;
+    let nextIndex = 0;
+    const warmupStartedAt = nowMs();
+    let interactionHandle: { cancel?: () => void } | null = null;
+
+    const runWarmupChunk = () => {
+      if (cancelled) {
+        return;
+      }
+
+      const chunkStartedAt = nowMs();
+      let computedCount = 0;
+
+      while (
+        nextIndex < pendingFilters.length &&
+        computedCount < FILTER_PICKER_SWATCH_WARMUP_BATCH_SIZE
+      ) {
+        getOrCreateFilterOverlayColor(pendingFilters[nextIndex], 1.0);
+        nextIndex += 1;
+        computedCount += 1;
+      }
+
+      const chunkDuration = nowMs() - chunkStartedAt;
+      if (chunkDuration > FILTER_PICKER_SWATCH_WARN_MS) {
+        logger.warn(
+          `[Camera Filter Perf] swatch warmup chunk ${computedCount} took ${chunkDuration.toFixed(1)}ms (${nextIndex}/${pendingFilters.length})`,
+        );
+      }
+
+      if (computedCount > 0 && showFilterPickerRef.current) {
+        startTransition(() => {
+          setFilterPickerCacheVersion((version) => version + 1);
+        });
+      }
+
+      if (nextIndex < pendingFilters.length) {
+        filterPickerWarmupRafRef.current =
+          requestAnimationFrame(runWarmupChunk);
+        return;
+      }
+
+      filterPickerWarmupDoneRef.current = true;
+      filterPickerWarmupRafRef.current = null;
+      logger.warn(
+        `[Camera Filter Perf] swatch warmup complete ${pendingFilters.length}/${ALL_FILTERS.length - 1} in ${(nowMs() - warmupStartedAt).toFixed(1)}ms`,
+      );
+    };
+
+    interactionHandle = InteractionManager.runAfterInteractions(() => {
+      filterPickerWarmupRafRef.current = requestAnimationFrame(runWarmupChunk);
+    });
+
+    return () => {
+      cancelled = true;
+      interactionHandle?.cancel?.();
+      if (filterPickerWarmupRafRef.current != null) {
+        cancelAnimationFrame(filterPickerWarmupRafRef.current);
+        filterPickerWarmupRafRef.current = null;
+      }
+      if (!filterPickerWarmupDoneRef.current) {
+        filterPickerWarmupStartedRef.current = false;
+      }
+    };
+  }, [cameraReady]);
 
   // ==========================================================================
   // CAMERA-MODE HANDLERS
@@ -837,14 +981,40 @@ const CameraScreen: React.FC = () => {
     }
   }, [handleFlipCamera]);
 
-  // Filter picker item — uses colour indicators derived from each filter's
-  // colour matrix. Lightweight: no Skia Canvas, no live camera duplication.
-  // Each thumbnail is a static color swatch that represents the filter's
-  // visual character, computed once and cached.
+  const handleOpenFilterPicker = useCallback(() => {
+    filterPickerOpenStartedAtRef.current = nowMs();
+    filterPickerCachedAtOpenRef.current = getFilterOverlayColorCacheCount(1.0);
+    filterPickerLoggedVisibleItemsRef.current = false;
+    setShowFilterPicker(true);
+    triggerHaptic();
+    scheduleFilterPickerStallProbe("filter picker open");
+  }, [scheduleFilterPickerStallProbe, triggerHaptic]);
+
+  const handleCloseFilterPicker = useCallback(() => {
+    setShowFilterPicker(false);
+  }, []);
+
+  const handleFilterPickerShown = useCallback(() => {
+    const openedAt = filterPickerOpenStartedAtRef.current;
+    const openDuration = openedAt == null ? null : nowMs() - openedAt;
+    filterPickerOpenStartedAtRef.current = null;
+    logger.warn(
+      `[Camera Filter Perf] picker shown${
+        openDuration == null ? "" : ` in ${openDuration.toFixed(1)}ms`
+      }; cache=${filterPickerCachedAtOpenRef.current}/${ALL_FILTERS.length - 1} -> ${getFilterOverlayColorCacheCount(1.0)}/${ALL_FILTERS.length - 1}`,
+    );
+    scheduleFilterPickerStallProbe("filter picker show");
+  }, [scheduleFilterPickerStallProbe]);
+
+  // Filter picker item — swatches only read from cache here. Any expensive
+  // matrix math is warmed outside the render path in tiny background chunks.
   const renderFilterItem = useCallback(
     ({ item, index }: { item: FilterConfig; index: number }) => {
       const isSelected = selectedFilterIndex === index;
-      const tintColor = getFilterOverlayColor(item);
+      const tintColor =
+        item.id === "none"
+          ? null
+          : (getCachedFilterOverlayColor(item, 1.0) ?? null);
       return (
         <TouchableOpacity
           style={[styles.filterChip, isSelected && styles.filterChipActive]}
@@ -1198,12 +1368,7 @@ const CameraScreen: React.FC = () => {
     } finally {
       setIsExporting(false);
     }
-  }, [
-    capturedMedia,
-    isExporting,
-    params,
-    navigation,
-  ]);
+  }, [capturedMedia, isExporting, params, navigation]);
 
   // -- Render overlay elements (editor) ---------------------------------------
   const renderOverlayElement = useCallback(
@@ -1943,10 +2108,7 @@ const CameraScreen: React.FC = () => {
       {!isEditorMode && !recordingState.isRecording && (
         <TouchableOpacity
           style={styles.filterPickerButton}
-          onPress={() => {
-            setShowFilterPicker(true);
-            triggerHaptic();
-          }}
+          onPress={handleOpenFilterPicker}
           activeOpacity={0.7}
         >
           <Ionicons name="color-filter-outline" size={22} color="#fff" />
@@ -1967,18 +2129,19 @@ const CameraScreen: React.FC = () => {
           visible={showFilterPicker}
           transparent
           animationType="slide"
-          onRequestClose={() => setShowFilterPicker(false)}
+          onRequestClose={handleCloseFilterPicker}
+          onShow={handleFilterPickerShown}
         >
           <TouchableOpacity
             style={styles.filterPickerBackdrop}
             activeOpacity={1}
-            onPress={() => setShowFilterPicker(false)}
+            onPress={handleCloseFilterPicker}
           />
           <View style={styles.filterPickerSheet}>
             <View style={styles.filterPickerHeader}>
               <Text style={styles.filterPickerTitle}>Filters</Text>
               <TouchableOpacity
-                onPress={() => setShowFilterPicker(false)}
+                onPress={handleCloseFilterPicker}
                 hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
               >
                 <Ionicons name="close" size={24} color="#fff" />
@@ -1988,12 +2151,15 @@ const CameraScreen: React.FC = () => {
               data={ALL_FILTERS}
               renderItem={renderFilterItem}
               keyExtractor={filterKeyExtractor}
+              extraData={filterPickerCacheVersion}
               horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.filterPickerList}
-              initialNumToRender={8}
-              maxToRenderPerBatch={6}
-              windowSize={5}
+              initialNumToRender={FILTER_PICKER_INITIAL_NUM_TO_RENDER}
+              maxToRenderPerBatch={FILTER_PICKER_MAX_TO_RENDER_PER_BATCH}
+              windowSize={FILTER_PICKER_WINDOW_SIZE}
+              onViewableItemsChanged={handleFilterPickerViewableItemsChanged}
+              viewabilityConfig={filterPickerViewabilityConfig}
               getItemLayout={(_data, index) => ({
                 length: 72,
                 offset: 72 * index,
