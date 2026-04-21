@@ -34,6 +34,31 @@ const streamSDK = CALL_FEATURES.CALLS_ENABLED
 const useCalls: () => Call[] = streamSDK?.useCalls ?? (() => []);
 const CallingState = streamSDK?.CallingState;
 
+/**
+ * True iff the given Stream call is still in a ring-able state and has not
+ * been ended server-side. This is the single canonical gate used before
+ * both the in-app accept path and the native-accept adoption path — so a
+ * late CallKit/notification tap on an expired call can never transition
+ * the app into a broken empty call screen.
+ */
+function isCallStillRingable(call: Call | null | undefined): boolean {
+  if (!call || !CallingState) return false;
+  if ((call.state as any).endedAt) return false;
+  return call.state.callingState === CallingState.RINGING;
+}
+
+/**
+ * True iff a natively-accepted call is in a state we can safely adopt.
+ * Requires JOINING/JOINED AND no `endedAt` (the server has not marked the
+ * call as ended, meaning the join is against a live call).
+ */
+function isCallSafelyAdoptable(call: Call | null | undefined): boolean {
+  if (!call || !CallingState) return false;
+  if ((call.state as any).endedAt) return false;
+  const s = call.state.callingState;
+  return s === CallingState.JOINING || s === CallingState.JOINED;
+}
+
 // Lazy-load ringtone service for incoming call sound
 const ringtoneService = CALL_FEATURES.CALLS_ENABLED
   ? (require("@/services/calls/ringtoneService") as typeof import("@/services/calls/ringtoneService"))
@@ -145,6 +170,29 @@ function IncomingCallHandlerInner({
       const callToAdopt = alreadyAcceptedCall;
       const mode =
         (callToAdopt.state.custom?.mode as "audio" | "video") ?? "audio";
+
+      // ── Stale-accept guard ────────────────────────────────────────────
+      // Native CallKit / notification taps can race with server-side
+      // expiry. A call can be in JOINING locally while already ended on
+      // the server (endedAt set). Adopting it would navigate to an empty
+      // call screen that self-dismisses — that is the "broken screen"
+      // bug. Refuse adoption here and leave the call so the SDK cleans
+      // up any local ringing UI.
+      if (!isCallSafelyAdoptable(callToAdopt)) {
+        console.warn(
+          "[IncomingCallHandler] Refusing stale native-accept — call is not safely adoptable",
+          {
+            callId: callToAdopt.id,
+            callingState: callToAdopt.state.callingState,
+            hasEndedAt: !!(callToAdopt.state as any).endedAt,
+          },
+        );
+        callToAdopt.leave().catch(() => {
+          // best-effort — ringing SDK state may already be gone
+        });
+        return;
+      }
+
       console.info(
         `[IncomingCallHandler] Adopting natively-accepted call ${callToAdopt.id} (${mode}, state=${callToAdopt.state.callingState})`,
       );
@@ -154,6 +202,24 @@ function IncomingCallHandlerInner({
 
       acceptCall(callToAdopt)
         .then(() => {
+          // Re-verify after the async join completes. If the call flipped
+          // to a terminal state during accept (e.g. caller hung up
+          // mid-accept), skip navigation — the context's callingState$
+          // subscription will clear activeCall shortly and we do not
+          // want a transient ghost DirectCallScreen mount.
+          const s = callToAdopt.state.callingState;
+          if (
+            s === CallingState.LEFT ||
+            s === CallingState.IDLE ||
+            s === CallingState.RECONNECTING_FAILED ||
+            (callToAdopt.state as any).endedAt
+          ) {
+            console.warn(
+              "[IncomingCallHandler] Adopted call transitioned to terminal state before navigation — skipping navigate",
+              { callId: callToAdopt.id, callingState: s },
+            );
+            return;
+          }
           console.info(
             `[IncomingCallHandler] Native-accept adoption complete — navigating to call ${callToAdopt.id}`,
           );
@@ -177,13 +243,25 @@ function IncomingCallHandlerInner({
   useEffect(() => {
     if (mostRecentIncomingCall) {
       const newCall = mostRecentIncomingCall;
+      console.info("[IncomingCallHandler] pendingCall set", {
+        callId: newCall.id,
+        callingState: newCall.state.callingState,
+      });
       setPendingCall(newCall);
       if (checkedCallIdRef.current !== newCall.id) {
         setCallAllowed(null);
         checkedCallIdRef.current = null;
       }
     } else {
-      setPendingCall(null);
+      setPendingCall((prev) => {
+        if (prev) {
+          console.info(
+            "[IncomingCallHandler] pendingCall cleared — no more ringing calls",
+            { callId: prev.id },
+          );
+        }
+        return null;
+      });
       setCallAllowed(null);
       checkedCallIdRef.current = null;
     }
@@ -252,6 +330,25 @@ function IncomingCallHandlerInner({
   const handleAccept = useCallback(async () => {
     if (!pendingCall) return;
 
+    // Acceptability gate at tap time. Between render and tap the call may
+    // have expired, been canceled, or moved to a non-ringing state. The
+    // in-app UI lifecycle can lag the CallKit UI by one or two frames —
+    // without this gate a tap inside that window would transition the app
+    // into a ghost DirectCallScreen.
+    if (!isCallStillRingable(pendingCall)) {
+      console.warn(
+        "[IncomingCallHandler] handleAccept ignored — call no longer ringable",
+        {
+          callId: pendingCall.id,
+          callingState: pendingCall.state.callingState,
+          hasEndedAt: !!(pendingCall.state as any).endedAt,
+        },
+      );
+      setPendingCall(null);
+      setCallAllowed(null);
+      return;
+    }
+
     const mode =
       (pendingCall.state.custom?.mode as "audio" | "video") ?? "audio";
     const callToAccept = pendingCall;
@@ -264,6 +361,21 @@ function IncomingCallHandlerInner({
 
     try {
       await acceptCall(callToAccept);
+      // Re-verify acceptability post-join so a call that expired during
+      // the async join does not trigger navigation.
+      const s = callToAccept.state.callingState;
+      if (
+        s === CallingState.LEFT ||
+        s === CallingState.IDLE ||
+        s === CallingState.RECONNECTING_FAILED ||
+        (callToAccept.state as any).endedAt
+      ) {
+        console.warn(
+          "[IncomingCallHandler] handleAccept: call ended during join — skipping navigate",
+          { callId: callToAccept.id, callingState: s },
+        );
+        return;
+      }
       onNavigateToCall?.(callToAccept.id, mode);
     } catch (err) {
       console.error("[IncomingCallHandler] Accept failed:", err);

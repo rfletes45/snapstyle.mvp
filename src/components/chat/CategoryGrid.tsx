@@ -11,12 +11,13 @@
  * @module components/chat/CategoryGrid
  */
 
+import { AppImage } from "@/components/AppImage";
+import { buildRemoteImageSource } from "@/utils/remoteImageSource";
 import * as Haptics from "expo-haptics";
 import React, { memo, useCallback } from "react";
 import {
   Dimensions,
   FlatList,
-  Image,
   Pressable,
   StyleSheet,
   View,
@@ -80,6 +81,7 @@ const CategoryCard = memo(function CategoryCard({
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     onPress(tile.name);
   }, [onPress, tile.name]);
+  const previewSource = buildRemoteImageSource(tile.imageUrl);
 
   return (
     <Pressable
@@ -97,11 +99,13 @@ const CategoryCard = memo(function CategoryCard({
       accessibilityRole="button"
       accessibilityHint={`Browse ${tile.name}`}
     >
-      {tile.imageUrl ? (
-        <Image
-          source={{ uri: tile.imageUrl }}
+      {previewSource ? (
+        <AppImage
+          source={previewSource}
           style={StyleSheet.absoluteFill}
-          resizeMode="cover"
+          transition={0}
+          cachePolicy="memory-disk"
+          contentFit="cover"
         />
       ) : null}
       {/* Dark overlay for text legibility */}

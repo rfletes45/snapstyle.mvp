@@ -221,11 +221,17 @@ function DirectCallContent({
   const prevPiPModeRef = useRef(false);
   useEffect(() => {
     if (prevPiPModeRef.current && !isInPiPMode) {
-      // PiP just exited — schedule a remount on next frame
+      // PiP just exited — schedule a remount on next frame.
+      // NOTE: we intentionally do NOT try to distinguish "user tapped
+      // PiP" from "app foreground enforced stop" here — NativePiPBridge
+      // owns the restore-navigation decision based on whether the user
+      // was on this screen when PiP started.
       console.info(
         "[DirectCallScreen] PiP exited — forcing video renderer remount",
       );
       setPipRestoreGeneration((g) => g + 1);
+    } else if (!prevPiPModeRef.current && isInPiPMode) {
+      console.info("[DirectCallScreen] PiP entered");
     }
     prevPiPModeRef.current = isInPiPMode;
   }, [isInPiPMode]);

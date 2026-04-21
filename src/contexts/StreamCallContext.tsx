@@ -185,6 +185,15 @@ function StreamCallInnerProvider({
 
       if (activeCallRef.current !== call) return;
 
+      console.info(
+        "[StreamCallContext] Active call transitioning to terminal state — clearing session",
+        {
+          callId: call.id,
+          state,
+          sessionType: activeSession?.type ?? "unknown",
+        },
+      );
+
       if (state === CallingState.RECONNECTING_FAILED) {
         console.error(
           "[StreamCallContext] Reconnection failed, clearing active session:",
@@ -255,11 +264,58 @@ function StreamCallInnerProvider({
         await rejectDirectCall(call, "busy");
         return;
       }
+
+      // ── Acceptability guard ────────────────────────────────────────────
+      // Reject calls that have already been ended/expired/left by the time
+      // the accept reaches the context. This is the single canonical gate
+      // that prevents DirectCallScreen from ever being mounted against a
+      // dead call object (the cause of the "empty ghost call" bug when a
+      // stale CallKit accept is processed after server-side expiry).
+      const preAcceptState = call.state.callingState;
+      const endedAt = (call.state as any).endedAt as Date | undefined | null;
+      const isEndedState =
+        preAcceptState === CallingState.LEFT ||
+        preAcceptState === CallingState.IDLE ||
+        preAcceptState === CallingState.RECONNECTING_FAILED;
+      if (endedAt || isEndedState) {
+        console.warn(
+          "[StreamCallContext] acceptCall refused — call no longer acceptable",
+          {
+            callId: call.id,
+            callingState: preAcceptState,
+            hasEndedAt: !!endedAt,
+          },
+        );
+        // Best-effort local cleanup so the SDK doesn't hold a zombie call.
+        try {
+          await call.leave();
+        } catch {
+          // ignored — call may already be fully gone
+        }
+        throw new Error("Call is no longer active");
+      }
+
       busyRef.current = true;
 
       try {
         const mode = (call.state.custom?.mode as DirectCallMode) ?? "audio";
         await acceptDirectCall(call, mode);
+
+        // Re-verify after the async join — the call could have ended while
+        // acceptDirectCall() was in flight.
+        const postAcceptState = call.state.callingState;
+        if (
+          postAcceptState === CallingState.LEFT ||
+          postAcceptState === CallingState.IDLE ||
+          postAcceptState === CallingState.RECONNECTING_FAILED
+        ) {
+          console.warn(
+            "[StreamCallContext] acceptCall: call ended during join — not adopting",
+            { callId: call.id, callingState: postAcceptState },
+          );
+          busyRef.current = false;
+          throw new Error("Call ended before it could be joined");
+        }
 
         activeCallRef.current = call;
         setActiveCall(call);
@@ -267,6 +323,11 @@ function StreamCallInnerProvider({
           type: "direct_call",
           callId: call.id,
           recipientName: call.state.createdBy?.name,
+          mode,
+        });
+        console.info("[StreamCallContext] acceptCall adopted", {
+          callId: call.id,
+          callingState: postAcceptState,
           mode,
         });
       } catch (err) {

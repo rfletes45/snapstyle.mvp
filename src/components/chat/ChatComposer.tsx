@@ -23,14 +23,17 @@ import { VoiceRecording } from "@/hooks/useVoiceRecorder";
 import { isNativeComposerAvailable } from "@/modules/nativeKeyboard";
 import { useAppTheme } from "@/store/ThemeContext";
 import { ReplyToMetadata } from "@/types/messaging";
+import { scheduleIdleWork } from "@/utils/scheduleIdleWork";
 import React, {
+  startTransition,
   useCallback,
-  useLayoutEffect,
+  useEffect,
   useMemo,
   useRef,
 } from "react";
 import {
   ActivityIndicator,
+  InteractionManager,
   Platform,
   StyleProp,
   StyleSheet,
@@ -366,14 +369,38 @@ export function ChatComposer({
 
   // ── Toolbar state ─────────────────────────────────────────────────────
   const [itemPickerVisible, setItemPickerVisible] = React.useState(false);
+  const [warmMountedPickersEnabled, setWarmMountedPickersEnabled] =
+    React.useState(false);
 
   // Determine which toolbar items to render (use provided or defaults)
   const activeToolbarItems = toolbarItems ?? DEFAULT_TOOLBAR_ITEMS;
 
-  // Preload picker bundles for equipped toolbar items on mount / layout change
-  useLayoutEffect(() => {
+  // Preload picker bundles for equipped toolbar items after the first paint.
+  useEffect(() => {
     preloadPickersForToolbar(activeToolbarItems.map((i) => i.id));
   }, [activeToolbarItems]);
+
+  // Warm-mount picker sheets after chat entry settles so first visible open
+  // does not pay for the initial sheet/list tree mount on button press.
+  useEffect(() => {
+    let cancelled = false;
+    let cancelIdle: (() => void) | null = null;
+
+    const task = InteractionManager.runAfterInteractions(() => {
+      cancelIdle = scheduleIdleWork(() => {
+        if (cancelled) return;
+        startTransition(() => {
+          setWarmMountedPickersEnabled(true);
+        });
+      });
+    });
+
+    return () => {
+      cancelled = true;
+      cancelIdle?.();
+      task.cancel();
+    };
+  }, []);
 
   // ── Toolbar item renderer ─────────────────────────────────────────────
   const renderToolbarItem = useCallback(
@@ -516,12 +543,18 @@ export function ChatComposer({
 
         case "gif":
           return onGifSelected ? (
-            <GifButton onGifSelected={onGifSelected} />
+            <GifButton
+              onGifSelected={onGifSelected}
+              warmMountEnabled={warmMountedPickersEnabled}
+            />
           ) : null;
 
         case "sticker":
           return onStickerSelected ? (
-            <StickerButton onStickerSelected={onStickerSelected} />
+            <StickerButton
+              onStickerSelected={onStickerSelected}
+              warmMountEnabled={warmMountedPickersEnabled}
+            />
           ) : null;
 
         case "schedule":
@@ -540,6 +573,7 @@ export function ChatComposer({
             <GifStickerButton
               onGifSelected={onGifSelected}
               onStickerSelected={onStickerSelected}
+              warmMountEnabled={warmMountedPickersEnabled}
             />
           ) : null;
 
@@ -596,6 +630,7 @@ export function ChatComposer({
       inputRef,
       scope,
       useNative,
+      warmMountedPickersEnabled,
     ],
   );
 

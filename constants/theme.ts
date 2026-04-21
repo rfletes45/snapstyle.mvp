@@ -1307,6 +1307,13 @@ export interface ThemeColors {
 
   // Utility
   dividerSubtle?: string;
+  /**
+   * Architectural seam line used on the Profile widget board to separate
+   * adjacent widgets. Theme-aware: darker in light themes, lighter in dark
+   * themes. Slightly stronger than `dividerSubtle` because these lines are
+   * load-bearing visual structure, not passive separators.
+   */
+  boardSeam?: string;
 }
 
 // ============================================================================
@@ -3050,6 +3057,13 @@ function resolveSemanticTokens(
     dividerSubtle:
       colors.dividerSubtle ??
       (isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.06)"),
+    // Board seam — stronger than dividerSubtle; used for structural grid
+    // lines on the Profile widget board. Theme-aware so dark themes get a
+    // light line and light themes get a dark line (previously hardcoded #000
+    // which read as an invisible/harsh line depending on theme).
+    boardSeam:
+      colors.boardSeam ??
+      (isDark ? "rgba(255,255,255,0.10)" : "rgba(0,0,0,0.12)"),
   };
 }
 

@@ -13,9 +13,11 @@
  * @module components/chat/pickerPreload
  */
 
+import { chatPerf } from "@/utils/chatPerf";
+import { prefetchImages } from "@/utils/imagePrefetch";
 import { createLogger, isDebugEnabled } from "@/utils/log";
-import { useSyncExternalStore } from "react";
 import type React from "react";
+import { useSyncExternalStore } from "react";
 
 import type { ComposerToolbarItemId } from "./ComposerToolbar/types";
 
@@ -46,6 +48,9 @@ const PICKER_IDS: PickerPreloadableId[] = [
   "gif-sticker",
 ];
 const PICKER_ID_SET = new Set<ComposerToolbarItemId>(PICKER_IDS);
+const GIF_PREVIEW_WARM_COUNT = 12;
+const GIF_CATEGORY_WARM_COUNT = 6;
+const STICKER_PREVIEW_WARM_COUNT = 18;
 
 // ---------------------------------------------------------------------------
 // Observable preload state
@@ -110,6 +115,7 @@ export function usePickerPreloadStatus(
 function markLoading(id: PickerPreloadableId) {
   const startedAt = Date.now();
   setSnapshot(id, { status: "loading", startedAt });
+  chatPerf.mark(`picker-warm:${id}`);
   trace("preload-start", { id, startedAt });
   return startedAt;
 }
@@ -117,6 +123,7 @@ function markLoading(id: PickerPreloadableId) {
 function markReady(id: PickerPreloadableId, startedAt?: number) {
   const resolvedAt = Date.now();
   setSnapshot(id, { status: "ready", startedAt, resolvedAt });
+  chatPerf.measure(`picker-warm:${id}`, "module-ready");
   trace("preload-resolved", {
     id,
     elapsedMs: startedAt ? resolvedAt - startedAt : undefined,
@@ -140,6 +147,23 @@ function markFailed(
     elapsedMs: startedAt ? resolvedAt - startedAt : undefined,
     error: getErrorMessage(error),
   });
+}
+
+function collectWarmUrls(
+  urls: (string | null | undefined)[],
+  limit: number,
+): string[] {
+  const deduped = new Set<string>();
+
+  for (const url of urls) {
+    if (!url) continue;
+    const normalized = url.trim();
+    if (!normalized) continue;
+    deduped.add(normalized);
+    if (deduped.size >= limit) break;
+  }
+
+  return [...deduped];
 }
 
 // ---------------------------------------------------------------------------
@@ -203,6 +227,29 @@ function warmGifPickerData() {
         getCategories(),
       ]);
       await assertAllSettled("gif", results);
+
+      const [trendingResult, categoriesResult] = results;
+      const trending =
+        trendingResult?.status === "fulfilled" ? trendingResult.value : null;
+      const categories =
+        categoriesResult?.status === "fulfilled"
+          ? categoriesResult.value
+          : null;
+
+      chatPerf.measure("picker-warm:gif", "data-ready");
+
+      const warmUrls = collectWarmUrls(
+        [
+          ...(trending?.items ?? []).map((item) => item.previewUrl),
+          ...(categories ?? []).map((category) => category.imageUrl),
+        ],
+        GIF_PREVIEW_WARM_COUNT + GIF_CATEGORY_WARM_COUNT,
+      );
+
+      if (warmUrls.length > 0) {
+        await prefetchImages(warmUrls);
+        chatPerf.measure("picker-warm:gif", "images-ready");
+      }
     })
     .then(() => {
       trace("data-preload-resolved", {
@@ -238,6 +285,22 @@ function warmStickerPickerData() {
         fetchTrendingStickers({ limit: 30 }),
       ]);
       await assertAllSettled("sticker", results);
+
+      const trendingResult = results[0];
+      const trending =
+        trendingResult?.status === "fulfilled" ? trendingResult.value : null;
+
+      chatPerf.measure("picker-warm:sticker", "data-ready");
+
+      const warmUrls = collectWarmUrls(
+        (trending?.items ?? []).map((item) => item.previewUrl),
+        STICKER_PREVIEW_WARM_COUNT,
+      );
+
+      if (warmUrls.length > 0) {
+        await prefetchImages(warmUrls);
+        chatPerf.measure("picker-warm:sticker", "images-ready");
+      }
     })
     .then(() => {
       trace("data-preload-resolved", {

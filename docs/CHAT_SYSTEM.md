@@ -1276,30 +1276,40 @@ Read priority: Firestore snapshot > AsyncStorage fallback > hardcoded default.
 
 ### Picker Sheet Eager Preloading
 
-Toolbar picker buttons (GIF, Emoji, Sticker, Game, GifSticker) are code-split via `React.lazy()` for bundle size reduction. To eliminate the ~3-second loading spinner on first tap, the picker bundles are eagerly preloaded when the composer mounts.
+Toolbar picker buttons (GIF, Emoji, Sticker, Game, GifSticker) are code-split via `React.lazy()` for bundle size reduction. The current system does more than warm imports: it preloads the picker modules, warms first-open data, prefetches the first visible preview assets into the `expo-image` cache, and then warm-mounts picker sheets offscreen after chat entry settles so the first visible open does not pay for a cold sheet/list mount.
 
 #### How It Works
 
-`src/components/chat/pickerPreload.ts` maintains a singleton cache of `import()` promises per picker module:
+`src/components/chat/pickerPreload.ts` maintains a singleton cache of `import()` promises per picker module and warms initial picker data/image caches:
 
 ```
 preloadPickersForToolbar(["gif", "emoji", "sticker"]) → starts imports
   ├─ getGifPickerImport()      → import("./GifPicker")         [cached]
   ├─ getEmojiPickerImport()    → import("./FullEmojiPicker")   [cached]
   └─ getStickerPickerImport()  → import("./StickerPicker")     [cached]
+
+warmGifPickerData()
+  ├─ fetchTrending({ limit: 30 })
+  ├─ getCategories()
+  └─ prefetchImages(first preview/category URLs)
+
+warmStickerPickerData()
+  ├─ fetchTrendingStickers({ limit: 30 })
+  └─ prefetchImages(first preview URLs)
 ```
 
-Each button component's `React.lazy()` factory calls the same getter (e.g., `React.lazy(() => getGifPickerImport())`), so when the user taps the button, `React.lazy` resolves instantly from the cached promise — no Suspense fallback visible.
+Each button component's `React.lazy()` factory calls the same getter (e.g., `React.lazy(() => getGifPickerImport())`), so when the user taps the button, `React.lazy` resolves instantly from the cached promise. Once the import has resolved, the button keeps the picker component mounted with `open={false}` and `warmupEnabled={true}`. The picker renders a `DraggableBottomSheet` with `keepMountedWhenClosed`, so the Portal, sheet host, search bar, list, and first-frame layout all warm in the background rather than on the tap that the user feels.
 
 #### Trigger
 
-`ChatComposer.tsx` calls `preloadPickersForToolbar(activeToolbarItems.map(i => i.id))` in a `useEffect` on mount and whenever the toolbar layout changes. Only items with picker sheets are matched; non-picker items (camera, send, message-bar) are ignored.
+`ChatComposer.tsx` calls `preloadPickersForToolbar(activeToolbarItems.map(i => i.id))` in a `useEffect` on mount and whenever the toolbar layout changes. After `InteractionManager.runAfterInteractions()` plus `scheduleIdleWork()`, the composer flips a local warm-mount gate so equipped picker buttons can mount their hidden picker trees offscreen without contending with chat-entry animation. Only items with picker sheets are matched; non-picker items (camera, send, message-bar) are ignored.
 
 #### Adding New Picker Items
 
 1. Add the lazy import getter to `pickerPreload.ts`
-2. Map the toolbar item ID to the getter in `PRELOAD_MAP`
-3. Update the button component's `React.lazy` factory to use the getter
+2. Map the toolbar item ID to the getter in `MODULE_PRELOAD_MAP`
+3. Add any first-open data or preview-image warmup to `warmDataForPicker()` when the picker has network-backed content
+4. Update the button component's `React.lazy` factory to use the getter and pass the picker through the hidden warm-mount path
 
 ---
 
@@ -2096,7 +2106,11 @@ File: `src/components/chat/pickerPreload.ts` (registry) + individual button file
 
 Five toolbar picker sheets (GIF, Emoji, Sticker, Game, GifSticker) are code-split with `React.lazy()`. Each button component (`GifButton`, `EmojiButton`, `StickerButton`, `GameButton`, `GifStickerButton`) wraps its sheet in `<Suspense fallback={<PickerLoadingFallback />}>` as a fallback path.
 
-**Eager preloading + resolved component cache**: `ChatComposer` calls `preloadPickersForToolbar(activeToolbarItems)` on mount, which starts the dynamic imports for all equipped picker items immediately. When each import settles, `pickerPreload.ts` stores the resolved component reference in a module-level cache. Each button reads this cache synchronously via `getResolved*Picker()` at render time. If the component is already loaded, the button renders it directly — bypassing `React.lazy()` and `Suspense` entirely. This eliminates the 1-frame fallback flash that `React.lazy` always produces (it suspends for at least one microtask even when the underlying promise is settled). The `Suspense` + `React.lazy` path is kept as a fallback for the rare case where a picker is tapped before preloading finishes.
+**Eager preloading + warm-mounted picker shells**: `ChatComposer` calls `preloadPickersForToolbar(activeToolbarItems)` on mount, which starts the dynamic imports and first-open data/image warmups for all equipped picker items immediately after the first paint. When each import settles, `pickerPreload.ts` stores the resolved component reference in a module-level cache. Each button reads this cache synchronously via `getResolved*Picker()` at render time. If the component is already loaded, the button renders it directly — bypassing `React.lazy()` and `Suspense` entirely. After chat entry becomes idle, the equipped picker buttons keep those resolved picker components mounted offscreen with `warmupEnabled={true}`. The picker then renders a hidden `DraggableBottomSheet` via `keepMountedWhenClosed`, which pre-mounts the Portal, sheet host, list, and first-frame subtree before the user taps. The `Suspense` + `React.lazy` path is kept as a fallback for the rare case where a picker is tapped before preloading finishes.
+
+**Cache alignment + synchronous state hydration**: GIF/sticker/category preview images render through `AppImage` (`expo-image`) instead of RN `Image`, matching the cache warmed by `prefetchImages()`. The GIF and Sticker services now expose synchronous cache snapshot helpers (`peekTrendingGifPage`, `peekGifCategories`, `peekTrendingStickerPage`) so picker components can seed their initial state from already-warmed service caches instead of waiting for a new async fetch to complete on first visible open.
+
+**Combined GIF+Sticker warmup**: `GifStickerPicker` now warms both the GIF and Sticker data paths in the background even if the initial tab is only one side. Closing the combined picker resets search/UI state but preserves warmed result sets and loaded flags, so reopening or first-switching tabs does not re-pay the initial fetch/mount cost.
 
 **Seamless sheet switching** (three layers):
 

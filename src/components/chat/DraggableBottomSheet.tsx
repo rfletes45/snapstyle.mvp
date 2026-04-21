@@ -52,6 +52,8 @@ export interface DraggableBottomSheetHandle {
 export interface DraggableBottomSheetProps {
   /** Whether the sheet is visible */
   open: boolean;
+  /** Keep the Portal + sheet tree mounted offscreen while closed. */
+  keepMountedWhenClosed?: boolean;
   /** Called when sheet should close (drag down past threshold, backdrop tap) */
   onClose: () => void;
   /** Snap points as fractions of screen height (e.g., [0.45, 0.85]) — sorted ascending */
@@ -83,6 +85,7 @@ export const DraggableBottomSheet = forwardRef<
 >(function DraggableBottomSheet(
   {
     open,
+    keepMountedWhenClosed = false,
     onClose,
     snapPoints = [0.5, 0.85],
     initialSnapIndex,
@@ -321,10 +324,11 @@ export const DraggableBottomSheet = forwardRef<
     height: Math.max(0, SCREEN_HEIGHT - translateY.value - HANDLE_ZONE_HEIGHT),
   }));
 
-  if (!open) return null;
+  const shouldRender = open || keepMountedWhenClosed;
+  if (!shouldRender) return null;
 
   // Determine whether to show standard backdrop (never in keyboard-replacement mode)
-  const shouldShowBackdrop = showBackdrop && !isKeyboardReplacement;
+  const shouldShowBackdrop = open && showBackdrop && !isKeyboardReplacement;
 
   const handleNode = (
     <View style={styles.handleZone}>
@@ -366,7 +370,10 @@ export const DraggableBottomSheet = forwardRef<
 
   return (
     <Portal>
-      <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+      <View
+        style={StyleSheet.absoluteFill}
+        pointerEvents={open ? "box-none" : "none"}
+      >
         {/* Standard backdrop — only for non-keyboard-replacement sheets */}
         {shouldShowBackdrop && (
           <Animated.View
@@ -391,7 +398,7 @@ export const DraggableBottomSheet = forwardRef<
               chat content hierarchy, which can coexist with message long
               presses, scrolling, and swipe-to-reply gestures
             - Opacity is 0 at keyboard-height snap, fades in when sheet expands */}
-        {isKeyboardReplacement && (
+        {isKeyboardReplacement && open && (
           <Animated.View
             style={[
               styles.kbOverlay,

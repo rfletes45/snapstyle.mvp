@@ -17,6 +17,7 @@
 
 import { useComposerSheet } from "@/contexts/ComposerSheetContext";
 import type { StickerItem } from "@/services/sticker/types";
+import { chatPerf } from "@/utils/chatPerf";
 import * as Haptics from "expo-haptics";
 import React, {
   memo,
@@ -49,6 +50,8 @@ export interface StickerButtonProps {
   onStickerSelected: (sticker: StickerItem) => void;
   /** Button size in pixels. */
   size?: number;
+  /** Keep the picker tree warm-mounted after chat entry settles. */
+  warmMountEnabled?: boolean;
 }
 
 // =============================================================================
@@ -58,6 +61,7 @@ export interface StickerButtonProps {
 function StickerButtonBase({
   onStickerSelected,
   size = 24,
+  warmMountEnabled = false,
 }: StickerButtonProps) {
   const theme = useTheme();
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -91,6 +95,7 @@ function StickerButtonBase({
   const handlePress = useCallback(() => {
     if (pickerOpenRef.current) return;
     pickerOpenRef.current = true;
+    chatPerf.mark("picker-open:sticker");
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     void preloadPickerById("sticker")?.catch(() => {});
     activateSheet(undefined, handleClose);
@@ -111,7 +116,8 @@ function StickerButtonBase({
     [onStickerSelected],
   );
 
-  const ResolvedPicker = pickerOpen ? getResolvedStickerPicker() : null;
+  const shouldKeepMounted = warmMountEnabled || pickerOpen;
+  const ResolvedPicker = shouldKeepMounted ? getResolvedStickerPicker() : null;
   const isLoading =
     pickerOpen && !ResolvedPicker && preloadStatus.status !== "failed";
 
@@ -129,7 +135,7 @@ function StickerButtonBase({
         />
         {isLoading && <ButtonLoadingOverlay />}
       </View>
-      {pickerOpen &&
+      {shouldKeepMounted &&
         (ResolvedPicker ? (
           <ResolvedPicker
             ref={sheetRef}
@@ -138,8 +144,9 @@ function StickerButtonBase({
             onStickerSelected={handleStickerSelected}
             keyboardHeight={lastKeyboardHeight}
             sharedTranslateY={sheetTranslateY}
+            warmupEnabled={warmMountEnabled}
           />
-        ) : preloadStatus.status !== "failed" ? (
+        ) : pickerOpen && preloadStatus.status !== "failed" ? (
           <Suspense fallback={null}>
             <LazyStickerPicker
               ref={sheetRef}
@@ -148,6 +155,7 @@ function StickerButtonBase({
               onStickerSelected={handleStickerSelected}
               keyboardHeight={lastKeyboardHeight}
               sharedTranslateY={sheetTranslateY}
+              warmupEnabled={warmMountEnabled}
             />
           </Suspense>
         ) : null)}

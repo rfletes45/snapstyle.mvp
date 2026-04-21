@@ -141,6 +141,24 @@ export async function getCategories(): Promise<GifCategory[]> {
 }
 
 /**
+ * Return the cached first trending page if it is still fresh.
+ */
+export function peekTrendingGifPage(): GifPage | null {
+  return isCacheValid(trendingCache.current)
+    ? trendingCache.current.data
+    : null;
+}
+
+/**
+ * Return cached GIF categories if they are still fresh.
+ */
+export function peekGifCategories(): GifCategory[] | null {
+  return isCacheValid(categoriesCache.current)
+    ? categoriesCache.current.data
+    : null;
+}
+
+/**
  * Register a share event with the provider (call after sending a GIF).
  * Best-effort — failures are silently logged.
  */

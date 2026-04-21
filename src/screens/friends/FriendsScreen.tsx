@@ -12,26 +12,30 @@
 
 import BlockUserModal from "@/components/BlockUserModal";
 import {
-    QRCodeSheet,
-    QuickAddSheet,
-    SectionHeader,
+  QRCodeSheet,
+  QuickAddSheet,
+  SectionHeader,
 } from "@/components/friends";
 import AddFriendsSheet from "@/components/friends/AddFriendsSheet";
 import { ProfilePictureWithDecoration } from "@/components/profile/ProfilePicture";
 import ReportUserModal from "@/components/ReportUserModal";
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui";
+import { CALL_FEATURES } from "@/constants/featureFlags";
 import { BorderRadius, Spacing } from "@/constants/theme";
+import { useStreamCall } from "@/contexts/StreamCallContext";
 import { blockUser } from "@/services/blocking";
+import { getOrCreateChat } from "@/services/chat";
+import { prepareDmThreadEntry } from "@/services/chat/threadIdentityWarmup";
 import { getFirestoreInstance } from "@/services/firebase";
 import {
-    acceptFriendRequest,
-    cancelFriendRequest,
-    declineFriendRequest,
-    getFriends,
-    getPendingRequests,
-    getUserProfileByUid,
-    removeFriend,
-    sendFriendRequest,
+  acceptFriendRequest,
+  cancelFriendRequest,
+  declineFriendRequest,
+  getFriends,
+  getPendingRequests,
+  getUserProfileByUid,
+  removeFriend,
+  sendFriendRequest,
 } from "@/services/friends";
 import { shareInviteLink, shareProfileLink } from "@/services/invites";
 import { submitReport } from "@/services/reporting";
@@ -40,59 +44,59 @@ import { useAuth } from "@/store/AuthContext";
 import { useInAppNotifications } from "@/store/InAppNotificationsContext";
 import { useIsDark } from "@/store/ThemeContext";
 import {
-    AvatarConfig,
-    Friend,
-    FriendRequest,
-    ReportReason,
+  AvatarConfig,
+  Friend,
+  FriendRequest,
+  ReportReason,
 } from "@/types/models";
 import * as haptics from "@/utils/haptics";
 import { createLogger } from "@/utils/log";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useFocusEffect, useRoute } from "@react-navigation/native";
 import {
-    collection,
-    getDocs,
-    onSnapshot,
-    query,
-    where,
+  collection,
+  getDocs,
+  onSnapshot,
+  query,
+  where,
 } from "firebase/firestore";
 import React, {
-    useCallback,
-    useEffect,
-    useMemo,
-    useRef,
-    useState,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
 } from "react";
 import {
-    ActivityIndicator,
-    Alert,
-    Dimensions,
-    LayoutAnimation,
-    Platform,
-    RefreshControl,
-    SectionList,
-    StyleSheet,
-    TouchableOpacity,
-    UIManager,
-    View,
+  ActivityIndicator,
+  Alert,
+  Dimensions,
+  LayoutAnimation,
+  Platform,
+  RefreshControl,
+  SectionList,
+  StyleSheet,
+  TouchableOpacity,
+  UIManager,
+  View,
 } from "react-native";
 import {
-    Button,
-    Divider,
-    IconButton,
-    Menu,
-    Searchbar,
-    Snackbar,
-    Text,
-    useTheme,
+  Button,
+  Divider,
+  IconButton,
+  Menu,
+  Searchbar,
+  Snackbar,
+  Text,
+  useTheme,
 } from "react-native-paper";
 // Appbar removed — header is now custom Animated.View with safe area insets
 import Animated, {
-    Extrapolation,
-    interpolate,
-    useAnimatedScrollHandler,
-    useAnimatedStyle,
-    useSharedValue,
+  Extrapolation,
+  interpolate,
+  useAnimatedScrollHandler,
+  useAnimatedStyle,
+  useSharedValue,
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -329,6 +333,11 @@ const FriendRow = React.memo(function FriendRow({
   onOpenMenu,
   onCloseMenu,
   onMessage,
+  onCall,
+  callEnabled,
+  callDisabled,
+  messageLoading,
+  callLoading,
   onNavigateProfile,
   onRemove,
   onBlock,
@@ -341,6 +350,11 @@ const FriendRow = React.memo(function FriendRow({
   onOpenMenu: () => void;
   onCloseMenu: () => void;
   onMessage: () => void;
+  onCall: () => void;
+  callEnabled: boolean;
+  callDisabled: boolean;
+  messageLoading: boolean;
+  callLoading: boolean;
   onNavigateProfile: () => void;
   onRemove: () => void;
   onBlock: () => void;
@@ -408,21 +422,59 @@ const FriendRow = React.memo(function FriendRow({
           )}
         </View>
         <View style={styles.friendActions}>
+          {callEnabled && (
+            <TouchableOpacity
+              style={[
+                styles.callBtn,
+                { backgroundColor: colors.primaryContainer },
+                (callDisabled || callLoading) && styles.actionBtnDisabled,
+              ]}
+              onPress={onCall}
+              disabled={callDisabled || callLoading}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              accessibilityLabel={`Call ${friend.otherUserProfile?.username || "friend"}`}
+              accessibilityRole="button"
+              accessibilityState={{ disabled: callDisabled || callLoading }}
+            >
+              {callLoading ? (
+                <ActivityIndicator
+                  size="small"
+                  color={colors.onPrimaryContainer}
+                />
+              ) : (
+                <MaterialCommunityIcons
+                  name="phone-outline"
+                  size={18}
+                  color={colors.onPrimaryContainer}
+                />
+              )}
+            </TouchableOpacity>
+          )}
           <TouchableOpacity
             style={[
               styles.messageBtn,
               { backgroundColor: colors.primaryContainer },
+              messageLoading && styles.actionBtnDisabled,
             ]}
             onPress={onMessage}
+            disabled={messageLoading}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            accessibilityLabel={`Message ${profile?.username || "friend"}`}
+            accessibilityLabel={`Message ${friend.otherUserProfile?.username || "friend"}`}
             accessibilityRole="button"
+            accessibilityState={{ disabled: messageLoading }}
           >
-            <MaterialCommunityIcons
-              name="message-text-outline"
-              size={18}
-              color={colors.onPrimaryContainer}
-            />
+            {messageLoading ? (
+              <ActivityIndicator
+                size="small"
+                color={colors.onPrimaryContainer}
+              />
+            ) : (
+              <MaterialCommunityIcons
+                name="message-text-outline"
+                size={18}
+                color={colors.onPrimaryContainer}
+              />
+            )}
           </TouchableOpacity>
           <Menu
             visible={menuVisible}
@@ -1161,9 +1213,140 @@ export default function FriendsScreen({ navigation }: any) {
     [navigation],
   );
 
-  const navigateToChat = useCallback(
-    (friendUid: string) => navigation.navigate("ChatDetail", { friendUid }),
-    [navigation],
+  // ── Messaging & Calling ────────────────────────────────────────
+  // Fix for the Friends→Message ownership bug: before navigating into a DM
+  // we explicitly call getOrCreateChat() here. This materializes the
+  // canonical Chats/{chatId} doc BEFORE the ChatDetail screen mounts, so
+  // the useInboxData subscription (onSnapshot over Chats where members
+  // array-contains uid) picks up the new conversation and it appears on
+  // the main Messages screen — even if the user never sends a message
+  // and backs out immediately. We also pass the resolved chatId +
+  // cached profile data via initialData for instant first-paint, and
+  // warm the avatar/decoration assets via prepareDmThreadEntry, matching
+  // the pattern used by ChatListScreenV2 and SearchSheet.
+  const {
+    startCall,
+    isBusy: callIsBusy,
+    isReady: callIsReady,
+  } = useStreamCall();
+  const callsUiEnabled =
+    CALL_FEATURES.CALLS_ENABLED && CALL_FEATURES.DIRECT_CALLS_ENABLED;
+  const [messagingUid, setMessagingUid] = useState<string | null>(null);
+  const [callingUid, setCallingUid] = useState<string | null>(null);
+
+  const handleMessagePress = useCallback(
+    async (friend: FriendWithProfile, friendUid: string) => {
+      if (!uid || !friendUid) return;
+      if (messagingUid) return; // duplicate-tap guard
+      const profile = friend.otherUserProfile;
+      const friendAvatar = profile?.profilePictureUrl || null;
+      // Opportunistic asset warmup (fire-and-forget)
+      prepareDmThreadEntry({
+        avatarUrl: friendAvatar,
+        decorationId: profile?.decorationId,
+      }).catch(() => {});
+
+      setMessagingUid(friendUid);
+      try {
+        const chatId = await getOrCreateChat(uid, friendUid);
+        navigation.navigate("ChatDetail", {
+          friendUid,
+          initialData: {
+            chatId,
+            friendName: profile?.username || profile?.displayName || "",
+            friendAvatar,
+            friendAvatarConfig: profile?.avatarConfig,
+            friendDecorationId: profile?.decorationId || null,
+          },
+        });
+      } catch (error: any) {
+        const msg: string = error?.message || "";
+        if (msg.includes("Cannot chat with this user")) {
+          showSnackbar("You can't message this user", "error");
+        } else {
+          logger.error("Failed to open DM from Friends:", error);
+          showSnackbar("Couldn't open conversation", "error");
+        }
+      } finally {
+        setMessagingUid(null);
+      }
+    },
+    [uid, navigation, messagingUid, showSnackbar],
+  );
+
+  const handleCallPress = useCallback(
+    (friend: FriendWithProfile, friendUid: string) => {
+      if (!uid || !friendUid) return;
+      if (callingUid) return; // duplicate-tap guard
+      if (!callsUiEnabled) return;
+      if (!callIsReady) {
+        Alert.alert(
+          "Calls unavailable",
+          "Calls are still initializing. Please try again in a moment.",
+        );
+        return;
+      }
+      if (callIsBusy) {
+        Alert.alert(
+          "Already in a call",
+          "Please end your current call before starting a new one.",
+        );
+        return;
+      }
+      const profile = friend.otherUserProfile;
+      const displayName = profile?.username || profile?.displayName || "Friend";
+
+      const launch = async (mode: "audio" | "video") => {
+        if (callingUid) return;
+        setCallingUid(friendUid);
+        try {
+          const callId = await startCall(friendUid, mode, displayName);
+          navigation.navigate("DirectCall" as any, {
+            callId,
+            recipientName: displayName,
+            mode,
+            isOutgoing: true,
+          });
+        } catch (err: any) {
+          Alert.alert(
+            "Call Failed",
+            err?.message || "Unable to start call. Please try again.",
+          );
+        } finally {
+          setCallingUid(null);
+        }
+      };
+
+      Alert.alert(
+        `Call ${displayName}`,
+        "Choose a call type",
+        [
+          {
+            text: "Audio call",
+            onPress: () => {
+              void launch("audio");
+            },
+          },
+          {
+            text: "Video call",
+            onPress: () => {
+              void launch("video");
+            },
+          },
+          { text: "Cancel", style: "cancel" },
+        ],
+        { cancelable: true },
+      );
+    },
+    [
+      uid,
+      callingUid,
+      callsUiEnabled,
+      callIsReady,
+      callIsBusy,
+      startCall,
+      navigation,
+    ],
   );
 
   // ── Toggle sections ────────────────────────────────────────────
@@ -1256,11 +1439,15 @@ export default function FriendsScreen({ navigation }: any) {
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* ── Header ─────────────────────────────────────────────── */}
       {/* Safe-area strip stays fixed; the content below it pulls up
-          on scroll via translateY to visually shrink the header. */}
+          on scroll via translateY to visually shrink the header.
+          Header surface matches the page `background` (not `surface`) so
+          the friend islands (which use `surface`) sit on the page as
+          clearly elevated cards — matching the Calls screen header
+          treatment and the light-mode reference hierarchy. */}
       <View
         style={[
           styles.headerSafeArea,
-          { backgroundColor: colors.surface, height: insets.top },
+          { backgroundColor: colors.background, height: insets.top },
         ]}
       />
       <View style={[styles.headerOuter]}>
@@ -1269,7 +1456,11 @@ export default function FriendsScreen({ navigation }: any) {
         <Animated.View
           style={[
             styles.headerBg,
-            { backgroundColor: colors.surface },
+            {
+              backgroundColor: colors.background,
+              borderBottomWidth: StyleSheet.hairlineWidth,
+              borderBottomColor: colors.outlineVariant ?? colors.outline,
+            },
             headerBgStyle,
           ]}
         />
@@ -1314,11 +1505,13 @@ export default function FriendsScreen({ navigation }: any) {
           </View>
 
           {/* Search bar — absolutely positioned so its movement
-              doesn't affect sibling layout (no jitter). */}
+              doesn't affect sibling layout (no jitter). Uses `surface`
+              so the pill reads as an elevated pill on top of the header,
+              consistent with friend cards which also sit on `surface`. */}
           <Animated.View
             style={[
               styles.searchAbsolute,
-              { backgroundColor: colors.surfaceVariant },
+              { backgroundColor: colors.surface },
               searchBarAnimStyle,
             ]}
           >
@@ -1419,7 +1612,12 @@ export default function FriendsScreen({ navigation }: any) {
                 menuVisible={menuVisible === friendUid}
                 onOpenMenu={() => handleOpenMenu(friendUid)}
                 onCloseMenu={handleCloseMenu}
-                onMessage={() => navigateToChat(friendUid)}
+                onMessage={() => handleMessagePress(friend, friendUid)}
+                onCall={() => handleCallPress(friend, friendUid)}
+                callEnabled={callsUiEnabled}
+                callDisabled={!callIsReady || callIsBusy}
+                messageLoading={messagingUid === friendUid}
+                callLoading={callingUid === friendUid}
                 onNavigateProfile={() => navigateToProfile(friendUid)}
                 onRemove={() => handleRemoveFriend(friendUid)}
                 onBlock={() =>
@@ -1725,6 +1923,17 @@ const styles = StyleSheet.create({
     borderRadius: 17,
     alignItems: "center",
     justifyContent: "center",
+  },
+  callBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 2,
+  },
+  actionBtnDisabled: {
+    opacity: 0.45,
   },
   actionBtn: {
     width: 32,

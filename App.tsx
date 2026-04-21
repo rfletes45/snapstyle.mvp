@@ -259,7 +259,9 @@ function AppContent() {
                             });
                           }}
                         />
-                        <NativePiPBridge />
+                        <NativePiPBridge
+                          isOnCallScreen={currentRouteName === "DirectCall"}
+                        />
                         <FloatingVideoOverlay
                           isOnCallScreen={
                             currentRouteName === undefined ||

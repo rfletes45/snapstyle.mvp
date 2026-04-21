@@ -15,7 +15,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     supportsTablet: true,
     bundleIdentifier: "com.vibeapp.mobile",
     googleServicesFile: "./GoogleService-Info.plist",
-    buildNumber: "41",
+    buildNumber: "42",
     infoPlist: {
       // Camera & Microphone permissions
       NSCameraUsageDescription: "Vibe needs camera access for video calls",
@@ -106,7 +106,9 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     [
       "expo-notifications",
       {
-        icon: "./assets/images/icon.png",
+        // Android notification small icons must be white-only with transparency.
+        // This lamp mark is a notification-specific derivative of Filler_App_Icon.
+        icon: "./assets/images/android-notification-icon.png",
         color: "#ffffff",
       },
     ],

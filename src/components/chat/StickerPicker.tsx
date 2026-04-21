@@ -19,13 +19,17 @@
  * @module components/chat/StickerPicker
  */
 
+import { AppImage } from "@/components/AppImage";
 import {
   fetchTrendingStickers,
+  peekTrendingStickerPage,
   searchStickers,
 } from "@/services/sticker/stickerService";
 import type { StickerItem } from "@/services/sticker/types";
 import { useAppTheme } from "@/store/ThemeContext";
+import { chatPerf } from "@/utils/chatPerf";
 import { createLogger } from "@/utils/log";
+import { buildRemoteImageSource } from "@/utils/remoteImageSource";
 import * as Haptics from "expo-haptics";
 import React, {
   forwardRef,
@@ -41,7 +45,6 @@ import {
   ActivityIndicator,
   Dimensions,
   FlatList,
-  Image,
   Platform,
   Pressable,
   StyleSheet,
@@ -67,6 +70,8 @@ const log = createLogger("StickerPicker");
 export interface StickerPickerProps {
   /** Whether the picker is visible */
   open: boolean;
+  /** Whether the picker should stay warm-mounted while hidden. */
+  warmupEnabled?: boolean;
   /** Called when the picker should close */
   onClose: () => void;
   /** Called when a sticker is selected */
@@ -146,6 +151,8 @@ const StickerCell = memo(function StickerCell({
   sticker: StickerItem;
   onPress: (sticker: StickerItem) => void;
 }) {
+  const previewSource = buildRemoteImageSource(sticker.previewUrl);
+
   return (
     <Pressable
       onPress={() => onPress(sticker)}
@@ -158,11 +165,15 @@ const StickerCell = memo(function StickerCell({
       accessibilityRole="button"
       accessibilityHint="Double tap to send this sticker"
     >
-      <Image
-        source={{ uri: sticker.previewUrl }}
-        style={styles.stickerImage}
-        resizeMode="contain"
-      />
+      {previewSource ? (
+        <AppImage
+          source={previewSource}
+          style={styles.stickerImage}
+          transition={0}
+          cachePolicy="memory-disk"
+          contentFit="contain"
+        />
+      ) : null}
     </Pressable>
   );
 });
@@ -175,12 +186,21 @@ export const StickerPicker = forwardRef<
   DraggableBottomSheetHandle,
   StickerPickerProps
 >(function StickerPicker(
-  { open, onClose, onStickerSelected, keyboardHeight, sharedTranslateY },
+  {
+    open,
+    warmupEnabled = false,
+    onClose,
+    onStickerSelected,
+    keyboardHeight,
+    sharedTranslateY,
+  },
   ref,
 ) {
   const { colors, isDark } = useAppTheme();
   const insets = useSafeAreaInsets();
   const sheetRef = useRef<DraggableBottomSheetHandle>(null);
+  const initialTrendingPageRef = useRef(peekTrendingStickerPage());
+  const shouldPrepare = open || warmupEnabled;
 
   // Forward imperative handle
   useImperativeHandle(ref, () => ({
@@ -216,20 +236,47 @@ export const StickerPicker = forwardRef<
 
   // ── State ──────────────────────────────────────────────────────────────────
   const [searchQuery, setSearchQuery] = useState("");
-  const [stickers, setStickers] = useState<StickerItem[]>([]);
+  const [stickers, setStickers] = useState<StickerItem[]>(
+    () => initialTrendingPageRef.current?.items ?? [],
+  );
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [nextPage, setNextPage] = useState<number | undefined>();
+  const [nextPage, setNextPage] = useState<number | undefined>(
+    () => initialTrendingPageRef.current?.nextPage,
+  );
 
   const debouncedQuery = useDebouncedValue(searchQuery, DEBOUNCE_MS);
   const abortRef = useRef<AbortController | null>(null);
   const flatListRef = useRef<FlatList>(null);
-  const hasLoadedRef = useRef(false);
+  const hasLoadedRef = useRef(!!initialTrendingPageRef.current);
+  const warmMountedRef = useRef(false);
+  const contentReadyMarkedRef = useRef(false);
+
+  useEffect(() => {
+    if (!warmupEnabled || open || warmMountedRef.current) return;
+    warmMountedRef.current = true;
+    chatPerf.measure("picker-warm:sticker", "component-mounted");
+  }, [open, warmupEnabled]);
+
+  useEffect(() => {
+    if (!open) return;
+    contentReadyMarkedRef.current = false;
+    const frame = requestAnimationFrame(() => {
+      chatPerf.measure("picker-open:sticker", "sheet-visible");
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open || contentReadyMarkedRef.current || stickers.length === 0) return;
+    contentReadyMarkedRef.current = true;
+    chatPerf.end("picker-open:sticker", "first-content:grid");
+  }, [open, stickers.length]);
 
   // ── Fetch trending on open ─────────────────────────────────────────────────
   useEffect(() => {
-    if (!open) return;
+    if (!shouldPrepare) return;
 
     // Only load trending if we haven't already or stickers are empty
     if (hasLoadedRef.current && stickers.length > 0 && !searchQuery) return;
@@ -263,8 +310,7 @@ export const StickerPicker = forwardRef<
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  }, [searchQuery, shouldPrepare, stickers.length]);
 
   // ── Search when debounced query changes ────────────────────────────────────
   useEffect(() => {
@@ -396,12 +442,13 @@ export const StickerPicker = forwardRef<
     [],
   );
 
-  if (!open) return null;
+  if (!open && !warmupEnabled) return null;
 
   return (
     <DraggableBottomSheet
       ref={sheetRef}
       open={open}
+      keepMountedWhenClosed={warmupEnabled}
       onClose={handleClose}
       snapPoints={snapPoints}
       initialSnapIndex={initialSnapIndex}

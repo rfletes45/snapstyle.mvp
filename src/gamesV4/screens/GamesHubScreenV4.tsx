@@ -416,13 +416,26 @@ export default function GamesHubScreenV4() {
   }, []);
 
   // ── Colors ─────────────────────────────────────────────────────────────
-  const bgColor = theme.isDark ? "#000" : theme.colors.background;
-  const cardBg = theme.isDark ? "#1A1A1A" : "#FFF";
-  const textColor = theme.isDark ? "#FFF" : "#222";
-  const subtextColor = theme.isDark ? "#AAA" : "#666";
-  const borderColor = theme.isDark ? "#333" : "#E0E0E0";
-  const accentBg = theme.isDark ? "#2C2C2E" : "#F2F2F7";
-  const sectionBarBg = theme.isDark ? "#1C1C1E" : "#FFF";
+  // Drive every local color from the theme so the Games hub matches the
+  // chosen theme (previously the locals were hardcoded to a pseudo-iOS
+  // neutral palette that ignored the theme — e.g. always black in any dark
+  // theme, always pure white in any light theme). The semantic mapping is:
+  //   bgColor       → page background (matches Calls/Friends page)
+  //   cardBg        → elevated card/island surface
+  //   sectionBarBg  → section header strips (intentionally match the page
+  //                   so section headers feel like page sub-dividers, not
+  //                   floating bars — matches the Calls screen pattern)
+  //   accentBg      → subtle chip / quick-action surface
+  //   textColor     → primary text
+  //   subtextColor  → secondary/muted text
+  //   borderColor   → hairline dividers & card borders
+  const bgColor = theme.colors.background;
+  const cardBg = theme.colors.surface;
+  const textColor = theme.colors.text;
+  const subtextColor = theme.colors.textSecondary;
+  const borderColor = theme.colors.border;
+  const accentBg = theme.colors.surfaceVariant;
+  const sectionBarBg = theme.colors.background;
 
   // ── Invite status label ────────────────────────────────────────────────
   const inviteStatusLabel = (status: string): string => {

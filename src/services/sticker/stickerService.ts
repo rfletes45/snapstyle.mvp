@@ -128,6 +128,24 @@ export async function getStickerCategories(): Promise<StickerCategory[]> {
 }
 
 /**
+ * Return the cached first trending sticker page if it is still fresh.
+ */
+export function peekTrendingStickerPage(): StickerPage | null {
+  return isCacheValid(trendingCache.current)
+    ? trendingCache.current.data
+    : null;
+}
+
+/**
+ * Return cached sticker categories if they are still fresh.
+ */
+export function peekStickerCategories(): StickerCategory[] | null {
+  return isCacheValid(categoriesCache.current)
+    ? categoriesCache.current.data
+    : null;
+}
+
+/**
  * Register a share event with the provider (call after sending a sticker).
  * Best-effort — failures are silently logged.
  */

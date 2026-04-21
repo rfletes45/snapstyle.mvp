@@ -17,6 +17,7 @@ import { LayoutChangeEvent, ScrollView, StyleSheet, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 
 import { Spacing } from "@/constants/theme";
+import { useColors } from "@/store/ThemeContext";
 
 import { getWidgetPixelSize } from "./BoardLayoutEngine";
 import { WidgetGallery } from "./WidgetGallery";
@@ -237,6 +238,7 @@ function WidgetBoardContainerBase({
   onCancel,
 }: WidgetBoardContainerProps) {
   const isCustomizing = mode === "customize";
+  const colors = useColors();
 
   // ── Board Width Measurement ───────────────────────────────────────────
 
@@ -471,7 +473,7 @@ function WidgetBoardContainerBase({
               top: line.y,
               width: line.width,
               height: line.height,
-              backgroundColor: "#000",
+              backgroundColor: colors.boardSeam ?? colors.divider,
               zIndex: 2,
             }}
           />

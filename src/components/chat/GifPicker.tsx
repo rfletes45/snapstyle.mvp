@@ -20,15 +20,20 @@
  * @module components/chat/GifPicker
  */
 
+import { AppImage } from "@/components/AppImage";
 import {
   fetchTrending,
   getAutocomplete,
   getCategories,
+  peekGifCategories,
+  peekTrendingGifPage,
   searchGifs,
 } from "@/services/gif/gifService";
 import type { GifItem } from "@/services/gif/types";
 import { useAppTheme } from "@/store/ThemeContext";
+import { chatPerf } from "@/utils/chatPerf";
 import { createLogger } from "@/utils/log";
+import { buildRemoteImageSource } from "@/utils/remoteImageSource";
 import * as Haptics from "expo-haptics";
 import React, {
   forwardRef,
@@ -44,7 +49,6 @@ import {
   ActivityIndicator,
   Dimensions,
   FlatList,
-  Image,
   Platform,
   Pressable,
   StyleSheet,
@@ -71,6 +75,8 @@ const log = createLogger("GifPicker");
 export interface GifPickerProps {
   /** Whether the picker is visible */
   open: boolean;
+  /** Whether the picker should stay warm-mounted while hidden. */
+  warmupEnabled?: boolean;
   /** Called when the picker should close */
   onClose: () => void;
   /** Called when a GIF is selected */
@@ -100,6 +106,13 @@ const COLUMN_WIDTH =
 const DEBOUNCE_MS = 400;
 const PAGE_SIZE = 30;
 const SKELETON_COUNT = 8;
+
+function toCategoryTiles(categories: ReturnType<typeof peekGifCategories>) {
+  return (categories ?? []).map((category) => ({
+    name: category.name,
+    imageUrl: category.imageUrl,
+  }));
+}
 
 // =============================================================================
 // Debounce Hook
@@ -156,6 +169,7 @@ const GifCell = memo(function GifCell({
   const cellHeight = COLUMN_WIDTH / Math.max(aspectRatio, 0.5);
   // Clamp height to reasonable bounds
   const clampedHeight = Math.min(Math.max(cellHeight, 80), 300);
+  const previewSource = buildRemoteImageSource(gif.previewUrl);
 
   return (
     <Pressable
@@ -169,14 +183,18 @@ const GifCell = memo(function GifCell({
       accessibilityRole="button"
       accessibilityHint="Double tap to send this GIF"
     >
-      <Image
-        source={{ uri: gif.previewUrl }}
-        style={[
-          styles.gifImage,
-          { width: COLUMN_WIDTH, height: clampedHeight },
-        ]}
-        resizeMode="cover"
-      />
+      {previewSource ? (
+        <AppImage
+          source={previewSource}
+          style={[
+            styles.gifImage,
+            { width: COLUMN_WIDTH, height: clampedHeight },
+          ]}
+          transition={0}
+          cachePolicy="memory-disk"
+          contentFit="cover"
+        />
+      ) : null}
     </Pressable>
   );
 });
@@ -214,12 +232,22 @@ const SuggestionChip = memo(function SuggestionChip({
 
 export const GifPicker = forwardRef<DraggableBottomSheetHandle, GifPickerProps>(
   function GifPicker(
-    { open, onClose, onGifSelected, keyboardHeight, sharedTranslateY },
+    {
+      open,
+      warmupEnabled = false,
+      onClose,
+      onGifSelected,
+      keyboardHeight,
+      sharedTranslateY,
+    },
     ref,
   ) {
     const { colors, isDark } = useAppTheme();
     const insets = useSafeAreaInsets();
     const sheetRef = useRef<DraggableBottomSheetHandle>(null);
+    const initialTrendingPageRef = useRef(peekTrendingGifPage());
+    const initialCategoriesRef = useRef(toCategoryTiles(peekGifCategories()));
+    const shouldPrepare = open || warmupEnabled;
 
     // Forward imperative handle
     useImperativeHandle(ref, () => ({
@@ -256,13 +284,19 @@ export const GifPicker = forwardRef<DraggableBottomSheetHandle, GifPickerProps>(
 
     // ── State ──────────────────────────────────────────────────────────────────
     const [searchQuery, setSearchQuery] = useState("");
-    const [gifs, setGifs] = useState<GifItem[]>([]);
+    const [gifs, setGifs] = useState<GifItem[]>(
+      () => initialTrendingPageRef.current?.items ?? [],
+    );
     const [loading, setLoading] = useState(false);
     const [loadingMore, setLoadingMore] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [nextCursor, setNextCursor] = useState<string | undefined>();
+    const [nextCursor, setNextCursor] = useState<string | undefined>(
+      () => initialTrendingPageRef.current?.nextCursor,
+    );
     const [suggestions, setSuggestions] = useState<string[]>([]);
-    const [gifCategories, setGifCategories] = useState<CategoryTile[]>([]);
+    const [gifCategories, setGifCategories] = useState<CategoryTile[]>(
+      () => initialCategoriesRef.current,
+    );
     const [categoriesLoading, setCategoriesLoading] = useState(false);
     // Browse state: "landing" = category grid, "category" = inside a category, "search" = user typed a query
     const [browseState, setBrowseState] = useState<
@@ -271,14 +305,45 @@ export const GifPicker = forwardRef<DraggableBottomSheetHandle, GifPickerProps>(
     const debouncedQuery = useDebouncedValue(searchQuery, DEBOUNCE_MS);
     const abortRef = useRef<AbortController | null>(null);
     const flatListRef = useRef<FlatList>(null);
-    const hasLoadedRef = useRef(false);
+    const hasLoadedRef = useRef(!!initialTrendingPageRef.current);
+    const warmMountedRef = useRef(false);
+    const contentReadyMarkedRef = useRef(false);
+
+    useEffect(() => {
+      if (!warmupEnabled || open || warmMountedRef.current) return;
+      warmMountedRef.current = true;
+      chatPerf.measure("picker-warm:gif", "component-mounted");
+    }, [open, warmupEnabled]);
+
+    useEffect(() => {
+      if (!open) return;
+      contentReadyMarkedRef.current = false;
+      const frame = requestAnimationFrame(() => {
+        chatPerf.measure("picker-open:gif", "sheet-visible");
+      });
+      return () => cancelAnimationFrame(frame);
+    }, [open]);
+
+    useEffect(() => {
+      if (!open || contentReadyMarkedRef.current) return;
+      const firstContentReady =
+        (browseState === "landing" && gifCategories.length > 0) ||
+        (browseState !== "landing" && gifs.length > 0);
+
+      if (!firstContentReady) return;
+
+      contentReadyMarkedRef.current = true;
+      chatPerf.end(
+        "picker-open:gif",
+        browseState === "landing"
+          ? "first-content:categories"
+          : "first-content:grid",
+      );
+    }, [browseState, gifCategories.length, gifs.length, open]);
 
     // ── Fetch trending on open ─────────────────────────────────────────────────
     useEffect(() => {
-      if (!open) {
-        // Reset on close — but keep gifs cached for re-open
-        return;
-      }
+      if (!shouldPrepare) return;
 
       // Only load trending if we haven't already or gifs are empty
       if (hasLoadedRef.current && gifs.length > 0 && !searchQuery) return;
@@ -312,12 +377,11 @@ export const GifPicker = forwardRef<DraggableBottomSheetHandle, GifPickerProps>(
       return () => {
         cancelled = true;
       };
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [open]);
+    }, [gifs.length, searchQuery, shouldPrepare]);
 
     // ── Fetch categories on open ───────────────────────────────────────────────
     useEffect(() => {
-      if (!open || gifCategories.length > 0) return;
+      if (!shouldPrepare || gifCategories.length > 0) return;
 
       let cancelled = false;
       setCategoriesLoading(true);
@@ -340,8 +404,7 @@ export const GifPicker = forwardRef<DraggableBottomSheetHandle, GifPickerProps>(
       return () => {
         cancelled = true;
       };
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [open]);
+    }, [gifCategories.length, shouldPrepare]);
 
     // ── Category tile tap → navigate into that category ───────────────────────
     const handleCategorySelect = useCallback((categoryName: string) => {
@@ -548,12 +611,13 @@ export const GifPicker = forwardRef<DraggableBottomSheetHandle, GifPickerProps>(
       [],
     );
 
-    if (!open) return null;
+    if (!open && !warmupEnabled) return null;
 
     return (
       <DraggableBottomSheet
         ref={sheetRef}
         open={open}
+        keepMountedWhenClosed={warmupEnabled}
         onClose={handleClose}
         snapPoints={snapPoints}
         initialSnapIndex={initialSnapIndex}

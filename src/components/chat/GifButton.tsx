@@ -17,6 +17,7 @@
 
 import { useComposerSheet } from "@/contexts/ComposerSheetContext";
 import type { GifItem } from "@/services/gif/types";
+import { chatPerf } from "@/utils/chatPerf";
 import * as Haptics from "expo-haptics";
 import React, {
   memo,
@@ -49,13 +50,19 @@ export interface GifButtonProps {
   onGifSelected: (gif: GifItem) => void;
   /** Button size in pixels. */
   size?: number;
+  /** Keep the picker tree warm-mounted after chat entry settles. */
+  warmMountEnabled?: boolean;
 }
 
 // =============================================================================
 // Component
 // =============================================================================
 
-function GifButtonBase({ onGifSelected, size = 24 }: GifButtonProps) {
+function GifButtonBase({
+  onGifSelected,
+  size = 24,
+  warmMountEnabled = false,
+}: GifButtonProps) {
   const theme = useTheme();
   const [pickerOpen, setPickerOpen] = useState(false);
   const sheetRef = useRef<DraggableBottomSheetHandle>(null);
@@ -92,6 +99,7 @@ function GifButtonBase({ onGifSelected, size = 24 }: GifButtonProps) {
   const handlePress = useCallback(() => {
     if (pickerOpenRef.current) return;
     pickerOpenRef.current = true;
+    chatPerf.mark("picker-open:gif");
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     void preloadPickerById("gif")?.catch(() => {});
     activateSheet(undefined, handleClose);
@@ -116,7 +124,8 @@ function GifButtonBase({ onGifSelected, size = 24 }: GifButtonProps) {
   // React.lazy always suspends for at least one microtask even when the
   // promise is settled, producing a 1-frame fallback flash. Reading the
   // resolved ref synchronously eliminates that flash entirely.
-  const ResolvedPicker = pickerOpen ? getResolvedGifPicker() : null;
+  const shouldKeepMounted = warmMountEnabled || pickerOpen;
+  const ResolvedPicker = shouldKeepMounted ? getResolvedGifPicker() : null;
   const isLoading =
     pickerOpen && !ResolvedPicker && preloadStatus.status !== "failed";
 
@@ -134,7 +143,7 @@ function GifButtonBase({ onGifSelected, size = 24 }: GifButtonProps) {
         />
         {isLoading && <ButtonLoadingOverlay />}
       </View>
-      {pickerOpen &&
+      {shouldKeepMounted &&
         (ResolvedPicker ? (
           <ResolvedPicker
             ref={sheetRef}
@@ -143,8 +152,9 @@ function GifButtonBase({ onGifSelected, size = 24 }: GifButtonProps) {
             onGifSelected={handleGifSelected}
             keyboardHeight={lastKeyboardHeight}
             sharedTranslateY={sheetTranslateY}
+            warmupEnabled={warmMountEnabled}
           />
-        ) : preloadStatus.status !== "failed" ? (
+        ) : pickerOpen && preloadStatus.status !== "failed" ? (
           <Suspense fallback={null}>
             <LazyGifPicker
               ref={sheetRef}
@@ -153,6 +163,7 @@ function GifButtonBase({ onGifSelected, size = 24 }: GifButtonProps) {
               onGifSelected={handleGifSelected}
               keyboardHeight={lastKeyboardHeight}
               sharedTranslateY={sheetTranslateY}
+              warmupEnabled={warmMountEnabled}
             />
           </Suspense>
         ) : null)}

@@ -14,20 +14,26 @@
  * @module components/chat/GifStickerPicker
  */
 
+import { AppImage } from "@/components/AppImage";
 import {
   fetchTrending,
   getAutocomplete,
   getCategories,
+  peekGifCategories,
+  peekTrendingGifPage,
   searchGifs,
 } from "@/services/gif/gifService";
 import type { GifItem } from "@/services/gif/types";
 import {
   fetchTrendingStickers,
+  peekTrendingStickerPage,
   searchStickers,
 } from "@/services/sticker/stickerService";
 import type { StickerItem } from "@/services/sticker/types";
 import { useAppTheme } from "@/store/ThemeContext";
+import { chatPerf } from "@/utils/chatPerf";
 import { createLogger } from "@/utils/log";
+import { buildRemoteImageSource } from "@/utils/remoteImageSource";
 import * as Haptics from "expo-haptics";
 import React, {
   forwardRef,
@@ -43,7 +49,6 @@ import {
   ActivityIndicator,
   Dimensions,
   FlatList,
-  Image,
   Platform,
   Pressable,
   StyleSheet,
@@ -72,6 +77,8 @@ export type GifStickerTab = "gifs" | "stickers";
 export interface GifStickerPickerProps {
   /** Whether the picker is visible */
   open: boolean;
+  /** Whether the picker should stay warm-mounted while hidden. */
+  warmupEnabled?: boolean;
   /** Called when the picker should close */
   onClose: () => void;
   /** Called when a GIF is selected */
@@ -111,6 +118,13 @@ const PAGE_SIZE = 30;
 const GIF_SKELETON_COUNT = 8;
 const STICKER_SKELETON_COUNT = 9;
 const TAB_BAR_HEIGHT = 40;
+
+function toCategoryTiles(categories: ReturnType<typeof peekGifCategories>) {
+  return (categories ?? []).map((category) => ({
+    name: category.name,
+    imageUrl: category.imageUrl,
+  }));
+}
 
 // =============================================================================
 // Debounce Hook
@@ -181,6 +195,7 @@ const GifCell = memo(function GifCell({
   const aspectRatio = gif.previewWidth / Math.max(gif.previewHeight, 1);
   const cellHeight = GIF_COLUMN_WIDTH / Math.max(aspectRatio, 0.5);
   const clampedHeight = Math.min(Math.max(cellHeight, 80), 300);
+  const previewSource = buildRemoteImageSource(gif.previewUrl);
 
   return (
     <Pressable
@@ -194,14 +209,18 @@ const GifCell = memo(function GifCell({
       accessibilityRole="button"
       accessibilityHint="Double tap to send this GIF"
     >
-      <Image
-        source={{ uri: gif.previewUrl }}
-        style={[
-          styles.gifImage,
-          { width: GIF_COLUMN_WIDTH, height: clampedHeight },
-        ]}
-        resizeMode="cover"
-      />
+      {previewSource ? (
+        <AppImage
+          source={previewSource}
+          style={[
+            styles.gifImage,
+            { width: GIF_COLUMN_WIDTH, height: clampedHeight },
+          ]}
+          transition={0}
+          cachePolicy="memory-disk"
+          contentFit="cover"
+        />
+      ) : null}
     </Pressable>
   );
 });
@@ -213,6 +232,8 @@ const StickerCell = memo(function StickerCell({
   sticker: StickerItem;
   onPress: (sticker: StickerItem) => void;
 }) {
+  const previewSource = buildRemoteImageSource(sticker.previewUrl);
+
   return (
     <Pressable
       onPress={() => onPress(sticker)}
@@ -225,11 +246,15 @@ const StickerCell = memo(function StickerCell({
       accessibilityRole="button"
       accessibilityHint="Double tap to send this sticker"
     >
-      <Image
-        source={{ uri: sticker.previewUrl }}
-        style={styles.stickerImage}
-        resizeMode="contain"
-      />
+      {previewSource ? (
+        <AppImage
+          source={previewSource}
+          style={styles.stickerImage}
+          transition={0}
+          cachePolicy="memory-disk"
+          contentFit="contain"
+        />
+      ) : null}
     </Pressable>
   );
 });
@@ -343,6 +368,7 @@ export const GifStickerPicker = forwardRef<
 >(function GifStickerPicker(
   {
     open,
+    warmupEnabled = false,
     onClose,
     onGifSelected,
     onStickerSelected,
@@ -355,6 +381,10 @@ export const GifStickerPicker = forwardRef<
   const { colors, isDark } = useAppTheme();
   const insets = useSafeAreaInsets();
   const sheetRef = useRef<DraggableBottomSheetHandle>(null);
+  const initialGifTrendingPageRef = useRef(peekTrendingGifPage());
+  const initialGifCategoriesRef = useRef(toCategoryTiles(peekGifCategories()));
+  const initialStickerTrendingPageRef = useRef(peekTrendingStickerPage());
+  const shouldPrepare = open || warmupEnabled;
 
   // Forward imperative handle
   useImperativeHandle(ref, () => ({
@@ -395,35 +425,42 @@ export const GifStickerPicker = forwardRef<
   // GIF TAB STATE
   // =========================================================================
   const [gifSearchQuery, setGifSearchQuery] = useState("");
-  const [gifs, setGifs] = useState<GifItem[]>([]);
+  const [gifs, setGifs] = useState<GifItem[]>(
+    () => initialGifTrendingPageRef.current?.items ?? [],
+  );
   const [gifLoading, setGifLoading] = useState(false);
   const [gifLoadingMore, setGifLoadingMore] = useState(false);
   const [gifError, setGifError] = useState<string | null>(null);
-  const [gifNextCursor, setGifNextCursor] = useState<string | undefined>();
+  const [gifNextCursor, setGifNextCursor] = useState<string | undefined>(
+    () => initialGifTrendingPageRef.current?.nextCursor,
+  );
   const [gifSuggestions, setGifSuggestions] = useState<string[]>([]);
-  const [gifCategories, setGifCategories] = useState<CategoryTile[]>([]);
+  const [gifCategories, setGifCategories] = useState<CategoryTile[]>(
+    () => initialGifCategoriesRef.current,
+  );
   const [gifCategoriesLoading, setGifCategoriesLoading] = useState(false);
   const [gifBrowseState, setGifBrowseState] = useState<
     "landing" | "category" | "search"
   >("landing");
-  const [gifActiveCategory, setGifActiveCategory] = useState<string | null>(
-    null,
-  );
 
   const gifDebouncedQuery = useDebouncedValue(gifSearchQuery, DEBOUNCE_MS);
   const gifAbortRef = useRef<AbortController | null>(null);
   const gifFlatListRef = useRef<FlatList>(null);
-  const gifHasLoadedRef = useRef(false);
+  const gifHasLoadedRef = useRef(!!initialGifTrendingPageRef.current);
 
   // =========================================================================
   // STICKER TAB STATE
   // =========================================================================
   const [stickerSearchQuery, setStickerSearchQuery] = useState("");
-  const [stickers, setStickers] = useState<StickerItem[]>([]);
+  const [stickers, setStickers] = useState<StickerItem[]>(
+    () => initialStickerTrendingPageRef.current?.items ?? [],
+  );
   const [stickerLoading, setStickerLoading] = useState(false);
   const [stickerLoadingMore, setStickerLoadingMore] = useState(false);
   const [stickerError, setStickerError] = useState<string | null>(null);
-  const [stickerNextPage, setStickerNextPage] = useState<number | undefined>();
+  const [stickerNextPage, setStickerNextPage] = useState<number | undefined>(
+    () => initialStickerTrendingPageRef.current?.nextPage,
+  );
 
   const stickerDebouncedQuery = useDebouncedValue(
     stickerSearchQuery,
@@ -431,7 +468,53 @@ export const GifStickerPicker = forwardRef<
   );
   const stickerAbortRef = useRef<AbortController | null>(null);
   const stickerFlatListRef = useRef<FlatList>(null);
-  const stickerHasLoadedRef = useRef(false);
+  const stickerHasLoadedRef = useRef(!!initialStickerTrendingPageRef.current);
+  const warmMountedRef = useRef(false);
+  const contentReadyMarkedRef = useRef(false);
+
+  useEffect(() => {
+    if (!warmupEnabled || open || warmMountedRef.current) return;
+    warmMountedRef.current = true;
+    chatPerf.measure("picker-warm:gif-sticker", "component-mounted");
+  }, [open, warmupEnabled]);
+
+  useEffect(() => {
+    if (!open) return;
+    contentReadyMarkedRef.current = false;
+    const frame = requestAnimationFrame(() => {
+      chatPerf.measure("picker-open:gif-sticker", "sheet-visible");
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open || contentReadyMarkedRef.current) return;
+
+    const gifContentReady =
+      activeTab === "gifs" &&
+      ((gifBrowseState === "landing" && gifCategories.length > 0) ||
+        (gifBrowseState !== "landing" && gifs.length > 0));
+    const stickerContentReady = activeTab === "stickers" && stickers.length > 0;
+
+    if (!gifContentReady && !stickerContentReady) return;
+
+    contentReadyMarkedRef.current = true;
+    chatPerf.end(
+      "picker-open:gif-sticker",
+      activeTab === "gifs"
+        ? gifBrowseState === "landing"
+          ? "first-content:gifs-categories"
+          : "first-content:gifs-grid"
+        : "first-content:stickers-grid",
+    );
+  }, [
+    activeTab,
+    gifBrowseState,
+    gifCategories.length,
+    gifs.length,
+    open,
+    stickers.length,
+  ]);
 
   // =========================================================================
   // GIF TAB EFFECTS
@@ -439,7 +522,7 @@ export const GifStickerPicker = forwardRef<
 
   // Fetch trending GIFs when tab is active and open
   useEffect(() => {
-    if (!open || activeTab !== "gifs") return;
+    if (!shouldPrepare) return;
     if (gifHasLoadedRef.current && gifs.length > 0 && !gifSearchQuery) return;
 
     let cancelled = false;
@@ -471,12 +554,11 @@ export const GifStickerPicker = forwardRef<
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, activeTab]);
+  }, [gifSearchQuery, gifs.length, shouldPrepare]);
 
   // Fetch GIF categories
   useEffect(() => {
-    if (!open || activeTab !== "gifs" || gifCategories.length > 0) return;
+    if (!shouldPrepare || gifCategories.length > 0) return;
 
     let cancelled = false;
     setGifCategoriesLoading(true);
@@ -499,8 +581,7 @@ export const GifStickerPicker = forwardRef<
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, activeTab]);
+  }, [gifCategories.length, shouldPrepare]);
 
   // GIF search
   useEffect(() => {
@@ -587,7 +668,7 @@ export const GifStickerPicker = forwardRef<
 
   // Fetch trending stickers when tab is active and open
   useEffect(() => {
-    if (!open || activeTab !== "stickers") return;
+    if (!shouldPrepare) return;
     if (
       stickerHasLoadedRef.current &&
       stickers.length > 0 &&
@@ -626,8 +707,7 @@ export const GifStickerPicker = forwardRef<
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, activeTab]);
+  }, [shouldPrepare, stickerSearchQuery, stickers.length]);
 
   // Sticker search
   useEffect(() => {
@@ -691,7 +771,6 @@ export const GifStickerPicker = forwardRef<
   // =========================================================================
 
   const handleGifCategorySelect = useCallback((categoryName: string) => {
-    setGifActiveCategory(categoryName);
     setGifSearchQuery(categoryName);
     setGifBrowseState("category");
   }, []);
@@ -700,10 +779,8 @@ export const GifStickerPicker = forwardRef<
     setGifSearchQuery(text);
     if (text.trim()) {
       setGifBrowseState("search");
-      setGifActiveCategory(null);
     } else {
       setGifBrowseState("landing");
-      setGifActiveCategory(null);
     }
   }, []);
 
@@ -749,13 +826,10 @@ export const GifStickerPicker = forwardRef<
     setGifSearchQuery("");
     setGifSuggestions([]);
     setGifError(null);
-    setGifActiveCategory(null);
     setGifBrowseState("landing");
     setStickerSearchQuery("");
     setStickerError(null);
     setActiveTab(initialTab);
-    gifHasLoadedRef.current = false;
-    stickerHasLoadedRef.current = false;
     onClose();
   }, [onClose, initialTab]);
 
@@ -899,7 +973,7 @@ export const GifStickerPicker = forwardRef<
     [],
   );
 
-  if (!open) return null;
+  if (!open && !warmupEnabled) return null;
 
   // =========================================================================
   // RENDER
@@ -909,6 +983,7 @@ export const GifStickerPicker = forwardRef<
     <DraggableBottomSheet
       ref={sheetRef}
       open={open}
+      keepMountedWhenClosed={warmupEnabled}
       onClose={handleClose}
       snapPoints={snapPoints}
       initialSnapIndex={initialSnapIndex}
@@ -967,7 +1042,6 @@ export const GifStickerPicker = forwardRef<
               <TouchableOpacity
                 onPress={() => {
                   setGifSearchQuery("");
-                  setGifActiveCategory(null);
                   setGifBrowseState("landing");
                 }}
                 accessibilityLabel="Clear search"
