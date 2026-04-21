@@ -25,6 +25,7 @@ import React, {
   useImperativeHandle,
   useMemo,
   useRef,
+  useState,
 } from "react";
 import type { StyleProp, ViewStyle } from "react-native";
 import {
@@ -34,6 +35,10 @@ import {
 } from "react-native-vision-camera";
 
 const logger = createLogger("components/camera/LiveFilterCamera");
+
+const IDENTITY_COLOR_MATRIX = [
+  1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0,
+];
 
 // =============================================================================
 // Types
@@ -88,6 +93,12 @@ function nowMs(): number {
     : Date.now();
 }
 
+function waitForNextAnimationFrame(): Promise<void> {
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => resolve());
+  });
+}
+
 function areLiveFilterCameraPropsEqual(
   prev: LiveFilterCameraProps,
   next: LiveFilterCameraProps,
@@ -128,6 +139,14 @@ const LiveFilterCameraComponent = forwardRef<
 ) {
   const device = useCameraDevice(facing === "front" ? "front" : "back");
   const vcRef = useRef<Camera>(null);
+  const isMountedRef = useRef(true);
+  const [isFrameProcessorEnabled, setIsFrameProcessorEnabled] = useState(true);
+
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   // Keep flash mode in a ref so the imperative handle always reads the
   // latest value without needing re-creation.
@@ -135,6 +154,7 @@ const LiveFilterCameraComponent = forwardRef<
   flashModeRef.current = flashMode;
 
   const propSignatureRef = useRef<string | null>(null);
+  const appliedFilterIdRef = useRef("none");
   const filterId = filter?.id ?? null;
   const propSignature = `${facing}|${flashMode}|${isActive ? 1 : 0}|${filterId ?? "none"}`;
 
@@ -151,65 +171,56 @@ const LiveFilterCameraComponent = forwardRef<
     propSignatureRef.current = propSignature;
   }, [propSignature]);
 
-  // ──────────────────────────────────────────────────────────────────────
-  // Skia Paint with the filter's 4×5 ColorMatrix
-  //
-  // NOTE (2026-04-20 freeze fix): paint creation is memoised by filter.id
-  // (not by filter object identity) so that parent re-renders with a new
-  // filter object that represents the same filter don't thrash Skia.
-  // ──────────────────────────────────────────────────────────────────────
+  // Keep one Paint object for the whole camera session so filter taps only
+  // mutate the active matrix instead of rebuilding the live frame pipeline.
   const filterPaint = useMemo(() => {
-    if (!filter || filter.id === "none") return undefined;
-
-    const startedAt = nowMs();
-    const matrix = filterConfigToColorMatrix(filter);
     const paint = Skia.Paint();
-    paint.setColorFilter(Skia.ColorFilter.MakeMatrix(matrix));
+    paint.setColorFilter(Skia.ColorFilter.MakeMatrix(IDENTITY_COLOR_MATRIX));
+    return paint;
+  }, []);
 
-    const buildDuration = nowMs() - startedAt;
-    if (buildDuration > 4) {
+  useEffect(() => {
+    const nextFilterId = filterId ?? "none";
+    const startedAt = nowMs();
+    const matrix =
+      filter && filter.id !== "none"
+        ? filterConfigToColorMatrix(filter)
+        : IDENTITY_COLOR_MATRIX;
+
+    filterPaint.setColorFilter(Skia.ColorFilter.MakeMatrix(matrix));
+
+    const updateDuration = nowMs() - startedAt;
+    const previousFilterId = appliedFilterIdRef.current;
+
+    if (previousFilterId !== nextFilterId || updateDuration > 4) {
       logger.warn(
-        `[Camera Filter Perf] filter paint ${filter.id} built in ${buildDuration.toFixed(1)}ms`,
+        `[Camera Filter Perf] live filter ${previousFilterId} -> ${nextFilterId}${updateDuration > 4 ? ` in ${updateDuration.toFixed(1)}ms` : ""}`,
       );
     }
 
-    return paint;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterId]);
+    appliedFilterIdRef.current = nextFilterId;
+  }, [filter, filterId, filterPaint]);
 
   // ──────────────────────────────────────────────────────────────────────
   // Skia Frame Processor — applies the real filter to every camera frame.
   //
-  // NOTE (2026-04-20 TestFlight freeze fix):
-  //   Previously the frame processor was ALWAYS attached, even when no
-  //   filter was active.  That routed every preview frame through the
-  //   Skia GPU pipeline, which on iOS release builds caused ~1-2s
-  //   preview lock-ups as the GPU queue backpressured against the
-  //   camera session startup (audio + photo + video + Skia compositing).
-  //
-  //   Fix: create the processor hook unconditionally (hook-rule compliant)
-  //   but only attach it to the <Camera> when a filter is actually
-  //   active.  In the baseline "no filter" case VisionCamera now uses
-  //   its native preview fast path with zero GPU contention.
+  // Keep the processor attached for the full session so filter selection only
+  // updates the paint matrix and does not force VisionCamera to reconfigure
+  // its live preview/output pipeline mid-session.
   // ──────────────────────────────────────────────────────────────────────
   const frameProcessor = useSkiaFrameProcessor(
     (frame) => {
       "worklet";
-      if (filterPaint != null) {
-        frame.render(filterPaint);
-      } else {
-        frame.render();
-      }
+      frame.render(filterPaint);
     },
     [filterPaint],
   );
-  const hasActiveFilter = filterPaint != null;
 
   useEffect(() => {
     logger.warn(
-      `[Camera Filter Perf] frame processor ${hasActiveFilter ? "attached" : "detached"} (${filterId ?? "none"})`,
+      `[Camera Filter Perf] frame processor ${isFrameProcessorEnabled ? "attached" : "detached"} (stable pipeline)`,
     );
-  }, [filterId, hasActiveFilter]);
+  }, [isFrameProcessorEnabled]);
 
   // ──────────────────────────────────────────────────────────────────────
   // Expose ref methods for CameraService compatibility
@@ -219,21 +230,37 @@ const LiveFilterCameraComponent = forwardRef<
     () => ({
       async takePictureAsync(options) {
         if (!vcRef.current) throw new Error("Camera not ready");
+        logger.warn(
+          "[Camera Filter Perf] pausing frame processor for photo capture",
+        );
+        setIsFrameProcessorEnabled(false);
+        await waitForNextAnimationFrame();
+        await waitForNextAnimationFrame();
+        if (!vcRef.current) throw new Error("Camera not ready");
         // Honour explicit flash option (preview capture uses "off");
         // otherwise fall back to the parent's flash mode setting.
         const flash = (options?.flash ?? flashModeRef.current ?? "off") as
           | "on"
           | "off"
           | "auto";
-        const result = await vcRef.current.takePhoto({
-          flash,
-          enableShutterSound: false,
-        });
-        return {
-          uri: `file://${result.path}`,
-          width: result.width,
-          height: result.height,
-        };
+        try {
+          const result = await vcRef.current.takePhoto({
+            flash,
+            enableShutterSound: false,
+          });
+          return {
+            uri: `file://${result.path}`,
+            width: result.width,
+            height: result.height,
+          };
+        } finally {
+          if (isMountedRef.current) {
+            logger.warn(
+              "[Camera Filter Perf] resuming frame processor after photo capture",
+            );
+            setIsFrameProcessorEnabled(true);
+          }
+        }
       },
 
       recordAsync(_options) {
@@ -274,10 +301,7 @@ const LiveFilterCameraComponent = forwardRef<
       exposure={exposure}
       torch="off"
       style={style}
-      // IMPORTANT: only attach the Skia frame processor when a filter
-      // is actually active.  Passing `undefined` here lets VisionCamera
-      // use its native preview fast path with zero GPU compositing cost.
-      frameProcessor={hasActiveFilter ? frameProcessor : undefined}
+      frameProcessor={isFrameProcessorEnabled ? frameProcessor : undefined}
       onInitialized={() => {
         logger.info("[LiveFilterCamera] onInitialized");
         onInitialized?.();

@@ -1603,7 +1603,7 @@ export default function ChatScreen({
     setChatScrollViewConfig({
       offset: 0,
       keyboardLiftBehavior: "whenAtEnd",
-      extraContentPadding: sheetExtraPadding,
+      blankSpace: sheetExtraPadding,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sheetExtraPadding]);

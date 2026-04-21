@@ -1019,6 +1019,11 @@ const CameraScreen: React.FC = () => {
         <TouchableOpacity
           style={[styles.filterChip, isSelected && styles.filterChipActive]}
           onPress={() => {
+            const previousFilterId =
+              ALL_FILTERS[selectedFilterIndex]?.id ?? "none";
+            logger.warn(
+              `[Camera Filter Perf] filter tap ${previousFilterId} -> ${item.id} (index ${selectedFilterIndex} -> ${index})`,
+            );
             setSelectedFilterIndex(index);
             triggerHaptic();
           }}

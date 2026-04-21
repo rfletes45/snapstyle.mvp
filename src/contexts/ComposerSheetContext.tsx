@@ -271,13 +271,20 @@ export function ComposerSheetProvider({
     // are also preserved so there is no 1-frame gap where the sheet disappears.
     if (switchingRef.current) return;
 
+    // Snapshot whether this dismiss is part of a sheet→keyboard handoff
+    // BEFORE the capture block mutates the ref.  The defensive-reset branch
+    // below must read this snapshot, not the ref — otherwise the ref's
+    // in-block reset to false makes every branch look like a non-handoff
+    // dismiss and immediately erases the floor we just captured.
+    const wasHandoff = handoffPendingRef.current;
+
     // ── Sheet → keyboard handoff ──────────────────────────────────────────
     // When the composer is about to gain focus (keyboard opening), capture
     // the current effective sheet offset as a floor so every bottom-offset
     // derivation stays ≥ this value until the keyboard takes over.  This
     // prevents the transient drop-to-baseline frame that occurs when
     // isSheetActive resets to 0 before keyboardHeight has risen.
-    if (handoffPendingRef.current) {
+    if (wasHandoff) {
       const sheetVisible = Math.max(0, SCREEN_HEIGHT - sheetTranslateY.value);
       const clamped = Math.min(
         sheetVisible,
@@ -313,14 +320,36 @@ export function ComposerSheetProvider({
     // below it" race that can occur if the owning reaction in
     // ChatFooterWrapper does not re-fire for multiple frames.
     //
-    // During an actual handoff (handoffPendingRef was true above) we do
-    // NOT reset these values — the floor captured above is what keeps the
-    // footer stable until the keyboard catches up.
-    if (!handoffPendingRef.current) {
+    // During an actual handoff (wasHandoff === true above) we do NOT reset
+    // these values — the floor captured above is what keeps the footer
+    // stable until the keyboard catches up.
+    if (!wasHandoff) {
       sheetExtraPadding.value = 0;
       if (handoffFloor.value !== 0) {
         handoffFloor.value = 0;
       }
+
+      // Issue 4 fix — stuck toolbar after closing an extended picker.
+      //
+      // Pickers with `keepMountedWhenClosed` (GIF, Sticker, GifSticker)
+      // keep their subtree — including the search TextInput — mounted
+      // after `open` flips to false.  If the user tapped that search
+      // input while the picker was extended, its OS keyboard came up.
+      // When the picker then closes without handing off to the main
+      // composer input, the search TextInput retains focus inside the
+      // hidden/off-screen subtree, so iOS keeps the keyboard up.  The
+      // composer then reports unifiedFooterOffset = max(kbH, 0) = kbH
+      // and stays translated at keyboard height with empty space
+      // beneath it.
+      //
+      // Dismissing the keyboard here forces the picker's search input
+      // to blur and the OS keyboard to retract on the next frame, so
+      // the footer collapses cleanly.  This is safe on non-handoff
+      // dismiss paths because a legitimate handoff is explicitly
+      // distinguished by `wasHandoff`: in that case we want the
+      // composer to receive focus and the keyboard to come up, so we
+      // do not dismiss here.
+      Keyboard.dismiss();
     }
   }, [
     isSheetActive,

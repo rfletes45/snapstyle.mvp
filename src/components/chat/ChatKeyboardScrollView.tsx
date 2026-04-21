@@ -83,7 +83,23 @@ export const isKCSVAvailable = kcsvAvailable;
 export interface ChatScrollViewConfig {
   offset: number;
   keyboardLiftBehavior?: KeyboardChatScrollViewProps["keyboardLiftBehavior"];
-  extraContentPadding?: SharedValue<number>;
+  /**
+   * Piped to KCSV's `blankSpace` prop — NOT `extraContentPadding`.
+   *
+   * KCSV computes `totalPadding = max(blankSpace, keyboardPadding + extraContentPadding)`.
+   * When `blankSpace >= keyboardPadding + extraContentPadding`, KCSV's
+   * `useExtraContentPadding` reaction early-returns with `effectiveDelta = 0`
+   * ("blankSpace absorbed the change") and does NOT call scrollTo. This is
+   * what prevents the chat list from being displaced during sheet↔keyboard
+   * transitions: as long as blankSpace holds at the region height while the
+   * keyboard animates up, totalPadding stays flat and the chat stays still.
+   *
+   * Previously this was piped to `extraContentPadding`, which fires the
+   * scroll-correction reaction on every frame while the delta ramps from
+   * regionHeight → 0 during the keyboard rise, producing visible chat
+   * motion even though the math (padding + extra = regionHeight) was correct.
+   */
+  blankSpace?: SharedValue<number>;
 }
 
 const DEFAULT_CONFIG: ChatScrollViewConfig = {
@@ -124,7 +140,7 @@ export const ChatKeyboardScrollViewComponent = forwardRef<any, ScrollViewProps>(
         inverted
         keyboardLiftBehavior={activeConfig.keyboardLiftBehavior ?? "whenAtEnd"}
         offset={activeConfig.offset}
-        extraContentPadding={activeConfig.extraContentPadding}
+        blankSpace={activeConfig.blankSpace}
         applyWorkaroundForContentInsetHitTestBug
         {...props}
       />
@@ -402,14 +418,26 @@ export function ChatFooterWrapper({ children }: { children: React.ReactNode }) {
     [handoffFloor, keyboardHeight, sheetTranslateY, isSheetActive],
   );
 
-  // Pipe the sheet's extra contribution → sheetExtraPadding so KCSV shifts
-  // chat content.  This is the portion of the unified offset beyond what the
-  // keyboard itself contributes.
+  // Pipe the unified footer offset → sheetExtraPadding (repurposed).
+  //
+  // Historical note: this SharedValue used to carry "extra content padding"
+  // (max(0, unifiedFooterOffset - kbH)) and was piped into KCSV's
+  // `extraContentPadding` prop. That caused visible chat-list motion during
+  // sheet↔keyboard transitions because KCSV's `useExtraContentPadding`
+  // useAnimatedReaction calls `scrollTo(target)` on every frame that
+  // extraContentPadding changes — as the delta ramped regionHeight → 0
+  // during the keyboard rise, the chat was displaced by the full ramp
+  // even though `keyboardPadding + extraContentPadding` summed to a constant.
+  //
+  // It now carries the full target inset (unifiedFooterOffset) and is piped
+  // into KCSV's `blankSpace` prop.  `totalPadding = max(blankSpace, padding +
+  // extra)` means when blankSpace equals the region height, padding changes
+  // (keyboard opening / closing) are absorbed by the floor and no scroll
+  // correction fires — the chat stays visually still through the entire
+  // transition.  The `useExtraContentPadding` reaction detects this via
+  // `effectiveDelta === 0` and early-returns.
   useAnimatedReaction(
-    () => {
-      const kbH = Math.abs(keyboardHeight.value);
-      return Math.max(0, unifiedFooterOffset.value - kbH);
-    },
+    () => unifiedFooterOffset.value,
     (current, previous) => {
       sheetExtraPadding.value = current;
       if (
@@ -426,7 +454,7 @@ export function ChatFooterWrapper({ children }: { children: React.ReactNode }) {
         );
       }
     },
-    [sheetExtraPadding, keyboardHeight, handoffFloor],
+    [sheetExtraPadding, unifiedFooterOffset, keyboardHeight, handoffFloor],
   );
 
   // Single-driver composer translate.
