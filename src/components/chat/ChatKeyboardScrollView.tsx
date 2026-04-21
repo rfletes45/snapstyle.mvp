@@ -19,6 +19,7 @@ import { useComposerSheet } from "@/contexts/ComposerSheetContext";
 import { useAppTheme } from "@/store/ThemeContext";
 import {
   isKeyboardControllerAvailable,
+  KeyboardStickyView,
   KeyboardChatScrollView as OptionalKeyboardChatScrollView,
   useReanimatedKeyboardAnimationCompat,
 } from "@/utils/optionalKeyboardController";
@@ -148,15 +149,19 @@ export function useKeyboardBackdropHeight(): SharedValue<number> {
 
   return useDerivedValue(() => {
     const kbH = Math.abs(keyboardHeight.value);
+    const floor = handoffFloor.value;
 
     if (isSheetActive.value === 0) {
       // During a sheet→keyboard handoff the floor keeps the backdrop tall
       // until the keyboard catches up.
-      return Math.max(kbH, handoffFloor.value);
+      return Math.max(kbH, floor);
     }
 
+    // Backdrop must also include the floor during KB→sheet so it doesn't
+    // transiently collapse while the picker animates up and the keyboard
+    // animates down.
     const sheetVisible = getSheetVisibleHeight(sheetTranslateY.value);
-    return Math.max(kbH, sheetVisible);
+    return Math.max(kbH, sheetVisible, floor);
   }, [sheetTranslateY, isSheetActive, keyboardHeight, handoffFloor]);
 }
 
@@ -313,19 +318,27 @@ export function ChatFooterWrapper({ children }: { children: React.ReactNode }) {
   // during the keyboard→sheet handoff (visible in native/TestFlight).
   const unifiedFooterOffset = useDerivedValue(() => {
     const kbH = Math.abs(keyboardHeight.value);
+    const floor = handoffFloor.value;
 
     if (isSheetActive.value === 0) {
       // During a sheet→keyboard handoff the floor prevents the footer
       // from dropping to baseline before the keyboard has started rising.
-      return Math.max(kbH, handoffFloor.value);
+      return Math.max(kbH, floor);
     }
 
+    // Sheet is active.  Include the floor in the max so the KB→sheet
+    // lock survives until the picker's own animation has driven
+    // sheetVisible up to the lock height.  Without this, there is a
+    // transient window on the first 1-2 frames of the handoff where
+    // the picker has reset sheetTranslateY to its starting value
+    // (hidden) while kbH has already started animating down, producing
+    // the visible chat-list teleport.
     const sheetVisible = getSheetVisibleHeight(sheetTranslateY.value);
     const clamped = clampSheetToInitialSnap(
       sheetVisible,
       initialSnapHeight.value,
     );
-    return Math.max(kbH, clamped);
+    return Math.max(kbH, clamped, floor);
   }, [
     keyboardHeight,
     isSheetActive,
@@ -334,26 +347,45 @@ export function ChatFooterWrapper({ children }: { children: React.ReactNode }) {
     handoffFloor,
   ]);
 
-  // Clear the handoff floor once the keyboard height has caught up.
-  // This keeps the floor alive only during the brief gap and removes it
-  // the instant the keyboard is tall enough, so it never lingers.
-  // Threshold 0.98 (was 0.85) — higher threshold eliminates the visible
-  // jump when the floor clears: at 0.85 there was a ~15% height drop on
-  // the frame the floor was zeroed; at 0.98 the drop is ~2%, imperceptible.
+  // Clear the handoff lock once EITHER the keyboard or the sheet has caught
+  // up to the lock height.  This supports both directions of the transition:
+  //
+  //   KB → sheet:  activateSheet locks at current kbH.  Keyboard animates
+  //                down, picker animates up.  As soon as sheetVisible
+  //                reaches the lock, the lock is no longer needed (the
+  //                sheet is now the tallest thing and unifiedFooterOffset
+  //                tracks it directly).  Clearing then allows the sheet
+  //                to continue growing past the initial snap without
+  //                the floor artificially clamping it.
+  //
+  //   sheet → KB:  deactivateSheet captures floor via beginKeyboardHandoff.
+  //                Sheet animates down, keyboard animates up.  As soon as
+  //                kbH reaches the lock, the lock is cleared and the
+  //                keyboard takes over directly.
+  //
+  // Threshold 0.98 — the last 2% gap is imperceptible and prevents the
+  // lock from lingering until exact equality (which animation curves
+  // never reach cleanly).
   useAnimatedReaction(
     () => ({
       floor: handoffFloor.value,
       kbH: Math.abs(keyboardHeight.value),
+      sheetVisible: getSheetVisibleHeight(sheetTranslateY.value),
     }),
     (current) => {
-      if (current.floor > 0 && current.kbH >= current.floor * 0.98) {
-        if (ENABLE_HANDOFF_DIAGNOSTICS) {
-          runOnJS(logHandoffFloorCleared)(current.floor, current.kbH);
+      if (current.floor > 0) {
+        const caughtUp =
+          current.kbH >= current.floor * 0.98 ||
+          current.sheetVisible >= current.floor * 0.98;
+        if (caughtUp) {
+          if (ENABLE_HANDOFF_DIAGNOSTICS) {
+            runOnJS(logHandoffFloorCleared)(current.floor, current.kbH);
+          }
+          handoffFloor.value = 0;
         }
-        handoffFloor.value = 0;
       }
     },
-    [handoffFloor, keyboardHeight],
+    [handoffFloor, keyboardHeight, sheetTranslateY],
   );
 
   // Pipe the sheet's extra contribution → sheetExtraPadding so KCSV shifts
@@ -383,21 +415,57 @@ export function ChatFooterWrapper({ children }: { children: React.ReactNode }) {
     [sheetExtraPadding, keyboardHeight, handoffFloor],
   );
 
-  const unifiedOffsetStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: -unifiedFooterOffset.value }],
-  }));
+  // Sheet-overlay delta — the portion of the unified footer offset that
+  // exceeds the current keyboard height.  This is applied on top of
+  // KeyboardStickyView's native keyboard-frame tracking.
+  //
+  //   • Cold keyboard open (no sheet, no floor):
+  //       unifiedFooterOffset = kbH → delta = 0
+  //       → Only KSV moves the footer.  KSV is frame-synced to the iOS
+  //         keyboard animation at the CADisplayLink level, so the composer
+  //         sits exactly on the keyboard's top edge throughout the opening
+  //         animation — no visible gap ahead of the rising keyboard.
+  //
+  //   • Sheet active / handoff lock engaged:
+  //       delta = max(0, regionHeight - kbH)
+  //       KSV lift (kbH) + overlay translateY (delta) = regionHeight.
+  //       The Step-A region lock holds regionHeight constant during
+  //       transitions, so any 1-frame desynchronization between KSV and
+  //       the Reanimated overlay is bounded to the frame-to-frame change
+  //       in kbH, which is visually imperceptible when the sum is locked.
+  const sheetOverlayStyle = useAnimatedStyle(() => {
+    const kbH = Math.abs(keyboardHeight.value);
+    const delta = Math.max(0, unifiedFooterOffset.value - kbH);
+    return { transform: [{ translateY: -delta }] };
+  });
 
   if (kcsvAvailable) {
-    // KCSV path: a single translateY derived from the unified footer offset
-    // positions the footer above the keyboard *or* the active sheet —
-    // whichever is taller.  No KeyboardStickyView wrapper needed.
+    // KCSV path: two-layer composition.
+    //
+    //   [outer] KeyboardStickyView — native iOS keyboard-frame tracking
+    //           (CADisplayLink-synced lift by the current keyboard height).
+    //           Drives the composer's position during a pure keyboard
+    //           open/close, eliminating the "composer-ahead-of-keyboard"
+    //           gap that occurs when only a Reanimated shared value drives
+    //           the translate (the Reanimated pipeline commits slightly
+    //           after the keyboard's own animation on some devices).
+    //
+    //   [inner] Reanimated overlay — adds ONLY the sheet/handoff-floor
+    //           delta above the keyboard.  On cold keyboard open this
+    //           delta is 0, so the overlay is a no-op and KSV alone
+    //           positions the composer.  During sheet transitions the
+    //           Step-A region lock holds (KSV.lift + overlay.delta) at
+    //           a constant sum, so the composer is stable even if the
+    //           two drivers are 1 frame out of phase.
     return (
-      <Animated.View
-        style={[styles.footerLayer, unifiedOffsetStyle]}
-        pointerEvents="box-none"
+      <KeyboardStickyView
+        offset={{ closed: 0, opened: 0 }}
+        style={styles.footerLayer}
       >
-        {children}
-      </Animated.View>
+        <Animated.View style={sheetOverlayStyle} pointerEvents="box-none">
+          {children}
+        </Animated.View>
+      </KeyboardStickyView>
     );
   }
 
@@ -433,10 +501,11 @@ function useEffectiveBottomInset(): SharedValue<number> {
 
   return useDerivedValue(() => {
     const kbH = Math.abs(keyboardHeight.value);
+    const floor = handoffFloor.value;
 
     if (isSheetActive.value === 0) {
       // Respect handoff floor during sheet→keyboard transitions.
-      return Math.max(kbH, handoffFloor.value);
+      return Math.max(kbH, floor);
     }
 
     const sheetVisible = getSheetVisibleHeight(sheetTranslateY.value);
@@ -446,7 +515,10 @@ function useEffectiveBottomInset(): SharedValue<number> {
     );
     // Layout lift stays clamped to the keyboard-equivalent snap so expanded
     // sheets don't keep pushing the footer/list farther upward.
-    return Math.max(kbH, clamped);
+    // The handoff floor is included so the KB→sheet lock holds the
+    // chat list height constant while the picker's first frames race
+    // against the keyboard dismissal.
+    return Math.max(kbH, clamped, floor);
   });
 }
 

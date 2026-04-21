@@ -193,14 +193,34 @@ export function ComposerSheetProvider({
       // Persist for future use
       if (kbH > 0) setLastKbH(kbH);
 
-      // Clear any pending handoff floor — a new sheet is taking over.
-      handoffFloor.value = 0;
+      // Clear any previous pending safety timer.  We will set a new lock
+      // (handoffFloor) below that protects the keyboard→sheet transition;
+      // its own catch-up logic will clear it when the sheet's own animation
+      // has fully driven sheetTranslateY into place.
       if (handoffTimerRef.current) {
         clearTimeout(handoffTimerRef.current);
         handoffTimerRef.current = null;
       }
 
       const initialSheetHeight = getKeyboardReplacementSheetHeight(kbH);
+
+      // ── Region lock during KB → sheet handoff ────────────────────────────
+      // If the keyboard is currently up, lock the bottom region at its
+      // current height.  This prevents the transient chat-list teleport
+      // that occurs when the picker mounts and its own animation briefly
+      // resets sheetTranslateY to its starting value before animating up
+      // to the pre-seeded snap.  Without this lock, for a few frames both
+      // kbH (dropping) and sheetVisible (not yet driven) are near zero,
+      // causing unifiedFooterOffset to drop and the chat list to fall
+      // downward before being lifted back up once the picker settles.
+      //
+      // The lock clears in ChatFooterWrapper the moment EITHER the sheet
+      // or the returning keyboard catches up to the lock height.
+      if (kbH > 0) {
+        handoffFloor.value = kbH;
+      } else {
+        handoffFloor.value = 0;
+      }
 
       // Match the sheet's real keyboard-height snap so the composer/chat
       // stay aligned during the keyboard -> sheet handoff.
@@ -210,6 +230,17 @@ export function ComposerSheetProvider({
       // Pre-seed sheetTranslateY to the exact keyboard-height snap so the
       // shared animated value does not jump on the first frame.
       sheetTranslateY.value = SCREEN_HEIGHT - initialSheetHeight;
+
+      // Safety: if the picker never mounts or never drives sheetTranslateY
+      // (edge case), decay the lock after 600ms so the UI isn't stuck.
+      if (kbH > 0) {
+        handoffTimerRef.current = setTimeout(() => {
+          handoffTimerRef.current = null;
+          if (handoffFloor.value > 0) {
+            handoffFloor.value = withTiming(0, { duration: 200 });
+          }
+        }, 600);
+      }
 
       // Dismiss keyboard — the sheet replaces it. The shared translateY is
       // already aligned to the sheet's real initial snap, so the keyboard ->
