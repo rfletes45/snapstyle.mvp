@@ -15,7 +15,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     supportsTablet: true,
     bundleIdentifier: "com.vibeapp.mobile",
     googleServicesFile: "./GoogleService-Info.plist",
-    buildNumber: "42",
+    buildNumber: "43",
     infoPlist: {
       // Camera & Microphone permissions
       NSCameraUsageDescription: "Vibe needs camera access for video calls",
@@ -175,7 +175,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       projectId: "a57e6af7-ac18-4751-90ee-3b9cda7ea645",
     },
     /**
-     * Colyseus realtime game server URL.
+      buildNumber: "43",
      *
      * Resolution priority:
      * 1. COLYSEUS_URL env var (set via eas.json or CI)
