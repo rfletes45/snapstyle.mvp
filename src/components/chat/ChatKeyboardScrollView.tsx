@@ -17,20 +17,10 @@
 
 import { useComposerSheet } from "@/contexts/ComposerSheetContext";
 import { useAppTheme } from "@/store/ThemeContext";
-import {
-  isKeyboardControllerAvailable,
-  KeyboardChatScrollView as OptionalKeyboardChatScrollView,
-  useReanimatedKeyboardAnimationCompat,
-} from "@/utils/optionalKeyboardController";
+import { useReanimatedKeyboardAnimationCompat } from "@/utils/optionalKeyboardController";
 import React, { forwardRef, useCallback, useEffect } from "react";
 import type { ScrollViewProps, StyleProp, ViewStyle } from "react-native";
-import {
-  Dimensions,
-  ScrollView,
-  StyleSheet,
-  UIManager,
-  View,
-} from "react-native";
+import { Dimensions, ScrollView, StyleSheet, View } from "react-native";
 import type { SharedValue } from "react-native-reanimated";
 import Animated, {
   interpolate,
@@ -51,32 +41,31 @@ const ENABLE_KEYBOARD_BACKDROP_DEBUG = false;
 // handoff timing in native/TestFlight builds.
 const ENABLE_HANDOFF_DIAGNOSTICS = __DEV__ && false;
 
-let kcsvAvailable = false;
+// KCSV (KeyboardChatScrollView) is the native-only chat-scroll component from
+// react-native-keyboard-controller.  It owns contentInset + scroll-correction
+// math via `useExtraContentPadding`, which on this codebase produced visible
+// chat-list motion during sheet↔keyboard transitions (the scroll-correction
+// reaction calls scrollTo on every `extraContentPadding` delta, and the
+// `blankSpace`/lift-behavior interactions don't fully neutralize it).
+//
+// The fallback path — an Animated.View with a single animated `paddingBottom`
+// that tracks keyboard+sheet height, wrapping a plain RN ScrollView — is
+// simpler, has no scroll-correction side effects, and is what Expo Go has
+// been using all along (and what the user describes as "working how I
+// wanted").  Forcing kcsvAvailable = false makes TestFlight use that same
+// path, unifying behavior across all builds.
+//
+// The RKBC `useReanimatedKeyboardAnimation` hook (via
+// `useReanimatedKeyboardAnimationCompat`) is still used when available —
+// that's the good, 60fps CADisplayLink-synced keyboard-height driver.
+// Only the scroll-view component is disabled here.
+const kcsvAvailable = false;
 let KeyboardChatScrollView: any = null;
 type KeyboardChatScrollViewProps = { keyboardLiftBehavior?: string };
 
-try {
-  const nativeView = "ClippingScrollViewDecoratorView";
-  const hasNativeView =
-    UIManager.hasViewManagerConfig?.(nativeView) ??
-    UIManager.getViewManagerConfig(nativeView) != null;
-
-  if (
-    hasNativeView &&
-    isKeyboardControllerAvailable &&
-    OptionalKeyboardChatScrollView
-  ) {
-    try {
-      require("@stream-io/react-native-webrtc");
-      KeyboardChatScrollView = OptionalKeyboardChatScrollView;
-      kcsvAvailable = true;
-    } catch {
-      kcsvAvailable = false;
-    }
-  }
-} catch {
-  kcsvAvailable = false;
-}
+// Intentionally no runtime detection — see block comment above.
+// The previous detection logic and `require("@stream-io/react-native-webrtc")`
+// probe are removed to make the disabling unconditional and side-effect-free.
 
 export const isKCSVAvailable = kcsvAvailable;
 
