@@ -87,7 +87,7 @@ export async function reauthenticateUser(
  * This must run AFTER server-side deletion but BEFORE the auth state listener
  * fires, so listeners don't accidentally recreate user data.
  */
-async function clearLocalState(): Promise<void> {
+async function clearLocalState(uid?: string | null): Promise<void> {
   try {
     // Clear known AsyncStorage keys
     await AsyncStorage.multiRemove(ASYNC_STORAGE_KEYS_TO_CLEAR);
@@ -110,6 +110,24 @@ async function clearLocalState(): Promise<void> {
     }
   } catch (err: any) {
     logger.warn("[accountDeletion] Error clearing vibe keys:", err.message);
+  }
+
+  // Privacy-first: wipe on-device call transcripts for the deleted uid.
+  // Dynamic import avoids pulling SQLite into accountDeletion's static
+  // import graph (transcripts are lazy throughout the app). Idempotent
+  // and safe if the DB was never initialized on this device.
+  if (uid) {
+    try {
+      const { wipeTranscriptsForOwner } =
+        await import("./calls/callTranscriptDb");
+      await wipeTranscriptsForOwner(uid);
+      logger.info("[accountDeletion] Wiped local call transcripts");
+    } catch (err: any) {
+      logger.warn(
+        "[accountDeletion] Transcript wipe failed (non-fatal):",
+        err?.message ?? String(err),
+      );
+    }
   }
 }
 
@@ -172,7 +190,7 @@ export async function executeAccountDeletion(
     );
 
     // Step 4: Clear local state regardless of server result
-    await clearLocalState();
+    await clearLocalState(uid);
 
     if (!data.success) {
       throw {
@@ -185,7 +203,7 @@ export async function executeAccountDeletion(
     return data;
   } catch (err: any) {
     // Clear local state even on failure (user may be partially deleted)
-    await clearLocalState();
+    await clearLocalState(uid);
 
     // Check for Firebase callable function errors
     if (

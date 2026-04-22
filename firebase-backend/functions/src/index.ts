@@ -249,6 +249,15 @@ export { onGroupBackgroundRemoved, onGroupDeleted };
 // ─── Stream Video ──────────────────────────────────────────────────────────
 export { ensureStreamUsers, getStreamVideoToken, streamCallWebhook };
 
+// ─── Call Transcripts (privacy-first, local-stored, 2-day server TTL) ──────
+export {
+  ackCallTranscript,
+  cleanupExpiredCallTranscripts,
+  getCallTranscript,
+  getCallTranscriptPolicy,
+  streamTranscriptionWebhook,
+} from "./callTranscripts";
+
 // ─── Callable aliases for client backward-compat ───────────────────────────
 // Client iap.ts calls "verifyIAPPurchase" — map it to the canonical handler.
 export const verifyIAPPurchase = validateReceipt;

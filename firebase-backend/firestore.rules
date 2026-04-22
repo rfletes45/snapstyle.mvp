@@ -189,6 +189,21 @@ service cloud.firestore {
     }
 
     // ============================================================
+    // CALL TRANSCRIPTS (server-only, privacy-first)
+    // ============================================================
+    // Transcript payload metadata written by the server transcription
+    // pipeline (callTranscripts.ts). Clients MUST NOT read or write this
+    // collection directly — all reads go through the `getCallTranscript`
+    // callable (which returns a short-lived signed URL to the app-owned
+    // Storage blob). Keeping this collection server-only is a hard
+    // privacy requirement: transcript text never lives permanently in
+    // Firestore. Per-user availability is surfaced via
+    // `Users/{uid}/CallTranscriptIndex/{id}` (read-own, server-written).
+    match /CallTranscripts/{transcriptId} {
+      allow read, write: if false;
+    }
+
+    // ============================================================
     // USERS COLLECTION
     // ============================================================
 
@@ -322,6 +337,20 @@ service cloud.firestore {
         allow read: if isAuth() && isOwner(uid);
 
         // Writes are server-only so history stays canonical.
+        allow create, update, delete: if false;
+      }
+
+      // --------------------------------------------------------
+      // CallTranscriptIndex subcollection
+      // Per-user availability pointer into the server-side `CallTranscripts`
+      // collection. Content is server-written only. Used by the client to
+      // know "is there a transcript ready for this call?" without scanning
+      // the global transcript collection.
+      // --------------------------------------------------------
+      match /CallTranscriptIndex/{transcriptId} {
+        // Owner-only read. No client writes ever — all state is driven
+        // by the transcript webhook + scheduled cleanup.
+        allow read: if isAuth() && isOwner(uid);
         allow create, update, delete: if false;
       }
 

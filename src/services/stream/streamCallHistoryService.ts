@@ -13,6 +13,8 @@ import type {
 import { createLogger } from "@/utils/log";
 import {
   collection,
+  doc,
+  getDoc,
   getDocs,
   limit,
   onSnapshot,
@@ -21,7 +23,6 @@ import {
   type Unsubscribe,
   where,
 } from "firebase/firestore";
-
 const getDb = () => getFirestoreInstance();
 const getAuth = () => getAuthInstance();
 const logger = createLogger("services/streamCallHistory");
@@ -111,6 +112,22 @@ export async function getStreamCallHistory(
   }
 
   return [];
+}
+
+export async function getStreamCallHistoryEntryById(
+  entryId: string,
+): Promise<StreamCallHistoryEntry | null> {
+  try {
+    const uid = getAuth().currentUser?.uid;
+    if (!uid) return null;
+    const ref = doc(getDb(), "Users", uid, COLLECTION, entryId);
+    const snap = await getDoc(ref);
+    if (!snap.exists()) return null;
+    return snap.data() as StreamCallHistoryEntry;
+  } catch (err) {
+    logger.warn("[StreamCallHistory] getEntryById failed", { data: { err } });
+    return null;
+  }
 }
 
 export function subscribeToStreamCallHistory(

@@ -764,6 +764,26 @@ export function CallSettingsScreen() {
             )}
         </View>
 
+        {/* Transcription (privacy-first, opt-in) */}
+        {renderSectionHeader(
+          "Transcription",
+          "Local-only transcripts for 1:1 audio calls",
+        )}
+        <View
+          style={[
+            styles.section,
+            { backgroundColor: colors.surface, borderColor: colors.border },
+          ]}
+        >
+          {renderToggle(
+            "Audio Call Transcriptions",
+            "Save transcripts to this device for 1:1 audio calls when both participants have this enabled. Transcripts are never created for video calls or voice rooms.",
+            settings.audioCallTranscriptionsEnabled,
+            (value) => updateSetting("audioCallTranscriptionsEnabled", value),
+            "document-text-outline",
+          )}
+        </View>
+
         {/* Reset button */}
         <TouchableOpacity
           style={[

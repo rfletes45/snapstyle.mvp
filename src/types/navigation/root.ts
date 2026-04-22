@@ -91,6 +91,14 @@ export type MainStackParamList = {
     groupId: string;
   };
   CallSettings: undefined;
+  CallInfo: {
+    /** Firestore StreamCallHistory entry id (required for durable reload) */
+    entryId: string;
+    /** Stream call id */
+    callId: string;
+    /** Optional Stream session id (disambiguates multi-session reuse) */
+    sessionId?: string;
+  };
   UserProfile: { userId: string };
   SetStatus: undefined;
   MutualFriendsList:

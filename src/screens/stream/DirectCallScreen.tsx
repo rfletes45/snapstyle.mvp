@@ -57,6 +57,12 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { NoiseCancellationWrapper } from "@/components/stream/NoiseCancellationWrapper";
 import { useStableCallInsets } from "@/components/stream/useStableCallInsets";
 import { VideoRenderErrorBoundary } from "@/components/stream/VideoRenderErrorBoundary";
+import {
+  forceDisableTranscriptionOnCall,
+  resolveTranscriptPolicy,
+  startCallTranscriptionIfEligible,
+  stopCallTranscription,
+} from "@/services/calls/callTranscriptService";
 
 // Lazy-load ringtone service for outgoing ring sound
 let ringtoneService: typeof import("@/services/calls/ringtoneService") | null =
@@ -273,6 +279,92 @@ function DirectCallContent({
       micReconciliationRef.current = false;
     };
   }, [isJoined, call]);
+
+  // --------------------------------------------------------------------------
+  // Transcription lifecycle (1:1 direct AUDIO calls only).
+  // Resolves effective policy (local + remote setting, fail-closed),
+  // starts transcription explicitly after JOINED, and stops it when the
+  // user disables the setting mid-call or when the call ends.
+  // --------------------------------------------------------------------------
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const transcriptionStartedRef = useRef(false);
+  const videoForcedOffRef = useRef(false);
+  const otherUserIdForTranscription =
+    participants.find((p) => !p.isLocalParticipant)?.userId ?? null;
+
+  useEffect(() => {
+    if (!call) return;
+
+    // Video calls — force-disable exactly once per call instance so an
+    // accidental settings_override or dashboard default can't spin
+    // transcription up mid-call.
+    if (isVideo) {
+      if (!videoForcedOffRef.current) {
+        videoForcedOffRef.current = true;
+        void forceDisableTranscriptionOnCall(call, "direct video call");
+      }
+      return;
+    }
+
+    if (!isJoined || transcriptionStartedRef.current) return;
+
+    let cancelled = false;
+    (async () => {
+      const policy = await resolveTranscriptPolicy({
+        mode: "audio",
+        isDirect: true,
+        otherUserId: otherUserIdForTranscription,
+      });
+      if (cancelled) return;
+      // Between await and here the user may have toggled the setting
+      // off — re-check the local flag before actually starting.
+      if (
+        !callSettingsService.getSettingsSync().audioCallTranscriptionsEnabled
+      ) {
+        return;
+      }
+      const started = await startCallTranscriptionIfEligible(call, policy);
+      if (cancelled) return;
+      if (started) {
+        transcriptionStartedRef.current = true;
+        setIsTranscribing(true);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [call, isVideo, isJoined, otherUserIdForTranscription]);
+
+  // Best-effort stop when the screen unmounts or the call reference
+  // changes. Stream auto-stops transcription when the call ends, but
+  // calling stop explicitly is safe and avoids lingering state if the
+  // user backgrounded the app during a reconnect loop.
+  useEffect(() => {
+    return () => {
+      if (call && transcriptionStartedRef.current) {
+        void stopCallTranscription(call);
+        transcriptionStartedRef.current = false;
+      }
+    };
+  }, [call]);
+
+  // React to the user disabling transcription mid-call.
+  useEffect(() => {
+    if (!call || isVideo) return;
+    const unsub = callSettingsService.addListener((settings) => {
+      if (
+        transcriptionStartedRef.current &&
+        !settings.audioCallTranscriptionsEnabled
+      ) {
+        void stopCallTranscription(call);
+        transcriptionStartedRef.current = false;
+        setIsTranscribing(false);
+      }
+    });
+    return unsub;
+  }, [call, isVideo]);
+
   // Speaker toggle state — tracked locally (SDK doesn't provide useSpeakerState on RN)
   const [isSpeakerOn, setIsSpeakerOn] = useState(isVideo); // Default speaker ON for video
   const [wasAcceptedByRemote, setWasAcceptedByRemote] = useState(false);
@@ -750,6 +842,28 @@ function DirectCallContent({
             connectionQuality={remoteConnectionQuality}
           />
         </View>
+        {!isVideo && isTranscribing ? (
+          <View
+            style={[
+              styles.transcribingPill,
+              {
+                backgroundColor: colors.primary + "22",
+                borderColor: colors.primary + "55",
+              },
+            ]}
+          >
+            <MaterialCommunityIcons
+              name="text-box-outline"
+              size={12}
+              color={colors.primary}
+            />
+            <Text
+              style={[styles.transcribingPillText, { color: colors.primary }]}
+            >
+              Transcribing
+            </Text>
+          </View>
+        ) : null}
       </View>
 
       {/* Spacer */}
@@ -974,5 +1088,21 @@ const styles = StyleSheet.create({
     minHeight: 28,
     justifyContent: "center",
     marginTop: 10,
+  },
+  transcribingPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    alignSelf: "center",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    marginTop: 8,
+  },
+  transcribingPillText: {
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 0.4,
   },
 });

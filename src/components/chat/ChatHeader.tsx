@@ -23,13 +23,26 @@ import { buildRemoteImageSource } from "@/utils/remoteImageSource";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React from "react";
 import {
-  Platform,
-  StyleSheet,
-  TouchableOpacity,
-  View,
-  ViewStyle,
+    Platform,
+    StyleSheet,
+    TouchableOpacity,
+    View,
+    ViewStyle,
 } from "react-native";
 import { Appbar, Text, useTheme } from "react-native-paper";
+
+const HEADER_LAYOUT = {
+  height: 46,
+  backButtonSize: 34,
+  backButtonRadius: 17,
+  backButtonMarginLeft: 8,
+  backIconSize: 33,
+  avatarSize: 36,
+  titleStartSpacing: 14,
+  identityGap: 14,
+  titleFontSize: 22,
+  subtitleFontSize: 13,
+} as const;
 
 // =============================================================================
 // Types
@@ -116,7 +129,7 @@ export function ChatHeader({
           pictureUrl={profilePictureUrl}
           name={avatarFallbackName || title}
           decorationId={decorationId}
-          size={36}
+          size={HEADER_LAYOUT.avatarSize}
         />
       );
     }
@@ -164,17 +177,14 @@ export function ChatHeader({
       >
         <MaterialCommunityIcons
           name={Platform.OS === "ios" ? "chevron-left" : "arrow-left"}
-          size={chatType === "group" ? 33 : 22}
+          size={HEADER_LAYOUT.backIconSize}
           color={colors.onSurface}
           style={Platform.OS === "ios" ? styles.backIconiOS : undefined}
         />
       </TouchableOpacity>
 
       <TouchableOpacity
-        style={[
-          styles.titleTouchable,
-          chatType === "group" && styles.titleTouchableGroup,
-        ]}
+        style={styles.titleTouchable}
         onPress={onTitlePress}
         disabled={!onTitlePress}
         activeOpacity={0.7}
@@ -186,11 +196,7 @@ export function ChatHeader({
               <PresenceIndicator online={isOnline} size={8} position="inline" />
             )}
             <Text
-              style={[
-                styles.titleText,
-                chatType === "group" && styles.titleTextGroup,
-                { color: colors.onSurface },
-              ]}
+              style={[styles.titleText, { color: colors.onSurface }]}
               numberOfLines={1}
             >
               {title}
@@ -222,15 +228,15 @@ export function ChatHeader({
 const styles = StyleSheet.create({
   header: {
     elevation: 0,
-    height: 46,
+    height: HEADER_LAYOUT.height,
   },
   backButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: HEADER_LAYOUT.backButtonSize,
+    height: HEADER_LAYOUT.backButtonSize,
+    borderRadius: HEADER_LAYOUT.backButtonRadius,
     justifyContent: "center",
     alignItems: "center",
-    marginLeft: 8,
+    marginLeft: HEADER_LAYOUT.backButtonMarginLeft,
   },
   backIconiOS: {
     // Optical centering: iOS chevron-left glyph is visually heavy on the left
@@ -240,12 +246,8 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
-    marginLeft: 2,
-    gap: 8,
-  },
-  titleTouchableGroup: {
-    marginLeft: 14,
-    gap: 14,
+    marginLeft: HEADER_LAYOUT.titleStartSpacing,
+    gap: HEADER_LAYOUT.identityGap,
   },
   titleTextContainer: {
     flex: 1,
@@ -256,25 +258,22 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   titleText: {
-    fontSize: 17,
+    fontSize: HEADER_LAYOUT.titleFontSize,
     fontWeight: "600",
   },
-  titleTextGroup: {
-    fontSize: 22,
-  },
   subtitleText: {
-    fontSize: 13,
+    fontSize: HEADER_LAYOUT.subtitleFontSize,
     marginTop: 1,
   },
   groupAvatarImage: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: HEADER_LAYOUT.avatarSize,
+    height: HEADER_LAYOUT.avatarSize,
+    borderRadius: HEADER_LAYOUT.avatarSize / 2,
   },
   groupAvatarPlaceholder: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: HEADER_LAYOUT.avatarSize,
+    height: HEADER_LAYOUT.avatarSize,
+    borderRadius: HEADER_LAYOUT.avatarSize / 2,
     justifyContent: "center",
     alignItems: "center",
   },

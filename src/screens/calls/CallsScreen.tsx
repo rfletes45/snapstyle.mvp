@@ -18,7 +18,6 @@ import { CALL_FEATURES } from "@/constants/featureFlags";
 import type { ActiveVoiceRoom } from "@/hooks/useActiveVoiceRooms";
 import { useActiveVoiceRooms } from "@/hooks/useActiveVoiceRooms";
 import { useStreamCallHistory } from "@/hooks/useStreamCallHistory";
-import { prepareGroupChatNavigation } from "@/services/chat/threadIdentityWarmup";
 import { useAppTheme } from "@/store/ThemeContext";
 import type { MainStackParamList } from "@/types/navigation/root";
 import type {
@@ -102,26 +101,17 @@ export default function CallsScreen() {
     [navigation],
   );
 
-  // Tap a history row
+  // Tap a history row — always opens CallInfoScreen for that specific entry.
+  // Direct chat / group navigation now happens from CallInfoScreen via its
+  // action buttons, so we never silently redirect into a conversation.
   const handleHistoryPress = useCallback(
     (entry: StreamCallHistoryEntry) => {
-      if (entry.entryType === "voice_room" && entry.groupId) {
-        // Navigate to the group chat (user can join from there)
-        void (async () => {
-          const navParams = await prepareGroupChatNavigation({
-            groupId: entry.groupId!,
-            groupName: entry.groupName ?? undefined,
-            groupAvatarUrl: entry.groupAvatar ?? null,
-          });
-          navigation.navigate("GroupChat", navParams);
-        })();
-      } else if (entry.otherUserId) {
-        // Navigate to the DM / user profile
-        navigation.navigate("ChatDetail", {
-          friendUid: entry.otherUserId,
-          friendName: entry.otherUserName ?? undefined,
-        });
-      }
+      navigation.navigate("CallInfo", {
+        entryId: entry.id,
+        callId: entry.callId,
+        // sessionId is not currently persisted on the history entry;
+        // CallInfoScreen falls back to the "latest session" local lookup.
+      });
     },
     [navigation],
   );
@@ -162,11 +152,15 @@ export default function CallsScreen() {
               size={18}
               color={colors.warning}
             />
-            <Text style={[styles.inlineStateText, { color: colors.textSecondary }]}>
+            <Text
+              style={[styles.inlineStateText, { color: colors.textSecondary }]}
+            >
               {roomsErrorMessage || "Active rooms are temporarily unavailable."}
             </Text>
             <TouchableOpacity onPress={() => void refreshRooms()}>
-              <Text style={[styles.inlineStateAction, { color: colors.primary }]}>
+              <Text
+                style={[styles.inlineStateAction, { color: colors.primary }]}
+              >
                 Retry
               </Text>
             </TouchableOpacity>
@@ -181,14 +175,20 @@ export default function CallsScreen() {
                   color={colors.warning}
                 />
                 <Text
-                  style={[styles.inlineStateText, { color: colors.textSecondary }]}
+                  style={[
+                    styles.inlineStateText,
+                    { color: colors.textSecondary },
+                  ]}
                 >
                   {roomsErrorMessage ||
                     "Some active room statuses could not be refreshed."}
                 </Text>
                 <TouchableOpacity onPress={() => void refreshRooms()}>
                   <Text
-                    style={[styles.inlineStateAction, { color: colors.primary }]}
+                    style={[
+                      styles.inlineStateAction,
+                      { color: colors.primary },
+                    ]}
                   >
                     Retry
                   </Text>

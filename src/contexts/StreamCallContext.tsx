@@ -654,6 +654,7 @@ export function StreamCallProvider({
   const { profile } = useUser();
   const [client, setClient] = useState<StreamVideoClient | null>(null);
   const currentUserId = currentFirebaseUser?.uid ?? null;
+  const previousUserIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     logStartupMount("StreamCallProvider", {
@@ -680,6 +681,22 @@ export function StreamCallProvider({
         reason: "no_authenticated_user",
       });
       const cleanup = async () => {
+        // Privacy-first: wipe any locally stored transcripts for the
+        // signed-out user. This matches the "local-only, not a cloud
+        // archive" story for call transcripts.
+        const signedOutUid = previousUserIdRef.current;
+        if (signedOutUid) {
+          try {
+            const { wipeTranscriptsForOwner } =
+              await import("@/services/calls/callTranscriptDb");
+            await wipeTranscriptsForOwner(signedOutUid);
+          } catch (err) {
+            console.warn(
+              "[StreamCallProvider] wipeTranscriptsForOwner failed:",
+              err,
+            );
+          }
+        }
         try {
           await destroyStreamClient();
         } catch (err: any) {
@@ -692,8 +709,11 @@ export function StreamCallProvider({
         setClient(null);
       };
       cleanup();
+      previousUserIdRef.current = null;
       return;
     }
+
+    previousUserIdRef.current = currentUserId;
 
     if (!profile) {
       logStartupEvent("StreamCall client init deferred", {

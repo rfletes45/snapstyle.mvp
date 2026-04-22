@@ -39,6 +39,13 @@ export interface CallSettings {
   flashOnRing: boolean;
   hapticFeedback: boolean;
   largeCallControls: boolean;
+  /**
+   * When true, eligible direct 1:1 audio calls may be transcribed on-device.
+   * Default is OFF for privacy-safe rollout — users must opt in.
+   * Transcription is never started for direct video or voice-room calls.
+   * If either participant has this disabled, transcription will not start.
+   */
+  audioCallTranscriptionsEnabled: boolean;
 }
 
 export const DEFAULT_CALL_SETTINGS: CallSettings = {
@@ -70,4 +77,5 @@ export const DEFAULT_CALL_SETTINGS: CallSettings = {
   flashOnRing: false,
   hapticFeedback: true,
   largeCallControls: false,
+  audioCallTranscriptionsEnabled: false,
 };
