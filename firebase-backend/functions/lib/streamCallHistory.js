@@ -47,6 +47,7 @@ exports.streamCallWebhook = void 0;
 const crypto = __importStar(require("crypto"));
 const admin = __importStar(require("firebase-admin"));
 const functions = __importStar(require("firebase-functions"));
+const callTranscripts_1 = require("./callTranscripts");
 const db = admin.firestore();
 exports.streamCallWebhook = functions.https.onRequest(async (req, res) => {
     if (req.method !== "POST") {
@@ -78,6 +79,16 @@ exports.streamCallWebhook = functions.https.onRequest(async (req, res) => {
     try {
         const event = req.body ?? {};
         const eventType = event.type;
+        // Delegate transcription events to the transcript pipeline. Stream
+        // only supports a single webhook URL, so we route from here.
+        if (eventType === "call.transcription_ready" ||
+            eventType === "call.transcription_failed") {
+            const result = await (0, callTranscripts_1.handleTranscriptionWebhookEvent)(event);
+            res
+                .status(result.ok ? 200 : 500)
+                .send(`OK - transcript:${result.reason}`);
+            return;
+        }
         if (eventType !== "call.session_ended" &&
             eventType !== "call.rejected" &&
             eventType !== "call.missed") {

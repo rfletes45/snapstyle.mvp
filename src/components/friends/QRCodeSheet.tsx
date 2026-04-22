@@ -1,15 +1,16 @@
 /**
  * QRCodeSheet — "My Code" display + "Scan Code" camera
  *
- * Uses expo-camera for barcode scanning.
- * Generates QR via a lightweight SVG approach.
+ * Uses expo-camera for barcode scanning and react-native-qrcode-svg for
+ * actual QR rendering. Each user's QR encodes their unique invite URL
+ * (vibe://invite/{code}) so every user gets a distinct, scannable code.
  */
 
 import { BorderRadius, Spacing } from "@/constants/theme";
-import { buildProfileUrl } from "@/services/invites";
+import { buildInviteUrl, getOrCreateInviteCode } from "@/services/invites";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { CameraView, useCameraPermissions } from "expo-camera";
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Dimensions,
@@ -20,26 +21,29 @@ import {
   View,
 } from "react-native";
 import { Button, IconButton, Text, useTheme } from "react-native-paper";
+import QRCode from "react-native-qrcode-svg";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const QR_SIZE = Math.min(SCREEN_WIDTH - 80, 240);
 
 // ---------------------------------------------------------------------------
-// Simple QR Code display (text-based fallback until dedicated lib added)
+// QR Code display (real SVG via react-native-qrcode-svg)
 // ---------------------------------------------------------------------------
 
 interface QRDisplayProps {
   value: string;
   size: number;
-  colors: any;
 }
 
 /**
- * Minimal QR display placeholder.
- * Shows the URL in a styled card with an icon.
- * Replace with react-native-qrcode-svg when available.
+ * Renders a real, scannable QR code encoding the invite URL.
+ *
+ * High error-correction ("H") leaves room for a small logo overlay and
+ * tolerates glare / camera noise during scanning. The card background is
+ * always white regardless of theme so the code contrast remains readable by
+ * camera scanners.
  */
-function QRDisplay({ value, size, colors }: QRDisplayProps) {
+function QRDisplay({ value, size }: QRDisplayProps) {
   return (
     <View
       style={[
@@ -52,10 +56,13 @@ function QRDisplay({ value, size, colors }: QRDisplayProps) {
         },
       ]}
     >
-      <MaterialCommunityIcons name="qrcode" size={size * 0.6} color="#222" />
-      <Text style={styles.qrUrlText} numberOfLines={2} selectable>
-        {value}
-      </Text>
+      <QRCode
+        value={value}
+        size={size - 32}
+        color="#000"
+        backgroundColor="#fff"
+        ecl="H"
+      />
     </View>
   );
 }
@@ -65,6 +72,7 @@ function QRDisplay({ value, size, colors }: QRDisplayProps) {
 // ---------------------------------------------------------------------------
 
 interface MyCodeViewProps {
+  uid: string;
   username: string;
   displayName: string;
   onShare: () => void;
@@ -72,13 +80,43 @@ interface MyCodeViewProps {
 }
 
 export function MyCodeView({
+  uid,
   username,
   displayName,
   onShare,
   onClose,
 }: MyCodeViewProps) {
   const { colors } = useTheme();
-  const profileUrl = buildProfileUrl(username);
+  const [inviteUrl, setInviteUrl] = useState<string | null>(null);
+  const [error, setError] = useState(false);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!uid) return;
+    setError(false);
+    setInviteUrl(null);
+    (async () => {
+      try {
+        const code = await getOrCreateInviteCode(uid);
+        if (cancelled || !mountedRef.current) return;
+        setInviteUrl(buildInviteUrl(code));
+      } catch {
+        if (cancelled || !mountedRef.current) return;
+        setError(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [uid]);
 
   return (
     <View style={styles.myCodeContainer}>
@@ -93,7 +131,36 @@ export function MyCodeView({
       </View>
 
       <View style={styles.qrCenter}>
-        <QRDisplay value={profileUrl} size={QR_SIZE} colors={colors} />
+        {inviteUrl ? (
+          <QRDisplay value={inviteUrl} size={QR_SIZE} />
+        ) : (
+          <View
+            style={[
+              styles.qrPlaceholder,
+              {
+                width: QR_SIZE,
+                height: QR_SIZE,
+                backgroundColor: "#fff",
+                borderRadius: BorderRadius.md,
+              },
+            ]}
+          >
+            {error ? (
+              <>
+                <MaterialCommunityIcons
+                  name="qrcode-remove"
+                  size={QR_SIZE * 0.35}
+                  color="#999"
+                />
+                <Text style={styles.qrUrlText}>
+                  Couldn’t load your code. Pull to retry.
+                </Text>
+              </>
+            ) : (
+              <ActivityIndicator size="large" color="#333" />
+            )}
+          </View>
+        )}
       </View>
 
       <Text
@@ -121,6 +188,7 @@ export function MyCodeView({
         onPress={onShare}
         style={styles.shareBtn}
         icon="share-variant-outline"
+        disabled={!inviteUrl}
       >
         Share My Code
       </Button>
@@ -255,6 +323,7 @@ export function ScanCodeView({ onScan, onClose }: ScanCodeViewProps) {
 interface QRCodeSheetProps {
   visible: boolean;
   mode: "myCode" | "scan";
+  uid: string;
   username: string;
   displayName: string;
   onShare: () => void;
@@ -266,6 +335,7 @@ interface QRCodeSheetProps {
 export default function QRCodeSheet({
   visible,
   mode,
+  uid,
   username,
   displayName,
   onShare,
@@ -331,6 +401,7 @@ export default function QRCodeSheet({
 
         {mode === "myCode" ? (
           <MyCodeView
+            uid={uid}
             username={username}
             displayName={displayName}
             onShare={onShare}

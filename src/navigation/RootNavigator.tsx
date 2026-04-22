@@ -7,16 +7,18 @@ import {
 } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import React, { useCallback, useEffect, useMemo, useRef } from "react";
-import { StyleSheet } from "react-native";
+import { Linking, StyleSheet } from "react-native";
 
 import type { HydrationState } from "@/components/AppGate";
 import AppGate from "@/components/AppGate";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import WarningModal from "@/components/WarningModal";
 import { ComposerSheetProvider } from "@/contexts/ComposerSheetContext";
+import { parseInviteUrl } from "@/services/invites";
 import { clearLastOpenChat, getLastOpenChat } from "@/services/lastOpenChat";
 import {
   flushPendingNavigation,
+  navigate as navigateExternal,
   navigationRef,
 } from "@/services/navigationRef";
 import { useInAppNotifications } from "@/store/InAppNotificationsContext";
@@ -811,6 +813,47 @@ export default function RootNavigator({
     });
     flushPendingNavigation();
   }, [getActiveRouteName, onRouteChange, setCurrentScreen]);
+
+  // ── Inbound friend-invite deep-link handler ──────────────────────
+  // Handles two entry points:
+  //   1. Cold start: Linking.getInitialURL() returns the URL the OS used
+  //      to launch the app. We defer handling until the navigator is ready
+  //      (navigationRef has its own queue for pending actions).
+  //   2. Warm: Linking.addEventListener('url') fires when a deep link is
+  //      opened while the app is backgrounded or already open.
+  //
+  // Both paths converge on `routeInviteUrl`, which parses the URL and, if
+  // it is a valid invite/profile payload, navigates to the Friends screen
+  // with `pendingInvite` set. FriendsScreen picks that up and opens the
+  // shared FriendInviteConfirmModal.
+  useEffect(() => {
+    const routeInviteUrl = (url: string | null | undefined) => {
+      if (!url) return;
+      const parsed = parseInviteUrl(url);
+      if (!parsed) return;
+      logStartupEvent("Deep link: friend invite received", {
+        kind: parsed.kind,
+      });
+      // `navigateExternal` uses the module-level pending-action queue so it
+      // is safe to call during cold start before the navigator is ready.
+      navigateExternal("Friends", { pendingInvite: parsed });
+    };
+
+    // Cold start
+    Linking.getInitialURL()
+      .then((url) => routeInviteUrl(url))
+      .catch(() => {
+        /* ignore */
+      });
+
+    // Warm
+    const sub = Linking.addEventListener("url", (event) => {
+      routeInviteUrl(event?.url);
+    });
+    return () => {
+      sub.remove();
+    };
+  }, []);
 
   const linking = useMemo(
     () => ({

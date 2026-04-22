@@ -27,9 +27,31 @@ const logger = createLogger("services/invites");
 // Constants
 // ---------------------------------------------------------------------------
 
-const APP_DOMAIN = "https://snapstyle.app";
-const INVITE_PATH = "/invite";
-const PROFILE_PATH = "/u";
+/**
+ * Canonical deep-link scheme declared in app.config.ts (`scheme: "vibe"`).
+ *
+ * The previous implementation used `https://snapstyle.app` as the invite
+ * domain, but that domain is NOT owned by the app — opening the link led
+ * recipients to a random parked/AI site instead of the app. Associated
+ * Domains / Android App Links are also not configured, so an https:// URL
+ * could never open the app anyway.
+ *
+ * We now build invite URLs using the real custom scheme. If the app is
+ * installed, the OS opens Vibe directly. If it is not installed, the link
+ * is inert (no hijacking by an unrelated web site).
+ */
+const APP_SCHEME = "vibe://";
+const INVITE_HOST = "invite";
+const PROFILE_HOST = "u";
+
+// Legacy path segments recognised by the inbound URL parser so that links
+// already shared before this fix still resolve correctly.
+const LEGACY_HTTP_HOSTS = [
+  "snapstyle.app",
+  "www.snapstyle.app",
+  "vibeapp.com",
+  "www.vibeapp.com",
+];
 
 // ---------------------------------------------------------------------------
 // Invite Code Management
@@ -81,11 +103,87 @@ export async function getOrCreateInviteCode(uid: string): Promise<string> {
 // ---------------------------------------------------------------------------
 
 export function buildInviteUrl(code: string): string {
-  return `${APP_DOMAIN}${INVITE_PATH}/${code}`;
+  return `${APP_SCHEME}${INVITE_HOST}/${encodeURIComponent(code)}`;
 }
 
 export function buildProfileUrl(username: string): string {
-  return `${APP_DOMAIN}${PROFILE_PATH}/${username}`;
+  return `${APP_SCHEME}${PROFILE_HOST}/${encodeURIComponent(username)}`;
+}
+
+// ---------------------------------------------------------------------------
+// Inbound URL Parsing
+// ---------------------------------------------------------------------------
+
+export type ParsedInvite =
+  | { kind: "invite"; code: string }
+  | { kind: "profile"; username: string }
+  | null;
+
+/**
+ * Parse an arbitrary URL (from QR scan, deep link, or clipboard) into a
+ * canonical invite payload. Accepts:
+ *   - vibe://invite/{code}
+ *   - vibe://u/{username}
+ *   - https://<legacy-host>/invite/{code}
+ *   - https://<legacy-host>/u/{username}
+ *   - Bare paths like "/invite/XYZ" or "/u/name" (defensive)
+ *
+ * Returns `null` if the URL is not a recognised invite link. The caller is
+ * expected to show an appropriate error in that case.
+ */
+export function parseInviteUrl(raw: string | null | undefined): ParsedInvite {
+  if (!raw || typeof raw !== "string") return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+
+  // Try the custom scheme first.
+  const schemeMatch = trimmed.match(/^vibe:\/\/([^/?#]+)\/([^/?#\s]+)/i);
+  if (schemeMatch) {
+    const host = schemeMatch[1].toLowerCase();
+    const value = safeDecode(schemeMatch[2]);
+    if (host === INVITE_HOST && value) return { kind: "invite", code: value };
+    if (host === PROFILE_HOST && value)
+      return { kind: "profile", username: value };
+    return null;
+  }
+
+  // Accept https:// fallback for legacy hosts only (defensive — new links use
+  // the custom scheme).
+  const httpsMatch = trimmed.match(/^https?:\/\/([^/?#]+)(\/[^?#]*)/i);
+  if (httpsMatch) {
+    const host = httpsMatch[1].toLowerCase();
+    if (!LEGACY_HTTP_HOSTS.includes(host)) return null;
+    return matchInvitePath(httpsMatch[2]);
+  }
+
+  // Defensive: plain path.
+  if (trimmed.startsWith("/")) {
+    return matchInvitePath(trimmed);
+  }
+
+  return null;
+}
+
+function matchInvitePath(path: string): ParsedInvite {
+  const invite = path.match(/\/invite\/([^/?#\s]+)/i);
+  if (invite) {
+    const code = safeDecode(invite[1]);
+    return code ? { kind: "invite", code } : null;
+  }
+  const profile = path.match(/\/u\/([^/?#\s]+)/i);
+  if (profile) {
+    const username = safeDecode(profile[1]);
+    return username ? { kind: "profile", username } : null;
+  }
+  return null;
+}
+
+function safeDecode(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -102,10 +200,14 @@ export async function shareInviteLink(
   try {
     const code = await getOrCreateInviteCode(uid);
     const url = buildInviteUrl(code);
+    // Include the sender's @handle in the message so the recipient sees who
+    // sent it even before tapping the link. The URL itself is the actionable
+    // part — tapping it opens Vibe and triggers the add-friend confirmation.
+    const senderHandle = username ? `@${username}` : "a friend";
     const message =
       Platform.OS === "ios"
-        ? `Join me on SnapStyle! ${url}`
-        : `Join me on SnapStyle!\n${url}`;
+        ? `${senderHandle} invited you to Vibe — tap to add them as a friend: ${url}`
+        : `${senderHandle} invited you to Vibe — tap to add them as a friend:\n${url}`;
 
     const result = await Share.share(
       { message },
@@ -138,18 +240,23 @@ export async function copyInviteLink(uid: string): Promise<string> {
  * Share a profile link via native share sheet.
  */
 export async function shareProfileLink(
+  uid: string,
   username: string,
 ): Promise<"shared" | "dismissed" | "error"> {
   try {
-    const url = buildProfileUrl(username);
+    // Prefer an invite code (resolves deterministically to *this* user)
+    // over the profile URL (resolves by username, which can collide if a
+    // username is changed). The invite code URL is the canonical share.
+    const code = await getOrCreateInviteCode(uid);
+    const url = buildInviteUrl(code);
     const message =
       Platform.OS === "ios"
-        ? `Check out my profile on SnapStyle! ${url}`
-        : `Check out my profile on SnapStyle!\n${url}`;
+        ? `Add me on Vibe — @${username}: ${url}`
+        : `Add me on Vibe — @${username}:\n${url}`;
 
     const result = await Share.share(
       { message },
-      { dialogTitle: "Share your profile" },
+      { dialogTitle: "Share your code" },
     );
 
     return result.action === Share.sharedAction ? "shared" : "dismissed";
@@ -169,7 +276,7 @@ export async function shareInviteToContact(
   try {
     const code = await getOrCreateInviteCode(uid);
     const url = buildInviteUrl(code);
-    const message = `Hey ${contactName}! Join me on SnapStyle — let's play games and chat! ${url}`;
+    const message = `Hey ${contactName}! Join me on Vibe — let's play games and chat! ${url}`;
 
     const result = await Share.share(
       { message },

@@ -17,6 +17,7 @@ import {
   SectionHeader,
 } from "@/components/friends";
 import AddFriendsSheet from "@/components/friends/AddFriendsSheet";
+import FriendInviteConfirmModal from "@/components/friends/FriendInviteConfirmModal";
 import { ProfilePictureWithDecoration } from "@/components/profile/ProfilePicture";
 import ReportUserModal from "@/components/ReportUserModal";
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui";
@@ -37,7 +38,12 @@ import {
   removeFriend,
   sendFriendRequest,
 } from "@/services/friends";
-import { shareInviteLink, shareProfileLink } from "@/services/invites";
+import {
+  parseInviteUrl,
+  shareInviteLink,
+  shareProfileLink,
+  type ParsedInvite,
+} from "@/services/invites";
 import { submitReport } from "@/services/reporting";
 import { markNotificationsReadByTypes } from "@/services/userNotifications";
 import { useAuth } from "@/store/AuthContext";
@@ -750,6 +756,10 @@ export default function FriendsScreen({ navigation }: any) {
   // Quick Add
   const [quickAddVisible, setQuickAddVisible] = useState(false);
 
+  // Friend-invite confirmation (shared by QR scan + inbound deep links)
+  const [pendingInvite, setPendingInvite] = useState<ParsedInvite>(null);
+  const [inviteModalVisible, setInviteModalVisible] = useState(false);
+
   // Block/Report
   const [menuVisible, setMenuVisible] = useState<string | null>(null);
   const [blockModalVisible, setBlockModalVisible] = useState(false);
@@ -774,6 +784,22 @@ export default function FriendsScreen({ navigation }: any) {
       navigation.setParams({ openAddFriends: undefined });
     }
   }, [route.params?.openAddFriends, navigation]);
+
+  // ── Inbound friend-invite payload (deep link) ──────────────────
+  // Triggered when a user taps a `vibe://invite/{code}` link or the
+  // equivalent legacy https:// form. The RootNavigator's URL listener
+  // parses the URL and navigates here with `pendingInvite` set. We then
+  // open the shared confirmation modal and clear the param so it doesn't
+  // re-trigger on every re-render.
+  useEffect(() => {
+    const incoming = route.params?.pendingInvite;
+    if (!incoming) return;
+    setAddFriendsOpen(false);
+    setQrModalVisible(false);
+    setPendingInvite(incoming);
+    setInviteModalVisible(true);
+    navigation.setParams({ pendingInvite: undefined });
+  }, [route.params?.pendingInvite, navigation]);
 
   // ── Mark notifications read ────────────────────────────────────
   useFocusEffect(
@@ -1103,28 +1129,24 @@ export default function FriendsScreen({ navigation }: any) {
 
   const handleQrScan = useCallback(
     (data: string) => {
-      const profileMatch = data.match(/\/u\/([^/?\s]+)/);
-      const inviteMatch = data.match(/\/invite\/([^/?\s]+)/);
-
-      if (profileMatch) {
-        const username = profileMatch[1];
-        setQrModalVisible(false);
-        handleSendRequest(username);
-        showSnackbar(`Found user: @${username}`);
-      } else if (inviteMatch) {
-        setQrModalVisible(false);
-        showSnackbar("Invite code scanned!");
-      } else {
+      const parsed = parseInviteUrl(data);
+      if (!parsed) {
         showSnackbar("Unrecognized QR code", "error");
+        return;
       }
+      // Close the scanner and hand off to the shared confirmation UI so
+      // invite-code and profile-URL QR codes funnel through one flow.
+      setQrModalVisible(false);
+      setPendingInvite(parsed);
+      setInviteModalVisible(true);
     },
-    [handleSendRequest, showSnackbar],
+    [showSnackbar],
   );
 
   const handleQrShare = useCallback(async () => {
-    if (!currentUsername) return;
-    await shareProfileLink(currentUsername);
-  }, [currentUsername]);
+    if (!uid || !currentUsername) return;
+    await shareProfileLink(uid, currentUsername);
+  }, [uid, currentUsername]);
 
   // ── Quick Add Actions ──────────────────────────────────────────
 
@@ -1667,12 +1689,26 @@ export default function FriendsScreen({ navigation }: any) {
       <QRCodeSheet
         visible={qrModalVisible}
         mode={qrMode}
+        uid={uid || ""}
         username={myUsername}
         displayName={myDisplayName}
         onShare={handleQrShare}
         onScan={handleQrScan}
         onClose={() => setQrModalVisible(false)}
         onSwitchMode={setQrMode}
+      />
+
+      {/* ── Friend Invite Confirmation (shared QR + deep-link flow) ── */}
+      <FriendInviteConfirmModal
+        visible={inviteModalVisible}
+        invite={pendingInvite}
+        onDismiss={() => {
+          setInviteModalVisible(false);
+          setPendingInvite(null);
+        }}
+        onSent={() => {
+          loadData();
+        }}
       />
 
       {/* ── Quick Add Modal ────────────────────────────────────── */}

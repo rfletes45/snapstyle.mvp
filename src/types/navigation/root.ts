@@ -50,6 +50,15 @@ export type MainStackParamList = {
     | {
         tab?: "all" | "requests";
         openAddFriends?: boolean;
+        /**
+         * Set by the deep-link handler to trigger the shared friend-invite
+         * confirmation modal on mount. Payload shape mirrors
+         * `ParsedInvite` from `@/services/invites` but is kept loose here to
+         * avoid a circular type dependency.
+         */
+        pendingInvite?:
+          | { kind: "invite"; code: string }
+          | { kind: "profile"; username: string };
       }
     | undefined;
   ChatDetail:

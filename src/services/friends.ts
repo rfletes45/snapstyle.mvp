@@ -18,7 +18,14 @@ import { getUserProfile } from "./users";
 import { createLogger } from "@/utils/log";
 const logger = createLogger("services/friends");
 /**
- * Send a friend request by searching for user by username
+ * Send a friend request by searching for user by username.
+ *
+ * Thin wrapper around {@link sendFriendRequestByUid} that first resolves the
+ * username to a uid. New code that already has a uid (e.g. invite-code
+ * resolution, QR scan) should call `sendFriendRequestByUid` directly to
+ * avoid an unnecessary username lookup and to guarantee the request targets
+ * the correct user even if their username changes.
+ *
  * @param fromUid User ID sending request
  * @param toUsername Username of user to add
  * @returns true if request sent successfully
@@ -28,22 +35,33 @@ export async function sendFriendRequest(
   toUsername: string,
 ): Promise<boolean> {
   const db = getFirestoreInstance();
+  const usersRef = collection(db, "Users");
+  const q = query(
+    usersRef,
+    where("usernameLower", "==", toUsername.toLowerCase()),
+  );
+  const snapshot = await getDocs(q);
+
+  if (snapshot.empty) {
+    throw new Error("User not found");
+  }
+
+  return sendFriendRequestByUid(fromUid, snapshot.docs[0].id);
+}
+
+/**
+ * Send a friend request directly by target uid. Preferred entry point for
+ * invite-code and QR-scan resolution flows where the uid has already been
+ * established. Performs the same validation as {@link sendFriendRequest}
+ * (self-add, blocking, already-friends, duplicate-pending).
+ */
+export async function sendFriendRequestByUid(
+  fromUid: string,
+  toUid: string,
+): Promise<boolean> {
+  const db = getFirestoreInstance();
 
   try {
-    // Find user by username
-    const usersRef = collection(db, "Users");
-    const q = query(
-      usersRef,
-      where("usernameLower", "==", toUsername.toLowerCase()),
-    );
-    const snapshot = await getDocs(q);
-
-    if (snapshot.empty) {
-      throw new Error("User not found");
-    }
-
-    const toUid = snapshot.docs[0].id;
-
     // Can't add yourself
     if (fromUid === toUid) {
       throw new Error("You cannot add yourself as a friend");
@@ -68,8 +86,8 @@ export async function sendFriendRequest(
     );
     const friendsSnapshot = await getDocs(friendsQuery);
 
-    const alreadyFriends = friendsSnapshot.docs.some((doc) => {
-      const friend = doc.data() as Friend;
+    const alreadyFriends = friendsSnapshot.docs.some((d) => {
+      const friend = d.data() as Friend;
       return friend.users.includes(toUid);
     });
 
@@ -77,18 +95,32 @@ export async function sendFriendRequest(
       throw new Error("Already friends with this user");
     }
 
-    // Check if request already exists
+    // Check if request already exists (either direction)
     const requestsRef = collection(db, "FriendRequests");
-    const existingQuery = query(
+    const outgoingQ = query(
       requestsRef,
       where("from", "==", fromUid),
       where("to", "==", toUid),
       where("status", "==", "pending"),
     );
-    const existingSnapshot = await getDocs(existingQuery);
+    const outgoingSnap = await getDocs(outgoingQ);
 
-    if (!existingSnapshot.empty) {
+    if (!outgoingSnap.empty) {
       throw new Error("Friend request already sent");
+    }
+
+    const incomingQ = query(
+      requestsRef,
+      where("from", "==", toUid),
+      where("to", "==", fromUid),
+      where("status", "==", "pending"),
+    );
+    const incomingSnap = await getDocs(incomingQ);
+
+    if (!incomingSnap.empty) {
+      throw new Error(
+        "This user already sent you a friend request \u2014 check your requests tab.",
+      );
     }
 
     // Create friend request

@@ -109,6 +109,34 @@ export async function getUserProfile(uid: string): Promise<User | null> {
 }
 
 /**
+ * Look up a user document by lowercased username. Returns `null` if no match
+ * is found. Used by the add-friend-by-QR / deep-link invite resolution flow.
+ */
+export async function getUserByUsername(
+  username: string,
+): Promise<User | null> {
+  const trimmed = username.trim().toLowerCase();
+  if (!trimmed) return null;
+  const db = getFirestoreInstance();
+  try {
+    const snap = await getDocs(
+      query(
+        collection(db, "Users"),
+        where("usernameLower", "==", trimmed),
+        firestoreLimit(1),
+      ),
+    );
+    if (snap.empty) return null;
+    const data = snap.docs[0].data() as User;
+    // Guarantee `uid` is populated (older docs may omit it from data()).
+    return { ...data, uid: data.uid ?? snap.docs[0].id };
+  } catch (error) {
+    logger.error("Error looking up user by username:", error);
+    return null;
+  }
+}
+
+/**
  * Create a new user profile in Firestore.
  *
  * SAFETY: This function REFUSES to overwrite an existing profile document.

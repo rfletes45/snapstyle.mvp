@@ -34,6 +34,7 @@ export { acceptMessageRequest, adminApplyStrike, adminApplyWarning, adminLiftBan
 export declare const deleteAccount: import("firebase-functions/v1").HttpsFunction & import("firebase-functions/v1").Runnable<any>;
 export { onGroupBackgroundRemoved, onGroupDeleted };
 export { ensureStreamUsers, getStreamVideoToken, streamCallWebhook };
+export { ackCallTranscript, cleanupExpiredCallTranscripts, getCallTranscript, getCallTranscriptPolicy, streamTranscriptionWebhook, } from "./callTranscripts";
 export declare const verifyIAPPurchase: import("firebase-functions/v1").HttpsFunction & import("firebase-functions/v1").Runnable<any>;
 export { onChatSettingsChanged, onInboxSettingsChanged };
 export { adminClearConversationGamesV4, adminClearGameV4, cancelGameInviteV4, claimAchievementSectionBadgeV4, claimAchievementV4, claimLevelRewardV4, createGameInviteV4, createSoloSessionV4, joinInviteLobbyV4, leaveInviteLobbyV4, onGameInviteV4Deleted, onRealtimeResolutionRequest, onSessionV4StatusChanged, resignSessionV4, restartSoloSessionV4, resumeOrCreateSoloSessionV4, startGameFromInviteV4, submitTurnMoveV4, suspendSoloSessionV4, updateLobbySettingsV4, watchdogGamesV4, };
