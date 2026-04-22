@@ -569,7 +569,7 @@ export default function ThreadScreen({ navigation, route }: Props) {
           renderScrollComponent={renderScrollComponent}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
-          keyboardDismissMode="interactive"
+          keyboardDismissMode="on-drag"
           keyboardShouldPersistTaps="handled"
           ListEmptyComponent={
             <View style={styles.emptyContainer}>

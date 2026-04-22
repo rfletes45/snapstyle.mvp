@@ -458,6 +458,13 @@ const CameraScreen: React.FC = () => {
   const [isBusy, setIsBusy] = useState(false);
   const [showFilterPicker, setShowFilterPicker] = useState(false);
   const [filterPickerCacheVersion, setFilterPickerCacheVersion] = useState(0);
+  // Latched once the user expresses filter intent (opens picker, or picks a
+  // filter).  Tells LiveFilterCamera to pre-warm the Skia frame-processor
+  // pipeline with an identity paint so the first real filter tap does NOT
+  // trigger a native capture-session reconfiguration.  Once true, stays
+  // true for the life of this screen so we never flap the pipeline
+  // mid-session.
+  const [pipelineWarmed, setPipelineWarmed] = useState(false);
 
   const showFilterPickerRef = useRef(false);
   const filterPickerOpenStartedAtRef = useRef<number | null>(null);
@@ -985,6 +992,18 @@ const CameraScreen: React.FC = () => {
     filterPickerOpenStartedAtRef.current = nowMs();
     filterPickerCachedAtOpenRef.current = getFilterOverlayColorCacheCount(1.0);
     filterPickerLoggedVisibleItemsRef.current = false;
+    // Pre-warm the Skia frame-processor pipeline now (while the modal
+    // slide masks any transient hitch) so the user's first filter tap
+    // becomes a cheap paint mutation instead of a native capture-session
+    // reconfiguration.
+    setPipelineWarmed((prev) => {
+      if (!prev) {
+        logger.warn(
+          "[Camera Filter Perf] pipeline warm-up triggered (filter picker open)",
+        );
+      }
+      return true;
+    });
     setShowFilterPicker(true);
     triggerHaptic();
     scheduleFilterPickerStallProbe("filter picker open");
@@ -1709,6 +1728,7 @@ const CameraScreen: React.FC = () => {
                   zoom={settings.zoom}
                   exposure={exposureValue}
                   isActive={isActive}
+                  keepPipelineWarm={pipelineWarmed}
                   style={styles.camera}
                   onInitialized={onCameraReady}
                   onError={onCameraError}

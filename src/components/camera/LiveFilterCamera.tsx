@@ -61,6 +61,22 @@ export interface LiveFilterCameraProps {
    * and avoid GPU work while invisible.
    */
   isActive?: boolean;
+  /**
+   * Pre-warm the Skia frame processor even when no filter is active.
+   *
+   * When true, the processor is attached with an identity color matrix so
+   * that the one-time native capture-session reconfiguration (which adds a
+   * frame-processor output to VisionCamera) happens *now* instead of at
+   * the moment the user taps their first real filter.  The parent screen
+   * typically flips this to true the instant the user opens the filter
+   * picker — the modal slide animation masks any transient hitch, and the
+   * subsequent first-filter tap becomes a cheap paint mutation instead of
+   * a native pipeline reconfiguration.
+   *
+   * Leave false during cold camera open to preserve VisionCamera's native
+   * preview fast path (critical for iOS release/TestFlight stability).
+   */
+  keepPipelineWarm?: boolean;
   style?: StyleProp<ViewStyle>;
   /**
    * Called once the camera hardware is initialised.
@@ -110,6 +126,7 @@ function areLiveFilterCameraPropsEqual(
     prev.zoom === next.zoom &&
     prev.exposure === next.exposure &&
     prev.isActive === next.isActive &&
+    prev.keepPipelineWarm === next.keepPipelineWarm &&
     prev.style === next.style &&
     prev.onInitialized === next.onInitialized &&
     prev.onError === next.onError
@@ -131,6 +148,7 @@ const LiveFilterCameraComponent = forwardRef<
     zoom = 0,
     exposure = 0,
     isActive = true,
+    keepPipelineWarm = false,
     style,
     onInitialized,
     onError,
@@ -204,9 +222,24 @@ const LiveFilterCameraComponent = forwardRef<
   // ──────────────────────────────────────────────────────────────────────
   // Skia Frame Processor — applies the real filter to every camera frame.
   //
-  // Keep the processor attached for the full session so filter selection only
-  // updates the paint matrix and does not force VisionCamera to reconfigure
-  // its live preview/output pipeline mid-session.
+  // IMPORTANT (2026-04-20 TestFlight freeze fix, re-asserted 2026-04-21):
+  //   The processor is ONLY attached to the <Camera> when a filter is
+  //   actually active.  Attaching it unconditionally routes every preview
+  //   frame through the Skia GPU pipeline, which on iOS release/TestFlight
+  //   builds causes ~1-2s preview lock-ups (and sometimes permanent
+  //   freezes on cold camera open) as the GPU queue backpressures against
+  //   the camera session startup (audio + photo + video + Skia compositing).
+  //
+  //   Filter selection itself does NOT recreate the processor: `filterPaint`
+  //   is a single stable Skia Paint created once and mutated in place via
+  //   setColorFilter(), and `useSkiaFrameProcessor(..., [filterPaint])` is
+  //   memoised on that stable reference.  Switching between two real
+  //   filters therefore only swaps the color matrix on the existing paint —
+  //   it does not force VisionCamera to reconfigure the live pipeline.
+  //
+  //   The `isFrameProcessorEnabled` gate only matters during photo capture,
+  //   where we briefly detach the processor so VisionCamera can drive a
+  //   clean still capture.
   // ──────────────────────────────────────────────────────────────────────
   const frameProcessor = useSkiaFrameProcessor(
     (frame) => {
@@ -215,12 +248,29 @@ const LiveFilterCameraComponent = forwardRef<
     },
     [filterPaint],
   );
+  const hasActiveFilter = filter != null && filter.id !== "none";
+  // Attach the processor when (a) a filter is actually rendering, or
+  // (b) the parent has told us to pre-warm the pipeline (filter picker
+  // opened).  Either way, do NOT attach during the capture-pause window.
+  const frameProcessorAttached =
+    (hasActiveFilter || keepPipelineWarm) && isFrameProcessorEnabled;
 
   useEffect(() => {
+    const reason = hasActiveFilter
+      ? "active-filter"
+      : keepPipelineWarm
+        ? "warm"
+        : "idle";
     logger.warn(
-      `[Camera Filter Perf] frame processor ${isFrameProcessorEnabled ? "attached" : "detached"} (stable pipeline)`,
+      `[Camera Filter Perf] frame processor ${frameProcessorAttached ? "attached" : "detached"} (${filterId ?? "none"}, ${reason}${!isFrameProcessorEnabled ? ", paused-for-capture" : ""})`,
     );
-  }, [isFrameProcessorEnabled]);
+  }, [
+    frameProcessorAttached,
+    filterId,
+    hasActiveFilter,
+    keepPipelineWarm,
+    isFrameProcessorEnabled,
+  ]);
 
   // ──────────────────────────────────────────────────────────────────────
   // Expose ref methods for CameraService compatibility
@@ -301,7 +351,11 @@ const LiveFilterCameraComponent = forwardRef<
       exposure={exposure}
       torch="off"
       style={style}
-      frameProcessor={isFrameProcessorEnabled ? frameProcessor : undefined}
+      // Native preview fast path when no filter is active; Skia pipeline
+      // only engages when a filter has been explicitly selected.  This is
+      // what keeps cold camera open off the GPU-contention critical path
+      // in iOS release/TestFlight builds.
+      frameProcessor={frameProcessorAttached ? frameProcessor : undefined}
       onInitialized={() => {
         logger.info("[LiveFilterCamera] onInitialized");
         onInitialized?.();

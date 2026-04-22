@@ -247,7 +247,11 @@ function ChatMessageListInner<T>(
     renderItem,
     keyExtractor,
     inverted: true,
-    keyboardDismissMode: "interactive" as const,
+    // "on-drag" — instantly dismiss the keyboard the moment the user begins
+    // dragging the chat, rather than letting it follow the finger
+    // interactively.  Matches the product requirement that dragging the
+    // chat should close the keyboard outright instead of pulling it down.
+    keyboardDismissMode: "on-drag" as const,
     keyboardShouldPersistTaps: "handled" as const,
     // Scroll events → unified hook
     onScroll: scrollState.onScroll,
