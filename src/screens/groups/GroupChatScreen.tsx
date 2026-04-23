@@ -205,7 +205,7 @@ import {
   useComposerSheet,
   useDismissTransientUiOnBlur,
 } from "@/contexts/ComposerSheetContext";
-import GameScorecard from "@/gamesV4/components/GameScorecard";
+import { ChatScorecardMessage } from "@/gamesV4/components/ChatScorecardMessage";
 import { decodeScorecardText } from "@/gamesV4/services/scorecardWire";
 import { useAnimalEntitlement } from "@/hooks/useAnimalEntitlement";
 import { useConversationDisplayMode } from "@/store/ConversationDisplayModeContext";
@@ -1945,18 +1945,27 @@ export default function GroupChatScreen({ route, navigation }: Props) {
 
       // ── Scorecard short-circuit ────────────────────────────────────
       // Scorecards ride inside either `system` (backend auto-post) or
-      // `text` (user share-sheet). We MUST decode before the stacked /
-      // bubble mode split below — otherwise stacked mode routes straight
-      // into GroupStackedMessageRenderer which renders the sentinel as
-      // plain text. This short-circuit is the single rendering entry
-      // point for scorecards in groups.
+      // `text` (user share-sheet). Decode before the stacked / bubble
+      // split so the scorecard renders as a true authored message via
+      // <ChatScorecardMessage> with full sender frame + display-mode
+      // alignment, not as a foreign full-width insert.
       if (item.kind === "system" || item.kind === "text") {
         const scorecardEarly = decodeScorecardText(item.text);
         if (scorecardEarly) {
+          const isOwn = item.senderId === uid;
+          const senderName = getSenderDisplayName(item);
+          const senderProfile = getSenderProfileInfo(item.senderId);
           return (
-            <View style={styles.scorecardContainer}>
-              <GameScorecard payload={scorecardEarly} />
-            </View>
+            <ChatScorecardMessage
+              message={item}
+              payload={scorecardEarly}
+              isOwn={isOwn}
+              displayMode={displayMode}
+              isGroupChat={true}
+              senderDisplayName={senderName}
+              senderProfilePictureUrl={senderProfile.profilePictureUrl}
+              senderDecorationId={senderProfile.decorationId}
+            />
           );
         }
       }
@@ -2866,11 +2875,6 @@ export default function GroupChatScreen({ route, navigation }: Props) {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  scorecardContainer: {
-    alignItems: "center",
-    marginVertical: 8,
-    paddingHorizontal: 8,
-  },
   chatBackground: {
     ...StyleSheet.absoluteFillObject,
     opacity: 1,

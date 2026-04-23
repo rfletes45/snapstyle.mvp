@@ -1265,14 +1265,17 @@ async function notifyFriendsBeatenByDeltas(
 // =============================================================================
 
 /**
- * Write a system message to `Groups/{groupId}/Messages` containing a
+ * Write a message to `Groups/{groupId}/Messages` containing a
  * `gameScorecard` payload clients can render inline.
  *
+ * The message is authored by the session **host** (not `system`) so it
+ * reads as a real in-chat message from the host — matching the manual
+ * share-sheet flow, where the scorecard is authored by the sharing user.
+ *
  * Deterministic doc id = `scorecard_{sessionId}` + `.create()` makes this
- * idempotent: a duplicate resolve/retry cannot double-post. The message is
- * intentionally `kind: "system"` so existing inbox / notification / read
- * watermark / group settings paths treat it like a member_joined style
- * row — no extra pipeline wiring needed.
+ * idempotent: a duplicate resolve/retry cannot double-post. `kind: "text"`
+ * lets the standard renderer's scorecard decode short-circuit mount the
+ * rich card — no special system-message wiring required.
  */
 async function postGameScorecardToGroup(
   db: FirebaseFirestore.Firestore,
@@ -1344,15 +1347,27 @@ async function postGameScorecardToGroup(
   const SCORECARD_SENTINEL = "[SCORECARD_V1]";
   const wireText = `${SCORECARD_SENTINEL}${JSON.stringify(scorecardPayload)}\n${fallbackText}`;
 
+  // Host identity — auto-posted multiplayer scorecards are authored by
+  // the session host so the message feels like a real post from that
+  // user. Fall back to the scoreboard entry (same uid) for displayName /
+  // avatar, then to the players slot, then to a safe default.
+  const hostId = session.hostId;
+  const hostScoreboardEntry = scoreboard.find((s) => s.uid === hostId) ?? null;
+  const hostPlayerSlot = session.players?.find((p) => p.uid === hostId) ?? null;
+  const hostDisplayName =
+    hostScoreboardEntry?.displayName ?? hostPlayerSlot?.displayName ?? "Player";
+
   // Shaped to align with `MessageV2` so the existing group subscribe /
-  // normalize / renderer path picks it up without changes.
+  // normalize / renderer path picks it up without changes. `kind: "text"`
+  // + the sentinel decode short-circuit makes the scorecard render as a
+  // native, sender-aligned in-chat message.
   const messageDoc = {
     id: messageId,
     scope: "group" as const,
     conversationId: groupId,
-    senderId: "system",
-    senderName: "SnapStyle",
-    kind: "system" as const,
+    senderId: hostId,
+    senderName: hostDisplayName,
+    kind: "text" as const,
     text: wireText,
     createdAt: createdAtMs,
     serverReceivedAt: createdAtMs,
@@ -1380,7 +1395,7 @@ async function postGameScorecardToGroup(
     await db.collection("Groups").doc(groupId).update({
       lastMessageText: fallbackText,
       lastMessageAt: createdAtMs,
-      lastMessageSenderId: "system",
+      lastMessageSenderId: hostId,
       updatedAt: createdAtMs,
     });
   } catch (err) {

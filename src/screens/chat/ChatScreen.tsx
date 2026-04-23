@@ -108,9 +108,9 @@ import {
   useComposerSheet,
   useDismissTransientUiOnBlur,
 } from "@/contexts/ComposerSheetContext";
+import { ChatScorecardMessage } from "@/gamesV4/components/ChatScorecardMessage";
 import { PinnedInviteBar } from "@/gamesV4/components/PinnedInviteBar";
 import { createGameInvite } from "@/gamesV4/services/gameServiceV4";
-import GameScorecard from "@/gamesV4/components/GameScorecard";
 import { decodeScorecardText } from "@/gamesV4/services/scorecardWire";
 import type { GameId } from "@/gamesV4/types";
 import { useConversationDisplayMode } from "@/store/ConversationDisplayModeContext";
@@ -1585,10 +1585,40 @@ export default function ChatScreen({
       if (msg.kind === "system" || msg.kind === "text") {
         const scorecard = decodeScorecardText(msg.text);
         if (scorecard) {
+          // Render scorecard as a true authored chat message — full
+          // sender frame (avatar, name, timestamp), aligned for
+          // self/other, respecting current bubble/stacked display mode.
+          const isOwn = msg.senderId === uid;
+          const senderName = isOwn
+            ? profile?.displayName ||
+              profile?.username ||
+              currentFirebaseUser?.displayName ||
+              "You"
+            : friendProfile?.displayName ||
+              friendProfile?.username ||
+              msg.senderName ||
+              "Friend";
+          const senderPic = isOwn
+            ? ((profile as any)?.profilePicture?.url ?? null)
+            : (friendProfile?.profilePicture?.url ??
+              (friendProfile as any)?.profilePictureUrl ??
+              null);
+          const senderDeco = isOwn
+            ? ((profile as any)?.avatarDecoration?.decorationId ?? null)
+            : (friendProfile?.avatarDecoration?.decorationId ??
+              (friendProfile as any)?.decorationId ??
+              null);
           return (
-            <View style={dmScorecardStyles.container}>
-              <GameScorecard payload={scorecard} />
-            </View>
+            <ChatScorecardMessage
+              message={msg}
+              payload={scorecard}
+              isOwn={isOwn}
+              displayMode={displayMode}
+              isGroupChat={false}
+              senderDisplayName={senderName}
+              senderProfilePictureUrl={senderPic}
+              senderDecorationId={senderDeco}
+            />
           );
         }
       }
@@ -2027,14 +2057,6 @@ export default function ChatScreen({
 // ==========================================================================
 // Styles
 // ==========================================================================
-
-const dmScorecardStyles = StyleSheet.create({
-  container: {
-    alignItems: "center",
-    marginVertical: 8,
-    paddingHorizontal: 8,
-  },
-});
 
 const styles = StyleSheet.create({
   container: {
