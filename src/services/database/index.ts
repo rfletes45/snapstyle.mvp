@@ -21,7 +21,7 @@ const logger = createLogger("services/database/index");
 // =============================================================================
 
 const DATABASE_NAME = "snapstyle.db";
-const DATABASE_VERSION = 4;
+const DATABASE_VERSION = 5;
 
 function hasSharedArrayBufferSupport(): boolean {
   return typeof SharedArrayBuffer !== "undefined";
@@ -118,6 +118,14 @@ export function closeDatabase(): void {
 // Schema Initialization
 // =============================================================================
 
+function tableExists(database: SQLiteDatabase, name: string): boolean {
+  const row = database.getFirstSync<{ name: string }>(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+    [name],
+  );
+  return !!row;
+}
+
 function initializeSchema(database: SQLiteDatabase): void {
   const currentVersion =
     database.getFirstSync<{ user_version: number }>("PRAGMA user_version")
@@ -195,6 +203,30 @@ function initializeSchema(database: SQLiteDatabase): void {
     }
   }
 
+  // ---- Migration from v4 → v5: add client_id column ----
+  // The scorecard trust gate keys off `client_id` (server-authored
+  // messages have `"server"` or `"server-share:*"`). Without this
+  // column the local cache always hydrates `clientId: ""`, which
+  // makes the renderer treat every server-authored scorecard as
+  // unverified plain text — leaking the raw sentinel + JSON
+  // (including profile-picture URLs) into the chat bubble.
+  //
+  // Run unconditionally (idempotent via duplicate-column catch) so
+  // legacy databases with stale `user_version = 0` — which predate
+  // the version-tracking system — still receive the column instead
+  // of being silently skipped by a version-range guard.
+  if (tableExists(database, "messages")) {
+    try {
+      database.execSync(`ALTER TABLE messages ADD COLUMN client_id TEXT;`);
+      logger.info("[Database] Ensured client_id column on messages");
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (!msg.includes("duplicate column")) {
+        throw e;
+      }
+    }
+  }
+
   if (currentVersion < DATABASE_VERSION) {
     database.execSync(`
       -- Conversations table
@@ -242,6 +274,7 @@ function initializeSchema(database: SQLiteDatabase): void {
         sync_status TEXT DEFAULT 'pending' CHECK(sync_status IN ('pending', 'synced', 'failed', 'conflict')),
         sync_error TEXT,
         retry_count INTEGER DEFAULT 0,
+        client_id TEXT,
         FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
       );
 

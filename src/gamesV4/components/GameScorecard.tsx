@@ -26,6 +26,8 @@
  * @module gamesV4/components/GameScorecard
  */
 
+import CosmeticImage from "@/components/CosmeticImage";
+import { getCosmeticAsset } from "@/cosmetics/assetRegistry";
 import UserAvatar from "@/gamesV4/components/UserAvatar";
 import { SCOREBOARD_DESCRIPTORS } from "@/gamesV4/constants";
 import type { GameScorecardPayload } from "@/gamesV4/types";
@@ -118,42 +120,123 @@ export const GameScorecard: React.FC<GameScorecardProps> = ({
   // Multiplayer 1v1 → VS layout. Multiplayer 3+ → compact list fallback.
   const isOneVOne = !isSolo && ordered.length === 2;
 
+  // Personalization: backgrounds differ by card type.
+  //  • Solo  → sender's equipped background (the card *is* the sender's
+  //           run, regardless of win/loss). Always read from the payload's
+  //           `senderEquippedBackgroundId`.
+  //  • Multi → winner's equipped background, when there's exactly one
+  //           winner. Falls back to neutral surface for draws / ties.
+  // In either branch, a missing/unresolved asset cleanly drops back to
+  // the default white surface.
+  const personalBgId = isSolo
+    ? (payload.senderEquippedBackgroundId ?? null)
+    : (payload.winnerEquippedBackgroundId ?? null);
+  const personalBgSource = personalBgId
+    ? getCosmeticAsset("background", personalBgId)
+    : null;
+  const hasBg = !!personalBgSource;
+
+  // Text colors flip to white-on-scrim when a background image is present.
+  const onBgPrimary = "#FFFFFF";
+  const onBgSecondary = "rgba(255,255,255,0.85)";
+  const onBgMuted = "rgba(255,255,255,0.7)";
+
+  // Solo-mode border assignment (user-requested visual):
+  //  • Top header box   → COLORED border (win/loss/draw headlineColor)
+  //  • Bottom hero row  → GREY neutral border
+  // For non-solo modes the header has no explicit border and we don't
+  // want to introduce one, so we gate both overrides on `isSolo`.
+  const headerBorderStyle = isSolo
+    ? {
+        borderWidth: 1.5,
+        borderColor: `${headlineColor}88`,
+        borderRadius: 10,
+        paddingHorizontal: 10,
+        paddingTop: 8,
+        paddingBottom: 8,
+        marginBottom: 10,
+      }
+    : null;
+  const heroGreyBorder = hasBg ? "rgba(255,255,255,0.22)" : "rgba(0,0,0,0.12)";
+
   return (
     <View
-      style={[styles.card, { borderColor: `${headlineColor}55` }]}
+      style={[
+        styles.card,
+        hasBg
+          ? { borderColor: `${headlineColor}55`, backgroundColor: "#1C1C1E" }
+          : { borderColor: `${headlineColor}55` },
+      ]}
       testID="game-scorecard"
     >
-      {/* Top: large outcome emphasis. */}
-      <Text
-        style={[styles.headline, { color: headlineColor }]}
-        numberOfLines={1}
-      >
-        {headline}
-      </Text>
-
-      {/* `{gameTitle} \u00B7 {statusText}` single line. */}
-      <Text style={styles.titleLine} numberOfLines={1}>
-        <Text style={styles.titleGame}>{payload.gameTitle}</Text>
-        <Text style={styles.titleDot}>{" \u00B7 "}</Text>
-        <Text style={[styles.titleStatus, { color: headlineColor }]}>
-          {statusText}
-        </Text>
-      </Text>
-
-      {durationText ? (
-        <Text style={styles.durationLine} numberOfLines={1}>
-          {durationText}
-        </Text>
+      {/* Personalized winner background (absolute fill, behind content). */}
+      {hasBg ? (
+        <>
+          <CosmeticImage
+            source={personalBgSource}
+            style={StyleSheet.absoluteFillObject}
+            debugLabel="scorecard-personal-bg"
+            transition={0}
+          />
+          {/* Dark scrim for global legibility. */}
+          <View style={styles.bgScrim} pointerEvents="none" />
+        </>
       ) : null}
+
+      {/* Glass panel behind the game text area (headline / title / duration). */}
+      <View
+        style={[
+          hasBg ? styles.headerGlass : styles.headerPlain,
+          headerBorderStyle,
+        ]}
+      >
+        <Text
+          style={[styles.headline, { color: headlineColor }]}
+          numberOfLines={1}
+        >
+          {headline}
+        </Text>
+
+        {/* `{gameTitle} \u00B7 {statusText}` single line. */}
+        <Text style={styles.titleLine} numberOfLines={1}>
+          <Text
+            style={[styles.titleGame, hasBg ? { color: onBgPrimary } : null]}
+          >
+            {payload.gameTitle}
+          </Text>
+          <Text
+            style={[styles.titleDot, hasBg ? { color: onBgSecondary } : null]}
+          >
+            {" \u00B7 "}
+          </Text>
+          <Text style={[styles.titleStatus, { color: headlineColor }]}>
+            {statusText}
+          </Text>
+        </Text>
+
+        {durationText ? (
+          <Text
+            style={[
+              styles.durationLine,
+              hasBg ? { color: onBgMuted, marginBottom: 0 } : null,
+            ]}
+            numberOfLines={1}
+          >
+            {durationText}
+          </Text>
+        ) : null}
+      </View>
 
       {/* Body — solo hero / 1v1 VS / multi-list fallback. */}
       {isSolo && heroEntry ? (
         <SoloHeroRow
           entry={heroEntry}
           color={headlineColor}
+          borderColor={heroGreyBorder}
           won={!!soloPlayerWon}
           isWinner={!!winnerEntry && heroEntry.uid === winnerEntry.uid}
           formatScore={formatScore}
+          hasBg={hasBg}
         />
       ) : isOneVOne ? (
         <VsLayout
@@ -161,6 +244,7 @@ export const GameScorecard: React.FC<GameScorecardProps> = ({
           right={ordered[1]}
           winnerIdSet={winnerIdSet}
           isDraw={isDraw}
+          hasBg={hasBg}
         />
       ) : (
         <MultiListLayout
@@ -168,6 +252,7 @@ export const GameScorecard: React.FC<GameScorecardProps> = ({
           winnerIdSet={winnerIdSet}
           isDraw={isDraw}
           formatScore={formatScore}
+          hasBg={hasBg}
         />
       )}
     </View>
@@ -189,12 +274,18 @@ interface ScoreEntry {
 const SoloHeroRow: React.FC<{
   entry: ScoreEntry;
   color: string;
+  /** Grey/neutral border applied to the hero row frame (see solo-mode
+   *  border split: top header = colored, bottom hero = grey). */
+  borderColor: string;
   won: boolean;
   isWinner: boolean;
   formatScore: (n: number) => string;
-}> = ({ entry, color, won, isWinner, formatScore }) => {
+  hasBg: boolean;
+}> = ({ entry, color, borderColor, won, isWinner, formatScore, hasBg }) => {
   return (
-    <View style={[styles.heroRow, { borderColor: `${color}55` }]}>
+    <View
+      style={[hasBg ? styles.heroRowGlass : styles.heroRow, { borderColor }]}
+    >
       <View style={styles.heroAvatarCol}>
         <UserAvatar
           uid={entry.uid}
@@ -212,10 +303,20 @@ const SoloHeroRow: React.FC<{
         ) : null}
       </View>
       <View style={{ flex: 1, marginLeft: 10 }}>
-        <Text style={styles.heroName} numberOfLines={1}>
+        <Text
+          style={[styles.heroName, hasBg ? { color: "#FFFFFF" } : null]}
+          numberOfLines={1}
+        >
           {entry.displayName}
         </Text>
-        <Text style={styles.heroLabel}>{won ? "Winner" : "Final Score"}</Text>
+        <Text
+          style={[
+            styles.heroLabel,
+            hasBg ? { color: "rgba(255,255,255,0.75)" } : null,
+          ]}
+        >
+          {won ? "Winner" : "Final Score"}
+        </Text>
       </View>
       <Text style={[styles.heroScore, { color }]}>
         {formatScore(entry.score)}
@@ -229,14 +330,25 @@ const VsLayout: React.FC<{
   right: ScoreEntry;
   winnerIdSet: Set<string>;
   isDraw: boolean;
-}> = ({ left, right, winnerIdSet, isDraw }) => {
+  hasBg: boolean;
+}> = ({ left, right, winnerIdSet, isDraw, hasBg }) => {
   return (
     <View style={styles.vsRow}>
-      <PlayerVsBox entry={left} winnerIdSet={winnerIdSet} isDraw={isDraw} />
+      <PlayerVsBox
+        entry={left}
+        winnerIdSet={winnerIdSet}
+        isDraw={isDraw}
+        hasBg={hasBg}
+      />
       <View style={styles.vsTextWrap}>
         <Text style={styles.vsText}>VS</Text>
       </View>
-      <PlayerVsBox entry={right} winnerIdSet={winnerIdSet} isDraw={isDraw} />
+      <PlayerVsBox
+        entry={right}
+        winnerIdSet={winnerIdSet}
+        isDraw={isDraw}
+        hasBg={hasBg}
+      />
     </View>
   );
 };
@@ -245,19 +357,25 @@ const PlayerVsBox: React.FC<{
   entry: ScoreEntry;
   winnerIdSet: Set<string>;
   isDraw: boolean;
-}> = ({ entry, winnerIdSet, isDraw }) => {
+  hasBg: boolean;
+}> = ({ entry, winnerIdSet, isDraw, hasBg }) => {
   const won = winnerIdSet.has(entry.uid);
   const color = isDraw ? COLORS.draw : won ? COLORS.win : COLORS.loss;
   const label = isDraw ? "Draw" : won ? "Win" : "Loss";
   return (
-    <View style={[styles.vsBox, { borderColor: color }]}>
+    <View
+      style={[hasBg ? styles.vsBoxGlass : styles.vsBox, { borderColor: color }]}
+    >
       <UserAvatar
         uid={entry.uid}
         displayName={entry.displayName}
         profilePictureUrl={entry.profilePictureUrl ?? null}
         size={48}
       />
-      <Text style={styles.vsName} numberOfLines={1}>
+      <Text
+        style={[styles.vsName, hasBg ? { color: "#FFFFFF" } : null]}
+        numberOfLines={1}
+      >
         {entry.displayName}
       </Text>
       <Text style={[styles.vsResult, { color }]}>{label}</Text>
@@ -270,9 +388,10 @@ const MultiListLayout: React.FC<{
   winnerIdSet: Set<string>;
   isDraw: boolean;
   formatScore: (n: number) => string;
-}> = ({ entries, winnerIdSet, isDraw, formatScore }) => {
+  hasBg: boolean;
+}> = ({ entries, winnerIdSet, isDraw, formatScore, hasBg }) => {
   return (
-    <View style={styles.playersList}>
+    <View style={hasBg ? styles.playersListGlass : styles.playersList}>
       {entries.map((entry) => {
         const won = winnerIdSet.has(entry.uid);
         const color = isDraw && won ? COLORS.draw : won ? COLORS.win : null;
@@ -284,11 +403,20 @@ const MultiListLayout: React.FC<{
               profilePictureUrl={entry.profilePictureUrl ?? null}
               size={28}
             />
-            <Text style={styles.playerName} numberOfLines={1}>
+            <Text
+              style={[styles.playerName, hasBg ? { color: "#FFFFFF" } : null]}
+              numberOfLines={1}
+            >
               {entry.displayName}
               {isDraw && won ? " (Draw)" : ""}
             </Text>
-            <Text style={[styles.playerScore, color ? { color } : null]}>
+            <Text
+              style={[
+                styles.playerScore,
+                hasBg ? { color: "#FFFFFF" } : null,
+                color ? { color } : null,
+              ]}
+            >
               {formatScore(entry.score)}
             </Text>
           </View>
@@ -329,6 +457,26 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 2,
   },
+  bgScrim: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.32)",
+  },
+  // Translucent "glass" panel behind game text when a winner background is present.
+  headerGlass: {
+    backgroundColor: "rgba(20,20,20,0.72)",
+    borderWidth: 1.5,
+    borderColor: "rgba(255,255,255,0.28)",
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingTop: 8,
+    paddingBottom: 8,
+    marginBottom: 10,
+  },
+  // Plain (non-glass) header wrapper used when there is no winner background.
+  // Zero padding/margin so the existing layout is byte-for-byte unchanged.
+  headerPlain: {
+    marginBottom: 0,
+  },
   headline: {
     fontSize: 19,
     fontWeight: "800",
@@ -364,6 +512,21 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     padding: 8,
     marginTop: 4,
+    // Always solid — must NOT inherit the winner background image.
+    backgroundColor: "#FFFFFF",
+  },
+  // Solo hero, glass variant — matches `headerGlass` so the pfp/name/
+  // score section visually pairs with the top text card when a
+  // personalized profile background is painted behind the scorecard.
+  heroRowGlass: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: 10,
+    padding: 8,
+    marginTop: 4,
+    backgroundColor: "rgba(20,20,20,0.72)",
+    borderWidth: 1.75,
+    borderColor: "rgba(255,255,255,0.32)",
   },
   heroAvatarCol: {
     width: 40,
@@ -407,7 +570,21 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 6,
     alignItems: "center",
-    backgroundColor: "rgba(0,0,0,0.015)",
+    // Always solid — user info boxes must remain solid surfaces and not
+    // visually inherit the winner background.
+    backgroundColor: "#FFFFFF",
+  },
+  // Glass variant applied when a winner background is painted behind
+  // the card. Semi-transparent black backing keeps the text legible
+  // over the background image.
+  vsBoxGlass: {
+    flex: 1,
+    borderWidth: 1.5,
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 6,
+    alignItems: "center",
+    backgroundColor: "rgba(20,20,20,0.72)",
   },
   vsName: {
     fontSize: 12,
@@ -430,14 +607,31 @@ const styles = StyleSheet.create({
   vsText: {
     fontSize: 13,
     fontWeight: "800",
-    color: "#8E8E93",
+    color: "#FFFFFF",
     letterSpacing: 1,
+    textShadowColor: "rgba(0,0,0,0.55)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
   },
 
   // 3+ player fallback list
   playersList: {
     gap: 4,
     marginTop: 4,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 10,
+    padding: 8,
+  },
+  // Glass variant — semi-transparent black backing for legibility over
+  // a personalized profile-background image.
+  playersListGlass: {
+    gap: 4,
+    marginTop: 4,
+    backgroundColor: "rgba(20,20,20,0.72)",
+    borderWidth: 1.5,
+    borderColor: "rgba(255,255,255,0.28)",
+    borderRadius: 10,
+    padding: 8,
   },
   playerRow: {
     flexDirection: "row",

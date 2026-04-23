@@ -106,6 +106,14 @@ export interface SendMessageParams {
    * Stamped on each message so recipients can render sender styling.
    */
   senderStyle?: SenderStyle;
+
+  /**
+   * Game-scorecard structured payload. Present ONLY when this message
+   * is a trusted scorecard share. The server validates the shape,
+   * stamps a trusted `clientId`, and rebuilds the wire text — any
+   * text the caller passes is ignored for scorecard sends.
+   */
+  scorecardPayload?: import("@/gamesV4/types").GameScorecardPayload;
 }
 
 /**
@@ -146,6 +154,7 @@ interface SendMessageV2Params {
   messageId: string;
   createdAt?: number;
   traceId?: string;
+  scorecardPayload?: import("@/gamesV4/types").GameScorecardPayload;
   senderDeviceId?: string;
   senderStyle?: {
     bubbleColorId?: string | null;
@@ -247,6 +256,7 @@ export async function sendMessage(
         traceId: outboxItem.traceId,
         senderStyle: params.senderStyle,
         senderDeviceId,
+        scorecardPayload: params.scorecardPayload,
       });
 
       if (!result.success) {
@@ -347,8 +357,7 @@ export async function getPendingForConversation(
 ): Promise<OutboxItem[]> {
   const pending = await getPendingItems();
   return pending.filter(
-    (item) =>
-      item.scope === scope && item.conversationId === conversationId,
+    (item) => item.scope === scope && item.conversationId === conversationId,
   );
 }
 
@@ -380,8 +389,7 @@ export async function getFailedMessages(): Promise<OutboxItem[]> {
 // Utility Functions
 // =============================================================================
 
-export { generateMessageId };
-export { getClientId };
+export { generateMessageId, getClientId };
 
 // =============================================================================
 // Re-export types

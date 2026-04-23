@@ -602,6 +602,34 @@ interface SendMessageV2Input {
     animalThemeId?: string | null;
     v: 1;
   };
+  /**
+   * Trusted game-scorecard share payload. When present the server
+   * validates the schema, overrides `text` with a generic label, and
+   * stamps the message with `clientId: server-share:{senderId}` so the
+   * renderer will trust-decode it as a rich scorecard. This is the
+   * ONLY client path that can produce a rendered scorecard — raw
+   * sentinel text sent via `text` is rejected.
+   */
+  scorecardPayload?: {
+    v: 1;
+    sessionId: string;
+    gameId: string;
+    gameTitle: string;
+    runtimeType: string;
+    resolutionType: string;
+    winnerIds: string[];
+    scoreboard: Array<{
+      uid: string;
+      displayName: string;
+      profilePictureUrl?: string | null;
+      score: number;
+      placement?: number;
+    }>;
+    durationMs?: number;
+    createdAt?: number;
+    winnerEquippedBackgroundId?: string | null;
+    senderEquippedBackgroundId?: string | null;
+  };
 }
 
 interface SendMessageV2Response {
@@ -658,6 +686,7 @@ export const sendMessageV2 = functions.https.onCall(
       senderStyle,
       animalId,
       senderDeviceId,
+      scorecardPayload,
     } = data;
 
     // Segment 8: Log traceId if present (for cross-system correlation)
@@ -706,6 +735,16 @@ export const sendMessageV2 = functions.https.onCall(
       );
     }
 
+    // Security: clients cannot impersonate server-authored messages by
+    // sending a `server*` clientId. The renderer's scorecard trust gate
+    // keys off this prefix, so we must guard it at ingress.
+    if (clientId === "server" || clientId.startsWith("server-share:")) {
+      throw new functions.https.HttpsError(
+        "invalid-argument",
+        "Reserved clientId",
+      );
+    }
+
     if (!isValidString(messageId, 1, 100)) {
       throw new functions.https.HttpsError(
         "invalid-argument",
@@ -718,6 +757,124 @@ export const sendMessageV2 = functions.https.onCall(
       throw new functions.https.HttpsError(
         "invalid-argument",
         "Text content too long (max 10000 chars)",
+      );
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // Scorecard trust gate
+    // ─────────────────────────────────────────────────────────────────
+    // Scorecards are privacy- and authenticity-sensitive. The renderer
+    // only decodes the sentinel when `clientId` is server-authored, so
+    // we must (a) reject any attempt to sneak the sentinel into a
+    // plain user-sent text message (spoofing), and (b) accept only a
+    // validated structured `scorecardPayload`, which we ourselves
+    // re-encode and stamp with the trusted clientId prefix.
+    const SCORECARD_SENTINEL = "[SCORECARD_V1]";
+    let trustedScorecardClientId: string | null = null;
+    let overriddenText: string | null = null;
+
+    if (scorecardPayload) {
+      // Structural validation. We deliberately rebuild the payload
+      // ourselves from primitives so untrusted fields can't leak into
+      // the stored document.
+      const sp = scorecardPayload as Record<string, unknown>;
+      const scoreboardRaw = Array.isArray(sp.scoreboard) ? sp.scoreboard : [];
+      const winnerIdsRaw = Array.isArray(sp.winnerIds) ? sp.winnerIds : [];
+      const valid =
+        sp.v === 1 &&
+        typeof sp.sessionId === "string" &&
+        sp.sessionId.length > 0 &&
+        sp.sessionId.length <= 128 &&
+        typeof sp.gameId === "string" &&
+        sp.gameId.length > 0 &&
+        sp.gameId.length <= 64 &&
+        typeof sp.gameTitle === "string" &&
+        sp.gameTitle.length > 0 &&
+        sp.gameTitle.length <= 128 &&
+        typeof sp.runtimeType === "string" &&
+        sp.runtimeType.length <= 32 &&
+        typeof sp.resolutionType === "string" &&
+        sp.resolutionType.length <= 32 &&
+        winnerIdsRaw.length <= 32 &&
+        scoreboardRaw.length > 0 &&
+        scoreboardRaw.length <= 32 &&
+        winnerIdsRaw.every((u) => typeof u === "string" && u.length <= 128) &&
+        scoreboardRaw.every((e) => {
+          if (!e || typeof e !== "object") return false;
+          const entry = e as Record<string, unknown>;
+          return (
+            typeof entry.uid === "string" &&
+            entry.uid.length > 0 &&
+            entry.uid.length <= 128 &&
+            typeof entry.displayName === "string" &&
+            entry.displayName.length <= 128 &&
+            typeof entry.score === "number" &&
+            isFinite(entry.score)
+          );
+        });
+
+      if (!valid) {
+        throw new functions.https.HttpsError(
+          "invalid-argument",
+          "Invalid scorecardPayload",
+        );
+      }
+
+      // Re-serialize. This is the sole path by which a sentinel-prefixed
+      // text can land in Firestore from a client call, and we build it
+      // ourselves from validated primitives only.
+      const cleanPayload = {
+        v: 1,
+        sessionId: sp.sessionId as string,
+        gameId: sp.gameId as string,
+        gameTitle: sp.gameTitle as string,
+        runtimeType: sp.runtimeType as string,
+        resolutionType: sp.resolutionType as string,
+        winnerIds: winnerIdsRaw as string[],
+        scoreboard: scoreboardRaw.map((e) => {
+          const entry = e as Record<string, unknown>;
+          return {
+            uid: entry.uid as string,
+            displayName: entry.displayName as string,
+            profilePictureUrl:
+              typeof entry.profilePictureUrl === "string"
+                ? entry.profilePictureUrl
+                : null,
+            score: entry.score as number,
+            ...(typeof entry.placement === "number"
+              ? { placement: entry.placement }
+              : {}),
+          };
+        }),
+        ...(typeof sp.durationMs === "number"
+          ? { durationMs: sp.durationMs }
+          : {}),
+        ...(typeof sp.createdAt === "number"
+          ? { createdAt: sp.createdAt }
+          : {}),
+        winnerEquippedBackgroundId:
+          typeof sp.winnerEquippedBackgroundId === "string"
+            ? sp.winnerEquippedBackgroundId
+            : null,
+        // Preserve sender-equipped background ID. Solo scorecards
+        // personalize from this field regardless of win/loss so the
+        // card always shows the sender's profile background.
+        senderEquippedBackgroundId:
+          typeof sp.senderEquippedBackgroundId === "string"
+            ? sp.senderEquippedBackgroundId
+            : null,
+      };
+      overriddenText = `${SCORECARD_SENTINEL}${JSON.stringify(
+        cleanPayload,
+      )}\nGame Scorecard`;
+      trustedScorecardClientId = `server-share:${senderId}`;
+    } else if (text && text.startsWith(SCORECARD_SENTINEL)) {
+      // No structured payload but the text begins with the scorecard
+      // sentinel — this is a spoofing attempt (a regular user trying to
+      // fake a game result by pasting scorecard text). Reject.
+      throw new functions.https.HttpsError(
+        "invalid-argument",
+        "Scorecard messages must be sent via the structured scorecard payload",
       );
     }
 
@@ -956,6 +1113,15 @@ export const sendMessageV2 = functions.https.onCall(
     };
     const legacyType = legacyTypeMap[kind] || "text";
 
+    // Scorecard override — when the caller supplied a validated
+    // `scorecardPayload`, the server-authored wire text + trusted
+    // clientId supersede whatever the client sent.
+    const effectiveText = overriddenText !== null ? overriddenText : text || "";
+    const effectiveClientId = trustedScorecardClientId ?? clientId;
+    const effectiveIdempotencyKey = trustedScorecardClientId
+      ? `${trustedScorecardClientId}:${messageId}`
+      : idempotencyKey;
+
     const messageData: Record<string, unknown> = {
       id: messageId,
       scope,
@@ -963,16 +1129,16 @@ export const sendMessageV2 = functions.https.onCall(
       // New unified field names
       senderId,
       kind,
-      text: text || "",
+      text: effectiveText,
       // Legacy field names for backward compatibility with groups.ts subscription
       sender: senderId,
       type: legacyType,
-      content: text || "",
+      content: effectiveText,
       // Timestamps
       createdAt: createdAt || serverNow,
       serverReceivedAt: admin.firestore.FieldValue.serverTimestamp(),
-      idempotencyKey,
-      clientId,
+      idempotencyKey: effectiveIdempotencyKey,
+      clientId: effectiveClientId,
       // Segment 8: Include traceId in message doc for debugging/correlation
       ...(traceId ? { traceId: logTraceId } : {}),
       // Stamp the sender's stable device ID so notification triggers can

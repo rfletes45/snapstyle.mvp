@@ -27,8 +27,8 @@
 
 import { AppImage } from "@/components/AppImage";
 import { ProfilePictureWithDecoration } from "@/components/profile/ProfilePicture";
+import { SCORECARD_VISIBLE_TEXT } from "@/gamesV4/services/scorecardWire";
 import type { GameScorecardPayload } from "@/gamesV4/types";
-import { encodeScorecardText } from "@/gamesV4/services/scorecardWire";
 import { isDMVisible } from "@/services/chatMembers";
 import { getFirestoreInstance } from "@/services/firebase";
 import { getUserProfileByUid } from "@/services/friends";
@@ -45,7 +45,13 @@ import {
   query,
   where,
 } from "firebase/firestore";
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -102,7 +108,9 @@ export function ScorecardShareSheetModal({
   const { currentFirebaseUser } = useAuth();
   const uid = currentFirebaseUser?.uid;
 
-  const [conversations, setConversations] = useState<ResolvedConversation[]>([]);
+  const [conversations, setConversations] = useState<ResolvedConversation[]>(
+    [],
+  );
   const [loading, setLoading] = useState(true);
   const [searchText, setSearchText] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -129,7 +137,10 @@ export function ScorecardShareSheetModal({
 
         // ---- DMs ----
         const dmSnap = await getDocs(
-          query(collection(db, "Chats"), where("members", "array-contains", uid)),
+          query(
+            collection(db, "Chats"),
+            where("members", "array-contains", uid),
+          ),
         );
 
         const dmPromises = dmSnap.docs.map(async (chatDoc) => {
@@ -142,7 +153,9 @@ export function ScorecardShareSheetModal({
           const memberState = privateSnap.exists() ? privateSnap.data() : null;
           if (!isDMVisible(memberState as any)) return null;
 
-          const otherUid = (chatData.members as string[])?.find((m) => m !== uid);
+          const otherUid = (chatData.members as string[])?.find(
+            (m) => m !== uid,
+          );
           let displayName = "Unknown";
           let profilePictureUrl: string | null = null;
           let decorationId: string | null = null;
@@ -151,7 +164,8 @@ export function ScorecardShareSheetModal({
             try {
               const profile = await getUserProfileByUid(otherUid);
               if (profile) {
-                displayName = profile.displayName || profile.username || displayName;
+                displayName =
+                  profile.displayName || profile.username || displayName;
                 profilePictureUrl = profile.profilePicture?.url ?? null;
                 decorationId =
                   profile.avatarDecoration?.equippedId ??
@@ -185,7 +199,10 @@ export function ScorecardShareSheetModal({
 
         // ---- Groups ----
         const groupSnap = await getDocs(
-          query(collection(db, "Groups"), where("memberIds", "array-contains", uid)),
+          query(
+            collection(db, "Groups"),
+            where("memberIds", "array-contains", uid),
+          ),
         );
 
         const groupPromises = groupSnap.docs.map(async (groupDoc) => {
@@ -223,7 +240,10 @@ export function ScorecardShareSheetModal({
 
         if (!cancelled) setConversations(resolved);
       } catch (err) {
-        console.error("[ScorecardShareSheet] Error loading conversations:", err);
+        console.error(
+          "[ScorecardShareSheet] Error loading conversations:",
+          err,
+        );
         if (!cancelled) setConversations([]);
       } finally {
         if (!cancelled) setLoading(false);
@@ -262,12 +282,15 @@ export function ScorecardShareSheetModal({
     if (!payload || sendingRef.current) return;
     if (selected.size === 0) return;
 
-    const wireText = encodeScorecardText(payload, fallbackText);
     const targets = conversations.filter((c) => selected.has(c.id));
 
     sendingRef.current = true;
     setSending(true);
 
+    // Structured payload — the server validates the shape, stamps a
+    // trusted `server-share:{uid}` clientId, and rebuilds the wire
+    // text itself. The `text` field we pass here is only the generic
+    // visible label; the server overrides it on accept.
     const outcomes = await Promise.all(
       targets.map(async (target) => {
         try {
@@ -275,7 +298,8 @@ export function ScorecardShareSheetModal({
             scope: target.scope,
             conversationId: target.id,
             kind: "text",
-            text: wireText,
+            text: SCORECARD_VISIBLE_TEXT,
+            scorecardPayload: payload,
           });
           // Outbox-backed send: the inner promise resolves to {success}. If
           // we don't await it here the UI would dismiss before the network
@@ -283,11 +307,7 @@ export function ScorecardShareSheetModal({
           const res = await handle.sendPromise;
           return res.success;
         } catch (err) {
-          console.warn(
-            "[ScorecardShareSheet] send failed for",
-            target.id,
-            err,
-          );
+          console.warn("[ScorecardShareSheet] send failed for", target.id, err);
           return false;
         }
       }),
@@ -300,7 +320,7 @@ export function ScorecardShareSheetModal({
     setSending(false);
     onComplete?.({ successes, failures });
     onClose();
-  }, [payload, fallbackText, conversations, selected, onComplete, onClose]);
+  }, [payload, conversations, selected, onComplete, onClose]);
 
   // ---------------------------------------------------------------------------
   // Colors
@@ -377,7 +397,9 @@ export function ScorecardShareSheetModal({
             styles.checkbox,
             {
               borderColor: isSelected ? theme.colors.primary : borderColor,
-              backgroundColor: isSelected ? theme.colors.primary : "transparent",
+              backgroundColor: isSelected
+                ? theme.colors.primary
+                : "transparent",
             },
           ]}
         >
@@ -502,9 +524,7 @@ export function ScorecardShareSheetModal({
                   <MaterialCommunityIcons
                     name="send"
                     size={18}
-                    color={
-                      selected.size > 0 ? "#FFF" : subtextColor
-                    }
+                    color={selected.size > 0 ? "#FFF" : subtextColor}
                   />
                   <Text
                     style={[

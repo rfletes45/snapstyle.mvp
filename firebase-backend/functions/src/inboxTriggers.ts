@@ -30,6 +30,11 @@ function getDb() {
  * Build a short preview string for the inbox entry.
  */
 function buildPreview(kind: string, text?: string): string {
+  // Scorecards embed a JSON sentinel in their `text` field. Never leak
+  // that into the inbox preview — substitute the generic label.
+  if (text && text.startsWith("[SCORECARD_V1]")) {
+    return "Game Scorecard";
+  }
   if (kind === "text" && text) {
     return text.length > 80 ? text.substring(0, 80) + "…" : text;
   }
@@ -208,7 +213,8 @@ export const onGroupMessageInbox = functions.firestore
       const groupName: string = groupDoc.data()?.name || "Group Chat";
       const avatarPath: string = groupDoc.data()?.avatarPath || "";
       const avatarUrl: string = groupDoc.data()?.avatarUrl || "";
-      const backgroundUrl: string | null = groupDoc.data()?.backgroundUrl || null;
+      const backgroundUrl: string | null =
+        groupDoc.data()?.backgroundUrl || null;
 
       // Fetch all member UIDs
       const memberUids = await getGroupMemberUids(groupId);

@@ -206,7 +206,7 @@ import {
   useDismissTransientUiOnBlur,
 } from "@/contexts/ComposerSheetContext";
 import { ChatScorecardMessage } from "@/gamesV4/components/ChatScorecardMessage";
-import { decodeScorecardText } from "@/gamesV4/services/scorecardWire";
+import { getTrustedScorecardPayload } from "@/gamesV4/services/scorecardWire";
 import { useAnimalEntitlement } from "@/hooks/useAnimalEntitlement";
 import { useConversationDisplayMode } from "@/store/ConversationDisplayModeContext";
 
@@ -1943,32 +1943,19 @@ export default function GroupChatScreen({ route, navigation }: Props) {
 
       const item = timelineItem.data;
 
-      // ── Scorecard short-circuit ────────────────────────────────────
-      // Scorecards ride inside either `system` (backend auto-post) or
-      // `text` (user share-sheet). Decode before the stacked / bubble
-      // split so the scorecard renders as a true authored message via
-      // <ChatScorecardMessage> with full sender frame + display-mode
-      // alignment, not as a foreign full-width insert.
-      if (item.kind === "system" || item.kind === "text") {
-        const scorecardEarly = decodeScorecardText(item.text);
-        if (scorecardEarly) {
-          const isOwn = item.senderId === uid;
-          const senderName = getSenderDisplayName(item);
-          const senderProfile = getSenderProfileInfo(item.senderId);
-          return (
-            <ChatScorecardMessage
-              message={item}
-              payload={scorecardEarly}
-              isOwn={isOwn}
-              displayMode={displayMode}
-              isGroupChat={true}
-              senderDisplayName={senderName}
-              senderProfilePictureUrl={senderProfile.profilePictureUrl}
-              senderDecorationId={senderProfile.decorationId}
-            />
-          );
-        }
-      }
+      // Decode scorecard payload once. The full first-class render
+      // (with gestures, grouping, reactions) happens after neighbor +
+      // reaction computation below so scorecards participate in the
+      // same pipeline as regular messages.
+      // Trust gate — scorecards only render when server-authored (see
+      // `getTrustedScorecardPayload`). Client-sent sentinel text is
+      // rejected at the server ingress, and any in-flight legacy row is
+      // treated as plain text here. Privacy sanitization for copy,
+      // reply-snippet and notifications lives downstream.
+      const scorecardPayload =
+        item.kind === "system" || item.kind === "text"
+          ? getTrustedScorecardPayload(item)
+          : null;
 
       const isOwnMessage = item.senderId === uid;
       // Use precomputed grouping from buildTimeline
@@ -2005,6 +1992,42 @@ export default function GroupChatScreen({ route, navigation }: Props) {
           fallbackReactionsRef.current.set(item.id, parsed);
           return parsed;
         })();
+
+      // ── Scorecard branch ───────────────────────────────────────────
+      // Render the scorecard as a first-class chat message with full
+      // gesture + reply + reactions + grouping pipeline wired in.
+      if (scorecardPayload) {
+        return (
+          <AnimatedMessageRow
+            messageId={item.id}
+            shouldAnimateOnMount={
+              screen.chat.messageEnterAnimation.shouldAnimateOnMount
+            }
+          >
+            <ChatScorecardMessage
+              message={item}
+              payload={scorecardPayload}
+              isOwn={isOwnMessage}
+              displayMode={displayMode}
+              isGroupChat={true}
+              senderDisplayName={senderDisplayName}
+              senderProfilePictureUrl={senderProfile.profilePictureUrl}
+              senderDecorationId={senderProfile.decorationId}
+              conversationId={groupId}
+              currentUid={uid}
+              onReply={handleReply}
+              onLongPress={handleMessageLongPress}
+              onScrollToMessage={scrollToMessage}
+              reactions={renderedReactions}
+              onOptimisticReaction={handleOptimisticReaction}
+              onThreadPress={handleStackedThreadPress}
+              isHighlighted={item.id === highlightedMessageIdRef.current}
+              isGroupedWithPrevious={isGroupedWithPrev}
+              isGroupedWithNext={isGroupedWithNextMsg}
+            />
+          </AnimatedMessageRow>
+        );
+      }
 
       // ── Stacked mode branch ─────────────────────────────────────────
       if (displayMode === "stacked" && item.kind !== "system") {

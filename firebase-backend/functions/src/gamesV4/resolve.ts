@@ -1308,25 +1308,43 @@ async function postGameScorecardToGroup(
     placement: e.placement,
   }));
 
-  // Short text fallback surfaced in inboxes / notification previews
-  // for clients that don't yet render the scorecard payload.
-  let fallbackText: string;
-  if (result.resolutionType === "loss") {
-    fallbackText = `🎮 ${gameTitle} — Game over`;
-  } else if (
-    result.resolutionType === "draw" ||
-    result.winnerIds.length === 0
-  ) {
-    fallbackText = `🎮 ${gameTitle} — Draw`;
-  } else if (result.winnerIds.length === 1) {
-    const winner = scoreboard.find((s) => s.uid === result.winnerIds[0]);
-    fallbackText = `🎮 ${gameTitle} — ${winner?.displayName ?? "Winner"} won!`;
-  } else {
-    fallbackText = `🎮 ${gameTitle} — Game over`;
-  }
+  // Generic text surfaced in inboxes / notification previews / search /
+  // clipboard / reply-snippet — anywhere the rich scorecard card is NOT
+  // drawn. We deliberately do NOT include player names, winner names,
+  // scores, or game title here: scorecards are privacy-sensitive and
+  // leaking that content into previews/notifications is a hazard.
+  //
+  // The rich in-chat card reads its data from the JSON payload encoded
+  // on line 1 of `wireText`; the human-readable line 2 is only used by
+  // clients that don't yet know about scorecards.
+  const fallbackText = "Game Scorecard";
 
   const now = admin.firestore.Timestamp.now();
   const createdAtMs = now.toMillis();
+
+  // Personalization: when there is exactly one winner, fetch their
+  // equipped profile background id so the scorecard renderer can paint
+  // the card with the winner's profile background. We do a single user
+  // doc read (best-effort: a failure simply leaves the field null and
+  // the renderer falls back to the neutral default surface).
+  let winnerEquippedBackgroundId: string | null = null;
+  if (result.winnerIds.length === 1) {
+    try {
+      const winnerSnap = await db
+        .collection("Users")
+        .doc(result.winnerIds[0])
+        .get();
+      const winnerData = winnerSnap.data() as
+        | { equippedBackgroundId?: string | null }
+        | undefined;
+      winnerEquippedBackgroundId = winnerData?.equippedBackgroundId ?? null;
+    } catch (err) {
+      console.warn(
+        `[resolveV4] Failed to read winner equippedBackgroundId for ${result.winnerIds[0]}:`,
+        err,
+      );
+    }
+  }
 
   const scorecardPayload = {
     v: 1,
@@ -1339,6 +1357,7 @@ async function postGameScorecardToGroup(
     scoreboard,
     durationMs: result.durationMs,
     createdAt: createdAtMs,
+    winnerEquippedBackgroundId,
   };
 
   // Sentinel-encoded wire format — mirrors `encodeScorecardText()` in

@@ -83,6 +83,12 @@ export interface InsertMessageParams {
   localAttachments?: LocalAttachment[];
   /** If true, mark as 'synced' immediately (for local-only test messages) */
   skipSync?: boolean;
+  /**
+   * Client-device id for this optimistic message. Persisted so the
+   * trusted-scorecard gate (and any other server-origin checks) can
+   * distinguish local vs server-authored messages after reload.
+   */
+  clientId?: string;
 }
 
 export interface MessageWithAttachments extends MessageRow {
@@ -136,6 +142,7 @@ export function insertMessage(params: InsertMessageParams): MessageRow {
     sync_status: params.skipSync ? "synced" : "pending",
     sync_error: null,
     retry_count: 0,
+    client_id: params.clientId ?? null,
   };
 
   // Wrap message + attachments + conversation update in a transaction
@@ -148,8 +155,8 @@ export function insertMessage(params: InsertMessageParams): MessageRow {
         thread_root_id, reply_count, last_reply_at,
         mentions_json, reactions_json, deleted_for_all, deleted_by, deleted_at,
         hidden_for_json, link_preview_json, sender_style_json,
-        sync_status, sync_error, retry_count
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        sync_status, sync_error, retry_count, client_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         row.id,
         row.conversation_id,
@@ -177,6 +184,7 @@ export function insertMessage(params: InsertMessageParams): MessageRow {
         row.sync_status,
         row.sync_error,
         row.retry_count,
+        row.client_id,
       ],
     );
 
@@ -287,6 +295,7 @@ export function upsertMessageFromServer(message: MessageV2): void {
           deleted_for_all = ?,
           deleted_by = ?,
           deleted_at = ?,
+          client_id = COALESCE(?, client_id),
           sync_status = 'synced',
           sync_error = NULL
         WHERE id = ?`,
@@ -314,6 +323,7 @@ export function upsertMessageFromServer(message: MessageV2): void {
           deletedForAll ? 1 : 0,
           deletedForAll?.by || null,
           deletedForAll?.at || null,
+          message.clientId || null,
           message.id,
         ],
       );
@@ -349,8 +359,8 @@ export function upsertMessageFromServer(message: MessageV2): void {
           thread_root_id, reply_count, last_reply_at,
           mentions_json, reactions_json, deleted_for_all, deleted_by, deleted_at,
           hidden_for_json, link_preview_json, sender_style_json,
-          sync_status, sync_error, retry_count
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'synced', NULL, 0)`,
+          sync_status, sync_error, retry_count, client_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'synced', NULL, 0, ?)`,
         [
           id,
           conversationId,
@@ -380,6 +390,7 @@ export function upsertMessageFromServer(message: MessageV2): void {
           message.hiddenFor ? JSON.stringify(message.hiddenFor) : null,
           message.linkPreview ? JSON.stringify(message.linkPreview) : null,
           message.senderStyle ? JSON.stringify(message.senderStyle) : null,
+          message.clientId || null,
         ],
       );
 
@@ -1146,5 +1157,6 @@ export function messageV2ToRow(
     sync_status: "synced",
     sync_error: null,
     retry_count: 0,
+    client_id: message.clientId || null,
   };
 }

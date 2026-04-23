@@ -59,6 +59,13 @@ export interface MessageRow {
   sync_status: MessageSyncStatus;
   sync_error: string | null;
   retry_count: number;
+  /**
+   * Client-device id for optimistic rows, or the server trust marker
+   * (`"server"` / `"server-share:<uid>"`) for server-authored messages.
+   * Required for the trusted-scorecard gate — a missing value means the
+   * renderer will refuse to decode sentinel-wrapped wire text.
+   */
+  client_id: string | null;
 }
 
 // =============================================================================

@@ -14,6 +14,10 @@
 
 import { BorderRadius, Spacing } from "@/constants/theme";
 import {
+  isScorecardMessage,
+  SCORECARD_VISIBLE_TEXT,
+} from "@/gamesV4/services/scorecardWire";
+import {
   canDeleteForAll,
   canDeleteForMe,
   canEditMessage,
@@ -156,16 +160,26 @@ export function MessageActionsSheet({
   const handleReply = useCallback(() => {
     if (!message) return;
 
+    // Scorecard privacy/UX: never leak the raw sentinel+JSON payload
+    // into the reply preview. This also prevents the oversized JSON
+    // snippet from poisoning `replyTo.textSnippet` on the server,
+    // which was the root cause of replies appearing to "disappear"
+    // after a few seconds when the parent was a scorecard.
+    const scorecard = isScorecardMessage(message);
+    const snippet = scorecard
+      ? SCORECARD_VISIBLE_TEXT
+      : message.text
+        ? message.text.length > 100
+          ? message.text.substring(0, 100) + "..."
+          : message.text
+        : undefined;
+
     const replyTo: ReplyToMetadata = {
       messageId: message.id,
       senderId: message.senderId,
       senderName: message.senderName,
       kind: message.kind,
-      textSnippet: message.text
-        ? message.text.length > 100
-          ? message.text.substring(0, 100) + "..."
-          : message.text
-        : undefined,
+      textSnippet: snippet,
       attachmentPreview:
         message.attachments && message.attachments.length > 0
           ? {
@@ -182,10 +196,17 @@ export function MessageActionsSheet({
   const handleCopyText = useCallback(() => {
     if (!message?.text) return;
 
+    // Scorecards carry their structured JSON payload (avatars, names,
+    // scores) inside `text`. Copying that to the clipboard would leak
+    // user info; swap for a generic label.
+    const copyText = isScorecardMessage(message)
+      ? SCORECARD_VISIBLE_TEXT
+      : message.text;
+
     if (Platform.OS === "web") {
-      void navigator.clipboard.writeText(message.text);
+      void navigator.clipboard.writeText(copyText);
     } else {
-      void Clipboard.setStringAsync(message.text);
+      void Clipboard.setStringAsync(copyText);
     }
 
     onClose();
@@ -386,7 +407,9 @@ export function MessageActionsSheet({
           style={{ color: theme.colors.onSurfaceVariant }}
           numberOfLines={2}
         >
-          {message.text || "[Media message]"}
+          {isScorecardMessage(message)
+            ? SCORECARD_VISIBLE_TEXT
+            : message.text || "[Media message]"}
         </Text>
       </View>
 

@@ -38,4 +38,27 @@ export interface GameScorecardPayload {
   durationMs: number;
   /** Posting timestamp (epoch ms). */
   createdAt: number;
+  /**
+   * Equipped profile background ID of the sole winner, if there is exactly
+   * one winner. Used by `<GameScorecard />` to personalize the card with
+   * the winner's profile background image. Null/undefined for draws,
+   * solo losses, or any no-winner state — renderer falls back to the
+   * neutral default surface.
+   *
+   * Optional for backward compatibility with scorecards posted before
+   * this field existed (decoder treats missing as null).
+   */
+  winnerEquippedBackgroundId?: string | null;
+  /**
+   * Equipped profile background ID of the user who sent / authored the
+   * scorecard. Used by `<GameScorecard />` to personalize **solo**
+   * scorecards regardless of win/loss — a solo card visually represents
+   * the sender, so their background is always the appropriate
+   * personalization source. For multiplayer cards the renderer prefers
+   * `winnerEquippedBackgroundId` and ignores this field.
+   *
+   * Null/undefined when the sender has no equipped background (clean
+   * fallback to the neutral default surface).
+   */
+  senderEquippedBackgroundId?: string | null;
 }

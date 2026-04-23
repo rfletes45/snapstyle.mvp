@@ -62,6 +62,11 @@ function getDb() {
  * Build a short preview string for the inbox entry.
  */
 function buildPreview(kind, text) {
+    // Scorecards embed a JSON sentinel in their `text` field. Never leak
+    // that into the inbox preview — substitute the generic label.
+    if (text && text.startsWith("[SCORECARD_V1]")) {
+        return "Game Scorecard";
+    }
     if (kind === "text" && text) {
         return text.length > 80 ? text.substring(0, 80) + "…" : text;
     }

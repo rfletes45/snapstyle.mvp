@@ -111,7 +111,7 @@ import {
 import { ChatScorecardMessage } from "@/gamesV4/components/ChatScorecardMessage";
 import { PinnedInviteBar } from "@/gamesV4/components/PinnedInviteBar";
 import { createGameInvite } from "@/gamesV4/services/gameServiceV4";
-import { decodeScorecardText } from "@/gamesV4/services/scorecardWire";
+import { getTrustedScorecardPayload } from "@/gamesV4/services/scorecardWire";
 import type { GameId } from "@/gamesV4/types";
 import { useConversationDisplayMode } from "@/store/ConversationDisplayModeContext";
 
@@ -1579,50 +1579,21 @@ export default function ChatScreen({
         return <DateDivider label={item.label} />;
       }
       const msg = item.data;
-      // Scorecards can ride inside either `system` (legacy/backend) or
-      // `text` (user-shared via the in-app Share Scorecard sheet). Both
-      // decode to the same rich `<GameScorecard />` row.
-      if (msg.kind === "system" || msg.kind === "text") {
-        const scorecard = decodeScorecardText(msg.text);
-        if (scorecard) {
-          // Render scorecard as a true authored chat message — full
-          // sender frame (avatar, name, timestamp), aligned for
-          // self/other, respecting current bubble/stacked display mode.
-          const isOwn = msg.senderId === uid;
-          const senderName = isOwn
-            ? profile?.displayName ||
-              profile?.username ||
-              currentFirebaseUser?.displayName ||
-              "You"
-            : friendProfile?.displayName ||
-              friendProfile?.username ||
-              msg.senderName ||
-              "Friend";
-          const senderPic = isOwn
-            ? ((profile as any)?.profilePicture?.url ?? null)
-            : (friendProfile?.profilePicture?.url ??
-              (friendProfile as any)?.profilePictureUrl ??
-              null);
-          const senderDeco = isOwn
-            ? ((profile as any)?.avatarDecoration?.decorationId ?? null)
-            : (friendProfile?.avatarDecoration?.decorationId ??
-              (friendProfile as any)?.decorationId ??
-              null);
-          return (
-            <ChatScorecardMessage
-              message={msg}
-              payload={scorecard}
-              isOwn={isOwn}
-              displayMode={displayMode}
-              isGroupChat={false}
-              senderDisplayName={senderName}
-              senderProfilePictureUrl={senderPic}
-              senderDecorationId={senderDeco}
-            />
-          );
-        }
-      }
-      if (msg.kind === "system") {
+      // Scorecard detection: decoded once and consumed below (after
+      // neighbor + reactions computation) so the scorecard message
+      // participates in the full gesture / grouping / reactions pipeline
+      // instead of short-circuiting to a bare render.
+      // Trust gate — the rich scorecard card is ONLY drawn for messages
+      // the server authored (either auto-posted by the resolver or sent
+      // via the validated scorecard-share path). Plain user text that
+      // happens to start with the sentinel is deliberately NOT decoded
+      // here: sanitization into "Game Scorecard" for copy/reply happens
+      // elsewhere, and spoofing is blocked at the server ingress.
+      const scorecardPayload =
+        msg.kind === "system" || msg.kind === "text"
+          ? getTrustedScorecardPayload(msg)
+          : null;
+      if (msg.kind === "system" && !scorecardPayload) {
         return <SystemMessageChip text={safeSystemText(msg.text)} />;
       }
 
@@ -1650,6 +1621,61 @@ export default function ChatScreen({
           fallbackReactionsRef.current.set(msg.id, parsed);
           return parsed;
         })();
+
+      // Scorecard branch — render a first-class chat message whose body
+      // is the <GameScorecard/>. All gesture/grouping/reactions plumbing
+      // matches the regular renderer.
+      if (scorecardPayload) {
+        const isOwn = msg.senderId === uid;
+        const senderName = isOwn
+          ? profile?.displayName ||
+            profile?.username ||
+            currentFirebaseUser?.displayName ||
+            "You"
+          : friendProfile?.displayName ||
+            friendProfile?.username ||
+            msg.senderName ||
+            "Friend";
+        const senderPic = isOwn
+          ? ((profile as any)?.profilePicture?.url ?? null)
+          : (friendProfile?.profilePicture?.url ??
+            (friendProfile as any)?.profilePictureUrl ??
+            null);
+        const senderDeco = isOwn
+          ? ((profile as any)?.avatarDecoration?.decorationId ?? null)
+          : (friendProfile?.avatarDecoration?.decorationId ??
+            (friendProfile as any)?.decorationId ??
+            null);
+        return (
+          <AnimatedMessageRow
+            messageId={msg.id}
+            shouldAnimateOnMount={
+              screen.chat.messageEnterAnimation.shouldAnimateOnMount
+            }
+          >
+            <ChatScorecardMessage
+              message={msg}
+              payload={scorecardPayload}
+              isOwn={isOwn}
+              displayMode={displayMode}
+              isGroupChat={false}
+              senderDisplayName={senderName}
+              senderProfilePictureUrl={senderPic}
+              senderDecorationId={senderDeco}
+              conversationId={chatId}
+              currentUid={uid}
+              onReply={handleReply}
+              onLongPress={handleMessageLongPress}
+              onScrollToMessage={scrollToMessage}
+              reactions={renderedReactions}
+              onOptimisticReaction={handleOptimisticReaction}
+              isHighlighted={msg.id === highlightedMessageIdRef.current}
+              isGroupedWithPrevious={item.isGroupedWithPrevious}
+              isGroupedWithNext={item.isGroupedWithNext}
+            />
+          </AnimatedMessageRow>
+        );
+      }
 
       return (
         <AnimatedMessageRow

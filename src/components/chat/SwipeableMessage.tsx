@@ -7,6 +7,10 @@
  * @module components/chat/SwipeableMessage
  */
 
+import {
+  isScorecardMessage,
+  SCORECARD_VISIBLE_TEXT,
+} from "@/gamesV4/services/scorecardWire";
 import { MessageV2, ReplyToMetadata } from "@/types/messaging";
 import React from "react";
 import { SwipeableMessageWrapper } from "./SwipeableMessageWrapper";
@@ -37,12 +41,17 @@ interface SwipeableMessageProps {
  * Adapter function for the generic SwipeableMessageWrapper
  */
 function dmMessageToReply(message: MessageV2): ReplyToMetadata {
-  // Truncate text to first 100 characters
-  const textSnippet = message.text
-    ? message.text.length > 100
-      ? message.text.substring(0, 100) + "..."
-      : message.text
-    : undefined;
+  // Scorecards must never expose their raw sentinel+JSON in reply
+  // previews (privacy) or in the `replyTo.textSnippet` we send to the
+  // server (which was implicated in the "disappearing reply" regression
+  // when parent messages were scorecards).
+  const textSnippet = isScorecardMessage(message)
+    ? SCORECARD_VISIBLE_TEXT
+    : message.text
+      ? message.text.length > 100
+        ? message.text.substring(0, 100) + "..."
+        : message.text
+      : undefined;
 
   return {
     messageId: message.id,

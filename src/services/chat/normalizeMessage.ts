@@ -145,7 +145,7 @@ export function normalizeMessageFromLocalRow(
     hiddenFor: hiddenFor.length > 0 ? hiddenFor : undefined,
     linkPreview: parseJsonColumn(row.link_preview_json, undefined),
     senderStyle,
-    clientId: "",
+    clientId: row.client_id || "",
     idempotencyKey: row.id,
     status: getMessageStatusFromSync(row.sync_status),
   };

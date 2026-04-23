@@ -69,7 +69,7 @@ type Nav = NativeStackNavigationProp<MainStackParamList>;
 export default function GameOverScreenV4() {
   const { theme } = useAppTheme();
   const { currentFirebaseUser } = useAuth();
-  const { refreshProfile } = useUser();
+  const { profile, refreshProfile } = useUser();
   const navigation = useNavigation<Nav>();
   const route = useRoute<{
     key: string;
@@ -298,6 +298,49 @@ export default function GameOverScreenV4() {
   const snackbar = useSnackbar();
   const [shareSheetVisible, setShareSheetVisible] = useState(false);
 
+  // ── Winner background resolution ──────────────────────────────────
+  // Personalize the scorecard with the winner's equipped profile
+  // background. Only resolves when there is exactly one winner. For
+  // self we read directly from the profile context (no fetch); for
+  // another user we read their `equippedBackgroundId` from Firestore
+  // once. Draws / no-winner / multi-winner stays null and the card
+  // falls back to the neutral default surface.
+  const [winnerBgId, setWinnerBgId] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setWinnerBgId(null);
+    const winnerIds = result?.winnerIds ?? [];
+    if (winnerIds.length !== 1) return;
+    const winnerId = winnerIds[0];
+
+    if (winnerId === uid) {
+      // Self winner — synchronous from profile context.
+      setWinnerBgId(profile?.equippedBackgroundId ?? null);
+      return;
+    }
+
+    // Other winner — single Firestore read.
+    (async () => {
+      try {
+        const { getFirestoreInstance } = await import("@/services/firebase");
+        const { doc, getDoc } = await import("firebase/firestore");
+        const db = getFirestoreInstance();
+        const snap = await getDoc(doc(db, "Users", winnerId));
+        if (cancelled) return;
+        const data = snap.data() as
+          | { equippedBackgroundId?: string | null }
+          | undefined;
+        setWinnerBgId(data?.equippedBackgroundId ?? null);
+      } catch {
+        if (!cancelled) setWinnerBgId(null);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [result, uid, profile?.equippedBackgroundId]);
+
   const scorecardPayload: GameScorecardPayload | null = useMemo(() => {
     if (!result || !session) return null;
     const runtimeType = session.runtimeType;
@@ -318,8 +361,13 @@ export default function GameOverScreenV4() {
       })),
       durationMs: result.durationMs ?? 0,
       createdAt: Date.now(),
+      winnerEquippedBackgroundId: winnerBgId,
+      // Solo cards personalize off the sender (= current user). For
+      // multiplayer this is ignored by the renderer. Cheap: read direct
+      // from profile context, no fetch.
+      senderEquippedBackgroundId: profile?.equippedBackgroundId ?? null,
     };
-  }, [result, session]);
+  }, [result, session, winnerBgId, profile?.equippedBackgroundId]);
 
   const scorecardFallbackText: string = useMemo(() => {
     if (!scorecardPayload) return "";

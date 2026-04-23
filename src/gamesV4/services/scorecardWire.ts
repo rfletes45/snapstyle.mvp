@@ -27,9 +27,69 @@
  */
 
 import type { GameScorecardPayload } from "@/gamesV4/types";
+import type { MessageV2 } from "@/types/messaging";
 
 /** Sentinel prefix marking the start of the JSON payload line. */
 export const SCORECARD_SENTINEL = "[SCORECARD_V1]";
+
+/**
+ * Human-readable label substituted for scorecard messages in every
+ * visible surface that is NOT the rich `<GameScorecard>` card: inbox
+ * preview, clipboard copy, reply snippet, search results, notifications,
+ * and any text-based fallback.
+ *
+ * Scorecards carry personally-identifying content (avatars, usernames,
+ * scores) inside their JSON payload. Leaking that raw text into
+ * surfaces that users can see or copy is a privacy hazard, so every
+ * non-card surface is labelled generically instead.
+ */
+export const SCORECARD_VISIBLE_TEXT = "Game Scorecard";
+
+/**
+ * Trust gate — a message is rendered as a rich scorecard ONLY if it
+ * was authored by the server (direct write from the resolve pipeline)
+ * or by the `sendMessageV2` scorecard-share path, which stamps a
+ * `server-share:*` clientId on verified payloads.
+ *
+ * Any user-authored message — including one whose `text` starts with
+ * the sentinel prefix — is deliberately NOT trusted. This closes the
+ * spoofing vector where a user could paste scorecard text verbatim and
+ * fake a game result.
+ */
+function isTrustedScorecardClientId(clientId: string | undefined): boolean {
+  if (!clientId) return false;
+  return clientId === "server" || clientId.startsWith("server-share:");
+}
+
+/**
+ * Return the scorecard payload for a message IF and ONLY IF the
+ * message is trusted. Returns `null` for untrusted messages even when
+ * their text happens to start with the sentinel.
+ */
+export function getTrustedScorecardPayload(
+  message: Pick<MessageV2, "text" | "clientId"> | null | undefined,
+): GameScorecardPayload | null {
+  if (!message) return null;
+  if (!isTrustedScorecardClientId(message.clientId)) return null;
+  return decodeScorecardText(message.text);
+}
+
+/**
+ * True when a message should be treated as a scorecard for purposes of
+ * visible-text sanitization (copy, reply-snippet, preview, etc.).
+ *
+ * This is broader than `getTrustedScorecardPayload` on purpose: legacy
+ * or in-flight messages whose text starts with the sentinel but have
+ * not yet been trust-verified should still be sanitized rather than
+ * leaking their raw JSON into preview surfaces.
+ */
+export function isScorecardMessage(
+  message: Pick<MessageV2, "text" | "clientId"> | null | undefined,
+): boolean {
+  if (!message) return false;
+  if (isTrustedScorecardClientId(message.clientId)) return true;
+  return !!message.text && message.text.startsWith(SCORECARD_SENTINEL);
+}
 
 /**
  * Wrap a scorecard payload and a human-readable fallback line into the

@@ -180,6 +180,15 @@ export const ConversationItem = memo(function ConversationItem({
         ? `${lastMessage.senderName}: `
         : "";
 
+    // Scorecards carry a JSON sentinel in their text. Never surface
+    // that raw payload in the inbox — substitute the generic label.
+    if (
+      typeof lastMessage.text === "string" &&
+      lastMessage.text.startsWith("[SCORECARD_V1]")
+    ) {
+      return `${prefix}Game Scorecard`;
+    }
+
     switch (lastMessage.type) {
       case "image":
         return `${prefix}📷 Photo`;
@@ -202,9 +211,9 @@ export const ConversationItem = memo(function ConversationItem({
   // long-press event payload.
   const lastTouchPos = useRef(DEFAULT_TOUCH_POSITION);
   const longPressFiredRef = useRef(false);
-  const longPressSuppressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null,
-  );
+  const longPressSuppressTimerRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
 
   const clearLongPressSuppression = useCallback(() => {
     longPressFiredRef.current = false;
