@@ -1967,13 +1967,15 @@ export default function ChatScreen({
               animalThemeId={animalEntitlement.equippedAnimalId}
               animalDisabled={!uid || !animalEntitlement.canSend}
               voiceButtonComponent={
-                voiceRecorder.isAvailable &&
-                !screen.composer.text.trim() &&
-                attachmentPicker.attachments.length === 0 ? (
+                voiceRecorder.isAvailable ? (
                   <VoiceRecordButton
                     onRecordingComplete={handleVoiceRecordingComplete}
                     onRecordingCancelled={NOOP}
-                    disabled={screen.sending}
+                    disabled={
+                      screen.sending ||
+                      !!screen.composer.text.trim() ||
+                      attachmentPicker.attachments.length > 0
+                    }
                     size={32}
                     maxDuration={60000}
                   />

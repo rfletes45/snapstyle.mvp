@@ -64,6 +64,21 @@ import { ReplyPreviewBar } from "./ReplyPreviewBar";
 import { SendButton } from "./SendButton";
 import { StickerButton } from "./StickerButton";
 import { VoiceRecordButton } from "./VoiceRecordButton";
+import {
+  VoiceRecordingHostProvider,
+  VoiceRecordingOverlay,
+} from "./VoiceRecordingHost";
+
+// ── Text-expansion constants ────────────────────────────────────────────
+// The composer grows upward up to 5 visible lines.  Beyond 5 lines the
+// multiline TextInput's internal scroll view kicks in automatically.
+// On iOS the native composer (UITextView) already clamps its intrinsic
+// content size between min/max and handles wrapping + internal scroll
+// natively.  These constants only drive layout limits for the
+// textInputContainer; no JS-side content-size measurement is needed.
+const COMPOSER_MIN_HEIGHT = 40;
+// 5 lines × ~22 lineHeight + vertical padding ≈ 130
+const COMPOSER_MAX_HEIGHT = 130;
 
 // =============================================================================
 // Types
@@ -280,6 +295,12 @@ export function ChatComposer({
   const nativeComposerRef = useRef<NativeComposerInputRef | null>(null);
   const useNative = Platform.OS === "ios" && isNativeComposerAvailable;
 
+  // Ref to the textInputContainer View — consumed by VoiceRecordButton via
+  // VoiceRecordingHost context so the in-textbox recording overlay can
+  // measure the host bounds and map gesture coords to cancel / lock
+  // targets regardless of dynamic composer width.
+  const textInputContainerRef = useRef<View | null>(null);
+
   // Expose a cross-platform focus() to callers via composerFocusRef.
   // Handles both native iOS path (nativeComposerRef) and fallback TextInput.
   useEffect(() => {
@@ -436,6 +457,7 @@ export function ChatComposer({
         case "message-bar":
           return (
             <View
+              ref={textInputContainerRef}
               style={[styles.textInputContainer, { backgroundColor: inputBg }]}
             >
               {useNative ? (
@@ -480,7 +502,7 @@ export function ChatComposer({
                   }
                   multiline
                   maxLength={1000}
-                  textAlignVertical="center"
+                  textAlignVertical="top"
                   editable={!isRecording && !toolbarEditing}
                   returnKeyType="send"
                   submitBehavior="submit"
@@ -514,6 +536,11 @@ export function ChatComposer({
                       style={styles.voiceButtonInside}
                     />
                   )))}
+              {/* Voice recording overlay — renders only while recording.
+                  Must be the LAST child so it paints on top, and must
+                  be a direct child of textInputContainer so its
+                  absolute fill matches the text box bounds exactly. */}
+              <VoiceRecordingOverlay />
             </View>
           );
 
@@ -662,7 +689,10 @@ export function ChatComposer({
   );
 
   return (
-    <>
+    <VoiceRecordingHostProvider
+      hostRef={textInputContainerRef}
+      disabled={hasContent || isSending}
+    >
       <View style={containerStyle}>
         {/* Customize mode toolbar (shown above composer when editing) */}
         {toolbarEditing && onToolbarSaveAndExit && onToolbarCancelEdit && (
@@ -740,7 +770,7 @@ export function ChatComposer({
           onClose={() => setItemPickerVisible(false)}
         />
       )}
-    </>
+    </VoiceRecordingHostProvider>
   );
 }
 
@@ -766,14 +796,21 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     borderRadius: BorderRadius.xl,
-    minHeight: 40,
-    maxHeight: 100,
+    minHeight: COMPOSER_MIN_HEIGHT,
+    // Grows upward up to 5 visible lines of text; past this the
+    // multiline TextInput (or native UITextView) handles internal
+    // scrolling automatically.
+    maxHeight: COMPOSER_MAX_HEIGHT,
     paddingRight: Spacing.xs,
+    // `relative` + no overflow clip — the overlay uses
+    // StyleSheet.absoluteFillObject to cover the full text box without
+    // needing to clip anything.
+    position: "relative",
   },
   textInput: {
     flex: 1,
-    minHeight: 40,
-    maxHeight: 100,
+    minHeight: COMPOSER_MIN_HEIGHT,
+    maxHeight: COMPOSER_MAX_HEIGHT,
     paddingHorizontal: Spacing.md,
     paddingVertical: 10,
     fontSize: 16,

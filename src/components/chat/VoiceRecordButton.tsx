@@ -1,10 +1,29 @@
 /**
  * VoiceRecordButton Component
  *
- * Polished hold-to-record button with modern visual feedback.
+ * Hold-to-record mic button. The in-textbox recording overlay (X /
+ * lock / duration / locked-mode controls) is rendered SEPARATELY by
+ * `VoiceRecordingOverlay` inside the textInputContainer so its bounds
+ * always match the composer.  This component only:
  *
- * Native: Hold to record, slide left to cancel, release to send.
- * Web: Click to start/stop, separate cancel button.
+ *   1. Renders the mic icon on the right side of the composer.
+ *   2. Owns the PanResponder gesture (hold ? measure ? track hover ?
+ *      release).
+ *   3. Owns the expo-audio recording lifecycle (start / stop / cancel).
+ *   4. Publishes UI state to `VoiceRecordingHost` so the overlay reacts.
+ *   5. Registers locked-mode send/cancel actions so the overlay can
+ *      invoke them.
+ *
+ * Gesture flow:
+ *   - press-and-hold mic ? start recording
+ *   - drag left over the X zone ? hoverTarget="cancel"
+ *   - drag up over the center lock zone ? hoverTarget="lock"
+ *   - release: cancel (target=cancel), lock (target=lock, keep
+ *     recording), or stop+send (target=none).
+ *
+ * Instant-disable gate: the PanResponder's touch-down handler reads a
+ * ref fed from the host context's `disabled` flag so gestures are
+ * rejected synchronously when text becomes non-empty.
  *
  * @module components/chat/VoiceRecordButton
  */
@@ -12,52 +31,41 @@
 import { useVoiceRecorder, VoiceRecording } from "@/hooks/useVoiceRecorder";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import React, { memo, useCallback, useRef, useState } from "react";
+import React, { memo, useCallback, useEffect, useRef } from "react";
 import {
   Animated,
   GestureResponderEvent,
+  LayoutRectangle,
   PanResponder,
   PanResponderGestureState,
   Platform,
   Pressable,
   StyleProp,
   StyleSheet,
-  Text,
   View,
   ViewStyle,
 } from "react-native";
 import { useTheme } from "react-native-paper";
 
-// =============================================================================
-// Types
-// =============================================================================
+import { HoverTarget, useVoiceRecordingHost } from "./VoiceRecordingHost";
 
+// -- Types ---------------------------------------------------------------
 export interface VoiceRecordButtonProps {
-  /** Called when recording completes successfully */
   onRecordingComplete: (recording: VoiceRecording) => void;
-  /** Called when recording is cancelled */
   onRecordingCancelled?: () => void;
-  /** Whether the button is disabled */
   disabled?: boolean;
-  /** Size of the button */
   size?: number;
-  /** Maximum recording duration in seconds */
   maxDuration?: number;
-  /** Container style */
   style?: StyleProp<ViewStyle>;
 }
 
-// =============================================================================
-// Constants
-// =============================================================================
-
+// -- Constants -----------------------------------------------------------
 const DEFAULT_SIZE = 40;
-const CANCEL_SLIDE_THRESHOLD = -80;
+const CANCEL_ZONE_WIDTH = 64;
+const LOCK_ZONE_HALF_WIDTH = 32;
+const VERTICAL_HOVER_SLACK = 40;
 
-// =============================================================================
-// Main Component
-// =============================================================================
-
+// -- Component -----------------------------------------------------------
 export const VoiceRecordButton = memo(function VoiceRecordButton({
   onRecordingComplete,
   onRecordingCancelled,
@@ -67,10 +75,9 @@ export const VoiceRecordButton = memo(function VoiceRecordButton({
   style,
 }: VoiceRecordButtonProps) {
   const theme = useTheme();
-  const [slideOffset, setSlideOffset] = useState(0);
-  const [isCancelling, setIsCancelling] = useState(false);
+  const host = useVoiceRecordingHost();
+
   const scaleAnim = useRef(new Animated.Value(1)).current;
-  const pulseAnim = useRef(new Animated.Value(0)).current;
 
   const voiceRecorder = useVoiceRecorder({
     maxDuration,
@@ -78,37 +85,102 @@ export const VoiceRecordButton = memo(function VoiceRecordButton({
     onRecordingCancelled,
   });
 
-  // Gentle glow pulse for the recording dot
-  const startPulse = useCallback(() => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, {
-          toValue: 1,
-          duration: 800,
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulseAnim, {
-          toValue: 0,
-          duration: 800,
-          useNativeDriver: true,
-        }),
-      ]),
-    ).start();
-  }, [pulseAnim]);
+  // Host layout, captured at recording-start via measureInWindow.
+  const hostLayoutRef = useRef<LayoutRectangle | null>(null);
 
-  const stopPulse = useCallback(() => {
-    pulseAnim.stopAnimation();
-    pulseAnim.setValue(0);
-  }, [pulseAnim]);
+  // Disabled gate — snapshotted into a ref for synchronous PanResponder
+  // rejection.
+  const effectiveDisabled = disabled || (host?.disabled ?? false);
+  const disabledRef = useRef(effectiveDisabled);
+  useEffect(() => {
+    disabledRef.current = effectiveDisabled;
+  }, [effectiveDisabled]);
 
-  // Handle press in (start recording)
+  // -- Publish duration updates to the host ------------------------------
+  useEffect(() => {
+    if (!host) return;
+    host.setRecordingState({
+      durationFormatted: voiceRecorder.durationFormatted,
+    });
+  }, [voiceRecorder.durationFormatted, host]);
+
+  // -- Publish recording flag (independent from gesture state) -----------
+  useEffect(() => {
+    if (!host) return;
+    host.setRecordingState({ isRecording: voiceRecorder.isRecording });
+    if (!voiceRecorder.isRecording) {
+      // Reset ancillary UI when recording stops (either by cancel, send,
+      // or natural timeout).
+      host.setRecordingState({ hoverTarget: "none", isLocked: false });
+    }
+  }, [voiceRecorder.isRecording, host]);
+
+  // -- Gesture refs (stable across renders for PanResponder closures) ----
+  const hoverTargetRef = useRef<HoverTarget>("none");
+  const isLockedRef = useRef(false);
+  const isRecordingRef = useRef(voiceRecorder.isRecording);
+  useEffect(() => {
+    isRecordingRef.current = voiceRecorder.isRecording;
+  }, [voiceRecorder.isRecording]);
+  // Keep local refs in sync with host-driven state (so PanResponder
+  // closures see fresh values without depending on React renders).
+  useEffect(() => {
+    hoverTargetRef.current = host?.recordingState.hoverTarget ?? "none";
+  }, [host?.recordingState.hoverTarget]);
+  useEffect(() => {
+    isLockedRef.current = host?.recordingState.isLocked ?? false;
+  }, [host?.recordingState.isLocked]);
+
+  // -- Measure host bounds (page coords) on recording start --------------
+  const measureHost = useCallback(() => {
+    const hostView = host?.hostRef?.current;
+    if (!hostView) {
+      hostLayoutRef.current = null;
+      return;
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (hostView as any).measureInWindow?.(
+      (x: number, y: number, width: number, height: number) => {
+        hostLayoutRef.current = { x, y, width, height };
+      },
+    );
+  }, [host]);
+
+  // -- Hover target resolution using captured bounds ---------------------
+  const resolveHoverTarget = useCallback(
+    (pageX: number, pageY: number): HoverTarget => {
+      const bounds = hostLayoutRef.current;
+      if (!bounds) return "none";
+      const { x, y, width, height } = bounds;
+
+      if (pageY < y - VERTICAL_HOVER_SLACK) return "none";
+      if (pageY > y + height + VERTICAL_HOVER_SLACK) return "none";
+
+      const localX = pageX - x;
+      if (localX <= CANCEL_ZONE_WIDTH) return "cancel";
+
+      const centerX = width / 2;
+      if (
+        localX >= centerX - LOCK_ZONE_HALF_WIDTH &&
+        localX <= centerX + LOCK_ZONE_HALF_WIDTH
+      ) {
+        return "lock";
+      }
+      return "none";
+    },
+    [],
+  );
+
+  // -- Recording lifecycle -----------------------------------------------
   const handlePressIn = useCallback(async () => {
-    if (disabled || !voiceRecorder.isAvailable) {
+    if (disabledRef.current) return;
+    if (!voiceRecorder.isAvailable) {
       voiceRecorder.startRecording();
       return;
     }
-
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    measureHost();
+    host?.setRecordingState({ hoverTarget: "none", isLocked: false });
 
     Animated.spring(scaleAnim, {
       toValue: 1.15,
@@ -117,56 +189,102 @@ export const VoiceRecordButton = memo(function VoiceRecordButton({
     }).start();
 
     await voiceRecorder.startRecording();
+  }, [voiceRecorder, scaleAnim, measureHost, host]);
 
-    if (voiceRecorder.isRecording) {
-      startPulse();
-    }
-  }, [disabled, voiceRecorder, scaleAnim, startPulse]);
+  const handleRelease = useCallback(
+    async (target: HoverTarget) => {
+      if (!voiceRecorder.isRecording) return;
 
-  // Handle press out (stop recording)
-  const handlePressOut = useCallback(async () => {
-    if (!voiceRecorder.isRecording) return;
-
-    stopPulse();
-    Animated.spring(scaleAnim, {
-      toValue: 1,
-      friction: 6,
-      useNativeDriver: true,
-    }).start();
-
-    if (isCancelling || slideOffset < CANCEL_SLIDE_THRESHOLD) {
-      await voiceRecorder.cancelRecording();
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-    } else {
-      const recording = await voiceRecorder.stopRecording();
-      if (recording && recording.durationMs > 500) {
+      if (target === "lock") {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        Animated.spring(scaleAnim, {
+          toValue: 1,
+          friction: 6,
+          useNativeDriver: true,
+        }).start();
+        host?.setRecordingState({ isLocked: true, hoverTarget: "none" });
+        return;
       }
+
+      Animated.spring(scaleAnim, {
+        toValue: 1,
+        friction: 6,
+        useNativeDriver: true,
+      }).start();
+
+      if (target === "cancel") {
+        await voiceRecorder.cancelRecording();
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      } else {
+        const recording = await voiceRecorder.stopRecording();
+        if (recording && recording.durationMs > 500) {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        }
+      }
+      host?.setRecordingState({
+        hoverTarget: "none",
+        isLocked: false,
+      });
+    },
+    [voiceRecorder, scaleAnim, host],
+  );
+
+  // -- Locked-mode actions (registered with the host) --------------------
+  const handleLockedSend = useCallback(async () => {
+    if (!voiceRecorder.isRecording) return;
+    const recording = await voiceRecorder.stopRecording();
+    if (recording && recording.durationMs > 500) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     }
+    host?.setRecordingState({ isLocked: false, hoverTarget: "none" });
+  }, [voiceRecorder, host]);
 
-    setSlideOffset(0);
-    setIsCancelling(false);
-  }, [voiceRecorder, isCancelling, slideOffset, scaleAnim, stopPulse]);
+  const handleLockedCancel = useCallback(async () => {
+    if (!voiceRecorder.isRecording) return;
+    await voiceRecorder.cancelRecording();
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    host?.setRecordingState({ isLocked: false, hoverTarget: "none" });
+  }, [voiceRecorder, host]);
 
-  // Refs for stable PanResponder closures
+  // Register actions on the host ref so the overlay's Pressables can
+  // invoke them.  Refreshed whenever the handlers change (effectively
+  // never — they are stable per voiceRecorder/host identity).
+  useEffect(() => {
+    if (!host) return;
+    host.lockedActionsRef.current = {
+      send: handleLockedSend,
+      cancel: handleLockedCancel,
+    };
+    return () => {
+      if (host.lockedActionsRef.current.send === handleLockedSend) {
+        host.lockedActionsRef.current = {};
+      }
+    };
+  }, [host, handleLockedSend, handleLockedCancel]);
+
+  // -- Gesture handler refs (stable) -------------------------------------
   const handlePressInRef = useRef(handlePressIn);
-  const handlePressOutRef = useRef(handlePressOut);
-  const isRecordingRef = useRef(voiceRecorder.isRecording);
-
-  React.useEffect(() => {
+  const handleReleaseRef = useRef(handleRelease);
+  useEffect(() => {
     handlePressInRef.current = handlePressIn;
   }, [handlePressIn]);
-  React.useEffect(() => {
-    handlePressOutRef.current = handlePressOut;
-  }, [handlePressOut]);
-  React.useEffect(() => {
-    isRecordingRef.current = voiceRecorder.isRecording;
-  }, [voiceRecorder.isRecording]);
+  useEffect(() => {
+    handleReleaseRef.current = handleRelease;
+  }, [handleRelease]);
 
   const panResponder = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: (_, gs) => Math.abs(gs.dx) > 5,
+      onStartShouldSetPanResponder: () => {
+        if (disabledRef.current) return false;
+        if (isLockedRef.current) return false;
+        return true;
+      },
+      onStartShouldSetPanResponderCapture: () => false,
+      onMoveShouldSetPanResponder: (_, gs) => {
+        if (disabledRef.current) return false;
+        if (isLockedRef.current) return false;
+        return Math.abs(gs.dx) > 5 || Math.abs(gs.dy) > 5;
+      },
       onPanResponderGrant: () => {
         handlePressInRef.current();
       },
@@ -174,59 +292,58 @@ export const VoiceRecordButton = memo(function VoiceRecordButton({
         _e: GestureResponderEvent,
         gs: PanResponderGestureState,
       ) => {
-        if (isRecordingRef.current) {
-          const offset = Math.min(0, gs.dx);
-          setSlideOffset(offset);
-          setIsCancelling(offset < CANCEL_SLIDE_THRESHOLD);
+        if (!isRecordingRef.current) return;
+        const target = resolveHoverTarget(gs.moveX, gs.moveY);
+        if (target !== hoverTargetRef.current) {
+          if (target !== "none") Haptics.selectionAsync();
+          hoverTargetRef.current = target;
+          host?.setRecordingState({ hoverTarget: target });
         }
       },
-      onPanResponderRelease: () => handlePressOutRef.current(),
-      onPanResponderTerminate: () => handlePressOutRef.current(),
+      onPanResponderRelease: () => {
+        handleReleaseRef.current(hoverTargetRef.current);
+      },
+      onPanResponderTerminate: () => {
+        handleReleaseRef.current(hoverTargetRef.current);
+      },
     }),
   ).current;
 
-  // Web toggle handler
+  // -- Web variant (click to toggle) -------------------------------------
   const handleWebClick = useCallback(async () => {
+    if (disabledRef.current && !voiceRecorder.isRecording) return;
     if (voiceRecorder.isRecording) {
-      stopPulse();
       Animated.spring(scaleAnim, {
         toValue: 1,
         friction: 6,
         useNativeDriver: true,
       }).start();
       await voiceRecorder.stopRecording();
+      host?.setRecordingState({ isLocked: false, hoverTarget: "none" });
     } else {
-      if (disabled || !voiceRecorder.isAvailable) {
+      if (!voiceRecorder.isAvailable) {
         voiceRecorder.startRecording();
         return;
       }
+      measureHost();
       Animated.spring(scaleAnim, {
         toValue: 1.15,
         friction: 6,
         useNativeDriver: true,
       }).start();
       await voiceRecorder.startRecording();
-      if (voiceRecorder.isRecording) startPulse();
     }
-  }, [voiceRecorder, disabled, scaleAnim, startPulse, stopPulse]);
+  }, [voiceRecorder, scaleAnim, measureHost, host]);
 
-  const handleWebCancel = useCallback(async () => {
-    if (voiceRecorder.isRecording) {
-      stopPulse();
-      Animated.spring(scaleAnim, {
-        toValue: 1,
-        friction: 6,
-        useNativeDriver: true,
-      }).start();
-      await voiceRecorder.cancelRecording();
-    }
-  }, [voiceRecorder, scaleAnim, stopPulse]);
-
-  // ---- Unavailable state ----
+  // -- Render ------------------------------------------------------------
   if (!voiceRecorder.isAvailable) {
     return (
       <Pressable
-        style={[styles.micButton, { width: size, height: size, opacity: 0.4 }]}
+        style={[
+          styles.micButton,
+          { width: size, height: size, opacity: 0.4 },
+          style,
+        ]}
         onPress={() => voiceRecorder.startRecording()}
       >
         <MaterialCommunityIcons
@@ -238,222 +355,86 @@ export const VoiceRecordButton = memo(function VoiceRecordButton({
     );
   }
 
-  // ---- Dot opacity driven by pulse animation ----
-  const dotOpacity = pulseAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [1, 0.3],
-  });
+  const isLocked = host?.recordingState.isLocked ?? false;
 
-  // ---- Slide cancel opacity ----
-  const cancelOpacity = Math.min(
-    1,
-    Math.abs(slideOffset) / Math.abs(CANCEL_SLIDE_THRESHOLD),
-  );
-
-  // ---- Recording overlay (shared between web & native) ----
-  const recordingOverlay = voiceRecorder.isRecording ? (
-    <View
-      style={[
-        styles.overlay,
-        {
-          backgroundColor: theme.dark
-            ? "rgba(30,30,30,0.95)"
-            : "rgba(245,245,245,0.97)",
-        },
-      ]}
-    >
-      {/* Left: recording indicator + duration */}
-      <View style={styles.overlayLeft}>
-        <Animated.View style={[styles.recordDot, { opacity: dotOpacity }]} />
-        <Text
-          style={[
-            styles.durationText,
-            { color: theme.dark ? "#FFF" : "#1a1a1a" },
-          ]}
-        >
-          {voiceRecorder.durationFormatted}
-        </Text>
-      </View>
-
-      {/* Center: slide-to-cancel (native) or cancel button (web) */}
-      {Platform.OS === "web" ? (
-        <Pressable onPress={handleWebCancel} style={styles.webCancel}>
-          <MaterialCommunityIcons
-            name="close-circle"
-            size={18}
-            color={theme.colors.error}
-          />
-          <Text style={[styles.cancelLabel, { color: theme.colors.error }]}>
-            Cancel
-          </Text>
-        </Pressable>
-      ) : (
-        <View style={styles.slideHint}>
-          <MaterialCommunityIcons
-            name={isCancelling ? "close-circle" : "chevron-left"}
-            size={16}
-            color={
-              isCancelling
-                ? theme.colors.error
-                : theme.dark
-                  ? "rgba(255,255,255,0.35)"
-                  : "rgba(0,0,0,0.3)"
-            }
-          />
-          <Text
+  if (Platform.OS === "web") {
+    return (
+      <Pressable
+        onPress={handleWebClick}
+        disabled={effectiveDisabled}
+        style={style}
+      >
+        <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
+          <View
             style={[
-              styles.slideLabel,
+              styles.micButton,
               {
-                color: isCancelling
+                width: size,
+                height: size,
+                backgroundColor: voiceRecorder.isRecording
                   ? theme.colors.error
-                  : theme.dark
-                    ? "rgba(255,255,255,0.35)"
-                    : "rgba(0,0,0,0.3)",
-                opacity: isCancelling ? 1 : 1 - cancelOpacity * 0.5,
+                  : "transparent",
+                opacity: effectiveDisabled ? 0.4 : 1,
               },
             ]}
           >
-            {isCancelling ? "Release to cancel" : "Slide to cancel"}
-          </Text>
-        </View>
-      )}
-    </View>
-  ) : null;
-
-  // ---- Web render ----
-  if (Platform.OS === "web") {
-    return (
-      <View style={[styles.container, style]}>
-        {recordingOverlay}
-        <Pressable onPress={handleWebClick}>
-          <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
-            <View
-              style={[
-                styles.micButton,
-                {
-                  width: size,
-                  height: size,
-                  backgroundColor: voiceRecorder.isRecording
-                    ? theme.colors.error
-                    : "transparent",
-                },
-              ]}
-            >
-              <MaterialCommunityIcons
-                name={voiceRecorder.isRecording ? "stop" : "microphone-outline"}
-                size={size * 0.55}
-                color={
-                  voiceRecorder.isRecording
-                    ? "#FFF"
-                    : theme.colors.onSurfaceVariant
-                }
-              />
-            </View>
-          </Animated.View>
-        </Pressable>
-      </View>
+            <MaterialCommunityIcons
+              name={voiceRecorder.isRecording ? "stop" : "microphone-outline"}
+              size={size * 0.55}
+              color={
+                voiceRecorder.isRecording
+                  ? "#FFF"
+                  : theme.colors.onSurfaceVariant
+              }
+            />
+          </View>
+        </Animated.View>
+      </Pressable>
     );
   }
 
-  // ---- Native render ----
+  // Native: hide the mic while locked (the overlay's right-side send/
+  // cancel controls take over the visual slot).
+  if (isLocked) {
+    return <View style={style} />;
+  }
+
   return (
-    <View style={[styles.container, style]}>
-      {recordingOverlay}
-      <Animated.View
-        style={{ transform: [{ scale: scaleAnim }] }}
-        {...panResponder.panHandlers}
+    <Animated.View
+      style={[{ transform: [{ scale: scaleAnim }] }, style]}
+      {...panResponder.panHandlers}
+      pointerEvents={effectiveDisabled ? "none" : "auto"}
+    >
+      <View
+        style={[
+          styles.micButton,
+          {
+            width: size,
+            height: size,
+            backgroundColor: voiceRecorder.isRecording
+              ? theme.colors.error
+              : "transparent",
+            opacity: effectiveDisabled ? 0.4 : 1,
+          },
+        ]}
       >
-        <View
-          style={[
-            styles.micButton,
-            {
-              width: size,
-              height: size,
-              backgroundColor: voiceRecorder.isRecording
-                ? theme.colors.error
-                : "transparent",
-            },
-          ]}
-        >
-          <MaterialCommunityIcons
-            name={
-              voiceRecorder.isRecording ? "microphone" : "microphone-outline"
-            }
-            size={size * 0.55}
-            color={
-              voiceRecorder.isRecording ? "#FFF" : theme.colors.onSurfaceVariant
-            }
-          />
-        </View>
-      </Animated.View>
-    </View>
+        <MaterialCommunityIcons
+          name={voiceRecorder.isRecording ? "microphone" : "microphone-outline"}
+          size={size * 0.55}
+          color={
+            voiceRecorder.isRecording ? "#FFF" : theme.colors.onSurfaceVariant
+          }
+        />
+      </View>
+    </Animated.View>
   );
 });
 
-// =============================================================================
-// Styles
-// =============================================================================
-
 const styles = StyleSheet.create({
-  container: {
-    position: "relative",
-  },
   micButton: {
     borderRadius: 999,
     justifyContent: "center",
     alignItems: "center",
-  },
-  overlay: {
-    position: "absolute",
-    right: 40,
-    top: -6,
-    bottom: -6,
-    left: -220,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    borderRadius: 20,
-    paddingHorizontal: 12,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  overlayLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  recordDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: "#FF3B30",
-  },
-  durationText: {
-    fontSize: 15,
-    fontWeight: "600",
-    fontVariant: ["tabular-nums"],
-  },
-  slideHint: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 3,
-  },
-  slideLabel: {
-    fontSize: 13,
-    fontWeight: "500",
-  },
-  cancelLabel: {
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  webCancel: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    padding: 6,
   },
 });
 

@@ -1013,11 +1013,11 @@ export default function ThreadScreen({ navigation, route }: Props) {
             onSchedulePress={handleScheduleUnsupported}
             onAnimalPress={handleAnimalUnsupported}
             voiceButtonComponent={
-              voiceRecorder.isAvailable && !replyText.trim() ? (
+              voiceRecorder.isAvailable ? (
                 <VoiceRecordButton
                   onRecordingComplete={handleVoiceRecordingComplete}
                   onRecordingCancelled={() => {}}
-                  disabled={sending}
+                  disabled={sending || !!replyText.trim()}
                   size={32}
                   maxDuration={60000}
                 />
