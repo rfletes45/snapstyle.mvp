@@ -472,6 +472,30 @@ export async function setGroupReadReceipts(
 }
 
 /**
+ * Set per-group auto-send scorecards preference.
+ *
+ * When disabled, the server skips auto-posting scorecards into this
+ * group after games this user hosts. Manual "Share" from the GameOver
+ * screen is unaffected.
+ */
+export async function setGroupAutoSendScorecards(
+  groupId: string,
+  uid: string,
+  autoSendScorecards: boolean,
+): Promise<void> {
+  try {
+    await setGroupMemberPrivateFields(groupId, uid, { autoSendScorecards });
+    log.info("Set group auto-send scorecards", {
+      operation: "setAutoSendScorecards",
+      data: { groupId, autoSendScorecards },
+    });
+  } catch (error) {
+    log.error("Failed to set group auto-send scorecards", error);
+    throw error;
+  }
+}
+
+/**
  * Pin/unpin a group conversation
  */
 export async function setGroupPinned(

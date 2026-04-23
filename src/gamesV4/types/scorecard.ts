@@ -19,6 +19,12 @@ export interface GameScorecardScoreboardEntry {
   uid: string;
   displayName: string;
   profilePictureUrl?: string | null;
+  /**
+   * Equipped avatar decoration ID for this player at the time of
+   * resolution. Rendered as a decoration overlay on the pfp inside
+   * the scorecard. Null/undefined = no decoration.
+   */
+  decorationId?: string | null;
   score: number;
   placement: number;
 }

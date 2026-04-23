@@ -45,6 +45,7 @@ export interface MinimalProfile {
     displayName: string;
     avatarConfig?: Record<string, unknown>;
     profilePictureUrl?: string | null;
+    decorationId?: string | null;
 }
 /**
  * Fetch minimal profile data for a user.

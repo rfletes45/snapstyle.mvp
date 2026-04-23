@@ -27,8 +27,8 @@
  */
 
 import CosmeticImage from "@/components/CosmeticImage";
+import { ProfilePictureWithDecoration } from "@/components/profile/ProfilePicture/ProfilePictureWithDecoration";
 import { getCosmeticAsset } from "@/cosmetics/assetRegistry";
-import UserAvatar from "@/gamesV4/components/UserAvatar";
 import { SCOREBOARD_DESCRIPTORS } from "@/gamesV4/constants";
 import type { GameScorecardPayload } from "@/gamesV4/types";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -267,9 +267,42 @@ interface ScoreEntry {
   uid: string;
   displayName: string;
   profilePictureUrl?: string | null;
+  decorationId?: string | null;
   score: number;
   placement?: number;
 }
+
+/**
+ * Small gold crown overlaid on top-right of a winner's profile picture.
+ * Tilted so the bottom of the crown leans left — toward the center of
+ * the pfp — matching the product spec (~250° visual reference).
+ * Rendered above both the base pfp and its decoration overlay.
+ */
+const WinnerCrown: React.FC<{ size: number }> = ({ size }) => {
+  const iconSize = Math.max(12, Math.round(size * 0.42));
+  return (
+    <View
+      pointerEvents="none"
+      style={[
+        styles.winnerCrownWrap,
+        {
+          // Anchor just above/right of the pfp so the tilted crown sits
+          // snugly at the corner with its bottom pointing toward center.
+          top: -Math.round(iconSize * 0.45),
+          right: -Math.round(iconSize * 0.2),
+          transform: [{ rotate: "-20deg" }],
+        },
+      ]}
+    >
+      <MaterialCommunityIcons
+        name="crown"
+        size={iconSize}
+        color="#FFD700"
+        style={styles.winnerCrownIcon}
+      />
+    </View>
+  );
+};
 
 const SoloHeroRow: React.FC<{
   entry: ScoreEntry;
@@ -287,20 +320,13 @@ const SoloHeroRow: React.FC<{
       style={[hasBg ? styles.heroRowGlass : styles.heroRow, { borderColor }]}
     >
       <View style={styles.heroAvatarCol}>
-        <UserAvatar
-          uid={entry.uid}
-          displayName={entry.displayName}
-          profilePictureUrl={entry.profilePictureUrl ?? null}
+        <ProfilePictureWithDecoration
+          pictureUrl={entry.profilePictureUrl ?? null}
+          name={entry.displayName}
+          decorationId={entry.decorationId ?? null}
           size={40}
         />
-        {isWinner ? (
-          <MaterialCommunityIcons
-            name="crown"
-            size={14}
-            color="#FFD700"
-            style={styles.crown}
-          />
-        ) : null}
+        {isWinner ? <WinnerCrown size={40} /> : null}
       </View>
       <View style={{ flex: 1, marginLeft: 10 }}>
         <Text
@@ -366,12 +392,15 @@ const PlayerVsBox: React.FC<{
     <View
       style={[hasBg ? styles.vsBoxGlass : styles.vsBox, { borderColor: color }]}
     >
-      <UserAvatar
-        uid={entry.uid}
-        displayName={entry.displayName}
-        profilePictureUrl={entry.profilePictureUrl ?? null}
-        size={48}
-      />
+      <View style={styles.vsAvatarCol}>
+        <ProfilePictureWithDecoration
+          pictureUrl={entry.profilePictureUrl ?? null}
+          name={entry.displayName}
+          decorationId={entry.decorationId ?? null}
+          size={48}
+        />
+        {won && !isDraw ? <WinnerCrown size={48} /> : null}
+      </View>
       <Text
         style={[styles.vsName, hasBg ? { color: "#FFFFFF" } : null]}
         numberOfLines={1}
@@ -397,12 +426,15 @@ const MultiListLayout: React.FC<{
         const color = isDraw && won ? COLORS.draw : won ? COLORS.win : null;
         return (
           <View key={entry.uid} style={styles.playerRow}>
-            <UserAvatar
-              uid={entry.uid}
-              displayName={entry.displayName}
-              profilePictureUrl={entry.profilePictureUrl ?? null}
-              size={28}
-            />
+            <View style={styles.playerAvatarCol}>
+              <ProfilePictureWithDecoration
+                pictureUrl={entry.profilePictureUrl ?? null}
+                name={entry.displayName}
+                decorationId={entry.decorationId ?? null}
+                size={28}
+              />
+              {won && !isDraw ? <WinnerCrown size={28} /> : null}
+            </View>
             <Text
               style={[styles.playerName, hasBg ? { color: "#FFFFFF" } : null]}
               numberOfLines={1}
@@ -533,6 +565,31 @@ const styles = StyleSheet.create({
     height: 40,
     justifyContent: "center",
     alignItems: "center",
+    overflow: "visible",
+  },
+  vsAvatarCol: {
+    width: 48,
+    height: 48,
+    justifyContent: "center",
+    alignItems: "center",
+    overflow: "visible",
+  },
+  playerAvatarCol: {
+    width: 28,
+    height: 28,
+    justifyContent: "center",
+    alignItems: "center",
+    overflow: "visible",
+  },
+  winnerCrownWrap: {
+    position: "absolute",
+    zIndex: 20,
+    elevation: 6,
+  },
+  winnerCrownIcon: {
+    textShadowColor: "rgba(0,0,0,0.45)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
   },
   crown: {
     position: "absolute",

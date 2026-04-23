@@ -93,6 +93,8 @@ export interface PlayerSlot {
   displayName?: string;
   avatarConfig?: Record<string, unknown>;
   profilePictureUrl?: string | null;
+  /** Equipped avatar decoration ID at session-start. */
+  decorationId?: string | null;
 }
 
 /** A spectator slot. */

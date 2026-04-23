@@ -191,6 +191,7 @@ export interface MinimalProfile {
   displayName: string;
   avatarConfig?: Record<string, unknown>;
   profilePictureUrl?: string | null;
+  decorationId?: string | null;
 }
 
 /**
@@ -207,6 +208,7 @@ export async function getUserProfile(
     displayName: data.displayName || "Unknown",
     avatarConfig: data.avatarConfig,
     profilePictureUrl: data.profilePicture?.url ?? null,
+    decorationId: data.avatarDecoration?.decorationId ?? null,
   };
 }
 

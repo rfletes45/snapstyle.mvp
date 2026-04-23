@@ -63,6 +63,8 @@ export interface PlayerSlot {
   displayName?: string;
   avatarConfig?: Record<string, unknown>;
   profilePictureUrl?: string | null;
+  /** Equipped avatar decoration ID (null = none). */
+  decorationId?: string | null;
 }
 
 export interface SpectatorSlot {

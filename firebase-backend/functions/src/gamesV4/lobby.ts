@@ -360,6 +360,7 @@ export const startGameFromInviteV4 = functions.https.onCall(
         displayName: string;
         avatarConfig?: Record<string, unknown>;
         profilePictureUrl?: string | null;
+        decorationId?: string | null;
       }
     >();
     await Promise.all(
@@ -426,6 +427,7 @@ export const startGameFromInviteV4 = functions.https.onCall(
             slotIndex: idx,
             displayName: profile?.displayName ?? "Player",
             profilePictureUrl: profile?.profilePictureUrl ?? null,
+            decorationId: profile?.decorationId ?? null,
           };
           // Only include avatarConfig when defined — Firestore rejects `undefined`.
           if (profile?.avatarConfig) slot.avatarConfig = profile.avatarConfig;

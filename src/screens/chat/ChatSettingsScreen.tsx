@@ -16,6 +16,7 @@ import { ScreenHeader } from "@/components/shared/ScreenHeader";
 import {
   getDMMemberPrivate,
   setArchived,
+  setDMAutoSendScorecards,
   setNotifyLevel as setDMNotifyLevel,
   setReadReceipts as setDMReadReceipts,
   setMuted,
@@ -23,6 +24,7 @@ import {
 import {
   getGroupMemberPrivate,
   setGroupArchived,
+  setGroupAutoSendScorecards,
   setGroupMuted,
   setGroupNotifyLevel,
   setGroupReadReceipts,
@@ -262,6 +264,41 @@ export default function ChatSettingsScreen({
     groupId,
   ]);
 
+  // Handle auto-send scorecards toggle
+  const handleAutoSendScorecardsToggle = useCallback(async () => {
+    if (!conversationId || !uid) return;
+
+    const newValue = settings?.autoSendScorecards === false ? true : false;
+    setSaving(true);
+
+    try {
+      if (chatType === "dm" && chatId) {
+        await setDMAutoSendScorecards(chatId, uid, newValue);
+      } else if (chatType === "group" && groupId) {
+        await setGroupAutoSendScorecards(groupId, uid, newValue);
+      }
+
+      setSettings((prev) =>
+        prev ? { ...prev, autoSendScorecards: newValue } : null,
+      );
+    } catch (error) {
+      logger.error(
+        "[ChatSettingsScreen] Failed to update auto-send scorecards:",
+        error,
+      );
+      Alert.alert("Error", "Failed to update scorecard setting");
+    } finally {
+      setSaving(false);
+    }
+  }, [
+    conversationId,
+    uid,
+    settings?.autoSendScorecards,
+    chatType,
+    chatId,
+    groupId,
+  ]);
+
   // Handle show member chat styles toggle (groups only)
   const handleShowMemberChatStylesToggle = useCallback(async () => {
     if (!groupId || !uid || chatType !== "group") return;
@@ -452,6 +489,30 @@ export default function ChatSettingsScreen({
               <Switch
                 value={settings?.sendReadReceipts !== false}
                 onValueChange={handleReadReceiptsToggle}
+                disabled={saving}
+                color={theme.colors.primary}
+              />
+            )}
+            style={{ backgroundColor: colors.surface, paddingVertical: 4 }}
+            titleStyle={{ color: colors.text, fontSize: 16 }}
+            descriptionStyle={{ color: colors.textSecondary, fontSize: 13 }}
+          />
+
+          {/* Auto-send Scorecards */}
+          <List.Item
+            title="Auto-send Scorecards"
+            description="Automatically share game results to this chat after a game you host finishes"
+            left={(props) => (
+              <List.Icon
+                {...props}
+                icon="trophy-outline"
+                color={colors.textSecondary}
+              />
+            )}
+            right={() => (
+              <Switch
+                value={settings?.autoSendScorecards !== false}
+                onValueChange={handleAutoSendScorecardsToggle}
                 disabled={saving}
                 color={theme.colors.primary}
               />

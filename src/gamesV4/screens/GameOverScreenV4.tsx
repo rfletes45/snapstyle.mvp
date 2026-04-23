@@ -344,6 +344,14 @@ export default function GameOverScreenV4() {
   const scorecardPayload: GameScorecardPayload | null = useMemo(() => {
     if (!result || !session) return null;
     const runtimeType = session.runtimeType;
+    // Look up equipped decoration per player from the session's PlayerSlot
+    // snapshot (captured at session start). This mirrors what the server
+    // does in `postGameScorecardToChat` so the manual "Share" path carries
+    // the same decoration data as the auto-post path.
+    const slotDecorationByUid = new Map<string, string | null>();
+    for (const p of session.players ?? []) {
+      slotDecorationByUid.set(p.uid, p.decorationId ?? null);
+    }
     return {
       v: 1,
       sessionId: result.sessionId,
@@ -356,6 +364,10 @@ export default function GameOverScreenV4() {
         uid: e.uid,
         displayName: e.displayName,
         profilePictureUrl: e.profilePictureUrl ?? null,
+        decorationId:
+          (e as { decorationId?: string | null }).decorationId ??
+          slotDecorationByUid.get(e.uid) ??
+          null,
         score: typeof e.score === "number" ? e.score : 0,
         placement: e.placement,
       })),

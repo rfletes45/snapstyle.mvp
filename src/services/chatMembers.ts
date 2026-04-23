@@ -862,6 +862,48 @@ export async function setReadReceipts(
 }
 
 /**
+ * Set per-chat auto-send scorecards preference for a DM.
+ *
+ * When disabled, the server skips auto-posting scorecards into this
+ * chat after games this user hosts. Manual "Share" from the GameOver
+ * screen is unaffected.
+ *
+ * @param chatId - Chat document ID
+ * @param uid - User ID
+ * @param autoSendScorecards - Whether to auto-post scorecards (default true)
+ */
+export async function setDMAutoSendScorecards(
+  chatId: string,
+  uid: string,
+  autoSendScorecards: boolean,
+): Promise<void> {
+  try {
+    const db = getFirestoreInstance();
+    const docRef = doc(db, "Chats", chatId, "MembersPrivate", uid);
+
+    await setDoc(
+      docRef,
+      {
+        uid,
+        autoSendScorecards,
+      },
+      { merge: true },
+    );
+
+    log.info(
+      "Set DM auto-send scorecards",
+      ctx({ chatId, autoSendScorecards }),
+    );
+  } catch (error) {
+    log.error(
+      "Failed to set DM auto-send scorecards",
+      ctx({ chatId, uid, error }),
+    );
+    throw error;
+  }
+}
+
+/**
  * Mark chat as unread
  *
  * Sets lastMarkedUnreadAt to force unread badge until next view.

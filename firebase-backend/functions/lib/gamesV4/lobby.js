@@ -306,6 +306,7 @@ exports.startGameFromInviteV4 = functions.https.onCall(async (data, context) => 
                     slotIndex: idx,
                     displayName: profile?.displayName ?? "Player",
                     profilePictureUrl: profile?.profilePictureUrl ?? null,
+                    decorationId: profile?.decorationId ?? null,
                 };
                 // Only include avatarConfig when defined — Firestore rejects `undefined`.
                 if (profile?.avatarConfig)

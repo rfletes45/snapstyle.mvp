@@ -200,6 +200,7 @@ async function getUserProfile(uid) {
         displayName: data.displayName || "Unknown",
         avatarConfig: data.avatarConfig,
         profilePictureUrl: data.profilePicture?.url ?? null,
+        decorationId: data.avatarDecoration?.decorationId ?? null,
     };
 }
 // =============================================================================

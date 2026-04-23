@@ -850,6 +850,15 @@ export interface MemberStatePrivate {
    */
   sendReadReceipts?: boolean;
 
+  /**
+   * Auto-send game scorecards to this conversation after a hosted game
+   * finishes. Only checked against the session host's MembersPrivate doc.
+   * When false, the server skips auto-posting the scorecard and members
+   * may still manually share via the GameOver share button.
+   * @default true (undefined / missing == enabled)
+   */
+  autoSendScorecards?: boolean;
+
   // =========================================================================
   // Per-Chat Privacy Overrides (Settings V3 — CHAT_SETTINGS_V3)
   // =========================================================================

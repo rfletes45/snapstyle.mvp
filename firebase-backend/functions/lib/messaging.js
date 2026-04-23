@@ -563,6 +563,10 @@ exports.sendMessageV2 = functions.https.onCall(async (data, context) => {
                     profilePictureUrl: typeof entry.profilePictureUrl === "string"
                         ? entry.profilePictureUrl
                         : null,
+                    decorationId: typeof entry.decorationId === "string" &&
+                        entry.decorationId.length <= 128
+                        ? entry.decorationId
+                        : null,
                     score: entry.score,
                     ...(typeof entry.placement === "number"
                         ? { placement: entry.placement }

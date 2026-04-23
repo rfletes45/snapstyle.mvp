@@ -622,6 +622,7 @@ interface SendMessageV2Input {
       uid: string;
       displayName: string;
       profilePictureUrl?: string | null;
+      decorationId?: string | null;
       score: number;
       placement?: number;
     }>;
@@ -839,6 +840,11 @@ export const sendMessageV2 = functions.https.onCall(
             profilePictureUrl:
               typeof entry.profilePictureUrl === "string"
                 ? entry.profilePictureUrl
+                : null,
+            decorationId:
+              typeof entry.decorationId === "string" &&
+              entry.decorationId.length <= 128
+                ? entry.decorationId
                 : null,
             score: entry.score as number,
             ...(typeof entry.placement === "number"

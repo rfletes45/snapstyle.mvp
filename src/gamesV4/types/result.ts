@@ -21,6 +21,8 @@ export interface FinalScoreboardEntry {
   displayName: string;
   avatarConfig?: Record<string, unknown>;
   profilePictureUrl?: string | null;
+  /** Equipped avatar decoration ID at resolution time. */
+  decorationId?: string | null;
   score: number;
   /** 1-indexed placement (1 = first place). Ties share same placement. */
   placement: number;

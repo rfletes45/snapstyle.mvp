@@ -414,20 +414,23 @@ export async function resolveSessionV4Internal(
     console.error(`[resolveV4] Failed to send resolved notifications:`, err);
   }
 
-  // ─── Phase 10.5: Auto-post scorecard to group chat ────────────────
-  // Group-only, multiplayer-only. DMs never receive auto-posts per product
-  // requirement — users in DMs can still share via the GameOverScreen
-  // "Share" button. Solo sessions have no conversation chat to post into.
+  // ─── Phase 10.5: Auto-post scorecard to conversation ─────────────
+  // Posts into the hosting chat (DM or group) for every multiplayer
+  // session. Solo sessions have no conversation to post into. The host's
+  // per-chat `autoSendScorecards` preference (stored on their
+  // MembersPrivate doc) gates the post — defaults to enabled when the
+  // field is absent.
   if (
-    session.conversationScope === "group" &&
+    (session.conversationScope === "group" ||
+      session.conversationScope === "dm") &&
     session.runtimeType !== "solo" &&
     session.conversationId
   ) {
     try {
-      await postGameScorecardToGroup(db, session, result);
+      await postGameScorecardToChat(db, session, result);
     } catch (err) {
       console.error(
-        `[resolveV4] Failed to auto-post scorecard to group ${session.conversationId}:`,
+        `[resolveV4] Failed to auto-post scorecard to ${session.conversationScope} ${session.conversationId}:`,
         err,
       );
     }
@@ -573,6 +576,7 @@ function buildDefaultScoreboard(
       displayName: player.displayName ?? "Player",
       avatarConfig: player.avatarConfig,
       profilePictureUrl: player.profilePictureUrl ?? null,
+      decorationId: player.decorationId ?? null,
       score: summaryEntry?.score ?? (isWinner ? 1 : 0),
       placement: isWinner ? 1 : idx + 1,
       stats: {},
@@ -1277,16 +1281,49 @@ async function notifyFriendsBeatenByDeltas(
  * lets the standard renderer's scorecard decode short-circuit mount the
  * rich card — no special system-message wiring required.
  */
-async function postGameScorecardToGroup(
+async function postGameScorecardToChat(
   db: FirebaseFirestore.Firestore,
   session: GameSessionV4,
   result: GameResultV4,
 ): Promise<void> {
-  const groupId = session.conversationId;
+  const conversationId = session.conversationId;
+  const scope: "dm" | "group" =
+    session.conversationScope === "dm" ? "dm" : "group";
+  const rootCollection = scope === "dm" ? "Chats" : "Groups";
+  const hostId = session.hostId;
+
+  // Host-preference gate: skip auto-post when the host has disabled
+  // auto-sending scorecards for this specific conversation. Field is
+  // stored on the host's per-conversation MembersPrivate doc. Missing /
+  // undefined = enabled (product default).
+  try {
+    const prefSnap = await db
+      .collection(rootCollection)
+      .doc(conversationId)
+      .collection("MembersPrivate")
+      .doc(hostId)
+      .get();
+    const prefs = prefSnap.data() as
+      | { autoSendScorecards?: boolean }
+      | undefined;
+    if (prefs?.autoSendScorecards === false) {
+      console.log(
+        `[resolveV4] Host ${hostId} disabled auto-send scorecards for ${scope} ${conversationId}; skipping.`,
+      );
+      return;
+    }
+  } catch (err) {
+    console.warn(
+      `[resolveV4] Failed to read autoSendScorecards pref for host ${hostId}:`,
+      err,
+    );
+    // Fall through — default is enabled.
+  }
+
   const messageId = `scorecard_${session.sessionId}`;
   const messageRef = db
-    .collection("Groups")
-    .doc(groupId)
+    .collection(rootCollection)
+    .doc(conversationId)
     .collection("Messages")
     .doc(messageId);
 
@@ -1300,10 +1337,17 @@ async function postGameScorecardToGroup(
   }
 
   const gameTitle = getGameDisplayName(session.gameId);
+  // Thread equipped decorationId from PlayerSlot onto scoreboard so the
+  // client scorecard renderer can draw pfp decorations per player.
+  const slotDecorationByUid = new Map<string, string | null>();
+  for (const p of session.players ?? []) {
+    slotDecorationByUid.set(p.uid, p.decorationId ?? null);
+  }
   const scoreboard = result.scoreboard.map((e) => ({
     uid: e.uid,
     displayName: e.displayName,
     profilePictureUrl: e.profilePictureUrl ?? null,
+    decorationId: slotDecorationByUid.get(e.uid) ?? null,
     score: typeof e.score === "number" ? e.score : 0,
     placement: e.placement,
   }));
@@ -1370,20 +1414,19 @@ async function postGameScorecardToGroup(
   // the session host so the message feels like a real post from that
   // user. Fall back to the scoreboard entry (same uid) for displayName /
   // avatar, then to the players slot, then to a safe default.
-  const hostId = session.hostId;
   const hostScoreboardEntry = scoreboard.find((s) => s.uid === hostId) ?? null;
   const hostPlayerSlot = session.players?.find((p) => p.uid === hostId) ?? null;
   const hostDisplayName =
     hostScoreboardEntry?.displayName ?? hostPlayerSlot?.displayName ?? "Player";
 
-  // Shaped to align with `MessageV2` so the existing group subscribe /
-  // normalize / renderer path picks it up without changes. `kind: "text"`
-  // + the sentinel decode short-circuit makes the scorecard render as a
+  // Shaped to align with `MessageV2` so the existing subscribe / normalize
+  // / renderer path picks it up without changes. `kind: "text"` + the
+  // sentinel decode short-circuit makes the scorecard render as a
   // native, sender-aligned in-chat message.
   const messageDoc = {
     id: messageId,
-    scope: "group" as const,
-    conversationId: groupId,
+    scope,
+    conversationId,
     senderId: hostId,
     senderName: hostDisplayName,
     kind: "text" as const,
@@ -1408,10 +1451,10 @@ async function postGameScorecardToGroup(
     throw err;
   }
 
-  // Best-effort: update the group's last message summary so the inbox
-  // preview reflects the scorecard. Non-fatal on failure.
+  // Best-effort: update the conversation's last message summary so the
+  // inbox preview reflects the scorecard. Non-fatal on failure.
   try {
-    await db.collection("Groups").doc(groupId).update({
+    await db.collection(rootCollection).doc(conversationId).update({
       lastMessageText: fallbackText,
       lastMessageAt: createdAtMs,
       lastMessageSenderId: hostId,
@@ -1419,12 +1462,12 @@ async function postGameScorecardToGroup(
     });
   } catch (err) {
     console.warn(
-      `[resolveV4] Failed to bump group lastMessage for ${groupId}:`,
+      `[resolveV4] Failed to bump ${scope} lastMessage for ${conversationId}:`,
       err,
     );
   }
 
   console.log(
-    `[resolveV4] Posted scorecard to group ${groupId} for session ${session.sessionId}.`,
+    `[resolveV4] Posted scorecard to ${scope} ${conversationId} for session ${session.sessionId}.`,
   );
 }
