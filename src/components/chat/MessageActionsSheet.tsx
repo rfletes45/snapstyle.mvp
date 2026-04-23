@@ -13,7 +13,6 @@
  */
 
 import { BorderRadius, Spacing } from "@/constants/theme";
-import * as Clipboard from "expo-clipboard";
 import {
   canDeleteForAll,
   canDeleteForMe,
@@ -23,6 +22,7 @@ import {
   editMessage,
 } from "@/services/messageActions";
 import { MessageV2, ReplyToMetadata } from "@/types/messaging";
+import * as Clipboard from "expo-clipboard";
 import React, { useCallback, useState } from "react";
 import {
   Alert,
@@ -73,6 +73,13 @@ interface MessageActionsSheetProps {
   onReactionAdded?: (emoji: string) => void;
   /** Called when user taps "+" to expand full emoji picker */
   onExpandReactions?: () => void;
+  /**
+   * When true the Reply action is hidden.  Used by the thread view,
+   * where "reply to a reply" is not supported — all replies in the
+   * sheet already target the thread root, so offering a reply button
+   * would be misleading.
+   */
+  hideReply?: boolean;
 }
 
 // =============================================================================
@@ -91,6 +98,7 @@ export function MessageActionsSheet({
   onDeleted,
   onReactionAdded,
   onExpandReactions,
+  hideReply = false,
 }: MessageActionsSheetProps) {
   const theme = useTheme();
 
@@ -384,14 +392,15 @@ export function MessageActionsSheet({
 
       {/* Actions */}
       <View style={styles.actions}>
-        {/* Reply */}
-        <ActionButton
-          icon="reply"
-          label="Reply"
-          onPress={handleReply}
-          theme={theme}
-        />
-
+        {/* Reply — hidden inside threads (no reply-to-a-reply). */}
+        {!hideReply && (
+          <ActionButton
+            icon="reply"
+            label="Reply"
+            onPress={handleReply}
+            theme={theme}
+          />
+        )}
         {/* Copy (text messages only) */}
         {message.kind === "text" && message.text && (
           <ActionButton

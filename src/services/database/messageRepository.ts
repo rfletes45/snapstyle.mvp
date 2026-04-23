@@ -446,13 +446,25 @@ export function getThreadMessages(
 
 /**
  * Get messages for a specific conversation (simpler API for useLocalMessages)
+ *
+ * Thread replies are filtered OUT by default — they are intended to be
+ * viewed only inside `ThreadScreen` (via `getThreadMessages`).  Without
+ * this filter, thread replies would leak into the parent conversation's
+ * main feed and lose their reply-to-root context (because the feed
+ * renderer only shows the reply chip for direct replies, not thread
+ * replies).  The main chat continues to show the thread ROOT message
+ * with its "X replies" indicator, which is the correct UX.
  */
 export function getMessagesForConversation(
   conversationId: string,
   scope: "dm" | "group",
   limit: number = 50,
 ): MessageWithAttachments[] {
-  return getMessages(conversationId, { limit, scope });
+  return getMessages(conversationId, {
+    limit,
+    scope,
+    excludeThreadReplies: true,
+  });
 }
 
 /**
@@ -488,6 +500,15 @@ export function getMessages(
     afterTimestamp?: number;
     includeDeleted?: boolean;
     scope?: "dm" | "group";
+    /**
+     * When true, rows whose `thread_root_id` is non-null/non-empty are
+     * excluded.  This is how the main chat feed hides thread replies —
+     * they live in the same `messages` table but are only meant to be
+     * visible inside `ThreadScreen` (which uses `getThreadMessages`
+     * instead).  Defaults to `false` for callers that want all rows
+     * (e.g. `getMessageWindowAroundMessage` used for deep-jump search).
+     */
+    excludeThreadReplies?: boolean;
   } = {},
 ): MessageWithAttachments[] {
   const db = getDatabase();
@@ -497,6 +518,7 @@ export function getMessages(
     afterTimestamp,
     includeDeleted = false,
     scope,
+    excludeThreadReplies = false,
   } = options;
 
   let whereClause = "conversation_id = ?";
@@ -509,6 +531,12 @@ export function getMessages(
 
   if (!includeDeleted) {
     whereClause += " AND deleted_for_all = 0";
+  }
+
+  if (excludeThreadReplies) {
+    // SQLite stores absent columns as NULL; older migrations may have
+    // written empty strings.  Handle both to be safe.
+    whereClause += " AND (thread_root_id IS NULL OR thread_root_id = '')";
   }
 
   if (beforeTimestamp) {
@@ -561,6 +589,7 @@ export function getMessageWindowAroundMessage(
   const newerRowsRaw = db.getAllSync<MessageRow>(
     `SELECT * FROM messages
      WHERE conversation_id = ? AND scope = ? AND deleted_for_all = 0
+     AND (thread_root_id IS NULL OR thread_root_id = '')
      AND created_at > ?
      ORDER BY created_at DESC
      LIMIT ?`,
@@ -569,6 +598,7 @@ export function getMessageWindowAroundMessage(
   const olderRowsRaw = db.getAllSync<MessageRow>(
     `SELECT * FROM messages
      WHERE conversation_id = ? AND scope = ? AND deleted_for_all = 0
+     AND (thread_root_id IS NULL OR thread_root_id = '')
      AND created_at < ?
      ORDER BY created_at DESC
      LIMIT ?`,

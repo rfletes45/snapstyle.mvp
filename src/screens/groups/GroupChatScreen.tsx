@@ -80,6 +80,7 @@ import {
 
 // Auth
 import { useAuth } from "@/store/AuthContext";
+import { useChatKeyboardPreference } from "@/store/ChatKeyboardPreferenceContext";
 import { useInAppNotifications } from "@/store/InAppNotificationsContext";
 import { useAppTheme } from "@/store/ThemeContext";
 import { useUser } from "@/store/UserContext";
@@ -204,6 +205,8 @@ import {
   useComposerSheet,
   useDismissTransientUiOnBlur,
 } from "@/contexts/ComposerSheetContext";
+import GameScorecard from "@/gamesV4/components/GameScorecard";
+import { decodeScorecardText } from "@/gamesV4/services/scorecardWire";
 import { useAnimalEntitlement } from "@/hooks/useAnimalEntitlement";
 import { useConversationDisplayMode } from "@/store/ConversationDisplayModeContext";
 
@@ -237,6 +240,7 @@ import type { GameId } from "@/gamesV4/types";
 
 import { clearLastOpenChat, saveLastOpenChat } from "@/services/lastOpenChat";
 import { syncMessagesAroundTarget } from "@/services/sync/syncEngine";
+import { useSnackbar } from "@/store/SnackbarContext";
 
 // Keyboard-sync (KCSV + fallback animated container)
 import {
@@ -443,6 +447,10 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   );
   const messageListRef = useRef<ChatMessageListRef>(null);
   const textInputRef = useRef<any>(null);
+  // Imperative ref to focus the composer (open keyboard) on chat entry.
+  const composerFocusRef = useRef<{ focus: () => void } | null>(null);
+  const { autoOpenKeyboard } = useChatKeyboardPreference();
+  const { showInfo } = useSnackbar();
 
   // Media viewer state (H10)
   const [mediaViewerVisible, setMediaViewerVisible] = useState(false);
@@ -493,6 +501,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   >(null);
   const [showReturnButton, setShowReturnButton] = useState(false);
   const returnIndexRef = useRef<number | null>(null);
+  const returnScrollOffsetRef = useRef<number | null>(null);
   const highlightTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
@@ -1441,6 +1450,10 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   /** Stable callback for stacked-mode thread navigation. */
   const handleStackedThreadPress = useCallback(
     (messageId: string) => {
+      // Close the group chat keyboard BEFORE navigating into the
+      // thread so the keyboard doesn't remain half-active during the
+      // transition (thread entry never opens the keyboard).
+      Keyboard.dismiss();
       navigation.navigate("ThreadView", {
         conversationId: groupId,
         scope: "group" as const,
@@ -1521,6 +1534,40 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     fallbackReactionsRef.current.clear();
   }, [messages, uid]);
 
+  // ── Auto-open keyboard on chat focus ────────────────────────────────
+  // Auto-focus the composer on FIRST entry only.  Returning from a
+  // child screen (ThreadView, MediaViewer, etc.) must not re-open the
+  // keyboard — doing so causes a jarring sideways keyboard animation
+  // while the stack-pop is still sliding horizontally.
+  const hasAutoFocusedRef = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      if (!autoOpenKeyboard) return;
+      if (targetMessageId) return;
+
+      if (hasAutoFocusedRef.current) {
+        Keyboard.dismiss();
+        return;
+      }
+      hasAutoFocusedRef.current = true;
+
+      let cancelled = false;
+      const task = InteractionManager.runAfterInteractions(() => {
+        const timeoutId = setTimeout(() => {
+          if (cancelled) return;
+          composerFocusRef.current?.focus();
+        }, 120);
+        (task as any).__timeoutId = timeoutId;
+      });
+      return () => {
+        cancelled = true;
+        const timeoutId = (task as any).__timeoutId;
+        if (timeoutId) clearTimeout(timeoutId);
+        task.cancel?.();
+      };
+    }, [autoOpenKeyboard, targetMessageId]),
+  );
+
   // Enhanced scroll-to-message with highlight animation
   const scrollToMessage = useCallback((messageId: string) => {
     const targetIndex = timelineDataRef.current.findIndex(
@@ -1533,7 +1580,10 @@ export default function GroupChatScreen({ route, navigation }: Props) {
       clearTimeout(highlightTimeoutRef.current);
     }
 
-    // Store current position for return navigation
+    // Snapshot current scroll offset so "Back to reply" can return the
+    // user to the exact position they were at — not dump them at bottom.
+    const snapshotOffset = messageListRef.current.getLastScrollOffset?.() ?? 0;
+    returnScrollOffsetRef.current = snapshotOffset;
     returnIndexRef.current = 0;
     setShowReturnButton(true);
 
@@ -1550,17 +1600,22 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     });
   }, []);
 
-  // Handle return button press
+  // Handle return button press — restore the exact scroll position
   const handleReturnToReply = useCallback(() => {
-    const returnIndex = returnIndexRef.current;
+    const snapshotOffset = returnScrollOffsetRef.current;
     screen.chat.clearMessageAnchor();
     setShowReturnButton(false);
     returnIndexRef.current = null;
-    if (returnIndex !== null && messageListRef.current) {
-      requestAnimationFrame(() => {
-        messageListRef.current?.scrollToIndex(returnIndex, true);
-      });
-    }
+    returnScrollOffsetRef.current = null;
+
+    if (!messageListRef.current) return;
+    requestAnimationFrame(() => {
+      if (snapshotOffset !== null) {
+        messageListRef.current?.scrollToOffset?.(snapshotOffset, true);
+      } else {
+        messageListRef.current?.scrollToBottom(true);
+      }
+    });
   }, [screen.chat]);
 
   // Auto-scroll to targetMessageId from navigation (deep jump)
@@ -1577,6 +1632,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
       prevTargetJumpKeyRef.current = targetJumpKey;
       hasScrolledToTargetRef.current = false;
       deepJumpSyncingRef.current = false;
+      messageListRef.current?.resetScrollToIndexAttempts?.();
     }
   }, [targetJumpKey]);
 
@@ -1606,24 +1662,23 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     }
 
     deepJumpSyncingRef.current = true;
-    syncMessagesAroundTarget("group", groupId, targetMessageId, 30)
+    syncMessagesAroundTarget("group", groupId, targetMessageId, 50)
       .then((found) => {
         if (found) {
           if (!screen.chat.loadAroundMessage(targetMessageId)) {
             screen.chat.refresh();
+            showInfo("Message not found");
           }
         } else {
-          Alert.alert(
-            "Message unavailable",
-            "That message couldn't be found. It may have been deleted.",
-          );
           logger.warn(
             `[GroupChat] Target message ${targetMessageId} not found on server`,
           );
+          showInfo("Message not found");
         }
       })
       .catch((err) => {
         logger.warn("[GroupChat] syncMessagesAroundTarget failed:", err);
+        showInfo("Couldn't load that message");
       })
       .finally(() => {
         deepJumpSyncingRef.current = false;
@@ -1635,11 +1690,13 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     screen.chat.loadAroundMessage,
     screen.chat.refresh,
     groupId,
+    showInfo,
   ]);
   // Auto-hide return button callback
   const handleReturnButtonAutoHide = useCallback(() => {
     setShowReturnButton(false);
     returnIndexRef.current = null;
+    returnScrollOffsetRef.current = null;
   }, []);
 
   const handleReply = useCallback(
@@ -1885,6 +1942,25 @@ export default function GroupChatScreen({ route, navigation }: Props) {
       }
 
       const item = timelineItem.data;
+
+      // ── Scorecard short-circuit ────────────────────────────────────
+      // Scorecards ride inside either `system` (backend auto-post) or
+      // `text` (user share-sheet). We MUST decode before the stacked /
+      // bubble mode split below — otherwise stacked mode routes straight
+      // into GroupStackedMessageRenderer which renders the sentinel as
+      // plain text. This short-circuit is the single rendering entry
+      // point for scorecards in groups.
+      if (item.kind === "system" || item.kind === "text") {
+        const scorecardEarly = decodeScorecardText(item.text);
+        if (scorecardEarly) {
+          return (
+            <View style={styles.scorecardContainer}>
+              <GameScorecard payload={scorecardEarly} />
+            </View>
+          );
+        }
+      }
+
       const isOwnMessage = item.senderId === uid;
       // Use precomputed grouping from buildTimeline
       const isGroupedWithPrev = timelineItem.isGroupedWithPrevious;
@@ -2292,13 +2368,14 @@ export default function GroupChatScreen({ route, navigation }: Props) {
                 <ThreadIndicator
                   replyCount={item.replyCount}
                   isOutgoing={isOwnMessage}
-                  onPress={() =>
+                  onPress={() => {
+                    Keyboard.dismiss();
                     navigation.navigate("ThreadView", {
                       conversationId: groupId,
                       scope: "group" as const,
                       rootMessageId: item.id,
-                    })
-                  }
+                    });
+                  }}
                 />
               )}
             </View>
@@ -2522,6 +2599,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
               newestMessageId={messages[0]?.id}
               renderScrollComponent={renderScrollComponent}
               pillBottomOffset={12}
+              suppressReturnToBottom={showReturnButton}
               isKeyboardOpen={screen.keyboard.isKeyboardOpen}
               onDismissTransientUi={dismissAllTransientUi}
               ListHeaderComponent={
@@ -2560,6 +2638,19 @@ export default function GroupChatScreen({ route, navigation }: Props) {
               }}
             />
           )}
+
+          {/* Back-to-Reply button.  Rendered INSIDE SheetDismissLayer so it
+              shares the same containing block as ReturnToBottomPill (which
+              lives inside ChatMessageList). With both measured from the
+              composer-top edge, `bottomOffset={12}` visually aligns the
+              two buttons at the same Y. */}
+          <ScrollReturnButton
+            visible={showReturnButton}
+            onPress={handleReturnToReply}
+            onAutoHide={handleReturnButtonAutoHide}
+            autoHideDelay={screen.chat.isMessageAnchorActive ? 0 : 5000}
+            bottomOffset={12}
+          />
         </SheetDismissLayer>
 
         {/* Keyboard-aware footer: typing indicator + composer */}
@@ -2678,6 +2769,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
             animalThemeId={animalEntitlement.equippedAnimalId}
             animalDisabled={!uid || !animalEntitlement.canSend}
             textInputRef={textInputRef}
+            composerFocusRef={composerFocusRef}
             // Customizable toolbar
             toolbarItems={toolbar.items}
             toolbarEditing={toolbar.isEditing}
@@ -2700,14 +2792,6 @@ export default function GroupChatScreen({ route, navigation }: Props) {
           />
           <KeyboardSafeAreaSpacer />
         </ChatFooterWrapper>
-
-        {/* Jump-back button for reply navigation */}
-        <ScrollReturnButton
-          visible={showReturnButton}
-          onPress={handleReturnToReply}
-          onAutoHide={handleReturnButtonAutoHide}
-          autoHideDelay={screen.chat.isMessageAnchorActive ? 0 : 5000}
-        />
       </ChatKeyboardContainer>
 
       <MediaViewerModal
@@ -2782,6 +2866,11 @@ export default function GroupChatScreen({ route, navigation }: Props) {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  scorecardContainer: {
+    alignItems: "center",
+    marginVertical: 8,
+    paddingHorizontal: 8,
+  },
   chatBackground: {
     ...StyleSheet.absoluteFillObject,
     opacity: 1,

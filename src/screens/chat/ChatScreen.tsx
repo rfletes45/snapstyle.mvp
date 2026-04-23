@@ -30,6 +30,7 @@ import React, {
 import {
   ActivityIndicator,
   Alert,
+  InteractionManager,
   Keyboard,
   Platform,
   StyleSheet,
@@ -43,6 +44,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 // Auth & notifications
 import { useAuth } from "@/store/AuthContext";
+import { useChatKeyboardPreference } from "@/store/ChatKeyboardPreferenceContext";
 import { useInAppNotifications } from "@/store/InAppNotificationsContext";
 import { useUser } from "@/store/UserContext";
 
@@ -108,6 +110,8 @@ import {
 } from "@/contexts/ComposerSheetContext";
 import { PinnedInviteBar } from "@/gamesV4/components/PinnedInviteBar";
 import { createGameInvite } from "@/gamesV4/services/gameServiceV4";
+import GameScorecard from "@/gamesV4/components/GameScorecard";
+import { decodeScorecardText } from "@/gamesV4/services/scorecardWire";
 import type { GameId } from "@/gamesV4/types";
 import { useConversationDisplayMode } from "@/store/ConversationDisplayModeContext";
 
@@ -166,6 +170,7 @@ import * as Haptics from "expo-haptics";
 
 import { clearLastOpenChat, saveLastOpenChat } from "@/services/lastOpenChat";
 import { syncMessagesAroundTarget } from "@/services/sync/syncEngine";
+import { useSnackbar } from "@/store/SnackbarContext";
 import { chatPerf } from "@/utils/chatPerf";
 import { createLogger } from "@/utils/log";
 import { scheduleIdleWork } from "@/utils/scheduleIdleWork";
@@ -414,6 +419,10 @@ export default function ChatScreen({
       : null,
   );
   const messageListRef = React.useRef<ChatMessageListRef>(null);
+  // Imperative ref used to focus the composer (open keyboard) on chat open.
+  const composerFocusRef = React.useRef<{ focus: () => void } | null>(null);
+  const { autoOpenKeyboard } = useChatKeyboardPreference();
+  const { showInfo } = useSnackbar();
 
   // Modal state
   const [blockModalVisible, setBlockModalVisible] = useState(false);
@@ -450,6 +459,10 @@ export default function ChatScreen({
     string | null
   >(null);
   const [showReturnButton, setShowReturnButton] = useState(false);
+  // Raw scroll offset captured when the user taps a reply to jump.  Used
+  // by handleReturnToReply to restore the user's previous scroll position
+  // exactly — instead of dumping them at the inverted-list bottom.
+  const returnScrollOffsetRef = useRef<number | null>(null);
   const returnIndexRef = useRef<number | null>(null);
   const highlightTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
@@ -1180,6 +1193,61 @@ export default function ChatScreen({
     fallbackReactionsRef.current.clear();
   }, [displayMessages, uid]);
 
+  // ── Auto-open keyboard on chat focus ────────────────────────────────
+  // When the user enters a DM (or returns to it) we focus the composer so
+  // the keyboard opens automatically — unless:
+  //   * the user has disabled the preference in Chat Settings
+  //   * we are deep-jumping to a specific targetMessageId (search / reply
+  //     notification tap) — forcing focus there would steal the user's
+  //     attention from the message they came to see.
+  //   * the chat is blocked (composer is not rendered)
+  //
+  // We call focus() after an `InteractionManager.runAfterInteractions`
+  // tick so layout (keyboard avoidance, sheet handoff floor, KCSV insets)
+  // is fully settled before the native keyboard begins animating in.
+  // `hasAutoFocusedRef` guards against the useFocusEffect firing on EVERY
+  // focus event — specifically when the user returns to this screen from
+  // a child screen like ThreadView, MediaViewer, ProfileViewer, etc.
+  // Without this guard the keyboard re-opens during the stack pop, which
+  // produces a jarring "sideways" animation because the keyboard is
+  // animating in while the screen is still sliding back horizontally.
+  //
+  // Contract: keyboard auto-opens on the FIRST focus only (initial
+  // mount / navigation-enter).  On subsequent focus events we actively
+  // dismiss any keyboard the child screen may have left hanging so the
+  // user returns to a calm, closed-composer state.
+  const hasAutoFocusedRef = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      if (!autoOpenKeyboard) return;
+      if (targetMessageId) return;
+      if (dmBlocked) return;
+
+      if (hasAutoFocusedRef.current) {
+        // Return-from-child focus: do not re-open the keyboard.  Dismiss
+        // anything that's still up so the chat settles cleanly.
+        Keyboard.dismiss();
+        return;
+      }
+      hasAutoFocusedRef.current = true;
+
+      let cancelled = false;
+      const task = InteractionManager.runAfterInteractions(() => {
+        const timeoutId = setTimeout(() => {
+          if (cancelled) return;
+          composerFocusRef.current?.focus();
+        }, 120);
+        (task as any).__timeoutId = timeoutId;
+      });
+      return () => {
+        cancelled = true;
+        const timeoutId = (task as any).__timeoutId;
+        if (timeoutId) clearTimeout(timeoutId);
+        task.cancel?.();
+      };
+    }, [autoOpenKeyboard, targetMessageId, dmBlocked]),
+  );
+
   // Enhanced scroll-to-message with highlight animation
   const scrollToMessage = useCallback(
     (messageId: string) => {
@@ -1193,9 +1261,14 @@ export default function ChatScreen({
         clearTimeout(highlightTimeoutRef.current);
       }
 
-      // Store current position for return navigation (rough estimate from visible messages)
-      // In inverted list, index 0 is at the bottom
-      returnIndexRef.current = 0;
+      // Snapshot the user's current scroll offset so "Back to reply" can
+      // return them exactly where they were — not just to the bottom.
+      // For the inverted list, this offset is a direction-correct value
+      // that scrollToOffset can consume verbatim.
+      const snapshotOffset =
+        messageListRef.current.getLastScrollOffset?.() ?? 0;
+      returnScrollOffsetRef.current = snapshotOffset;
+      returnIndexRef.current = 0; // retained for back-compat only
       setShowReturnButton(true);
 
       // Scroll to target message
@@ -1214,17 +1287,24 @@ export default function ChatScreen({
     [],
   );
 
-  // Handle return button press
+  // Handle return button press — restore the exact scroll position the
+  // user was at before tapping the reply.  If we failed to capture an
+  // offset for some reason, fall back to scroll-to-latest.
   const handleReturnToReply = useCallback(() => {
-    const returnIndex = returnIndexRef.current;
+    const snapshotOffset = returnScrollOffsetRef.current;
     screen.chat.clearMessageAnchor();
     setShowReturnButton(false);
     returnIndexRef.current = null;
-    if (returnIndex !== null && messageListRef.current) {
-      requestAnimationFrame(() => {
-        messageListRef.current?.scrollToIndex(returnIndex, true);
-      });
-    }
+    returnScrollOffsetRef.current = null;
+
+    if (!messageListRef.current) return;
+    requestAnimationFrame(() => {
+      if (snapshotOffset !== null) {
+        messageListRef.current?.scrollToOffset?.(snapshotOffset, true);
+      } else {
+        messageListRef.current?.scrollToBottom(true);
+      }
+    });
   }, [screen.chat]);
 
   // Auto-scroll to targetMessageId from search navigation (deep jump)
@@ -1239,6 +1319,10 @@ export default function ChatScreen({
       prevTargetJumpKeyRef.current = targetJumpKey;
       hasScrolledToTargetRef.current = false;
       deepJumpSyncingRef.current = false;
+      // Reset FlatList scrollToIndex retry budget so a re-jump to the
+      // same index gets a fresh set of attempts instead of immediately
+      // falling back to `highestMeasuredFrameIndex`.
+      messageListRef.current?.resetScrollToIndexAttempts?.();
     }
   }, [targetJumpKey]);
 
@@ -1268,20 +1352,31 @@ export default function ChatScreen({
     }
 
     deepJumpSyncingRef.current = true;
-    syncMessagesAroundTarget("dm", chatId, targetMessageId, 30)
+    // Larger window (50) matches useLocalMessages.loadAroundMessage's default
+    // so that after Firestore sync, SQLite has enough neighbours for the
+    // anchor read to succeed and for FlatList's virtualization to have a
+    // realistic chance of mounting the target cell on the first scroll
+    // attempt.  Also critical for "far up" jumps from threads.
+    syncMessagesAroundTarget("dm", chatId, targetMessageId, 50)
       .then((found) => {
         if (found) {
           if (!screen.chat.loadAroundMessage(targetMessageId)) {
             screen.chat.refresh();
+            // SQLite still cannot locate the anchor even after a successful
+            // Firestore sync - surface a toast instead of silently leaving
+            // the user on the latest page.
+            showInfo("Message not found");
           }
         } else {
           logger.warn(
             `[ChatScreen] Target message ${targetMessageId} not found on server`,
           );
+          showInfo("Message not found");
         }
       })
       .catch((err) => {
         logger.warn("[ChatScreen] syncMessagesAroundTarget failed:", err);
+        showInfo("Couldn't load that message");
       })
       .finally(() => {
         deepJumpSyncingRef.current = false;
@@ -1293,11 +1388,17 @@ export default function ChatScreen({
     screen.chat.loadAroundMessage,
     screen.chat.refresh,
     chatId,
+    showInfo,
   ]);
-  // Auto-hide return button callback
+  // Auto-hide return button callback.  Intentionally does NOT clear
+  // the scroll snapshot so that, when the pill fades into the return-to-
+  // bottom pill, the user can still recover their prior position via
+  // the scroll-to-latest path.  The snapshot is cleared only when the
+  // user explicitly presses "Back to reply".
   const handleReturnButtonAutoHide = useCallback(() => {
     setShowReturnButton(false);
     returnIndexRef.current = null;
+    returnScrollOffsetRef.current = null;
   }, []);
 
   // Tap sends the equipped animal directly into chat + plays its sound.
@@ -1478,6 +1579,19 @@ export default function ChatScreen({
         return <DateDivider label={item.label} />;
       }
       const msg = item.data;
+      // Scorecards can ride inside either `system` (legacy/backend) or
+      // `text` (user-shared via the in-app Share Scorecard sheet). Both
+      // decode to the same rich `<GameScorecard />` row.
+      if (msg.kind === "system" || msg.kind === "text") {
+        const scorecard = decodeScorecardText(msg.text);
+        if (scorecard) {
+          return (
+            <View style={dmScorecardStyles.container}>
+              <GameScorecard payload={scorecard} />
+            </View>
+          );
+        }
+      }
       if (msg.kind === "system") {
         return <SystemMessageChip text={safeSystemText(msg.text)} />;
       }
@@ -1662,6 +1776,7 @@ export default function ChatScreen({
               newestMessageId={displayMessages[0]?.id}
               renderScrollComponent={renderScrollComponent}
               pillBottomOffset={12}
+              suppressReturnToBottom={showReturnButton}
               isKeyboardOpen={screen.keyboard.isKeyboardOpen}
               onDismissTransientUi={dismissAllTransientUi}
               ListHeaderComponent={
@@ -1704,6 +1819,20 @@ export default function ChatScreen({
               }}
             />
           )}
+
+          {/* Back-to-Reply button.  Rendered INSIDE SheetDismissLayer so it
+              shares the same containing block as ReturnToBottomPill (which
+              lives inside ChatMessageList). With both measured from the
+              composer-top edge, `bottomOffset={12}` visually aligns the
+              two buttons at the same Y. When Back-to-Reply fades out,
+              ReturnToBottomPill can fade in at the exact same spot. */}
+          <ScrollReturnButton
+            visible={showReturnButton}
+            onPress={handleReturnToReply}
+            onAutoHide={handleReturnButtonAutoHide}
+            autoHideDelay={screen.chat.isMessageAnchorActive ? 0 : 5000}
+            bottomOffset={12}
+          />
         </SheetDismissLayer>
 
         {/* Network Status Banner */}
@@ -1749,6 +1878,7 @@ export default function ChatScreen({
               value={screen.composer.text}
               onChangeText={handleTextChange}
               onSend={handleSendMessage}
+              composerFocusRef={composerFocusRef}
               hasAttachments={attachmentPicker.attachments.length > 0}
               sendDisabled={
                 !chatId ||
@@ -1816,14 +1946,6 @@ export default function ChatScreen({
           )}
           <KeyboardSafeAreaSpacer />
         </ChatFooterWrapper>
-
-        {/* Jump-back button for reply navigation */}
-        <ScrollReturnButton
-          visible={showReturnButton}
-          onPress={handleReturnToReply}
-          onAutoHide={handleReturnButtonAutoHide}
-          autoHideDelay={screen.chat.isMessageAnchorActive ? 0 : 5000}
-        />
       </ChatKeyboardContainer>
 
       {blockModalVisible && (
@@ -1905,6 +2027,14 @@ export default function ChatScreen({
 // ==========================================================================
 // Styles
 // ==========================================================================
+
+const dmScorecardStyles = StyleSheet.create({
+  container: {
+    alignItems: "center",
+    marginVertical: 8,
+    paddingHorizontal: 8,
+  },
+});
 
 const styles = StyleSheet.create({
   container: {

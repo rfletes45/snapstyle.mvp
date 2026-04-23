@@ -10,7 +10,7 @@ import { ProfilePicture } from "@/components/profile/ProfilePicture/ProfilePictu
 import { useAppTheme } from "@/store/ThemeContext";
 import type { StreamCallHistoryEntry } from "@/types/streamCallHistory";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import React, { useCallback, useMemo } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 interface CallHistoryRowProps {
@@ -113,11 +113,21 @@ export default function CallHistoryRow({
     return parts.join(" · ");
   }, [isRoom, isMissed, isDeclined, entry]);
 
-  // Timestamp
-  const timeLabel = useMemo(
-    () => formatRelativeTime(entry.createdAt),
-    [entry.createdAt],
-  );
+  // Timestamp — uses a per-component ticker so relative labels ("5m ago",
+  // "1h ago", etc.) update live without requiring a full refresh of the
+  // list or a cold app restart. The tick interval is adaptive: seconds
+  // until we cross the next threshold, capped between 15s and 60s. Entries
+  // older than 7 days render a static date, so they opt out of the ticker.
+  const [, setNowTick] = useState(() => Date.now());
+  useEffect(() => {
+    const ageMs = Date.now() - entry.createdAt;
+    // Older than 7 days → static date label, no ticker needed.
+    if (ageMs > 7 * 24 * 60 * 60 * 1000) return;
+    const id = setInterval(() => setNowTick(Date.now()), 30_000);
+    return () => clearInterval(id);
+  }, [entry.createdAt]);
+
+  const timeLabel = formatRelativeTime(entry.createdAt);
 
   // Avatar content — use real profile pictures when available
   const avatarUrl = isRoom ? entry.groupAvatar : entry.otherUserAvatar;

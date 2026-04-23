@@ -10,13 +10,14 @@
  */
 
 import { CALL_FEATURES } from "@/constants/featureFlags";
-import React, { useEffect } from "react";
+import React, { useEffect, useMemo } from "react";
 
 // ---------------------------------------------------------------------------
 // Lazy load NoiseCancellationProvider + hook so the module doesn't crash in
 // environments where the native module isn't linked (Expo Go, web).
 // ---------------------------------------------------------------------------
 let NoiseCancellationProvider: React.ComponentType<{
+  noiseCancellation?: any;
   children: React.ReactNode;
 }> | null = null;
 let useNoiseCancellation:
@@ -32,6 +33,11 @@ let useCallStateHooks:
       useCallSettings: () => any;
     })
   | null = null;
+// Native noise-cancellation bridge instance (required as the
+// `noiseCancellation` prop on NoiseCancellationProvider — without it the
+// provider renders but performs NO audio processing, which is why the
+// Stream dashboard was reporting zero noise-cancellation minutes).
+let NoiseCancellationImpl: any = null;
 
 if (CALL_FEATURES.CALLS_ENABLED) {
   try {
@@ -41,6 +47,13 @@ if (CALL_FEATURES.CALLS_ENABLED) {
     useCallStateHooks = sdk.useCallStateHooks ?? null;
   } catch {
     // Native module unavailable
+  }
+  try {
+    const ncModule = require("@stream-io/noise-cancellation-react-native");
+    NoiseCancellationImpl =
+      ncModule.NoiseCancellation ?? ncModule.default ?? null;
+  } catch {
+    // Krisp native module not linked (Expo Go / older Android builds)
   }
 }
 
@@ -82,6 +95,44 @@ function NoiseCancellationDebugLogger() {
 }
 
 // ---------------------------------------------------------------------------
+// Auto-enable effect (runs inside provider)
+// ---------------------------------------------------------------------------
+//
+// Stream's NoiseCancellationProvider does NOT auto-activate Krisp even when
+// the dashboard mode is "available". The app must explicitly call
+// setEnabled(true) once the native module reports isSupported. We gate on
+// `isSupported` (covers dashboard "available" + device capability + native
+// bridge present) and only flip the switch on — we never force-off, so the
+// user can still mute noise cancellation from call UI if that's exposed.
+// This is what was previously missing and is why Stream was crediting zero
+// noise-cancellation minutes for this app.
+function NoiseCancellationAutoEnable() {
+  if (!useNoiseCancellation || !useCallStateHooks) return null;
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  const { isSupported, isEnabled, setEnabled } = useNoiseCancellation();
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  const { useCallSettings } = useCallStateHooks();
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  const settings = useCallSettings();
+  const dashboardMode = settings?.audio?.noise_cancellation?.mode ?? null;
+
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  useEffect(() => {
+    // Dashboard "auto-on" already flips isEnabled internally; only push
+    // ourselves when the dashboard is "available" (opt-in) and the
+    // native + device stack reports support.
+    if (isSupported && !isEnabled && dashboardMode !== "disabled") {
+      console.info(
+        `${TAG} Auto-enabling noise cancellation (dashboard=${dashboardMode})`,
+      );
+      setEnabled(true);
+    }
+  }, [isSupported, isEnabled, dashboardMode, setEnabled]);
+
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // Public wrapper component
 // ---------------------------------------------------------------------------
 
@@ -94,13 +145,41 @@ export function NoiseCancellationWrapper({
 }: {
   children: React.ReactNode;
 }) {
+  // Instantiate the native Krisp bridge once per wrapper mount. Without
+  // passing this as the `noiseCancellation` prop to NoiseCancellationProvider
+  // the provider is a no-op and produces zero Stream-side noise cancellation
+  // minutes, regardless of dashboard configuration.
+  const noiseCancellation = useMemo(() => {
+    if (!NoiseCancellationImpl) return null;
+    try {
+      return new NoiseCancellationImpl();
+    } catch (err) {
+      console.warn(
+        `${TAG} Failed to construct NoiseCancellation instance:`,
+        err,
+      );
+      return null;
+    }
+  }, []);
+
   if (!NoiseCancellationProvider) {
     // Native module not available — render children directly
     return <>{children}</>;
   }
 
+  if (!noiseCancellation) {
+    // Provider exists but Krisp bridge missing — providing the provider
+    // without the bridge would still be a no-op, so skip it and log once
+    // so it's obvious in TestFlight logs why NC isn't running.
+    console.warn(
+      `${TAG} NoiseCancellationProvider present but Krisp native bridge is not linked — noise cancellation disabled.`,
+    );
+    return <>{children}</>;
+  }
+
   return (
-    <NoiseCancellationProvider>
+    <NoiseCancellationProvider noiseCancellation={noiseCancellation}>
+      <NoiseCancellationAutoEnable />
       <NoiseCancellationDebugLogger />
       {children}
     </NoiseCancellationProvider>

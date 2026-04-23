@@ -464,6 +464,17 @@ function SearchSheetInner({
         setTimeout(() => {
           void (async () => {
             if (result.conversationScope === "dm") {
+              // Guard against malformed results — navigating with an empty
+              // `friendUid` would mount ChatScreen with no identity and
+              // leave the user on a blank screen.  Surface a log and bail
+              // instead.
+              const friendUid = result.otherUserId || result.senderId;
+              if (!friendUid) {
+                log.warn("[SearchSheet] DM result missing friendUid", {
+                  resultId: result.id,
+                });
+                return;
+              }
               try {
                 await prepareDmThreadEntry({
                   avatarUrl: result.conversationAvatar,
@@ -475,7 +486,7 @@ function SearchSheetInner({
               }
 
               navigation.navigate("ChatDetail", {
-                friendUid: result.otherUserId || result.senderId,
+                friendUid,
                 targetMessageId: result.messageId,
                 initialData: {
                   chatId: result.conversationId,
@@ -1169,10 +1180,7 @@ function SearchSheetInner({
                   color={colors.textSecondary}
                 />
                 <Text
-                  style={[
-                    styles.pendingText,
-                    { color: colors.textSecondary },
-                  ]}
+                  style={[styles.pendingText, { color: colors.textSecondary }]}
                 >
                   Searching messages
                 </Text>

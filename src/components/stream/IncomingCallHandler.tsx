@@ -200,6 +200,16 @@ function IncomingCallHandlerInner({
       setPendingCall(null);
       setCallAllowed(null);
 
+      // Ensure our JS-level ringtone is stopped before the call's audio
+      // session is fully active. Native CallKit stops its own UI ringtone
+      // but our JS playback would otherwise continue until the cleanup
+      // effect runs — which can race with startCallAudioSession().
+      try {
+        ringtoneService?.stopRingtone();
+      } catch {
+        // non-fatal
+      }
+
       acceptCall(callToAdopt)
         .then(() => {
           // Re-verify after the async join completes. If the call flipped
@@ -358,6 +368,23 @@ function IncomingCallHandlerInner({
     // isBusy=true and when we clear pendingCall below.
     acceptingRef.current = true;
     setPendingCall(null);
+
+    // Stop the incoming ringtone SYNCHRONOUSLY before starting the audio
+    // session. If we let the state-driven cleanup effect stop it, the
+    // ringtone can still be playing when acceptDirectCall() invokes
+    // startCallAudioSession(), which on iOS produces audio-session
+    // contention that can crash the app (the native ringtone holds an
+    // AVAudioSession category that conflicts with the call category).
+    // The native CallKit accept path avoids this because iOS stops the
+    // ringtone before handing control back to JS.
+    try {
+      ringtoneService?.stopRingtone();
+    } catch (err) {
+      console.warn(
+        "[IncomingCallHandler] stopRingtone failed (non-fatal):",
+        err,
+      );
+    }
 
     try {
       await acceptCall(callToAccept);

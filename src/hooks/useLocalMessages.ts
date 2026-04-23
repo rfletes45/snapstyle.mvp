@@ -219,6 +219,20 @@ export function useLocalMessages(
   const [messageAnchor, setMessageAnchor] = useState<MessageAnchorState | null>(
     null,
   );
+  // Synchronous mirror of `messageAnchor`.  The subscription callback below
+  // captures `loadMessages` at subscribe time, which in turn closes over the
+  // React state `messageAnchor`.  A snapshot arriving BEFORE React commits a
+  // fresh `loadAroundMessage()` state update would otherwise read the stale
+  // `messageAnchor === null` closure and overwrite the anchor window with
+  // the latest-N page.  Reading from this ref inside `loadMessages` removes
+  // that race entirely because we update the ref synchronously in
+  // `loadAroundMessage()` and `clearMessageAnchor()`.
+  const messageAnchorRef = useRef<MessageAnchorState | null>(null);
+  // True while a deep-jump anchor commit is in flight.  Subscription
+  // callbacks skip re-reads during this window so the list cannot flash
+  // back to the latest page between `loadAroundMessage()` and the first
+  // React commit that settles the new window.
+  const isAnchoringRef = useRef(false);
   const unsubscribeRef = useRef<(() => void) | null>(null);
   const hasSyncedRef = useRef(false);
   const latestLimitRef = useRef(initialLimit);
@@ -255,6 +269,8 @@ export function useLocalMessages(
     hasSyncedRef.current = false;
     firestoreExhaustedRef.current = false;
     isPaginatingRef.current = false;
+    isAnchoringRef.current = false;
+    messageAnchorRef.current = null;
     setCurrentLimit(initialLimit);
     setMessages(initialState.messages);
     setHasMore(initialState.hasMore);
@@ -274,13 +290,17 @@ export function useLocalMessages(
     }
 
     try {
-      if (messageAnchor) {
+      // Prefer the synchronous ref over React state so that subscription
+      // callbacks triggered during the commit window of loadAroundMessage()
+      // still see the active anchor.
+      const activeAnchor = messageAnchorRef.current ?? messageAnchor;
+      if (activeAnchor) {
         const window = getMessageWindowAroundMessage(
           conversationId,
           scope,
-          messageAnchor.targetMessageId,
-          messageAnchor.olderLimit,
-          messageAnchor.newerLimit,
+          activeAnchor.targetMessageId,
+          activeAnchor.olderLimit,
+          activeAnchor.newerLimit,
         );
 
         if (window) {
@@ -291,6 +311,7 @@ export function useLocalMessages(
           return;
         }
 
+        messageAnchorRef.current = null;
         setMessageAnchor(null);
       }
 
@@ -363,6 +384,13 @@ export function useLocalMessages(
           // itself once the sync completes, preventing intermediate/stale
           // re-reads from overwriting the visible timeline.
           if (isPaginatingRef.current) return;
+          // Skip re-reads while a deep-jump anchor commit is in flight.
+          // Without this, a Firestore snapshot that fires between the
+          // synchronous `setMessageAnchor()` call and its React commit
+          // would capture a stale `loadMessages` closure whose anchor is
+          // still `null` and flash the latest-N page over the anchor
+          // window.
+          if (isAnchoringRef.current) return;
           // Reload messages when new ones arrive from server
           loadMessages();
         },
@@ -414,12 +442,25 @@ export function useLocalMessages(
         return false;
       }
 
+      // Update the synchronous mirror BEFORE any React state write so that
+      // a subscription snapshot arriving during the React commit window
+      // still observes the active anchor via `messageAnchorRef`.
+      messageAnchorRef.current = nextAnchor;
+      isAnchoringRef.current = true;
+
       latestLimitRef.current = currentLimit;
       setMessageAnchor(nextAnchor);
       setMessages(window.messages);
       setHasMore(window.hasOlder);
       setError(null);
       updateStatusCounts(window.messages);
+
+      // Release the in-flight anchor guard after the next tick so that
+      // state updates flush and subscription callbacks resume normal
+      // anchor-aware re-reads.
+      setTimeout(() => {
+        isAnchoringRef.current = false;
+      }, 0);
       return true;
     },
     [conversationId, currentLimit, initialLimit, scope, updateStatusCounts],
@@ -428,6 +469,8 @@ export function useLocalMessages(
   const clearMessageAnchor = useCallback(() => {
     if (!messageAnchor) return;
 
+    // Keep the synchronous mirror in step with React state.
+    messageAnchorRef.current = null;
     setMessageAnchor(null);
     setCurrentLimit(latestLimitRef.current);
 

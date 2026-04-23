@@ -16,7 +16,13 @@
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import React, { useCallback } from "react";
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import {
+  Keyboard,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import { useTheme } from "react-native-paper";
 
 import type { MessageViewModel } from "@/chat/displayMode";
@@ -109,6 +115,14 @@ export interface StackedMessageRendererProps {
   groupPrevMessageId?: string;
   /** Next neighbor in same group (for right-side corner shape). */
   groupNextMessageId?: string;
+  /**
+   * Rendering inside a thread view.  When true: swipe-to-reply is
+   * disabled, tap-on-body navigates to parent chat via `onMessageTap`,
+   * and failed-status opacity dim is suppressed.
+   */
+  inThread?: boolean;
+  /** Optional tap handler used when `inThread` is true. */
+  onMessageTap?: (message: MessageV2) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -138,6 +152,8 @@ export const StackedMessageRenderer: React.FC<StackedMessageRendererProps> =
       cornerWidthStore,
       groupPrevMessageId,
       groupNextMessageId,
+      inThread = false,
+      onMessageTap,
     }) => {
       const theme = useTheme();
       const navigation = useNavigation<NativeStackNavigationProp<any>>();
@@ -179,8 +195,22 @@ export const StackedMessageRenderer: React.FC<StackedMessageRendererProps> =
             senderDisplayName,
             new Date(message.createdAt),
           );
+          return;
         }
-      }, [message, imageAttachment, senderDisplayName, onImagePress, onRetry]);
+        // Thread-only fallback: tap anywhere on a thread reply to jump
+        // to that message in the parent chat.
+        if (inThread && onMessageTap) {
+          onMessageTap(message);
+        }
+      }, [
+        message,
+        imageAttachment,
+        senderDisplayName,
+        onImagePress,
+        onRetry,
+        inThread,
+        onMessageTap,
+      ]);
 
       // ── Format timestamp ──────────────────────────────────────────────
       const formattedTime = React.useMemo(
@@ -300,7 +330,11 @@ export const StackedMessageRenderer: React.FC<StackedMessageRendererProps> =
       });
 
       // ── Thread press handler ──────────────────────────────────────────
+      // Close the normal chat keyboard synchronously BEFORE navigation so
+      // it doesn't remain half-active during the transition into the
+      // thread.  Thread entry itself never opens the keyboard.
       const handleThreadPress = useCallback(() => {
+        Keyboard.dismiss();
         navigation.navigate("ThreadView", {
           conversationId: chatId,
           scope: "dm" as const,
@@ -321,14 +355,14 @@ export const StackedMessageRenderer: React.FC<StackedMessageRendererProps> =
         <SwipeableMessage
           message={message}
           onReply={onReply}
-          enabled={message.status !== "failed"}
+          enabled={!inThread && message.status !== "failed"}
           currentUid={currentUid}
         >
           <View
             style={[
               s.feedRow,
               vm.isGroupStart ? s.feedRowGroupStart : s.feedRowWithinGroup,
-              message.status === "failed" && { opacity: 0.7 },
+              !inThread && message.status === "failed" && { opacity: 0.7 },
             ]}
           >
             {/* ── Message row: [avatar/spacer] [content column] ──────── */}

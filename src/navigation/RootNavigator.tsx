@@ -467,6 +467,15 @@ function MainStack() {
 
       <MainStack_Nav.Screen
         name="ChatDetail"
+        // Route identity: each friendUid is a distinct route instance.
+        // Without this, `navigate("ChatDetail", { friendUid: B })` while a
+        // ChatDetail for friendUid A is already mounted would silently
+        // reuse the existing screen and bleed state between conversations.
+        // With `getId`, React Navigation treats each friendUid as its own
+        // route — switching to a different DM replaces the screen, but
+        // returning to the same DM (e.g. from a Thread deep-jump) pops
+        // back to the existing instance instead of pushing a duplicate.
+        getId={({ params }) => (params as any)?.friendUid}
         options={{
           headerShown: false,
         }}
@@ -481,6 +490,9 @@ function MainStack() {
       </MainStack_Nav.Screen>
       <MainStack_Nav.Screen
         name="GroupChat"
+        // Route identity: each groupId is a distinct route instance.
+        // See ChatDetail above for rationale.
+        getId={({ params }) => (params as any)?.groupId}
         options={{
           headerShown: false,
         }}
@@ -493,6 +505,10 @@ function MainStack() {
       </MainStack_Nav.Screen>
       <MainStack_Nav.Screen
         name="ThreadView"
+        // Route identity: each thread root message is a distinct route.
+        // This also prevents duplicate ThreadView entries when a user
+        // rapidly taps a reply link twice.
+        getId={({ params }) => (params as any)?.rootMessageId}
         options={{
           headerShown: false,
           animation: "slide_from_right",

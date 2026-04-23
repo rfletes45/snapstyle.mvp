@@ -16,6 +16,7 @@
  * @module gamesV4/screens/GameOverScreenV4
  */
 
+import ScorecardShareSheetModal from "@/gamesV4/components/ScorecardShareSheetModal";
 import UserAvatar from "@/gamesV4/components/UserAvatar";
 import {
   GAME_METADATA,
@@ -29,8 +30,13 @@ import {
   subscribeToResult,
   subscribeToSession,
 } from "@/gamesV4/services/gameServiceV4";
-import type { GameResultV4, GameSessionV4 } from "@/gamesV4/types";
+import type {
+  GameResultV4,
+  GameScorecardPayload,
+  GameSessionV4,
+} from "@/gamesV4/types";
 import { useAuth } from "@/store/AuthContext";
+import { useSnackbar } from "@/store/SnackbarContext";
 import { useAppTheme } from "@/store/ThemeContext";
 import { useUser } from "@/store/UserContext";
 import type { MainStackParamList } from "@/types/navigation/root";
@@ -41,7 +47,7 @@ import {
   useRoute,
 } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -147,15 +153,20 @@ export default function GameOverScreenV4() {
   const winnerText = (() => {
     if (!result) return "";
     if (result.resolutionType === "resign") {
-      if (isSolo) return "Game Over";
+      if (isSolo) return "You Lost"; // solo resign always reads as a loss
       return result.winnerIds.includes(uid ?? "")
         ? "Opponent Resigned"
         : "You Resigned";
     }
     if (isPersistent && result.resolutionType === "win") return "Run Archived";
+    // Solo never surfaces as a draw — it's either a win or a loss.
+    if (isSolo) {
+      const soloWon =
+        result.resolutionType === "win" || result.winnerIds.includes(uid ?? "");
+      return soloWon ? "You Won! 🏆" : "You Lost";
+    }
     if (result.winnerIds.length === 0) return "It's a Draw!";
     if (result.winnerIds.includes(uid ?? "")) return "You Won! 🏆";
-    if (isSolo) return "Game Over";
     return "You Lost";
   })();
 
@@ -164,8 +175,14 @@ export default function GameOverScreenV4() {
     // Persistent solo archive → neutral color (not red)
     if (isPersistent && result.resolutionType === "win")
       return theme.isDark ? "#FFF" : "#333";
+    // Solo: green for win, red for loss (no orange/draw state).
+    if (isSolo) {
+      const soloWon =
+        result.resolutionType === "win" || result.winnerIds.includes(uid ?? "");
+      return soloWon ? "#34C759" : "#FF3B30";
+    }
     if (result.winnerIds.includes(uid ?? "")) return "#34C759";
-    if (result.winnerIds.length === 0) return "#FF9500";
+    if (result.winnerIds.length === 0) return "#FFCC00"; // draw = yellow
     return "#FF3B30";
   })();
 
@@ -271,6 +288,87 @@ export default function GameOverScreenV4() {
       handleBackToGames();
     }
   }, [isChatGame, handleReturnToChat, handleBackToGames]);
+
+  // ── Share scorecard (in-app) ───────────────────────────────────────
+  // Opens an in-app conversation picker so the user can push the
+  // scorecard into any of their DMs or group chats. No OS share sheet,
+  // no image capture — the scorecard travels as a sentinel-encoded
+  // text message and is rendered inline in both chat screens via the
+  // shared `<GameScorecard />` component.
+  const snackbar = useSnackbar();
+  const [shareSheetVisible, setShareSheetVisible] = useState(false);
+
+  const scorecardPayload: GameScorecardPayload | null = useMemo(() => {
+    if (!result || !session) return null;
+    const runtimeType = session.runtimeType;
+    return {
+      v: 1,
+      sessionId: result.sessionId,
+      gameId: result.gameId,
+      gameTitle: GAME_METADATA[result.gameId]?.displayName ?? result.gameId,
+      runtimeType,
+      resolutionType: result.resolutionType,
+      winnerIds: result.winnerIds ?? [],
+      scoreboard: result.scoreboard.map((e) => ({
+        uid: e.uid,
+        displayName: e.displayName,
+        profilePictureUrl: e.profilePictureUrl ?? null,
+        score: typeof e.score === "number" ? e.score : 0,
+        placement: e.placement,
+      })),
+      durationMs: result.durationMs ?? 0,
+      createdAt: Date.now(),
+    };
+  }, [result, session]);
+
+  const scorecardFallbackText: string = useMemo(() => {
+    if (!scorecardPayload) return "";
+    const gameTitle = scorecardPayload.gameTitle;
+    const isSoloPayload = scorecardPayload.runtimeType === "solo";
+    if (isSoloPayload) {
+      const soloWon =
+        scorecardPayload.resolutionType === "win" ||
+        scorecardPayload.winnerIds.length > 0;
+      return soloWon
+        ? `🎮 ${gameTitle} — You won!`
+        : `🎮 ${gameTitle} — Game over`;
+    }
+    if (
+      scorecardPayload.resolutionType === "draw" ||
+      scorecardPayload.winnerIds.length === 0
+    ) {
+      return `🎮 ${gameTitle} — Draw`;
+    }
+    if (scorecardPayload.winnerIds.length === 1) {
+      const winner = scorecardPayload.scoreboard.find(
+        (s) => s.uid === scorecardPayload.winnerIds[0],
+      );
+      return `🎮 ${gameTitle} — ${winner?.displayName ?? "Winner"} won!`;
+    }
+    return `🎮 ${gameTitle} — Game over`;
+  }, [scorecardPayload]);
+
+  const handleOpenShareSheet = useCallback(() => {
+    if (!scorecardPayload) return;
+    setShareSheetVisible(true);
+  }, [scorecardPayload]);
+
+  const handleShareComplete = useCallback(
+    ({ successes, failures }: { successes: number; failures: number }) => {
+      if (successes > 0 && failures === 0) {
+        snackbar.showSuccess(
+          successes === 1
+            ? "Scorecard sent"
+            : `Scorecard sent to ${successes} chats`,
+        );
+      } else if (successes > 0 && failures > 0) {
+        snackbar.showError(`Sent to ${successes}, failed for ${failures}`);
+      } else if (failures > 0) {
+        snackbar.showError("Could not share scorecard");
+      }
+    },
+    [snackbar],
+  );
 
   // XP info for current user
   const myXP = result?.xpAwards?.find((xp) => xp.uid === uid);
@@ -833,6 +931,31 @@ export default function GameOverScreenV4() {
             )}
           </TouchableOpacity>
 
+          {scorecardPayload ? (
+            <TouchableOpacity
+              style={[
+                styles.rematchButton,
+                {
+                  backgroundColor: theme.isDark ? "#1C1C1E" : "#FFF",
+                  borderColor: colors.primary,
+                },
+              ]}
+              onPress={handleOpenShareSheet}
+              testID="scorecard-share-button"
+            >
+              <MaterialCommunityIcons
+                name="share-variant"
+                size={18}
+                color={colors.primary}
+              />
+              <Text
+                style={[styles.secondaryButtonText, { color: colors.primary }]}
+              >
+                Share Scorecard
+              </Text>
+            </TouchableOpacity>
+          ) : null}
+
           <View style={styles.secondaryRow}>
             <TouchableOpacity
               style={[styles.secondaryButton, { borderColor: colors.primary }]}
@@ -887,6 +1010,16 @@ export default function GameOverScreenV4() {
           )}
         </View>
       </ScrollView>
+
+      {/* In-app share: opens a multi-select conversation picker.
+          Replaces the previous OS share sheet flow. */}
+      <ScorecardShareSheetModal
+        visible={shareSheetVisible}
+        payload={scorecardPayload}
+        fallbackText={scorecardFallbackText}
+        onClose={() => setShareSheetVisible(false)}
+        onComplete={handleShareComplete}
+      />
     </SafeAreaView>
   );
 }

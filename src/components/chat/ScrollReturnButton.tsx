@@ -13,6 +13,7 @@
  * @module components/chat/ScrollReturnButton
  */
 
+import { BorderRadius, Spacing } from "@/constants/theme";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useEffect, useRef } from "react";
 import { Platform, StyleSheet, TouchableOpacity } from "react-native";
@@ -27,7 +28,6 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { BorderRadius, Spacing } from "@/constants/theme";
 
 // =============================================================================
 // Types
@@ -42,6 +42,14 @@ interface ScrollReturnButtonProps {
   autoHideDelay?: number;
   /** Called when auto-hide triggers */
   onAutoHide?: () => void;
+  /**
+   * Raw bottom offset (px) from the container's bottom edge.  When
+   * provided, takes precedence over the default safe-area + 80 layout.
+   * Pass the same value used for `ChatMessageList.pillBottomOffset` so
+   * the button sits at the same vertical height as the return-to-bottom
+   * pill — one can fade into the other without visual jump.
+   */
+  bottomOffset?: number;
 }
 
 // =============================================================================
@@ -53,6 +61,7 @@ export function ScrollReturnButton({
   onPress,
   autoHideDelay = 5000,
   onAutoHide,
+  bottomOffset,
 }: ScrollReturnButtonProps) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
@@ -126,7 +135,13 @@ export function ScrollReturnButton({
       style={[
         styles.container,
         {
-          bottom: insets.bottom + 80, // Above composer
+          // When an explicit bottomOffset is provided, use it verbatim so
+          // this button lines up with the ReturnToBottomPill.  Otherwise
+          // fall back to the legacy safe-area + 80 layout.
+          bottom:
+            typeof bottomOffset === "number"
+              ? bottomOffset
+              : insets.bottom + 80,
         },
       ]}
     >

@@ -139,6 +139,13 @@ export interface ChatComposerProps {
   textInputProps?: Partial<TextInputProps>;
   /** TextInput ref */
   textInputRef?: React.RefObject<TextInput | null>;
+  /**
+   * Imperative ref exposing a single `focus()` method that works across
+   * both the native-composer path (iOS) and the fallback TextInput path.
+   * Callers can trigger the composer to receive focus (open the keyboard)
+   * without caring which underlying input implementation is active.
+   */
+  composerFocusRef?: React.MutableRefObject<{ focus: () => void } | null>;
   // ── Customizable Toolbar Props ──────────────────────────────────────
   /** Ordered toolbar items from useComposerToolbarLayout. Uses defaults if omitted. */
   toolbarItems?: {
@@ -232,6 +239,7 @@ export function ChatComposer({
   style,
   textInputProps,
   textInputRef,
+  composerFocusRef,
   // Customizable toolbar props
   toolbarItems,
   toolbarEditing = false,
@@ -271,6 +279,25 @@ export function ChatComposer({
   const inputRef = textInputRef || internalTextInputRef;
   const nativeComposerRef = useRef<NativeComposerInputRef | null>(null);
   const useNative = Platform.OS === "ios" && isNativeComposerAvailable;
+
+  // Expose a cross-platform focus() to callers via composerFocusRef.
+  // Handles both native iOS path (nativeComposerRef) and fallback TextInput.
+  useEffect(() => {
+    if (!composerFocusRef) return;
+    composerFocusRef.current = {
+      focus: () => {
+        const native = nativeComposerRef.current;
+        if (native) {
+          native.focus();
+          return;
+        }
+        inputRef.current?.focus();
+      },
+    };
+    return () => {
+      if (composerFocusRef) composerFocusRef.current = null;
+    };
+  }, [composerFocusRef, inputRef]);
   const normalizedMentionAutocomplete = useMemo(
     () => normalizeNodeForView(mentionAutocomplete),
     [mentionAutocomplete],

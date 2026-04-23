@@ -23,6 +23,7 @@
  */
 
 import { useComposerSheet } from "@/contexts/ComposerSheetContext";
+import { chatDbg } from "@/utils/chatUiDebug";
 import React, { useCallback, useRef } from "react";
 import type { GestureResponderEvent } from "react-native";
 import { StyleSheet, View } from "react-native";
@@ -105,13 +106,28 @@ export function SheetDismissLayer({ children }: SheetDismissLayerProps) {
         dy >= DRAG_DISMISS_PX &&
         ady > adx
       ) {
+        const elapsedMs = Date.now() - t.time;
+        // Classify the drag as "slow" vs "fast" using the time-to-threshold.
+        // Slow drag is the historically-buggy path (see
+        // ComposerSheetContext#activateSheet comment on the
+        // handoffPendingRef latch); logging the classification lets us
+        // correlate dismiss timing with the post-dismiss toolbar state.
+        const classification = elapsedMs > 300 ? "slow-drag" : "fast-drag";
         if (__DEV__) {
           // eslint-disable-next-line no-console
           console.log("[ChatTransientUi] SheetDismissLayer drag-to-dismiss", {
             dy: Math.round(dy),
             dx: Math.round(dx),
+            elapsedMs,
+            classification,
           });
         }
+        chatDbg("SheetDismissLayer:drag-dismiss", {
+          dy: Math.round(dy),
+          dx: Math.round(dx),
+          elapsedMs,
+          classification,
+        });
         t.dragDismissed = true;
         dismissActiveSheet();
       }
@@ -141,6 +157,7 @@ export function SheetDismissLayer({ children }: SheetDismissLayerProps) {
           durationMs: duration,
         });
       }
+      chatDbg("SheetDismissLayer:tap-dismiss", { durationMs: duration });
       dismissActiveSheet();
     }
     t.time = 0;

@@ -15,6 +15,7 @@
  */
 
 import { getKeyboardReplacementSheetHeight } from "@/components/chat/bottomSheetLayout";
+import { chatDbg } from "@/utils/chatUiDebug";
 import { useFocusEffect } from "@react-navigation/native";
 import React, {
   createContext,
@@ -91,9 +92,22 @@ export interface ComposerSheetContextValue {
   /** Update the stored keyboard height (called by the keyboard hook). */
   setLastKeyboardHeight: (height: number) => void;
 
-  /** Floor offset that holds the composer position during sheet→keyboard
-   *  handoff, preventing the transient drop to baseline.  Consumed by
-   *  every bottom-offset derivation as `Math.max(computed, handoffFloor)`. */
+  /** Floor offset that holds the composer position during sheet↔keyboard
+   *  transitions.  Consumed by every bottom-offset derivation as
+   *  `Math.max(computed, handoffFloor)`.
+   *
+   *  Used for three purposes:
+   *    1. KB → sheet region lock — activateSheet snaps `handoffFloor = kbH`
+   *       so the footer doesn't dip during the keyboard dismiss animation
+   *       before the picker has driven `sheetTranslateY` up to snap.
+   *    2. Sheet → KB handoff — the wasHandoff branch of deactivateSheet
+   *       captures the sheet's current visible height into the floor so
+   *       the footer stays put until the keyboard rises to meet it.
+   *    3. Non-handoff dismiss smooth decay — deactivateSheet's non-handoff
+   *       branch snapshots the current unified offset into the floor and
+   *       then animates it to 0 via `withTiming(0, 260ms)`.  This makes
+   *       the composer slide down smoothly instead of teleporting.
+   */
   handoffFloor: SharedValue<number>;
 
   /** Signal that the next deactivateSheet should capture a handoff floor
@@ -157,6 +171,38 @@ export function ComposerSheetProvider({
           hasExistingSheet: !!activeCloseRef.current,
         });
       }
+
+      // ── Cancel any stale pending main-input→keyboard handoff ──────────
+      // `handoffPendingRef` is set by `beginKeyboardHandoff()` when the
+      // main composer input gains focus.  Opening a picker is the
+      // OPPOSITE direction of a handoff (keyboard → sheet, not sheet →
+      // keyboard), so any pending handoff expectation is stale and MUST
+      // be cleared here.
+      //
+      // Without this reset, `handoffPendingRef` can latch `true` forever
+      // once the user has ever focused the composer, because
+      // `deactivateSheet` only clears it on the wasHandoff branch.
+      // That stale flag was the root cause of the "slow drag → picker
+      // closes but toolbar stays lifted" bug: a slow interactive drag
+      // that took > 600 ms to trigger `dismissActiveSheet` would hit
+      // `deactivateSheet` with `handoffPendingRef === true`, take the
+      // handoff branch, and capture a `handoffFloor` that no catch-up
+      // reaction could clear (sheet is already dismissed, no keyboard
+      // is rising to meet it).  Fast drags and taps completed inside
+      // the 600 ms safety timer window from the previous activateSheet,
+      // which would then decay the bogus floor via `withTiming(0)` —
+      // masking the bug for everything except the slow-drag path.
+      const hadPendingHandoff = handoffPendingRef.current;
+      if (hadPendingHandoff) {
+        handoffPendingRef.current = false;
+      }
+
+      // ── Cancel in-flight floor decay (from a prior non-handoff close) ──
+      // A new picker is opening.  We want it to establish its own
+      // region-lock floor from scratch, not race with the decaying tail
+      // of the previous dismiss animation.
+      handoffFloor.value = 0;
+
       // If another sheet is already open, dismiss it — but delay the
       // teardown to the next frame so both Portals overlap briefly.
       // React Native Paper's Portal uses componentDidMount/componentWillUnmount
@@ -242,6 +288,14 @@ export function ComposerSheetProvider({
         }, 600);
       }
 
+      chatDbg("activateSheet", {
+        hadPendingHandoff,
+        kbH: Math.round(kbH),
+        liveKbH: Math.round(liveKbH),
+        initialSheetHeight: Math.round(initialSheetHeight),
+        hasExistingSheet: switchingRef.current,
+      });
+
       // Dismiss keyboard — the sheet replaces it. The shared translateY is
       // already aligned to the sheet's real initial snap, so the keyboard ->
       // sheet handoff stays visually continuous while the keyboard animates out.
@@ -269,7 +323,10 @@ export function ComposerSheetProvider({
     // close callback is already stored in activeCloseRef by activateSheet(),
     // and clearing it here would break future switches. The animated values
     // are also preserved so there is no 1-frame gap where the sheet disappears.
-    if (switchingRef.current) return;
+    if (switchingRef.current) {
+      chatDbg("deactivateSheet:switching-skip", {});
+      return;
+    }
 
     // Snapshot whether this dismiss is part of a sheet→keyboard handoff
     // BEFORE the capture block mutates the ref.  The defensive-reset branch
@@ -278,6 +335,12 @@ export function ComposerSheetProvider({
     // dismiss and immediately erases the floor we just captured.
     const wasHandoff = handoffPendingRef.current;
 
+    // Snapshot the pre-teardown shared-value state for debug correlation.
+    const preSheetVisible = Math.max(0, SCREEN_HEIGHT - sheetTranslateY.value);
+    const preKbH = Math.abs(liveKeyboardHeight.value);
+    const preFloor = handoffFloor.value;
+    const preSnap = initialSnapHeight.value;
+
     // ── Sheet → keyboard handoff ──────────────────────────────────────────
     // When the composer is about to gain focus (keyboard opening), capture
     // the current effective sheet offset as a floor so every bottom-offset
@@ -285,20 +348,23 @@ export function ComposerSheetProvider({
     // prevents the transient drop-to-baseline frame that occurs when
     // isSheetActive resets to 0 before keyboardHeight has risen.
     if (wasHandoff) {
-      const sheetVisible = Math.max(0, SCREEN_HEIGHT - sheetTranslateY.value);
-      const clamped = Math.min(
-        sheetVisible,
-        Math.max(0, initialSnapHeight.value),
-      );
+      const clamped = Math.min(preSheetVisible, Math.max(0, preSnap));
       const capturedFloor = Math.max(0, clamped);
       handoffFloor.value = capturedFloor;
       handoffPendingRef.current = false;
 
+      chatDbg("deactivateSheet:handoff-branch", {
+        preSheetVisible: Math.round(preSheetVisible),
+        preSnap: Math.round(preSnap),
+        capturedFloor: Math.round(capturedFloor),
+        preKbH: Math.round(preKbH),
+      });
+
       if (ENABLE_HANDOFF_DIAGNOSTICS) {
         // eslint-disable-next-line no-console
         console.log("[HandoffDiag] floor captured", {
-          sheetVisible,
-          initialSnapHeight: initialSnapHeight.value,
+          sheetVisible: preSheetVisible,
+          initialSnapHeight: preSnap,
           clamped,
           capturedFloor,
           sheetExtraPadding: sheetExtraPadding.value,
@@ -311,45 +377,78 @@ export function ComposerSheetProvider({
     isSheetActive.value = 0;
     sheetTranslateY.value = SCREEN_HEIGHT;
     initialSnapHeight.value = 0;
-    // When this dismiss is NOT part of a sheet→keyboard handoff (e.g. tap-
-    // to-dismiss, drag-to-dismiss, swipe-close, backdrop-tap), there is no
-    // reason to keep any residual sheet state alive.  Explicitly zero out
-    // sheetExtraPadding and handoffFloor so the footer/list/backdrop all
-    // collapse cleanly to baseline in the same frame that isSheetActive
-    // flips to 0, eliminating the "toolbar stays elevated with empty space
-    // below it" race that can occur if the owning reaction in
-    // ChatFooterWrapper does not re-fire for multiple frames.
-    //
-    // During an actual handoff (wasHandoff === true above) we do NOT reset
-    // these values — the floor captured above is what keeps the footer
-    // stable until the keyboard catches up.
+
     if (!wasHandoff) {
+      // ── Non-handoff dismiss: smooth decay to baseline ──────────────────
+      //
+      // The user tapped outside / slow-dragged / fast-swiped the picker
+      // away without requesting a composer-focus handoff.  The composer
+      // must return to baseline smoothly, without teleporting.
+      //
+      // Strategy: capture the current effective footer offset (the visual
+      // height the composer is currently lifted by) into `handoffFloor`,
+      // then animate the floor to 0 via `withTiming(260ms)`.  The
+      // sheet-inactive branches of `useEffectiveBottomInset`,
+      // `unifiedFooterOffset`, and `useKeyboardBackdropHeight` are all
+      // `max(kbH, floor)` — as the floor decays the composer follows it
+      // down smoothly, and if the OS keyboard is also animating down
+      // (e.g. picker search TextInput blurred by Keyboard.dismiss() below)
+      // the two decays run concurrently and `max()` stays smooth all the
+      // way to 0.
+      //
+      // This replaces the previous `postDismissSuppress` approach which
+      // force-clamped the offset to 0 in a single frame — a visual
+      // teleport.  The animated floor decay makes every non-handoff
+      // dismiss (tap, slow drag, fast drag, swipe down, backdrop tap)
+      // look identical: a clean 260 ms slide to baseline.
+      const currentEffectiveOffset = Math.max(
+        preKbH,
+        // Sheet-active branch was using max(kbH, clamped, floor).  Mirror
+        // that here so the decay starts from the exact value the composer
+        // was visually at the instant before we flipped isSheetActive.
+        Math.min(preSheetVisible, preSnap > 0 ? preSnap : preSheetVisible),
+        preFloor,
+      );
+
       sheetExtraPadding.value = 0;
-      if (handoffFloor.value !== 0) {
+
+      if (currentEffectiveOffset > 0) {
+        // Seed the floor to the current offset so there is no 1-frame
+        // drop when isSheetActive flips to 0 (the sheet-inactive branch
+        // now reads `max(kbH, floor) = currentEffectiveOffset`).  Then
+        // animate the floor to 0.
+        handoffFloor.value = currentEffectiveOffset;
+        handoffFloor.value = withTiming(0, { duration: 260 });
+      } else {
         handoffFloor.value = 0;
       }
 
-      // Issue 4 fix — stuck toolbar after closing an extended picker.
-      //
+      // Cancel the activateSheet safety timer so a stale `withTiming(0)`
+      // doesn't fire 600 ms later and re-animate our floor.
+      if (handoffTimerRef.current) {
+        clearTimeout(handoffTimerRef.current);
+        handoffTimerRef.current = null;
+      }
+
       // Pickers with `keepMountedWhenClosed` (GIF, Sticker, GifSticker)
       // keep their subtree — including the search TextInput — mounted
       // after `open` flips to false.  If the user tapped that search
       // input while the picker was extended, its OS keyboard came up.
-      // When the picker then closes without handing off to the main
-      // composer input, the search TextInput retains focus inside the
-      // hidden/off-screen subtree, so iOS keeps the keyboard up.  The
-      // composer then reports unifiedFooterOffset = max(kbH, 0) = kbH
-      // and stays translated at keyboard height with empty space
-      // beneath it.
-      //
-      // Dismissing the keyboard here forces the picker's search input
-      // to blur and the OS keyboard to retract on the next frame, so
-      // the footer collapses cleanly.  This is safe on non-handoff
-      // dismiss paths because a legitimate handoff is explicitly
-      // distinguished by `wasHandoff`: in that case we want the
-      // composer to receive focus and the keyboard to come up, so we
-      // do not dismiss here.
+      // Dismissing here forces the picker's search input to blur and
+      // the OS keyboard to retract on the next frame.  Because our
+      // floor decay is driving the composer position to 0 in parallel,
+      // the composer's downward animation is already committed even
+      // while the OS keyboard is still retracting — no stuck toolbar.
       Keyboard.dismiss();
+
+      chatDbg("deactivateSheet:non-handoff", {
+        preKbH: Math.round(preKbH),
+        preSheetVisible: Math.round(preSheetVisible),
+        preSnap: Math.round(preSnap),
+        preFloor: Math.round(preFloor),
+        decayFrom: Math.round(currentEffectiveOffset),
+        hadPendingHandoff: false,
+      });
     }
   }, [
     isSheetActive,
@@ -367,6 +466,9 @@ export function ComposerSheetProvider({
         hasActiveSheet: !!activeCloseRef.current,
       });
     }
+    chatDbg("dismissActiveSheet", {
+      hasActiveSheet: !!activeCloseRef.current,
+    });
     if (activeCloseRef.current) {
       const close = activeCloseRef.current;
       activeCloseRef.current = null;
@@ -376,6 +478,14 @@ export function ComposerSheetProvider({
 
   const beginKeyboardHandoff = useCallback(() => {
     handoffPendingRef.current = true;
+
+    chatDbg("beginKeyboardHandoff", {
+      isSheetActive: isSheetActive.value,
+      sheetTranslateY: Math.round(sheetTranslateY.value),
+      initialSnapHeight: Math.round(initialSnapHeight.value),
+      liveKeyboardHeight: Math.round(liveKeyboardHeight.value),
+      handoffFloor: Math.round(handoffFloor.value),
+    });
 
     if (ENABLE_HANDOFF_DIAGNOSTICS) {
       // eslint-disable-next-line no-console
@@ -392,9 +502,19 @@ export function ComposerSheetProvider({
 
     // Safety: if the keyboard never opens (e.g. hardware keyboard, edge
     // case), smoothly decay the floor after 600 ms so the UI isn't stuck.
+    //
+    // Critically: ALSO reset `handoffPendingRef` when this timer fires.
+    // Without that reset, if the user never triggers a sheet dismiss
+    // within 600 ms, the pending-handoff flag latches `true` forever and
+    // the next sheet dismiss incorrectly takes the handoff branch —
+    // causing the slow-drag "toolbar stays open" bug.
     if (handoffTimerRef.current) clearTimeout(handoffTimerRef.current);
     handoffTimerRef.current = setTimeout(() => {
       handoffTimerRef.current = null;
+      const hadPending = handoffPendingRef.current;
+      if (hadPending) {
+        handoffPendingRef.current = false;
+      }
       if (handoffFloor.value > 0) {
         if (ENABLE_HANDOFF_DIAGNOSTICS) {
           // eslint-disable-next-line no-console
@@ -404,6 +524,10 @@ export function ComposerSheetProvider({
         }
         handoffFloor.value = withTiming(0, { duration: 200 });
       }
+      chatDbg("beginKeyboardHandoff:safetyTimerFired", {
+        clearedPending: hadPending,
+        floorAtFire: Math.round(handoffFloor.value),
+      });
     }, 600);
   }, [
     handoffFloor,

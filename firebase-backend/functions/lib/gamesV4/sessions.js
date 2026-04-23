@@ -255,6 +255,7 @@ exports.submitTurnMoveV4 = functions.https.onCall(async (data, context) => {
                 session,
                 effectiveTerminal,
                 effectiveWinnerIds,
+                adapterTerminal,
                 inviteId: session.inviteId,
             };
         });
@@ -283,9 +284,34 @@ exports.submitTurnMoveV4 = functions.https.onCall(async (data, context) => {
             // The session status is already being set to resolved inside
             // resolveSessionV4Internal's own transaction, and the client
             // detects terminal via its session snapshot listener.
+            //
+            // Resolution type mapping (authoritative):
+            //   1. Prefer the adapter's declared terminal.type.
+            //   2. Solo runtime never surfaces as "draw" — a solo run either
+            //      wins or loses. Any non-win adapter terminal (timeout,
+            //      draw, etc.) collapses to "loss".
+            //   3. Multiplayer falls back to win/draw via winnerIds count
+            //      when the adapter didn't declare a type.
+            const adapterTerminalType = result.adapterTerminal?.type;
+            const isSoloRuntime = result.session.runtimeType === "solo";
+            const hasWinner = result.effectiveWinnerIds.length > 0;
+            let resolvedType;
+            if (adapterTerminalType === "win" || hasWinner) {
+                resolvedType = "win";
+            }
+            else if (isSoloRuntime) {
+                // Solo: any non-win terminal = loss. No draws in solo.
+                resolvedType = "loss";
+            }
+            else if (adapterTerminalType === "timeout") {
+                resolvedType = "timeout";
+            }
+            else {
+                resolvedType = "draw";
+            }
             (0, resolve_1.resolveSessionV4Internal)({
                 sessionId,
-                resolutionType: result.effectiveWinnerIds.length > 0 ? "win" : "draw",
+                resolutionType: resolvedType,
                 winnerIds: result.effectiveWinnerIds,
                 resolverUid: uid,
             }).catch((err) => console.error(`[gamesV4] Async resolution failed for session ${sessionId}:`, err));

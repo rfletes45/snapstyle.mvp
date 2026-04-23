@@ -75,6 +75,13 @@ export interface ChatMessageListProps<T> {
    * Typically composerHeight + safeAreaBottom + small padding.
    */
   pillBottomOffset?: number;
+  /**
+   * When true, the return-to-bottom pill is suppressed regardless of
+   * scroll position.  Used by screens to hand off floating-button
+   * real-estate to another overlay (e.g. the reply-jump "Back to reply"
+   * button) and avoid stacking two overlapping buttons.
+   */
+  suppressReturnToBottom?: boolean;
   /** Custom container style */
   style?: StyleProp<ViewStyle>;
   /** Custom content container style */
@@ -94,8 +101,26 @@ export interface ChatMessageListRef {
   scrollToBottom: (animated?: boolean) => void;
   /** Scroll to a specific index */
   scrollToIndex: (index: number, animated?: boolean) => void;
+  /**
+   * Scroll to a raw content offset.  Used by reply-navigation to return
+   * the user to the exact scroll position they were at before jumping
+   * to a referenced message.
+   */
+  scrollToOffset: (offset: number, animated?: boolean) => void;
+  /**
+   * Returns the most recently observed content offset (from the last
+   * onScroll event).  Used by reply-navigation to snapshot the user's
+   * position before scrolling to the reply target.
+   */
+  getLastScrollOffset: () => number;
   /** Get the FlatList ref */
   getFlatListRef: () => FlatList<any> | null;
+  /**
+   * Reset the per-target scrollToIndex retry counter.  Callers invoke this
+   * whenever a new deep-jump request begins so a fresh retry budget is
+   * available even when re-jumping to the same index.
+   */
+  resetScrollToIndexAttempts: () => void;
 }
 
 // =============================================================================
@@ -117,6 +142,7 @@ function ChatMessageListInner<T>(
     ListEmptyComponent,
     onAtBottomChange,
     pillBottomOffset = 96,
+    suppressReturnToBottom = false,
     style,
     contentContainerStyle,
     flatListProps,
@@ -124,6 +150,10 @@ function ChatMessageListInner<T>(
   } = props;
 
   const flatListRef = useRef<FlatList<T>>(null);
+  // Track most recent scroll offset so parent screens (via imperative ref)
+  // can snapshot the user's scroll position before triggering a scroll-to-
+  // message, and later restore it (back-to-reply).
+  const lastScrollOffsetRef = useRef<number>(0);
 
   // ── Unified scroll state (replaces useAtBottom + useNewMessageAutoscroll) ──
   const scrollState = useChatScrollState({
@@ -192,26 +222,75 @@ function ChatMessageListInner<T>(
     [data.length],
   );
 
+  // Scroll to raw offset (used by reply-navigation to restore prior position)
+  const scrollToOffset = useCallback((offset: number, animated = true) => {
+    flatListRef.current?.scrollToOffset({ offset, animated });
+  }, []);
+
+  // Per-target scrollToIndex retry bookkeeping.  Declared here (ahead of
+  // `useImperativeHandle`) so the imperative `resetScrollToIndexAttempts`
+  // can write to it.
+  const scrollToIndexAttemptsRef = useRef<{ index: number; attempts: number }>({
+    index: -1,
+    attempts: 0,
+  });
+
   // Expose ref methods
   useImperativeHandle(
     ref,
     () => ({
       scrollToBottom,
       scrollToIndex,
+      scrollToOffset,
+      getLastScrollOffset: () => lastScrollOffsetRef.current,
       getFlatListRef: () => flatListRef.current,
+      // Reset the per-target scrollToIndex retry counter.  Called from
+      // ChatScreen / GroupChatScreen whenever a new deep-jump request
+      // arrives (via `jumpRequestId`).  Without this reset, re-jumping to
+      // the SAME index (e.g. re-tapping a reply or a search result) would
+      // inherit an exhausted attempts counter from the prior jump and the
+      // retry would immediately fall back to `highestMeasuredFrameIndex`
+      // instead of re-attempting the real target.
+      resetScrollToIndexAttempts: () => {
+        scrollToIndexAttemptsRef.current = { index: -1, attempts: 0 };
+      },
     }),
-    [scrollToBottom, scrollToIndex],
+    [scrollToBottom, scrollToIndex, scrollToOffset],
   );
 
-  // Handle scroll-to-index failure
+  // Handle scroll-to-index failure.
+  // FlatList invokes this whenever a target index can't be scrolled to
+  // because the cell isn't measured yet (virtualization hasn't mounted it).
+  // A single retry at `highestMeasuredFrameIndex` was not reliable for
+  // deep-jumps: after an anchor page loads, the target cell can take
+  // several frames to mount + measure.  We track per-target attempts on a
+  // ref and retry the ORIGINAL index up to 5 times with increasing delays.
+  // Only after that do we fall back to the measured-frame index.
   const handleScrollToIndexFailed = useCallback(
     (info: { index: number; highestMeasuredFrameIndex: number }) => {
-      setTimeout(() => {
+      const state = scrollToIndexAttemptsRef.current;
+      if (state.index !== info.index) {
+        state.index = info.index;
+        state.attempts = 0;
+      }
+      const MAX_ATTEMPTS = 5;
+      state.attempts += 1;
+      if (state.attempts > MAX_ATTEMPTS) {
+        // Last resort: jump to the nearest measured frame so the user at
+        // least moves in the right direction instead of staying put.
         flatListRef.current?.scrollToIndex({
           index: Math.min(info.index, info.highestMeasuredFrameIndex),
           animated: true,
         });
-      }, 100);
+        return;
+      }
+      setTimeout(() => {
+        flatListRef.current?.scrollToIndex({
+          index: info.index,
+          animated: true,
+          viewPosition: 0.5,
+        });
+      }, 120 * state.attempts);
     },
     [],
   );
@@ -253,8 +332,13 @@ function ChatMessageListInner<T>(
     // chat should close the keyboard outright instead of pulling it down.
     keyboardDismissMode: "on-drag" as const,
     keyboardShouldPersistTaps: "handled" as const,
-    // Scroll events → unified hook
-    onScroll: scrollState.onScroll,
+    // Scroll events → unified hook.  We also intercept to record the most
+    // recent contentOffset.y so parent screens can snapshot/restore
+    // scroll position via the imperative ref.
+    onScroll: (e: any) => {
+      lastScrollOffsetRef.current = e?.nativeEvent?.contentOffset?.y ?? 0;
+      scrollState.onScroll(e);
+    },
     onScrollEndDrag: scrollState.onScrollEndDrag,
     onMomentumScrollEnd: scrollState.onMomentumScrollEnd,
     scrollEventThrottle: 16,
@@ -299,9 +383,11 @@ function ChatMessageListInner<T>(
         contentContainerStyle={dynamicContentStyle}
       />
 
-      {/* Jump-to-latest pill — positioned above the composer */}
+      {/* Jump-to-latest pill — positioned above the composer.
+          Suppressed while reply-navigation is active so it does not
+          stack with the "Back to reply" button. */}
       <ReturnToBottomPill
-        visible={scrollState.showJumpPill}
+        visible={scrollState.showJumpPill && !suppressReturnToBottom}
         unreadCount={scrollState.newMessagesWhileAway}
         onPress={handleReturnToBottom}
         bottomOffset={pillBottomOffset}

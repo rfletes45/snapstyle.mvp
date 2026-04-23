@@ -19,7 +19,7 @@
  *
  * @module gamesV4/resolve
  */
-import type { FinalScoreboardEntry, GameResultV4, ResolutionType } from "./types";
+import type { FinalScoreboardEntry, GameId, GameResultV4, ResolutionType } from "./types";
 export interface ResolveInput {
     sessionId: string;
     resolutionType: ResolutionType;
@@ -61,3 +61,23 @@ export declare function resolveSessionV4Internal(input: ResolveInput): Promise<G
  * re-entrant by design.
  */
 export declare function retryRewardsForSession(sessionId: string): Promise<void>;
+/**
+ * Per-uid delta describing how a player's aggregate leaderboard value
+ * changed during this resolution. Fed to the beat-friend notification
+ * phase so we can detect friends who just got passed on a board.
+ *
+ * `variant` partitions Minesweeper by difficulty so each tier maintains
+ * an independent leaderboard. All other games use variant = "default".
+ *
+ * `higherIsBetter = false` is only set for Minesweeper (time metric).
+ */
+export interface PBDelta {
+    uid: string;
+    gameId: GameId;
+    metric: "wins" | "bestScore";
+    variant: string;
+    previousValue: number | null;
+    newValue: number;
+    higherIsBetter: boolean;
+    improved: boolean;
+}

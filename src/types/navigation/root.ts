@@ -67,6 +67,9 @@ export type MainStackParamList = {
         friendName?: string;
         initialData?: Record<string, unknown>;
         targetMessageId?: string;
+        /** Fresh token that forces the deep-jump effect to re-arm even when
+         *  `targetMessageId` is unchanged (e.g. repeated taps from a thread). */
+        jumpRequestId?: string;
       }
     | undefined;
   GroupChat:
@@ -74,6 +77,8 @@ export type MainStackParamList = {
         groupId: string;
         groupName?: string;
         targetMessageId?: string;
+        /** See `ChatDetail.jumpRequestId`. */
+        jumpRequestId?: string;
         initialGroupData?: Record<string, unknown>;
       }
     | undefined;

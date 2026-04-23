@@ -937,49 +937,101 @@ export async function fetchGameHistoryByGame(
 // =============================================================================
 
 /**
+ * Supported Minesweeper difficulty variants. Used by
+ * `fetchFriendsLeaderboard` to select the per-difficulty best-time board
+ * instead of the encoded aggregate PB.
+ */
+export type MinesweeperLeaderboardVariant = "easy" | "intermediate" | "expert";
+
+export interface FriendsLeaderboardOptions {
+  /**
+   * Minesweeper-only: which difficulty board to read. Required when
+   * `gameId === "minesweeper"`. Ignored for other games.
+   */
+  minesweeperDifficulty?: MinesweeperLeaderboardVariant;
+}
+
+/**
  * Fetch a friends-only leaderboard for a game.
- * Reads the user's friends list, then fetches their PBs for the game.
- * Returns sorted by the game's leaderboard metric (wins or bestScore).
  *
- * For wins-based games: reads totalWins from the PB doc.
- * For bestScore-based games: reads pbValue from the PB doc.
+ * Reads the user's PB doc plus each friend's PB doc and returns only
+ * users with a *qualifying* entry for this board:
+ *
+ *   - wins-based games:       `totalWins > 0`
+ *   - best-score games:        `pbValue > 0`
+ *   - minesweeper per board:   `bestsByDifficulty[difficulty].elapsedMs > 0`
+ *
+ * Users with no entry are never returned, so they also never receive
+ * beat-your-score notifications for this board (the backend uses the
+ * same filter).
+ *
+ * The returned `score` is the raw metric value (wins count, encoded PB,
+ * or elapsed ms for Minesweeper). Callers format it via the appropriate
+ * descriptor or a Minesweeper-specific time formatter.
  */
 export async function fetchFriendsLeaderboard(
   uid: string,
   friendUids: string[],
   gameId: GameId,
+  options: FriendsLeaderboardOptions = {},
 ): Promise<LeaderboardEntryV4[]> {
-  if (friendUids.length === 0) return [];
-
   const db = getFirestoreInstance();
   const allUids = [uid, ...friendUids.slice(0, 19)]; // cap at 20 for perf
   const entries: LeaderboardEntryV4[] = [];
 
-  // Determine which field to read based on the game's leaderboard metric
   const descriptor = LEADERBOARD_DESCRIPTORS[gameId];
   const metric = descriptor?.metric ?? "bestScore";
+  const isMinesweeper = gameId === "minesweeper";
+  const difficulty = options.minesweeperDifficulty ?? "easy";
 
   await Promise.all(
     allUids.map(async (fuid) => {
       const ref = doc(db, "Users", fuid, COLLECTIONS.GAME_PB, gameId);
       const snap = await getDoc(ref);
-      if (snap.exists()) {
-        const data = snap.data() as GamePBV4;
-        // Use totalWins for wins-based games, pbValue for bestScore-based
-        const score =
-          metric === "wins" ? (data.totalWins ?? 0) : (data.pbValue ?? 0);
-        entries.push({
-          uid: fuid,
-          displayName: "", // caller resolves display names
-          score,
-          updatedAt: data.achievedAt ?? null,
-        });
+      if (!snap.exists()) return;
+      const data = snap.data() as GamePBV4 & {
+        bestsByDifficulty?: Record<
+          string,
+          { elapsedMs?: number; achievedAt?: unknown } | undefined
+        >;
+      };
+
+      let score: number | null = null;
+      let updatedAt: unknown = data.achievedAt ?? null;
+
+      if (isMinesweeper) {
+        const entry = data.bestsByDifficulty?.[difficulty];
+        const ms = entry?.elapsedMs;
+        if (typeof ms === "number" && ms > 0) {
+          score = ms;
+          if (entry?.achievedAt) updatedAt = entry.achievedAt;
+        }
+      } else if (metric === "wins") {
+        const wins = data.totalWins ?? 0;
+        if (wins > 0) score = wins;
+      } else {
+        const pb = data.pbValue ?? 0;
+        if (typeof pb === "number" && pb > 0) score = pb;
       }
+
+      // Filter out users with no qualifying entry.
+      if (score === null) return;
+
+      entries.push({
+        uid: fuid,
+        displayName: "", // caller resolves display names
+        score,
+        updatedAt: (updatedAt as LeaderboardEntryV4["updatedAt"]) ?? null,
+      });
     }),
   );
 
-  // Sort descending by score
-  entries.sort((a, b) => b.score - a.score);
+  // Minesweeper uses time (lower is better); all other metrics higher is better.
+  if (isMinesweeper) {
+    entries.sort((a, b) => a.score - b.score);
+  } else {
+    entries.sort((a, b) => b.score - a.score);
+  }
   return entries;
 }
 

@@ -470,6 +470,7 @@ export default function GamesHubScreenV4() {
       {/* Header */}
       <ScreenHeader
         title="Games"
+        style={styles.headerNoBorder}
         renderRight={() => (
           <View style={styles.headerRightRow}>
             <TouchableOpacity
@@ -971,11 +972,12 @@ const styles = StyleSheet.create({
     paddingTop: 0,
     paddingBottom: 0,
     zIndex: 3,
-    elevation: 3,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 3,
+  },
+  // GamesHub uses a seamless surface — suppress ScreenHeader's hairline
+  // bottom border so the title area and the sticky filter bar read as
+  // one continuous sheet.
+  headerNoBorder: {
+    borderBottomWidth: 0,
   },
 
   // Section

@@ -9,12 +9,14 @@
  * the composer to track the sheet position at 60fps.
  */
 
+import { chatDbg } from "@/utils/chatUiDebug";
 import React, {
   forwardRef,
   useCallback,
   useEffect,
   useImperativeHandle,
   useMemo,
+  useRef,
 } from "react";
 import { BackHandler, Dimensions, StyleSheet, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
@@ -110,17 +112,36 @@ export const DraggableBottomSheet = forwardRef<
   const dismissY = SCREEN_HEIGHT; // fully off screen
   const startIndex = initialSnapIndex ?? snapPoints.length - 1;
 
-  // When in keyboard-replacement mode and a shared translateY is already at
-  // a valid snap position (e.g. pre-seeded by activateSheet during a
-  // picker-to-picker switch), start there instead of dismissY.  This
-  // eliminates the 1-frame gap where the sheet renders off-screen before
-  // useEffect fires to move it to the snap position.
-  const initialY =
-    sharedTranslateY && sharedTranslateY.value < dismissY
-      ? sharedTranslateY.value
-      : dismissY;
+  // ── Initial translateY: one-time read from pre-seeded sharedTranslateY ──
+  //
+  // When an activated sheet hands off to a new picker (picker-switch) the
+  // previous picker's close and the new picker's mount race.  `activateSheet`
+  // synchronously pre-seeds `sharedTranslateY` to the new picker's snap
+  // position BEFORE triggering React state (`open=true`) so this mount reads
+  // an already-correct value and the new picker paints at snap on its very
+  // first frame — eliminating the 1-frame flash where the picker would
+  // otherwise paint at `dismissY` and jump to snap on the next UI tick.
+  //
+  // We MUST read the shared value exactly once at mount (the first render
+  // of this component).  Subsequent re-renders must NOT re-read — both
+  // because `useSharedValue` only honors its initial argument on mount AND
+  // because re-reading a shared value during render triggers Reanimated's
+  // "Reading from `value` during component render" warning on every render
+  // of every picker sheet (previously a major source of log noise that
+  // masked real diagnostic output).
+  //
+  // `useRef` + null-check gates the read to the first render only.  The
+  // warning still fires exactly once per picker mount (unavoidable without
+  // a 1-frame flash), but no longer on every re-render.
+  const initialYRef = useRef<number | null>(null);
+  if (initialYRef.current === null) {
+    initialYRef.current =
+      sharedTranslateY && sharedTranslateY.value < dismissY
+        ? sharedTranslateY.value
+        : dismissY;
+  }
 
-  const translateY = useSharedValue(initialY);
+  const translateY = useSharedValue(initialYRef.current);
   const startY = useSharedValue(0);
   const activeSnapIndex = useSharedValue(startIndex);
 
@@ -179,7 +200,24 @@ export const DraggableBottomSheet = forwardRef<
       }
       activeSnapIndex.value = startIndex;
     } else {
-      translateY.value = withSpring(dismissY, SPRING_CONFIG);
+      // Skip the close spring when translateY is already at (or past)
+      // dismissY.  This happens when the user closes via a fast-swipe-down
+      // gesture: panGesture.onEnd starts `withSpring(dismissY)` on the UI
+      // thread and posts `handleClose` to JS via scheduleOnRN.  By the time
+      // React processes `setPickerOpen(false)` and this effect runs, the
+      // spring is already well underway (or finished).  Starting a SECOND
+      // spring here creates two competing animations whose easing curves
+      // add a subtle re-bounce visible at close time.  The guard also
+      // covers the first-open → immediate-dismiss race where the picker
+      // mounts for the first time with `open` already false (translateY
+      // was just initialised to `dismissY` so there is nothing to
+      // animate).
+      if (translateY.value < dismissY - 0.5) {
+        translateY.value = withSpring(dismissY, SPRING_CONFIG);
+      } else if (translateY.value !== dismissY) {
+        // Ensure exact settle at dismissY (no floating-point drift).
+        translateY.value = dismissY;
+      }
     }
   }, [
     open,
@@ -192,8 +230,11 @@ export const DraggableBottomSheet = forwardRef<
   ]);
 
   const handleClose = useCallback(() => {
+    chatDbg("DraggableBottomSheet:close-callback", {
+      isKeyboardReplacement,
+    });
     onClose();
-  }, [onClose]);
+  }, [onClose, isKeyboardReplacement]);
 
   // Android back-button handling (replaces Modal's onRequestClose)
   useEffect(() => {

@@ -29,6 +29,7 @@ import {
   setGroupShowMemberChatStyles,
 } from "@/services/groupMembers";
 import { useAuth } from "@/store/AuthContext";
+import { useChatKeyboardPreference } from "@/store/ChatKeyboardPreferenceContext";
 import { MemberStatePrivate } from "@/types/messaging";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import React, { useCallback, useEffect, useState } from "react";
@@ -91,6 +92,8 @@ export default function ChatSettingsScreen({
   const { colors } = useAppTheme();
   const { currentFirebaseUser } = useAuth();
   const uid = currentFirebaseUser?.uid;
+  // Global (per-user) preference — applies to every chat and thread.
+  const { autoOpenKeyboard, setAutoOpenKeyboard } = useChatKeyboardPreference();
 
   // State
   const [loading, setLoading] = useState(true);
@@ -483,6 +486,37 @@ export default function ChatSettingsScreen({
               descriptionStyle={{ color: colors.textSecondary, fontSize: 13 }}
             />
           )}
+        </List.Section>
+
+        {/* Keyboard Section — global preference, applies to every chat */}
+        <List.Section>
+          <List.Subheader
+            style={[styles.sectionHeader, { color: colors.textSecondary }]}
+          >
+            Keyboard
+          </List.Subheader>
+
+          <List.Item
+            title="Open Keyboard on Chat Open"
+            description="Automatically focus the message field when you enter any chat"
+            left={(props) => (
+              <List.Icon
+                {...props}
+                icon="keyboard-outline"
+                color={colors.textSecondary}
+              />
+            )}
+            right={() => (
+              <Switch
+                value={autoOpenKeyboard}
+                onValueChange={setAutoOpenKeyboard}
+                color={theme.colors.primary}
+              />
+            )}
+            style={{ backgroundColor: colors.surface, paddingVertical: 4 }}
+            titleStyle={{ color: colors.text, fontSize: 16 }}
+            descriptionStyle={{ color: colors.textSecondary, fontSize: 13 }}
+          />
         </List.Section>
 
         {/* Chat Management Section */}

@@ -48,6 +48,14 @@ function gameName(gameId: GameId): string {
   return GAME_DISPLAY_NAMES[gameId] || gameId;
 }
 
+/**
+ * Public helper so the resolve pipeline can label the auto-posted group
+ * scorecard with the same name we use everywhere else.
+ */
+export function getGameDisplayName(gameId: GameId): string {
+  return gameName(gameId);
+}
+
 export async function notifyInviteCreated(
   invite: GameInviteV4,
   senderDisplayName: string,
@@ -171,6 +179,9 @@ export async function notifyResolved(
   function buildGameOverBody(uid: string): string {
     if (result.resolutionType === "draw") {
       return "The game ended in a draw.";
+    }
+    if (result.resolutionType === "loss") {
+      return "Your run is over.";
     }
     if (result.winnerIds.length > 0) {
       if (result.winnerIds.includes(uid)) {
@@ -313,5 +324,60 @@ export async function notifyAchievementUnlocked(params: {
       gameId: gameId ?? null,
       sourceSessionId: sessionId ?? null,
     },
+  });
+}
+
+/**
+ * Notify a user that a friend just overtook them on a friends leaderboard.
+ *
+ * Reuses the `game_resolved` notification transport (so existing category,
+ * channel, and mute plumbing all apply) but with a distinct title/body
+ * and a route that deep-links to the game's detail/leaderboard view.
+ *
+ * `variant` is "default" for standard games and the difficulty key
+ * ("easy" | "intermediate" | "expert") for Minesweeper so we dedupe
+ * per-board rather than once per game.
+ */
+export async function notifyFriendBeatScore(params: {
+  victimUid: string;
+  actorUid: string;
+  actorName: string;
+  gameId: GameId;
+  variant: string;
+}): Promise<void> {
+  const { victimUid, actorUid, actorName, gameId, variant } = params;
+
+  // Defensive: never notify the actor or invalid uid.
+  if (!victimUid || victimUid === actorUid) return;
+
+  const label = gameName(gameId);
+  const variantSuffix =
+    gameId === "minesweeper" && variant !== "default"
+      ? ` (${variant[0].toUpperCase()}${variant.slice(1)})`
+      : "";
+
+  await notifyUser({
+    recipientUid: victimUid,
+    type: "game_resolved",
+    category: "games",
+    // DedupeKey is victim+actor+game+variant so each overtake fires once.
+    dedupeKey: `game_friend_beat:${victimUid}:${actorUid}:${gameId}:${variant}`,
+    collapseKey: `game_friend_beat:${victimUid}:${gameId}:${variant}`,
+    title: `${actorName} beat your score in ${label}${variantSuffix}!`,
+    body: "Tap to see the friends leaderboard.",
+    actorUid,
+    actorName,
+    gameId,
+    route: {
+      screen: "GameDetailV4",
+      params: { gameId },
+    },
+    data: {
+      gameId,
+      actorUid,
+      variant,
+      kind: "friend_beat_score",
+    },
+    badgeEligible: true,
   });
 }

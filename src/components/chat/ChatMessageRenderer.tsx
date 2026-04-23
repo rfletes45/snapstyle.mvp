@@ -74,6 +74,15 @@ export interface ChatMessageRendererProps {
   groupPrevMessageId?: string;
   /** Next neighbor in same group (for right-side corner shape). */
   groupNextMessageId?: string;
+  /**
+   * Rendering inside a thread view.
+   * When true the child renderers disable swipe-to-reply, suppress
+   * failed-status opacity dimming, and route body taps through
+   * `onMessageTap` so the thread can jump to the parent chat.
+   */
+  inThread?: boolean;
+  /** Thread-only: tap handler to jump to parent chat message. */
+  onMessageTap?: (message: MessageV2) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -107,6 +116,8 @@ export const ChatMessageRenderer: React.FC<ChatMessageRendererProps> =
       cornerWidthStore,
       groupPrevMessageId,
       groupNextMessageId,
+      inThread = false,
+      onMessageTap,
     }) => {
       const isSentByMe = message.senderId === currentUid;
 
@@ -206,6 +217,8 @@ export const ChatMessageRenderer: React.FC<ChatMessageRendererProps> =
             showStatus={shouldShowStatus}
             reactions={reactions}
             onOptimisticReaction={onOptimisticReaction}
+            inThread={inThread}
+            onMessageTap={onMessageTap}
           />
         );
       }
@@ -233,6 +246,8 @@ export const ChatMessageRenderer: React.FC<ChatMessageRendererProps> =
           cornerWidthStore={cornerWidthStore}
           groupPrevMessageId={groupPrevMessageId}
           groupNextMessageId={groupNextMessageId}
+          inThread={inThread}
+          onMessageTap={onMessageTap}
         />
       );
     },

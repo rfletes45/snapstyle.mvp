@@ -16,6 +16,7 @@ import { firebaseConfig } from "@/services/firebaseConfig";
 import { navigate as globalNavigate } from "@/services/navigationRef";
 import { AuthProvider } from "@/store/AuthContext";
 import { CameraProvider } from "@/store/CameraContext";
+import { ChatKeyboardPreferenceProvider } from "@/store/ChatKeyboardPreferenceContext";
 import { ConversationDisplayModeProvider } from "@/store/ConversationDisplayModeContext";
 import { InAppNotificationsProvider } from "@/store/InAppNotificationsContext";
 import { SnackbarProvider } from "@/store/SnackbarContext";
@@ -226,55 +227,57 @@ function AppContent() {
         <AuthProvider>
           <UserProvider>
             <ConversationDisplayModeProvider>
-              <StreamCallProvider>
-                <InAppNotificationsProvider>
-                  <CameraProvider>
-                    <OutboxProcessorProvider />
-                    {/* StreamVideoEffectsProvider MUST wrap every subtree that
+              <ChatKeyboardPreferenceProvider>
+                <StreamCallProvider>
+                  <InAppNotificationsProvider>
+                    <CameraProvider>
+                      <OutboxProcessorProvider />
+                      {/* StreamVideoEffectsProvider MUST wrap every subtree that
                         can render ParticipantView or other Stream Video SDK
                         UI components (DirectCallScreen, VoiceChannelScreen,
                         FloatingVideoOverlay, NativePiPBridge). Moving it
                         lower causes: "useThemeContext hook was called outside
                         the ThemeContext Provider". */}
-                    <StreamVideoEffectsProvider>
-                      <View
-                        style={[
-                          styles.container,
-                          { backgroundColor: colors.background },
-                        ]}
-                      >
-                        <RootNavigator
-                          onRouteChange={(routeName) =>
-                            setCurrentRouteName(routeName)
-                          }
-                        />
-                        <InAppToast onNavigate={handleToastNavigate} />
-                        <IncomingCallHandler
-                          onNavigateToCall={(callId, mode) => {
-                            globalNavigate("DirectCall" as any, {
-                              callId,
-                              recipientName: "",
-                              mode,
-                              isOutgoing: false,
-                            });
-                          }}
-                        />
-                        <NativePiPBridge
-                          isOnCallScreen={currentRouteName === "DirectCall"}
-                        />
-                        <FloatingVideoOverlay
-                          isOnCallScreen={
-                            currentRouteName === undefined ||
-                            currentRouteName === "DirectCall" ||
-                            currentRouteName === "VoiceChannel"
-                          }
-                        />
-                      </View>
-                    </StreamVideoEffectsProvider>
-                    <ExpoStatusBar style={isDark ? "light" : "dark"} />
-                  </CameraProvider>
-                </InAppNotificationsProvider>
-              </StreamCallProvider>
+                      <StreamVideoEffectsProvider>
+                        <View
+                          style={[
+                            styles.container,
+                            { backgroundColor: colors.background },
+                          ]}
+                        >
+                          <RootNavigator
+                            onRouteChange={(routeName) =>
+                              setCurrentRouteName(routeName)
+                            }
+                          />
+                          <InAppToast onNavigate={handleToastNavigate} />
+                          <IncomingCallHandler
+                            onNavigateToCall={(callId, mode) => {
+                              globalNavigate("DirectCall" as any, {
+                                callId,
+                                recipientName: "",
+                                mode,
+                                isOutgoing: false,
+                              });
+                            }}
+                          />
+                          <NativePiPBridge
+                            isOnCallScreen={currentRouteName === "DirectCall"}
+                          />
+                          <FloatingVideoOverlay
+                            isOnCallScreen={
+                              currentRouteName === undefined ||
+                              currentRouteName === "DirectCall" ||
+                              currentRouteName === "VoiceChannel"
+                            }
+                          />
+                        </View>
+                      </StreamVideoEffectsProvider>
+                      <ExpoStatusBar style={isDark ? "light" : "dark"} />
+                    </CameraProvider>
+                  </InAppNotificationsProvider>
+                </StreamCallProvider>
+              </ChatKeyboardPreferenceProvider>
             </ConversationDisplayModeProvider>
           </UserProvider>
         </AuthProvider>

@@ -28,6 +28,7 @@
  */
 
 import { getAdapter } from "@/gamesV4/adapters";
+import { FriendsLeaderboardModal } from "@/gamesV4/components/FriendsLeaderboardModal";
 import {
   GAME_METADATA,
   getGameLifecyclePolicy,
@@ -437,6 +438,24 @@ export function withGameV4Shell<P extends GameShellProps>(
     const soloOnPauseRef = useRef<(() => void) | undefined>(undefined);
     const soloOnResumeRef = useRef<(() => void) | undefined>(undefined);
 
+    // Friends Leaderboard modal — available in every game, via the
+    // overlay button placed directly to the left of the menu/resign button.
+    const [friendsLBVisible, setFriendsLBVisible] = useState(false);
+    const openFriendsLB = useCallback(() => {
+      // Pause solo gameplay while the sheet is open so running timers /
+      // animation loops freeze (matches the existing menu-open contract).
+      if (runtimeType === "solo" && soloOnPauseRef.current) {
+        soloOnPauseRef.current();
+      }
+      setFriendsLBVisible(true);
+    }, [runtimeType]);
+    const closeFriendsLB = useCallback(() => {
+      setFriendsLBVisible(false);
+      if (runtimeType === "solo") {
+        soloOnResumeRef.current?.();
+      }
+    }, [runtimeType]);
+
     const resumeSoloGameplay = useCallback(() => {
       soloOnResumeRef.current?.();
     }, []);
@@ -739,17 +758,32 @@ export function withGameV4Shell<P extends GameShellProps>(
                 />
               </TouchableOpacity>
 
-              <TouchableOpacity
-                style={styles.soloOverlayBtn}
-                onPress={() => {
-                  if (soloOnPauseRef.current) soloOnPauseRef.current();
-                  setSoloMenuVisible(true);
-                }}
-                disabled={soloSuspendLoading}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              >
-                <Ionicons name="ellipsis-vertical" size={22} color="#FFF" />
-              </TouchableOpacity>
+              <View style={styles.overlayRightGroup}>
+                <TouchableOpacity
+                  style={styles.soloOverlayBtn}
+                  onPress={openFriendsLB}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  accessibilityLabel="Friends leaderboard"
+                >
+                  <MaterialCommunityIcons
+                    name="trophy-outline"
+                    size={22}
+                    color="#FFF"
+                  />
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.soloOverlayBtn}
+                  onPress={() => {
+                    if (soloOnPauseRef.current) soloOnPauseRef.current();
+                    setSoloMenuVisible(true);
+                  }}
+                  disabled={soloSuspendLoading}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <Ionicons name="ellipsis-vertical" size={22} color="#FFF" />
+                </TouchableOpacity>
+              </View>
             </View>
           )}
 
@@ -759,18 +793,32 @@ export function withGameV4Shell<P extends GameShellProps>(
               style={[styles.overlayHeader, { paddingTop: insets.top + 8 }]}
               pointerEvents="box-none"
             >
-              <TouchableOpacity
-                style={[styles.resignBtn, styles.overlayResignBtn]}
-                onPress={handleResign}
-                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-              >
-                <MaterialCommunityIcons
-                  name="flag-outline"
-                  size={16}
-                  color="#FFF"
-                />
-                <Text style={styles.resignBtnText}>Resign</Text>
-              </TouchableOpacity>
+              <View style={styles.overlayRightGroup}>
+                <TouchableOpacity
+                  style={styles.soloOverlayBtn}
+                  onPress={openFriendsLB}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  accessibilityLabel="Friends leaderboard"
+                >
+                  <MaterialCommunityIcons
+                    name="trophy-outline"
+                    size={22}
+                    color="#FFF"
+                  />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.resignBtn, styles.overlayResignBtn]}
+                  onPress={handleResign}
+                  hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                >
+                  <MaterialCommunityIcons
+                    name="flag-outline"
+                    size={16}
+                    color="#FFF"
+                  />
+                  <Text style={styles.resignBtnText}>Resign</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           )}
 
@@ -905,6 +953,13 @@ export function withGameV4Shell<P extends GameShellProps>(
               </View>
             </Pressable>
           </Modal>
+
+          {/* ── Friends leaderboard (shared across runtimes) ── */}
+          <FriendsLeaderboardModal
+            visible={friendsLBVisible}
+            gameId={gameId}
+            onClose={closeFriendsLB}
+          />
         </View>
       );
     }
@@ -931,28 +986,50 @@ export function withGameV4Shell<P extends GameShellProps>(
               <View style={styles.headerBtn} />
             )}
 
-            {/* Right: resign */}
-            {showResignAction ? (
+            {/* Right: Friends leaderboard + resign */}
+            <View style={styles.headerRightGroup}>
               <TouchableOpacity
-                style={[styles.resignBtn, { backgroundColor: "#FF3B30" }]}
-                onPress={handleResign}
-                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                style={styles.headerBtn}
+                onPress={openFriendsLB}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                accessibilityLabel="Friends leaderboard"
               >
                 <MaterialCommunityIcons
-                  name="flag-outline"
-                  size={16}
-                  color="#FFF"
+                  name="trophy-outline"
+                  size={22}
+                  color={theme.isDark ? "#FFF" : "#333"}
                 />
-                <Text style={styles.resignBtnText}>Resign</Text>
               </TouchableOpacity>
-            ) : (
-              <View style={styles.headerBtn} />
-            )}
+
+              {showResignAction ? (
+                <TouchableOpacity
+                  style={[styles.resignBtn, { backgroundColor: "#FF3B30" }]}
+                  onPress={handleResign}
+                  hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                >
+                  <MaterialCommunityIcons
+                    name="flag-outline"
+                    size={16}
+                    color="#FFF"
+                  />
+                  <Text style={styles.resignBtnText}>Resign</Text>
+                </TouchableOpacity>
+              ) : (
+                <View style={styles.headerBtn} />
+              )}
+            </View>
           </View>
         )}
 
         {/* Wrapped game component */}
         <GameComponent {...(props as unknown as P)} {...shellProps} />
+
+        {/* ── Friends leaderboard (shared across runtimes) ── */}
+        <FriendsLeaderboardModal
+          visible={friendsLBVisible}
+          gameId={gameId}
+          onClose={closeFriendsLB}
+        />
       </SafeAreaView>
     );
   }
@@ -995,6 +1072,16 @@ const styles = StyleSheet.create({
     height: 44,
     justifyContent: "center",
     alignItems: "center",
+  },
+  headerRightGroup: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  overlayRightGroup: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
   },
   resignBtn: {
     flexDirection: "row",

@@ -12,7 +12,13 @@
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import React, { useCallback, useEffect } from "react";
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import {
+  Keyboard,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import { useTheme } from "react-native-paper";
 import Animated, {
   Easing,
@@ -109,6 +115,22 @@ interface DMMessageItemProps {
   reactions?: ReactionSummary[];
   /** Called immediately for optimistic reaction toggle */
   onOptimisticReaction?: (messageId: string, emoji: string) => void;
+  /**
+   * Rendering inside a thread view.
+   * When true:
+   *   - swipe-to-reply is disabled (threads are already the reply scope)
+   *   - a tap on the message body navigates to this message in the
+   *     parent chat (via `onMessageTap`) instead of no-op'ing
+   *   - any failed-status opacity dimming is suppressed for the root
+   *     message (replyTo roots should always render at full opacity)
+   */
+  inThread?: boolean;
+  /**
+   * Optional tap handler used when `inThread` is true.  Receives the
+   * full message so the caller can navigate to the correct parent-chat
+   * location regardless of scope.
+   */
+  onMessageTap?: (message: MessageV2) => void;
 }
 
 export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
@@ -131,6 +153,8 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
     showStatus = true,
     reactions = [],
     onOptimisticReaction,
+    inThread = false,
+    onMessageTap,
   }) => {
     const theme = useTheme();
     const navigation = useNavigation<NativeStackNavigationProp<any>>();
@@ -227,6 +251,12 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
         );
         return;
       }
+      // Thread-only fallback: tapping anywhere on a message inside a
+      // thread jumps to that message in the parent chat.  In the main
+      // chat this branch is intentionally inert (text taps are no-ops).
+      if (inThread && onMessageTap) {
+        onMessageTap(message);
+      }
     }, [
       message,
       imageAttachment,
@@ -234,6 +264,8 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
       friendProfile,
       onImagePress,
       onRetry,
+      inThread,
+      onMessageTap,
     ]);
 
     // Render message status indicator
@@ -388,7 +420,7 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
       <SwipeableMessage
         message={message}
         onReply={onReply}
-        enabled={message.status !== "failed"}
+        enabled={!inThread && message.status !== "failed"}
         currentUid={currentUid}
       >
         <View
@@ -397,7 +429,9 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
             isSentByMe
               ? styles.sentMessageContainer
               : styles.receivedMessageContainer,
-            message.status === "failed" && styles.failedMessageContainer,
+            !inThread &&
+              message.status === "failed" &&
+              styles.failedMessageContainer,
             isGrouped && styles.groupedMessageContainer,
             isGroupedWithNext && styles.groupedMessageContainerTight,
           ]}
@@ -522,13 +556,14 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
           <ThreadIndicator
             replyCount={message.replyCount}
             isOutgoing={isSentByMe}
-            onPress={() =>
+            onPress={() => {
+              Keyboard.dismiss();
               navigation.navigate("ThreadView", {
                 conversationId: chatId,
                 scope: "dm" as const,
                 rootMessageId: message.id,
-              })
-            }
+              });
+            }}
           />
         )}
       </SwipeableMessage>

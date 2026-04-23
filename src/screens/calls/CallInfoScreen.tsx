@@ -259,26 +259,10 @@ export default function CallInfoScreen({ route, navigation }: Props) {
   // Render helpers
   // -------------------------------------------------------------------------
   const renderTranscriptSection = () => {
-    if (isVideoDirect) {
-      return (
-        <InfoBlock
-          colors={colors}
-          icon="text-box-outline"
-          title="Transcripts aren't available for video calls"
-          subtitle="Only 1:1 audio calls are transcript-eligible."
-        />
-      );
-    }
-    if (isRoom) {
-      return (
-        <InfoBlock
-          colors={colors}
-          icon="text-box-outline"
-          title="Transcripts aren't available for voice rooms"
-          subtitle="Only 1:1 audio calls are transcript-eligible."
-        />
-      );
-    }
+    // This function is only invoked for direct audio calls — the parent
+    // render gates video calls and voice rooms by omitting the entire
+    // transcript section (no header, no body). Keep a defensive early
+    // return for safety against future refactors.
     if (!isAudioDirect) return null;
 
     const status = meta?.transcriptStatus ?? "processing";
@@ -508,37 +492,9 @@ export default function CallInfoScreen({ route, navigation }: Props) {
           </Text>
         </View>
 
-        {/* Metadata */}
-        <View
-          style={[
-            styles.metaCard,
-            { backgroundColor: colors.surface, borderColor: colors.border },
-          ]}
-        >
-          <MetaRow
-            colors={colors}
-            label="Started"
-            value={formatDateTime(entry.startedAt)}
-          />
-          {entry.endedAt ? (
-            <MetaRow
-              colors={colors}
-              label="Ended"
-              value={formatDateTime(entry.endedAt)}
-            />
-          ) : null}
-          {typeof entry.durationSeconds === "number" ? (
-            <MetaRow
-              colors={colors}
-              label="Duration"
-              value={formatDuration(entry.durationSeconds)}
-            />
-          ) : null}
-          <MetaRow colors={colors} label="Direction" value={entry.direction} />
-          <MetaRow colors={colors} label="Call ID" value={entry.callId} mono />
-        </View>
-
-        {/* Actions */}
+        {/* Actions — rendered BELOW the call status/title block and ABOVE
+            the metadata (started / ended / duration) for a cleaner,
+            intentional hierarchy: identity → actions → details. */}
         <View style={styles.actionRow}>
           {!isRoom && entry.otherUserId ? (
             <>
@@ -580,13 +536,50 @@ export default function CallInfoScreen({ route, navigation }: Props) {
           ) : null}
         </View>
 
-        {/* Transcript */}
-        <View style={styles.transcriptSection}>
-          <Text style={[styles.sectionHeader, { color: colors.textSecondary }]}>
-            Transcript
-          </Text>
-          {renderTranscriptSection()}
+        {/* Metadata */}
+        <View
+          style={[
+            styles.metaCard,
+            { backgroundColor: colors.surface, borderColor: colors.border },
+          ]}
+        >
+          <MetaRow
+            colors={colors}
+            label="Started"
+            value={formatDateTime(entry.startedAt)}
+          />
+          {entry.endedAt ? (
+            <MetaRow
+              colors={colors}
+              label="Ended"
+              value={formatDateTime(entry.endedAt)}
+            />
+          ) : null}
+          {typeof entry.durationSeconds === "number" ? (
+            <MetaRow
+              colors={colors}
+              label="Duration"
+              value={formatDuration(entry.durationSeconds)}
+            />
+          ) : null}
+          <MetaRow colors={colors} label="Direction" value={entry.direction} />
+          <MetaRow colors={colors} label="Call ID" value={entry.callId} mono />
         </View>
+
+        {/* Transcript — ONLY rendered for direct audio calls. Video calls
+            and voice rooms are never transcript-eligible, so we omit the
+            entire section (including header) rather than showing a
+            placeholder. */}
+        {isAudioDirect ? (
+          <View style={styles.transcriptSection}>
+            <Text
+              style={[styles.sectionHeader, { color: colors.textSecondary }]}
+            >
+              Transcript
+            </Text>
+            {renderTranscriptSection()}
+          </View>
+        ) : null}
       </ScrollView>
     </View>
   );

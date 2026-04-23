@@ -17,10 +17,33 @@
 
 import { useComposerSheet } from "@/contexts/ComposerSheetContext";
 import { useAppTheme } from "@/store/ThemeContext";
-import { useReanimatedKeyboardAnimationCompat } from "@/utils/optionalKeyboardController";
-import React, { forwardRef, useCallback, useEffect } from "react";
+import {
+  KEYBOARD_TOOLBAR_SYNC_THRESHOLD_PX,
+  MOTION_JUMP_THRESHOLD_PX,
+  chatDbg,
+  logKeyboardToolbarSync,
+  reportOffsetJump,
+} from "@/utils/chatUiDebug";
+import {
+  isKeyboardControllerAvailable,
+  useReanimatedKeyboardAnimationCompat,
+} from "@/utils/optionalKeyboardController";
+import React, {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import type { ScrollViewProps, StyleProp, ViewStyle } from "react-native";
-import { Dimensions, ScrollView, StyleSheet, View } from "react-native";
+import {
+  Dimensions,
+  Keyboard,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  View,
+} from "react-native";
 import type { SharedValue } from "react-native-reanimated";
 import Animated, {
   interpolate,
@@ -28,6 +51,7 @@ import Animated, {
   useAnimatedReaction,
   useAnimatedStyle,
   useDerivedValue,
+  useSharedValue,
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -35,6 +59,12 @@ const FOOTER_SCREEN_HEIGHT = Dimensions.get("window").height;
 const KEYBOARD_BACKDROP_Z_INDEX = 10;
 const CHAT_FOOTER_Z_INDEX = 20;
 const ENABLE_KEYBOARD_BACKDROP_DEBUG = false;
+
+// Fixed height of the chat header (see ChatHeader.tsx → HEADER_LAYOUT.height).
+// Used by the keyboard-transition interaction gate to position its overlay
+// strictly below the header so header controls remain interactive while the
+// keyboard is animating.  Must stay in sync with ChatHeader.
+const CHAT_HEADER_HEIGHT = 46;
 
 // Toggle for handoff transition diagnostics — mirrors the flag in
 // ComposerSheetContext.  Set to true when debugging sheet→keyboard
@@ -156,14 +186,14 @@ export function useKeyboardBackdropHeight(): SharedValue<number> {
     const floor = handoffFloor.value;
 
     if (isSheetActive.value === 0) {
-      // During a sheet→keyboard handoff the floor keeps the backdrop tall
-      // until the keyboard catches up.
+      // Sheet inactive.  After a non-handoff dismiss `handoffFloor` is
+      // seeded to the current effective offset then animated to 0 via
+      // `withTiming(260ms)`, so `max(kbH, floor)` produces a smooth
+      // backdrop collapse that tracks the composer's downward slide.
       return Math.max(kbH, floor);
     }
 
-    // Backdrop must also include the floor during KB→sheet so it doesn't
-    // transiently collapse while the picker animates up and the keyboard
-    // animates down.
+    // Sheet active — backdrop spans the larger of keyboard / sheet / floor.
     const sheetVisible = getSheetVisibleHeight(sheetTranslateY.value);
     return Math.max(kbH, sheetVisible, floor);
   }, [sheetTranslateY, isSheetActive, keyboardHeight, handoffFloor]);
@@ -325,8 +355,13 @@ export function ChatFooterWrapper({ children }: { children: React.ReactNode }) {
     const floor = handoffFloor.value;
 
     if (isSheetActive.value === 0) {
-      // During a sheet→keyboard handoff the floor prevents the footer
-      // from dropping to baseline before the keyboard has started rising.
+      // Sheet inactive.  `handoffFloor` is driven by two animated
+      // transitions:
+      //   - sheet→KB handoff: floor captures current sheet visible,
+      //     held until the rising keyboard catches up.
+      //   - non-handoff dismiss: floor seeded to current effective
+      //     offset, then `withTiming(0, 260ms)` animates it down —
+      //     composer slides smoothly to baseline without teleporting.
       return Math.max(kbH, floor);
     }
 
@@ -514,7 +549,13 @@ function useEffectiveBottomInset(): SharedValue<number> {
     const floor = handoffFloor.value;
 
     if (isSheetActive.value === 0) {
-      // Respect handoff floor during sheet→keyboard transitions.
+      // Sheet inactive.  After a non-handoff dismiss `handoffFloor` is
+      // seeded to the current effective inset and then animated down to
+      // 0 via `withTiming(260ms)` — so `max(kbH, floor)` produces a
+      // smooth composer slide to baseline regardless of whether the
+      // OS keyboard is still retracting from a search-TextInput blur.
+      // During a sheet→keyboard handoff the floor keeps the inset
+      // stable until kbH catches up.
       return Math.max(kbH, floor);
     }
 
@@ -523,11 +564,6 @@ function useEffectiveBottomInset(): SharedValue<number> {
       sheetVisible,
       initialSnapHeight.value,
     );
-    // Layout lift stays clamped to the keyboard-equivalent snap so expanded
-    // sheets don't keep pushing the footer/list farther upward.
-    // The handoff floor is included so the KB→sheet lock holds the
-    // chat list height constant while the picker's first frames race
-    // against the keyboard dismissal.
     return Math.max(kbH, clamped, floor);
   });
 }
@@ -606,16 +642,333 @@ function FallbackKeyboardContainer({
   keyboardBackdropColor: string;
 }) {
   const effectiveInset = useEffectiveBottomInset();
+  const { height: keyboardHeight } = useReanimatedKeyboardAnimationCompat();
+  const { isSheetActive, handoffFloor } = useComposerSheet();
+  const safeAreaTop = useSafeAreaInsets().top;
 
   const animatedStyle = useAnimatedStyle(() => ({
     paddingBottom: effectiveInset.value,
   }));
+
+  // ── Keyboard-transition interaction gates ────────────────────────────────
+  //
+  // Two independent gates are used, because the two transitions need
+  // different UX:
+  //
+  //  • OPEN gate (`isKbOpening`) — raised on `keyboardWillShow`, released
+  //    200ms after `keyboardDidShow` (or by safety timeout).  Blocks the
+  //    full chat body below the header so re-taps cannot start a second
+  //    overlapping transition while the keyboard is rising.
+  //
+  //  • CLOSE gate (`isKbClosing`) — raised on `keyboardWillHide`, released
+  //    exactly at `keyboardDidHide` (no post-settle hold).  Blocks ONLY
+  //    the Message box (composer region) so the user cannot re-focus the
+  //    TextInput while the keyboard is dismissing; chat list + header
+  //    remain interactive.
+  //
+  // Implementation notes:
+  //  • Driven by native `Keyboard` JS events — NOT a UI-thread reaction on
+  //    `keyboardHeight`.  Reason: `useAnimatedReaction` only fires while
+  //    its deps are changing; once the SharedValue settles the reaction
+  //    stops, so the final rest-edge can be missed and the gate would
+  //    stick on (auto-open bug).
+  //  • Separate safety timeouts per gate ensure each releases even if the
+  //    matching `did…` event is dropped.
+  //  • On Android, `willShow`/`willHide` do not fire — the gates rely on
+  //    `didShow`/`didHide` and are effectively a no-op for the animation
+  //    (Android system keyboard has a much shorter transition).
+  const [isKbOpening, setIsKbOpening] = useState(false);
+  const [isKbClosing, setIsKbClosing] = useState(false);
+  const openSafetyRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const closeSafetyRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    const clearOpen = () => {
+      if (openSafetyRef.current != null) {
+        clearTimeout(openSafetyRef.current);
+        openSafetyRef.current = null;
+      }
+    };
+    const clearClose = () => {
+      if (closeSafetyRef.current != null) {
+        clearTimeout(closeSafetyRef.current);
+        closeSafetyRef.current = null;
+      }
+    };
+
+    const raiseOpen = (e?: { duration?: number }) => {
+      setIsKbOpening(true);
+      clearOpen();
+      // Safety: if `keyboardDidShow` never fires, release the gate after
+      // native duration + slack.  If `didShow` fires first it schedules
+      // its own post-settle release.
+      const d = Math.max(100, Math.min(600, e?.duration ?? 250)) + 400;
+      openSafetyRef.current = setTimeout(() => {
+        setIsKbOpening(false);
+        openSafetyRef.current = null;
+      }, d);
+    };
+    const releaseOpen = () => {
+      // Hold the gate for 20ms after the keyboard reports settled.
+      // On some iOS builds the keyboard frame keeps micro-adjusting for
+      // a few frames past `keyboardDidShow`; re-taps landing in that
+      // window still produce the overlapping-transition desync.
+      clearOpen();
+      openSafetyRef.current = setTimeout(() => {
+        setIsKbOpening(false);
+        openSafetyRef.current = null;
+      }, 20);
+    };
+
+    const raiseClose = (e?: { duration?: number }) => {
+      setIsKbClosing(true);
+      clearClose();
+      // Safety: release the close gate by native duration + slack if
+      // `keyboardDidHide` never fires.  If `didHide` fires first it
+      // schedules its own post-settle release.
+      const d = Math.max(100, Math.min(600, e?.duration ?? 250)) + 200;
+      closeSafetyRef.current = setTimeout(() => {
+        setIsKbClosing(false);
+        closeSafetyRef.current = null;
+      }, d);
+    };
+    const releaseClose = () => {
+      // Hold the close gate for 20ms past `keyboardDidHide` to cover
+      // any post-settle frame jitter while the composer-region block
+      // drops shortly after the keyboard is fully closed.
+      clearClose();
+      closeSafetyRef.current = setTimeout(() => {
+        setIsKbClosing(false);
+        closeSafetyRef.current = null;
+      }, 20);
+    };
+
+    const subs = [
+      // iOS fires will* with animation duration; Android only fires did*.
+      Platform.OS === "ios"
+        ? Keyboard.addListener("keyboardWillShow", raiseOpen)
+        : null,
+      Platform.OS === "ios"
+        ? Keyboard.addListener("keyboardWillHide", raiseClose)
+        : null,
+      Keyboard.addListener("keyboardDidShow", releaseOpen),
+      Keyboard.addListener("keyboardDidHide", releaseClose),
+    ];
+    return () => {
+      clearOpen();
+      clearClose();
+      subs.forEach((s) => s?.remove());
+    };
+  }, []);
+
+  // ── Keyboard transition boundaries ───────────────────────────────────────
+  //
+  // Detect keyboard-open-start / keyboard-close-start / rest by sampling the
+  // direction of `keyboardHeight.value`.  A transition between directions
+  // is a meaningful state boundary to log — it lets us correlate perceived
+  // rigidness ("this open was smooth, this one wasn't") with the actual
+  // shared-value path.  State machine:
+  //   rest  → opening (delta > 0 while prev ≈ 0 or increasing)
+  //   rest  → closing (delta < 0 while prev ≈ kbH or decreasing)
+  //   moving → rest   (delta ≈ 0 for ≥2 frames at kbH=0 or kbH=peak)
+  const kbDirection = useSharedValue<0 | 1 | -1>(0); // 0=rest, 1=opening, -1=closing
+  useAnimatedReaction(
+    () => keyboardHeight.value,
+    (current, previous) => {
+      if (previous === null) return;
+      const absCurr = Math.abs(current);
+      const absPrev = Math.abs(previous);
+      const delta = absCurr - absPrev;
+      const prev = kbDirection.value;
+
+      let next: 0 | 1 | -1 = prev;
+      if (delta > 0.5) next = 1;
+      else if (delta < -0.5) next = -1;
+      else if (Math.abs(delta) < 0.1) next = 0;
+
+      if (next !== prev) {
+        kbDirection.value = next;
+        const event =
+          next === 1
+            ? "keyboard:open-start"
+            : next === -1
+              ? "keyboard:close-start"
+              : absCurr < 0.5
+                ? "keyboard:closed-rest"
+                : "keyboard:open-rest";
+        runOnJS(chatDbg)(event, {
+          kbH: Math.round(absCurr),
+          floor: Math.round(handoffFloor.value),
+          sheetActive: isSheetActive.value,
+          inset: Math.round(effectiveInset.value),
+        });
+      }
+    },
+    [keyboardHeight, kbDirection, handoffFloor, isSheetActive, effectiveInset],
+  );
+
+  // ── Motion-discontinuity detector ────────────────────────────────────────
+  //
+  // Samples the effective bottom inset on every UI-thread commit and flags
+  // any single-frame delta above `MOTION_JUMP_THRESHOLD_PX`.  This is the
+  // primary signal the user perceives as toolbar "teleporting / snapping"
+  // — a large jump between two consecutive values that should have been
+  // interpolated smoothly.
+  //
+  // Context captured at the jump: keyboard height, handoff floor, sheet
+  // active.  With the monotonic seq in `chatDbg` this lets us correlate
+  // a jump with the preceding `activateSheet` / `deactivateSheet` /
+  // `beginKeyboardHandoff` transition in the unified timeline.
+  //
+  // Enabled only when `chatUiDebug` is on (`setChatUiDebugEnabled(true)`).
+  useAnimatedReaction(
+    () => effectiveInset.value,
+    (current, previous) => {
+      if (previous === null) return;
+      const delta = Math.abs(current - previous);
+      if (delta > MOTION_JUMP_THRESHOLD_PX) {
+        runOnJS(reportOffsetJump)({
+          source: "effectiveInset",
+          from: previous,
+          to: current,
+          delta,
+          context: {
+            kbH: Math.round(Math.abs(keyboardHeight.value)),
+            floor: Math.round(handoffFloor.value),
+            sheetActive: isSheetActive.value,
+          },
+        });
+      }
+    },
+    [effectiveInset, keyboardHeight, handoffFloor, isSheetActive],
+  );
+
+  // ── Keyboard ↔ Toolbar sync monitor ──────────────────────────────────────
+  //
+  // The toolbar's visual position in the fallback path = container
+  // paddingBottom = `effectiveInset.value`.  When no sheet is active and
+  // no handoff floor is pending, this should equal `|keyboardHeight|`
+  // EXACTLY every frame.  Any drift > 2px during active motion means the
+  // toolbar and the native keyboard are running on different timelines —
+  // the exact bug class this pass targets.
+  //
+  // Fires at the START of each motion (first frame where direction becomes
+  // non-rest), at the END (settle), and at any mid-motion frame where
+  // |toolbar - keyboard| exceeds the threshold.  Each event carries the
+  // driver identity (`rkbc-native` vs `rn-fallback`) so a sync-bug report
+  // immediately distinguishes "the fallback easing is wrong" from "the
+  // native bridge itself is desynced from UIKit" without further probing.
+  useAnimatedReaction(
+    () => ({
+      kb: Math.abs(keyboardHeight.value),
+      tb: effectiveInset.value,
+      dir: kbDirection.value,
+      floor: handoffFloor.value,
+      sheetActive: isSheetActive.value,
+    }),
+    (current, previous) => {
+      // Only relevant when the toolbar should track the keyboard directly.
+      // If a sheet is active or a non-zero floor is held, the toolbar
+      // intentionally runs on `max(kbH, sheet, floor)` and drift vs kbH
+      // alone is expected.
+      if (current.sheetActive === 1 || current.floor > 0.5) return;
+
+      const delta = current.tb - current.kb; // + toolbar ahead (higher), - behind
+      const absDelta = Math.abs(delta);
+
+      // Motion start: first frame where direction leaves rest.
+      if (previous && previous.dir === 0 && current.dir !== 0) {
+        runOnJS(logKeyboardToolbarSync)({
+          event: "motion-start",
+          keyboardHeight: current.kb,
+          toolbarOffset: current.tb,
+          delta,
+          source: isKeyboardControllerAvailable ? "rkbc-native" : "rn-fallback",
+          direction: current.dir === 1 ? "opening" : "closing",
+          floor: current.floor,
+          sheetActive: current.sheetActive,
+        });
+        return;
+      }
+
+      // Motion end: direction returns to rest.
+      if (previous && previous.dir !== 0 && current.dir === 0) {
+        runOnJS(logKeyboardToolbarSync)({
+          event: "motion-end",
+          keyboardHeight: current.kb,
+          toolbarOffset: current.tb,
+          delta,
+          source: isKeyboardControllerAvailable ? "rkbc-native" : "rn-fallback",
+          direction: "rest",
+          floor: current.floor,
+          sheetActive: current.sheetActive,
+        });
+        return;
+      }
+
+      // Mid-motion drift.  Only log during active motion (direction
+      // non-rest) and only when drift exceeds the sync threshold —
+      // otherwise we'd spam on every frame.
+      if (current.dir !== 0 && absDelta > KEYBOARD_TOOLBAR_SYNC_THRESHOLD_PX) {
+        runOnJS(logKeyboardToolbarSync)({
+          event: delta > 0 ? "toolbar-ahead" : "toolbar-behind",
+          keyboardHeight: current.kb,
+          toolbarOffset: current.tb,
+          delta,
+          source: isKeyboardControllerAvailable ? "rkbc-native" : "rn-fallback",
+          direction: current.dir === 1 ? "opening" : "closing",
+          floor: current.floor,
+          sheetActive: current.sheetActive,
+        });
+      }
+    },
+    [effectiveInset, keyboardHeight, kbDirection, handoffFloor, isSheetActive],
+  );
 
   return (
     <Animated.View style={[styles.container, animatedStyle, style]}>
       {backgroundUnderlay}
       <KeyboardBackdropLayer backgroundColor={keyboardBackdropColor} />
       {children}
+      {isKbOpening ? (
+        // OPEN gate: transparent touch-eater covering the chat body +
+        // composer while the keyboard is rising.  Positioned BELOW the
+        // chat header (`top = safeArea.top + CHAT_HEADER_HEIGHT`) so the
+        // header — back button, title tap, right-side actions — remains
+        // interactive at all times, per product requirement.  Mounted
+        // only during the open transition, so steady-state interaction
+        // is unaffected.  `accessibilityElementsHidden` +
+        // `importantForAccessibility` keep VoiceOver from landing on
+        // the overlay during its brief lifetime.
+        <View
+          pointerEvents="auto"
+          style={[
+            StyleSheet.absoluteFill,
+            { top: safeAreaTop + CHAT_HEADER_HEIGHT },
+          ]}
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+        />
+      ) : null}
+      {isKbClosing ? (
+        // CLOSE gate: blocks ONLY the Message box (composer region) so
+        // the user cannot re-focus the TextInput while the keyboard is
+        // dismissing.  Chat list and header remain interactive.
+        //
+        // Positioned at `bottom: 0` with a fixed height of
+        // CLOSE_GATE_COMPOSER_REGION_PX, which is sized to cover the
+        // composer stack (input row + toolbar) with comfortable margin.
+        // The Animated.View's `paddingBottom` = effectiveInset pushes
+        // the content box up as the keyboard recedes; the composer
+        // therefore sits at `bottom: 0` of that content box and this
+        // overlay tracks it naturally.
+        <View
+          pointerEvents="auto"
+          style={styles.closeGate}
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+        />
+      ) : null}
     </Animated.View>
   );
 }
@@ -698,5 +1051,18 @@ const styles = StyleSheet.create({
   footerLayer: {
     position: "relative",
     zIndex: CHAT_FOOTER_Z_INDEX,
+  },
+  closeGate: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    // Tall enough to cover the composer stack (input row + attached
+    // toolbar) with comfortable margin.  Sits at the bottom of the
+    // Animated.View's content box; the animated paddingBottom tracks the
+    // receding keyboard so the composer remains within this region
+    // throughout the close transition.
+    height: 220,
+    zIndex: CHAT_FOOTER_Z_INDEX + 1,
   },
 });

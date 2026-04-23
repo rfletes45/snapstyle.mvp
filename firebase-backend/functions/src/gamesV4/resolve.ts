@@ -35,7 +35,12 @@ import {
   unpinInviteFromConversation,
 } from "./helpers";
 import { unlockLevelRewards } from "./levelRewardsV4";
-import { notifyAchievementUnlocked, notifyResolved } from "./notifications";
+import {
+  getGameDisplayName,
+  notifyAchievementUnlocked,
+  notifyFriendBeatScore,
+  notifyResolved,
+} from "./notifications";
 import type {
   AchievementUnlock,
   FinalScoreboardEntry,
@@ -256,6 +261,7 @@ export async function resolveSessionV4Internal(
     input.resolutionType,
     input.winnerIds ?? [],
     scoreboard,
+    input.resolverUid,
   );
 
   // Await the parallel countMoves query
@@ -325,12 +331,23 @@ export async function resolveSessionV4Internal(
   // ─── Phases 5-7: Apply rewards in parallel ─────────────────────────
   // PERF: XP, leaderboard, and PB writes are independent of each other.
   // Running them in parallel saves ~300-800ms compared to sequential.
-  const [, lbUpdates] = await Promise.all([
+  const [, lbUpdates, pbDeltas] = await Promise.all([
     applyXPAwards(db, xpAwards), // Phase 5
     updateLeaderboards(db, session.gameId, weekKey, scoreboard), // Phase 6
     updatePersonalBests(db, session.gameId, scoreboard, input.sessionId), // Phase 7
   ]);
   result.leaderboardUpdates = lbUpdates;
+
+  // ─── Phase 7.5: Beat-friend notifications ──────────────────────────
+  // For every participant whose PB improved this match, detect which of
+  // their friends just got overtaken on the relevant friends-leaderboard
+  // board and notify the beaten friends. Only friends with an existing
+  // qualifying entry are notified — never spam people who never played.
+  try {
+    await notifyFriendsBeatenByDeltas(db, session, pbDeltas, scoreboard);
+  } catch (err) {
+    console.error(`[resolveV4] Beat-friend notification phase failed:`, err);
+  }
 
   // ─── Phases 8-9: Unpin invite + mark rewards in parallel ─────────
   // PERF: These writes are independent; run together.
@@ -395,6 +412,25 @@ export async function resolveSessionV4Internal(
     await notifyResolved(result, session.conversationScope, input.resolverUid);
   } catch (err) {
     console.error(`[resolveV4] Failed to send resolved notifications:`, err);
+  }
+
+  // ─── Phase 10.5: Auto-post scorecard to group chat ────────────────
+  // Group-only, multiplayer-only. DMs never receive auto-posts per product
+  // requirement — users in DMs can still share via the GameOverScreen
+  // "Share" button. Solo sessions have no conversation chat to post into.
+  if (
+    session.conversationScope === "group" &&
+    session.runtimeType !== "solo" &&
+    session.conversationId
+  ) {
+    try {
+      await postGameScorecardToGroup(db, session, result);
+    } catch (err) {
+      console.error(
+        `[resolveV4] Failed to auto-post scorecard to group ${session.conversationId}:`,
+        err,
+      );
+    }
   }
 
   console.log(
@@ -553,14 +589,66 @@ function computeXPAwards(
   resolutionType: ResolutionType,
   winnerIds: string[],
   scoreboard: FinalScoreboardEntry[],
+  resolverUid?: string,
 ): XPAward[] {
   return scoreboard.map((entry) => {
+    const isWinner = winnerIds.includes(entry.uid);
+    const isDraw = resolutionType === "draw";
+
+    // ══════════════════════════════════════════════════════════════════
+    // ABSOLUTE HARD-ZERO GATES — run BEFORE any baseXP assignment.
+    // These ensure a user who bails on a match earns exactly 0 XP,
+    // regardless of runtimeType (solo included) or scoreboard score.
+    // ══════════════════════════════════════════════════════════════════
+
+    // Gate A: resignation — the resigner is ALWAYS 0 XP.
+    // The resigner is identified in two ways (defense-in-depth):
+    //   1. resolverUid (passed by resignSessionV4 callable)
+    //   2. any participant NOT in winnerIds for a resign resolution
+    //      (resignSessionV4 sets winnerIds = participants - resigner;
+    //       for solo, participants=[uid] so winnerIds=[] and the solo
+    //       player correctly matches this check)
+    if (resolutionType === "resign") {
+      const isResigner =
+        (resolverUid && entry.uid === resolverUid) || !isWinner;
+      if (isResigner) {
+        return {
+          uid: entry.uid,
+          baseXP: 0,
+          bonusXP: 0,
+          totalXP: 0,
+          bonusReason: "Resigned — no XP",
+        };
+      }
+      // Non-resigner participants (multiplayer): fall through to normal
+      // victory XP computation below.
+    }
+
+    // Gate B: disconnect / timeout — non-winners get 0 XP.
+    // Realtime rooms (Colyseus) emit these when a player bails mid-match.
+    if (
+      (resolutionType === "disconnect" || resolutionType === "timeout") &&
+      !isWinner
+    ) {
+      const reasonMap: Record<string, string> = {
+        disconnect: "Disconnected — no XP",
+        timeout: "Timed out — no XP",
+      };
+      return {
+        uid: entry.uid,
+        baseXP: 0,
+        bonusXP: 0,
+        totalXP: 0,
+        bonusReason: reasonMap[resolutionType] ?? "No XP",
+      };
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    // Normal XP computation (only reached for legitimate completions)
+    // ══════════════════════════════════════════════════════════════════
     let baseXP = XP_CONFIG.BASE_PARTICIPATION;
     let bonusXP = 0;
     let bonusReason: string | undefined;
-
-    const isWinner = winnerIds.includes(entry.uid);
-    const isDraw = resolutionType === "draw";
 
     if (isWinner) {
       bonusXP += XP_CONFIG.WIN_BONUS;
@@ -573,14 +661,36 @@ function computeXPAwards(
     // Solo games: award score-based XP instead of win/draw multiplayer bonus
     if (session.runtimeType === "solo") {
       baseXP = XP_CONFIG.BASE_PARTICIPATION;
-      // Score-based performance bonus: 1 XP per 1000 score, capped at MAX_PERFORMANCE_BONUS
-      const scoreBonus = Math.min(
-        Math.floor(entry.score / 1000),
-        XP_CONFIG.MAX_PERFORMANCE_BONUS,
-      );
-      bonusXP = scoreBonus;
-      bonusReason =
-        scoreBonus > 0 ? `Score ${entry.score.toLocaleString()}` : undefined;
+
+      // ── Game-specific progression XP ──────────────────────────────
+      // Brick Breaker scales with `levelsCleared` so a losing run that
+      // still reached level 25 earns more than one that died at level 3.
+      // Capped so the total never exceeds roughly 2x a participation run.
+      if (session.gameId === "brick_breaker") {
+        const levelsCleared = Number(
+          (entry.stats as Record<string, unknown>)?.levelsCleared ?? 0,
+        );
+        // 2 XP per cleared level, cap at 50 (→ max total 60 XP incl. base).
+        const BB_MAX_PROGRESS_BONUS = 50;
+        const progressBonus = Math.min(
+          levelsCleared * 2,
+          BB_MAX_PROGRESS_BONUS,
+        );
+        bonusXP = progressBonus;
+        bonusReason =
+          levelsCleared > 0
+            ? `Reached Level ${levelsCleared + (isWinner ? 0 : 1)}`
+            : undefined;
+      } else {
+        // Generic solo: 1 XP per 1000 score, capped at MAX_PERFORMANCE_BONUS
+        const scoreBonus = Math.min(
+          Math.floor(entry.score / 1000),
+          XP_CONFIG.MAX_PERFORMANCE_BONUS,
+        );
+        bonusXP = scoreBonus;
+        bonusReason =
+          scoreBonus > 0 ? `Score ${entry.score.toLocaleString()}` : undefined;
+      }
     }
 
     return {
@@ -789,14 +899,66 @@ async function updateLeaderboards(
 // Personal best updates
 // =============================================================================
 
+/**
+ * Minesweeper difficulty decoded from the encoded score.
+ * Mirrors `encodeBestScore` in `src/gamesV4/games/minesweeper/types.ts`.
+ */
+type MinesweeperDifficulty = "easy" | "intermediate" | "expert";
+
+function decodeMinesweeperScore(
+  score: number,
+): { difficulty: MinesweeperDifficulty; elapsedMs: number } | null {
+  if (!Number.isFinite(score) || score <= 0) return null;
+  let difficulty: MinesweeperDifficulty;
+  let tierBase: number;
+  if (score >= 3_000_000) {
+    difficulty = "expert";
+    tierBase = 3_000_000;
+  } else if (score >= 2_000_000) {
+    difficulty = "intermediate";
+    tierBase = 2_000_000;
+  } else if (score >= 1_000_000) {
+    difficulty = "easy";
+    tierBase = 1_000_000;
+  } else {
+    return null;
+  }
+  const elapsedMs = 999_999 - (score - tierBase);
+  if (!Number.isFinite(elapsedMs) || elapsedMs < 0) return null;
+  return { difficulty, elapsedMs };
+}
+
+/**
+ * Per-uid delta describing how a player's aggregate leaderboard value
+ * changed during this resolution. Fed to the beat-friend notification
+ * phase so we can detect friends who just got passed on a board.
+ *
+ * `variant` partitions Minesweeper by difficulty so each tier maintains
+ * an independent leaderboard. All other games use variant = "default".
+ *
+ * `higherIsBetter = false` is only set for Minesweeper (time metric).
+ */
+export interface PBDelta {
+  uid: string;
+  gameId: GameId;
+  metric: "wins" | "bestScore";
+  variant: string;
+  previousValue: number | null;
+  newValue: number;
+  higherIsBetter: boolean;
+  improved: boolean;
+}
+
 async function updatePersonalBests(
   db: FirebaseFirestore.Firestore,
   gameId: GameId,
   scoreboard: FinalScoreboardEntry[],
   sessionId: string,
-): Promise<void> {
+): Promise<PBDelta[]> {
   const batch = db.batch();
   const metric = getLeaderboardMetric(gameId);
+  const deltas: PBDelta[] = [];
+  const isMinesweeper = gameId === "minesweeper";
 
   for (const entry of scoreboard) {
     const pbRef = db
@@ -811,27 +973,85 @@ async function updatePersonalBests(
         // PB value comparison is meaningless (score is always 1 or 0).
         // Only track totalPlays / totalWins — the client reads totalWins
         // for leaderboard display.
+        const existing = await pbRef.get();
+        const previousWins = existing.exists
+          ? ((existing.data()?.totalWins as number | undefined) ?? 0)
+          : 0;
+        const isWinner = entry.placement === 1;
+        const newWins = isWinner ? previousWins + 1 : previousWins;
+
         batch.set(
           pbRef,
           {
             gameId,
             totalPlays: admin.firestore.FieldValue.increment(1),
-            ...(entry.placement === 1
+            ...(isWinner
               ? { totalWins: admin.firestore.FieldValue.increment(1) }
               : {}),
             schemaVersion: 1,
           },
           { merge: true },
         );
+
+        deltas.push({
+          uid: entry.uid,
+          gameId,
+          metric: "wins",
+          variant: "default",
+          previousValue: existing.exists ? previousWins : null,
+          newValue: newWins,
+          higherIsBetter: true,
+          improved: isWinner,
+        });
       } else {
         // ── Best-score games (2048, Brick Breaker, Minesweeper, etc.) ──
         // Keep running MAX of pbValue.
         const existing = await pbRef.get();
-        const currentPb = existing.exists
-          ? (existing.data()?.pbValue ?? -Infinity)
-          : -Infinity;
+        const existingData = existing.exists ? existing.data() : undefined;
+        const currentPb =
+          (existingData?.pbValue as number | undefined) ?? -Infinity;
+        const isPb = entry.score > (currentPb as number);
 
-        if (entry.score > (currentPb as number)) {
+        // Minesweeper: decode the encoded score and maintain a per-difficulty
+        // best-time map so friends leaderboards can have one board per tier.
+        // Lower elapsedMs = better. We store the raw ms value; the global
+        // leaderboard still uses the encoded `pbValue`.
+        let msPayload: Record<string, unknown> | undefined;
+        if (isMinesweeper) {
+          const decoded = decodeMinesweeperScore(entry.score);
+          if (decoded) {
+            const prevByDiff =
+              (existingData?.bestsByDifficulty as
+                | Record<string, { elapsedMs?: number } | undefined>
+                | undefined) ?? {};
+            const prevBestMs = prevByDiff[decoded.difficulty]?.elapsedMs;
+            const improvedTier =
+              prevBestMs === undefined || decoded.elapsedMs < prevBestMs;
+
+            if (improvedTier) {
+              msPayload = {
+                [`bestsByDifficulty.${decoded.difficulty}`]: {
+                  elapsedMs: decoded.elapsedMs,
+                  achievedAt: admin.firestore.Timestamp.now(),
+                  sessionId,
+                },
+              };
+            }
+
+            deltas.push({
+              uid: entry.uid,
+              gameId,
+              metric: "bestScore",
+              variant: decoded.difficulty,
+              previousValue: prevBestMs ?? null,
+              newValue: decoded.elapsedMs,
+              higherIsBetter: false,
+              improved: improvedTier,
+            });
+          }
+        }
+
+        if (isPb) {
           const hash = computeIntegrityHash(
             entry.uid,
             gameId,
@@ -854,13 +1074,12 @@ async function updatePersonalBests(
                   : admin.firestore.FieldValue.increment(0),
               integrityHash: hash,
               schemaVersion: 1,
+              ...(msPayload ?? {}),
             },
             { merge: true },
           );
         } else {
           // Still increment play count even if not a PB.
-          // Use set+merge (not update) so first-time players whose score
-          // is somehow ≤ –Infinity (NaN, etc.) don't crash the batch.
           batch.set(
             pbRef,
             {
@@ -869,9 +1088,25 @@ async function updatePersonalBests(
               ...(entry.placement === 1
                 ? { totalWins: admin.firestore.FieldValue.increment(1) }
                 : {}),
+              ...(msPayload ?? {}),
             },
             { merge: true },
           );
+        }
+
+        // Record a non-minesweeper bestScore delta (minesweeper is per-tier
+        // so the aggregate encoded pbValue is not a friends-leaderboard metric).
+        if (!isMinesweeper) {
+          deltas.push({
+            uid: entry.uid,
+            gameId,
+            metric: "bestScore",
+            variant: "default",
+            previousValue: existing.exists ? (currentPb as number) : null,
+            newValue: entry.score,
+            higherIsBetter: true,
+            improved: isPb,
+          });
         }
       }
     } catch (err) {
@@ -880,4 +1115,282 @@ async function updatePersonalBests(
   }
 
   await batch.commit();
+  return deltas;
+}
+
+// =============================================================================
+// Beat-friend notifications
+// =============================================================================
+
+/**
+ * Detect friends who were just overtaken on the friends leaderboard for
+ * this game and send each affected friend a "[actor] beat your score"
+ * notification.
+ *
+ * Only friends with an existing qualifying entry receive a notification.
+ * Friends who never played the game (no PB doc, zero wins, or no entry
+ * for the minesweeper difficulty in question) are silently skipped.
+ *
+ * A friend is "newly beaten" if:
+ *   higherIsBetter=true  : friend.value <  newValue && friend.value >= previousValue
+ *   higherIsBetter=false : friend.value >  newValue && friend.value <= previousValue
+ *
+ * This keeps the notification fair: we only pass someone when crossing
+ * the tie boundary, never send multiple notifications for the same
+ * overtake, and never notify friends who are still ahead.
+ */
+async function notifyFriendsBeatenByDeltas(
+  db: FirebaseFirestore.Firestore,
+  session: GameSessionV4,
+  deltas: PBDelta[],
+  scoreboard: FinalScoreboardEntry[],
+): Promise<void> {
+  const improved = deltas.filter((d) => d.improved);
+  if (improved.length === 0) return;
+
+  const gameId = session.gameId;
+  const displayNameByUid = new Map<string, string>();
+  for (const entry of scoreboard) {
+    displayNameByUid.set(entry.uid, entry.displayName);
+  }
+
+  await Promise.all(
+    improved.map(async (delta) => {
+      try {
+        // Load friendships: docs in "Friends" where users array-contains uid.
+        const friendsSnap = await db
+          .collection("Friends")
+          .where("users", "array-contains", delta.uid)
+          .get();
+
+        const friendUids: string[] = [];
+        for (const doc of friendsSnap.docs) {
+          const users = doc.data().users as string[] | undefined;
+          if (!Array.isArray(users)) continue;
+          const other = users.find((u) => u !== delta.uid);
+          if (other) friendUids.push(other);
+        }
+
+        if (friendUids.length === 0) return;
+
+        // Read each friend's PB doc in parallel.
+        const friendPBSnaps = await Promise.all(
+          friendUids.map((fuid) =>
+            db
+              .collection("Users")
+              .doc(fuid)
+              .collection(COLLECTIONS.GAME_PB)
+              .doc(gameId)
+              .get(),
+          ),
+        );
+
+        const actorName =
+          displayNameByUid.get(delta.uid) ??
+          session.players.find((p) => p.uid === delta.uid)?.displayName ??
+          "A friend";
+
+        // Collect beaten friends for this delta.
+        const beaten: string[] = [];
+        for (let i = 0; i < friendUids.length; i++) {
+          const snap = friendPBSnaps[i];
+          if (!snap.exists) continue;
+          const data = snap.data() ?? {};
+
+          let friendValue: number | null = null;
+
+          if (delta.metric === "wins") {
+            const wins = (data.totalWins as number | undefined) ?? 0;
+            if (wins <= 0) continue; // never won anything: no qualifying entry
+            friendValue = wins;
+          } else if (gameId === "minesweeper") {
+            const byDiff = data.bestsByDifficulty as
+              | Record<string, { elapsedMs?: number } | undefined>
+              | undefined;
+            const ms = byDiff?.[delta.variant]?.elapsedMs;
+            if (typeof ms !== "number" || ms <= 0) continue;
+            friendValue = ms;
+          } else {
+            const pb = data.pbValue as number | undefined;
+            if (typeof pb !== "number" || pb <= 0) continue;
+            friendValue = pb;
+          }
+
+          if (friendValue === null) continue;
+
+          const prev =
+            delta.previousValue === null
+              ? delta.higherIsBetter
+                ? -Infinity
+                : Infinity
+              : delta.previousValue;
+
+          const newlyBeaten = delta.higherIsBetter
+            ? friendValue < delta.newValue && friendValue >= prev
+            : friendValue > delta.newValue && friendValue <= prev;
+
+          if (newlyBeaten) beaten.push(friendUids[i]);
+        }
+
+        if (beaten.length === 0) return;
+
+        await Promise.all(
+          beaten.map((victimUid) =>
+            notifyFriendBeatScore({
+              victimUid,
+              actorUid: delta.uid,
+              actorName,
+              gameId,
+              variant: delta.variant,
+            }).catch((err) =>
+              console.error(
+                `[resolveV4] notifyFriendBeatScore failed for ${victimUid}:`,
+                err,
+              ),
+            ),
+          ),
+        );
+      } catch (err) {
+        console.error(
+          `[resolveV4] Beat-friend detection failed for ${delta.uid}:`,
+          err,
+        );
+      }
+    }),
+  );
+}
+
+// =============================================================================
+// Auto-post scorecard to group chat
+// =============================================================================
+
+/**
+ * Write a system message to `Groups/{groupId}/Messages` containing a
+ * `gameScorecard` payload clients can render inline.
+ *
+ * Deterministic doc id = `scorecard_{sessionId}` + `.create()` makes this
+ * idempotent: a duplicate resolve/retry cannot double-post. The message is
+ * intentionally `kind: "system"` so existing inbox / notification / read
+ * watermark / group settings paths treat it like a member_joined style
+ * row — no extra pipeline wiring needed.
+ */
+async function postGameScorecardToGroup(
+  db: FirebaseFirestore.Firestore,
+  session: GameSessionV4,
+  result: GameResultV4,
+): Promise<void> {
+  const groupId = session.conversationId;
+  const messageId = `scorecard_${session.sessionId}`;
+  const messageRef = db
+    .collection("Groups")
+    .doc(groupId)
+    .collection("Messages")
+    .doc(messageId);
+
+  // Idempotency: skip if already posted.
+  const existing = await messageRef.get();
+  if (existing.exists) {
+    console.log(
+      `[resolveV4] Scorecard message already exists for ${session.sessionId}, skipping.`,
+    );
+    return;
+  }
+
+  const gameTitle = getGameDisplayName(session.gameId);
+  const scoreboard = result.scoreboard.map((e) => ({
+    uid: e.uid,
+    displayName: e.displayName,
+    profilePictureUrl: e.profilePictureUrl ?? null,
+    score: typeof e.score === "number" ? e.score : 0,
+    placement: e.placement,
+  }));
+
+  // Short text fallback surfaced in inboxes / notification previews
+  // for clients that don't yet render the scorecard payload.
+  let fallbackText: string;
+  if (result.resolutionType === "loss") {
+    fallbackText = `🎮 ${gameTitle} — Game over`;
+  } else if (
+    result.resolutionType === "draw" ||
+    result.winnerIds.length === 0
+  ) {
+    fallbackText = `🎮 ${gameTitle} — Draw`;
+  } else if (result.winnerIds.length === 1) {
+    const winner = scoreboard.find((s) => s.uid === result.winnerIds[0]);
+    fallbackText = `🎮 ${gameTitle} — ${winner?.displayName ?? "Winner"} won!`;
+  } else {
+    fallbackText = `🎮 ${gameTitle} — Game over`;
+  }
+
+  const now = admin.firestore.Timestamp.now();
+  const createdAtMs = now.toMillis();
+
+  const scorecardPayload = {
+    v: 1,
+    sessionId: session.sessionId,
+    gameId: session.gameId,
+    gameTitle,
+    runtimeType: session.runtimeType,
+    resolutionType: result.resolutionType,
+    winnerIds: result.winnerIds,
+    scoreboard,
+    durationMs: result.durationMs,
+    createdAt: createdAtMs,
+  };
+
+  // Sentinel-encoded wire format — mirrors `encodeScorecardText()` in
+  // `src/gamesV4/services/scorecardWire.ts`. First line is machine-
+  // parsed by the renderer; second line is the human-readable fallback.
+  const SCORECARD_SENTINEL = "[SCORECARD_V1]";
+  const wireText = `${SCORECARD_SENTINEL}${JSON.stringify(scorecardPayload)}\n${fallbackText}`;
+
+  // Shaped to align with `MessageV2` so the existing group subscribe /
+  // normalize / renderer path picks it up without changes.
+  const messageDoc = {
+    id: messageId,
+    scope: "group" as const,
+    conversationId: groupId,
+    senderId: "system",
+    senderName: "SnapStyle",
+    kind: "system" as const,
+    text: wireText,
+    createdAt: createdAtMs,
+    serverReceivedAt: createdAtMs,
+    clientId: "server",
+    idempotencyKey: `server:scorecard:${session.sessionId}`,
+  };
+
+  try {
+    await messageRef.create(messageDoc);
+  } catch (err: unknown) {
+    // `create()` on an existing doc throws ALREADY_EXISTS — treat as idempotent success.
+    const code = (err as { code?: number | string } | null)?.code;
+    if (code === 6 || code === "already-exists") {
+      console.log(
+        `[resolveV4] Scorecard race — already posted for ${session.sessionId}.`,
+      );
+      return;
+    }
+    throw err;
+  }
+
+  // Best-effort: update the group's last message summary so the inbox
+  // preview reflects the scorecard. Non-fatal on failure.
+  try {
+    await db.collection("Groups").doc(groupId).update({
+      lastMessageText: fallbackText,
+      lastMessageAt: createdAtMs,
+      lastMessageSenderId: "system",
+      updatedAt: createdAtMs,
+    });
+  } catch (err) {
+    console.warn(
+      `[resolveV4] Failed to bump group lastMessage for ${groupId}:`,
+      err,
+    );
+  }
+
+  console.log(
+    `[resolveV4] Posted scorecard to group ${groupId} for session ${session.sessionId}.`,
+  );
 }

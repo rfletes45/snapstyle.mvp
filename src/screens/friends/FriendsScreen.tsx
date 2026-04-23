@@ -483,6 +483,7 @@ const FriendRow = React.memo(function FriendRow({
             )}
           </TouchableOpacity>
           <Menu
+            key={menuVisible ? "open" : "closed"}
             visible={menuVisible}
             onDismiss={onCloseMenu}
             anchor={
@@ -1042,7 +1043,17 @@ export default function FriendsScreen({ navigation }: any) {
   // ── Block/Report ───────────────────────────────────────────────
 
   const handleOpenMenu = useCallback((userId: string) => {
-    setMenuVisible(userId);
+    // Fully unmount the previous Menu modal before opening a new one. If
+    // we just call setMenuVisible(userId) directly, react-native-paper's
+    // Menu can get stuck mid-dismissal-animation after a prior outside-tap:
+    // the new `visible=true` arrives before the exit animation has
+    // completed, and the Menu immediately runs its dismissal again,
+    // producing the "briefly appears then disappears" behavior. Forcing
+    // a null-first render guarantees a clean remount of the Menu modal.
+    setMenuVisible(null);
+    requestAnimationFrame(() => {
+      setMenuVisible(userId);
+    });
   }, []);
 
   const handleCloseMenu = useCallback(() => {
@@ -1051,10 +1062,12 @@ export default function FriendsScreen({ navigation }: any) {
 
   const handleBlockPress = useCallback((userId: string, username: string) => {
     setMenuVisible(null);
+    // Defer modal open until after Menu's dismissal animation completes
+    // so the Menu doesn't contend with a new Modal backdrop for focus.
     setTimeout(() => {
       setSelectedUser({ uid: userId, username });
       setBlockModalVisible(true);
-    }, 150);
+    }, 220);
   }, []);
 
   const handleReportPress = useCallback((userId: string, username: string) => {
@@ -1062,7 +1075,7 @@ export default function FriendsScreen({ navigation }: any) {
     setTimeout(() => {
       setSelectedUser({ uid: userId, username });
       setReportModalVisible(true);
-    }, 150);
+    }, 220);
   }, []);
 
   const handleBlockConfirm = useCallback(

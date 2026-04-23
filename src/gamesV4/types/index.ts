@@ -23,8 +23,8 @@ export type {
 
 // Invite types
 export {
-  GAME_INVITE_STATUS_TRANSITIONS,
   canTransitionInviteStatus,
+  GAME_INVITE_STATUS_TRANSITIONS,
 } from "./invite";
 export type { GameInviteStatus, GameInviteV4 } from "./invite";
 
@@ -59,3 +59,8 @@ export type {
   SettingsFieldDef,
 } from "./adapter";
 
+// Scorecard types (shared by GameOverScreen share card + group chat inline post)
+export type {
+  GameScorecardPayload,
+  GameScorecardScoreboardEntry,
+} from "./scorecard";

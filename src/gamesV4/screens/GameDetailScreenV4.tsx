@@ -40,6 +40,7 @@ import {
   findPendingInvite,
   resumeOrCreateSoloSession,
   type LeaderboardEntryV4,
+  type MinesweeperLeaderboardVariant,
 } from "@/gamesV4/services/gameServiceV4";
 import type { GameId } from "@/gamesV4/types/common";
 import type { GameResultV4 } from "@/gamesV4/types/result";
@@ -120,6 +121,11 @@ export default function GameDetailScreenV4() {
   const [lbTab, setLbTab] = useState<"global" | "friends">("global");
   const [friendsLb, setFriendsLb] = useState<LeaderboardEntryV4[]>([]);
   const [friendsLbLoading, setFriendsLbLoading] = useState(false);
+  // Minesweeper friends-leaderboard difficulty selector. Each difficulty
+  // is a separate board backed by `bestsByDifficulty.{easy|intermediate|expert}`.
+  const [mineDifficulty, setMineDifficulty] =
+    useState<MinesweeperLeaderboardVariant>("easy");
+  const isMinesweeper = gameId === "minesweeper";
   const [history, setHistory] = useState<GameResultV4[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
   const [launching, setLaunching] = useState(false);
@@ -159,10 +165,9 @@ export default function GameDetailScreenV4() {
       .finally(() => setHistoryLoading(false));
   }, [uid, gameId]);
 
-  // Friends leaderboard — lazy load when tab selected
+  // Friends leaderboard — re-fetches on tab enter or Minesweeper difficulty change.
   useEffect(() => {
     if (lbTab !== "friends" || !uid) return;
-    if (friendsLb.length > 0) return; // already loaded
 
     let cancelled = false;
     setFriendsLbLoading(true);
@@ -174,7 +179,12 @@ export default function GameDetailScreenV4() {
           .map((f) => f.users.find((u: string) => u !== uid))
           .filter((id): id is string => Boolean(id));
 
-        const entries = await fetchFriendsLeaderboard(uid, friendUids, gameId);
+        const entries = await fetchFriendsLeaderboard(
+          uid,
+          friendUids,
+          gameId,
+          isMinesweeper ? { minesweeperDifficulty: mineDifficulty } : undefined,
+        );
 
         // Resolve display names via profile cache
         const resolved = await Promise.all(
@@ -198,7 +208,7 @@ export default function GameDetailScreenV4() {
     return () => {
       cancelled = true;
     };
-  }, [lbTab, uid, gameId, friendsLb.length]);
+  }, [lbTab, uid, gameId, isMinesweeper, mineDifficulty]);
 
   // ── Handlers ───────────────────────────────────────────────────────────
   const handlePlaySolo = useCallback(async () => {
@@ -307,12 +317,14 @@ export default function GameDetailScreenV4() {
   const formatOutcome = (result: GameResultV4) => {
     if (!uid) return "—";
     if (result.resolutionType === "draw") return "Draw";
+    if (result.resolutionType === "loss") return "Loss";
     return result.winnerIds.includes(uid) ? "Win" : "Loss";
   };
 
   const outcomeColor = (result: GameResultV4) => {
     if (!uid) return subtextColor;
-    if (result.resolutionType === "draw") return "#FF9500";
+    if (result.resolutionType === "draw") return "#FFCC00";
+    if (result.resolutionType === "loss") return "#FF3B30";
     return result.winnerIds.includes(uid) ? "#34C759" : "#FF3B30";
   };
 
@@ -623,6 +635,36 @@ export default function GameDetailScreenV4() {
             ))}
           </View>
 
+          {/* Minesweeper: difficulty selector for friends board */}
+          {isMinesweeper && lbTab === "friends" && (
+            <View style={[styles.tabRow, { backgroundColor: accentBg }]}>
+              {(["easy", "intermediate", "expert"] as const).map((d) => (
+                <TouchableOpacity
+                  key={d}
+                  style={[
+                    styles.tabButton,
+                    mineDifficulty === d && {
+                      backgroundColor: theme.colors.primary,
+                    },
+                  ]}
+                  onPress={() => setMineDifficulty(d)}
+                  activeOpacity={0.7}
+                >
+                  <Text
+                    style={[
+                      styles.tabText,
+                      {
+                        color: mineDifficulty === d ? "#FFF" : subtextColor,
+                      },
+                    ]}
+                  >
+                    {d[0].toUpperCase() + d.slice(1)}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+
           {/* Leaderboard entries */}
           {(lbTab === "global" ? lbLoading : friendsLbLoading) ? (
             <ActivityIndicator
@@ -676,9 +718,20 @@ export default function GameDetailScreenV4() {
                             { color: theme.colors.primary },
                           ]}
                         >
-                          {lbDescriptor?.formatValue
-                            ? lbDescriptor.formatValue(entry.score)
-                            : entry.score.toLocaleString()}
+                          {isMinesweeper && lbTab === "friends"
+                            ? (() => {
+                                // Minesweeper friends board stores raw elapsedMs; format as m:ss.
+                                const totalSec = Math.max(
+                                  0,
+                                  Math.floor(entry.score / 1000),
+                                );
+                                const m = Math.floor(totalSec / 60);
+                                const s = totalSec % 60;
+                                return `${m}:${String(s).padStart(2, "0")}`;
+                              })()
+                            : lbDescriptor?.formatValue
+                              ? lbDescriptor.formatValue(entry.score)
+                              : entry.score.toLocaleString()}
                         </Text>
                       </View>
                     );

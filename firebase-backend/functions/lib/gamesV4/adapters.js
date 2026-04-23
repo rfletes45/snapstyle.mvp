@@ -3817,7 +3817,11 @@ registerAdapter({
                     type: authStats.levelsCleared >= endLevelId - startLevelId + 1
                         ? "win"
                         : "timeout",
-                    winnerIds: [ctx.uid],
+                    // Only credit a winner when the full campaign was actually
+                    // cleared. Reaching level N<30 is a loss — no winnerIds.
+                    winnerIds: authStats.levelsCleared >= endLevelId - startLevelId + 1
+                        ? [ctx.uid]
+                        : [],
                     reason: authStats.levelsCleared >= endLevelId - startLevelId + 1
                         ? "Campaign complete!"
                         : `Reached level ${startLevelId + authStats.levelsCleared}`,
@@ -3830,8 +3834,9 @@ registerAdapter({
         const st = publicState;
         const uid = players[0]?.uid ?? "";
         const c = st.campaign;
+        const didWin = (c?.levelsCleared ?? 0) >= BB_MAX_LEVEL;
         return {
-            winnerIds: [uid],
+            winnerIds: didWin ? [uid] : [],
             finalScoreboard: [
                 {
                     uid,
