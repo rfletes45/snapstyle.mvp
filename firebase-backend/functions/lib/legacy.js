@@ -154,6 +154,9 @@ exports.onStoryViewed = functions.firestore
             actorName: viewerName,
             route: {
                 screen: "MainTabs",
+                params: {
+                    screen: "Profile",
+                },
             },
             data: {
                 storyId,

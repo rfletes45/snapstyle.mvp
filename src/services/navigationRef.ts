@@ -19,9 +19,15 @@ import {
 import type { RootStackParamList } from "@/types/navigation";
 
 import { createLogger } from "@/utils/log";
+import { logStartupEvent } from "@/utils/startupTrace";
 const logger = createLogger("services/navigationRef");
 export const navigationRef = createNavigationContainerRef<RootStackParamList>();
-const pendingActions: (() => void)[] = [];
+type PendingNavigationAction = {
+  action: () => void;
+  label: string;
+};
+
+const pendingActions: PendingNavigationAction[] = [];
 const MAX_PENDING_ACTIONS = 20;
 
 export function hasRenderedNavigator(): boolean {
@@ -45,15 +51,27 @@ export function getCurrentRouteNameSafe(): string | undefined {
 
 function runOrQueue(action: () => void, label: string): void {
   if (navigationRef.isReady()) {
+    logStartupEvent("External navigation dispatching", {
+      label,
+      currentRouteName: getCurrentRouteNameSafe() ?? null,
+    });
     action();
     return;
   }
 
   if (pendingActions.length >= MAX_PENDING_ACTIONS) {
-    pendingActions.shift();
+    const dropped = pendingActions.shift();
+    logStartupEvent("External navigation action dropped", {
+      label: dropped?.label ?? null,
+      reason: "pending_queue_full",
+    });
   }
 
-  pendingActions.push(action);
+  pendingActions.push({ action, label });
+  logStartupEvent("External navigation queued", {
+    label,
+    pendingCount: pendingActions.length,
+  });
   logger.info(`[navigationRef] Queued navigation action until ready: ${label}`);
 }
 
@@ -61,11 +79,16 @@ export function flushPendingNavigation(): void {
   if (!navigationRef.isReady()) return;
 
   while (pendingActions.length > 0) {
-    const nextAction = pendingActions.shift();
-    if (!nextAction) continue;
+    const next = pendingActions.shift();
+    if (!next) continue;
 
     try {
-      nextAction();
+      logStartupEvent("External navigation flushing", {
+        label: next.label,
+        currentRouteName: getCurrentRouteNameSafe() ?? null,
+        remainingPendingCount: pendingActions.length,
+      });
+      next.action();
     } catch (error) {
       logger.warn("[navigationRef] Failed to flush pending action:", error);
     }

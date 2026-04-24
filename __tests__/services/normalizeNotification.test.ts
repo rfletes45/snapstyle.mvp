@@ -110,6 +110,72 @@ describe("normalizeNotificationPayload", () => {
     });
   });
 
+  it("repairs legacy MainTabs routes that target root-stack screens", () => {
+    const normalized = normalizeNotificationPayload({
+      type: "message_request",
+      dedupeKey: "message_request:chat-9",
+      route: {
+        screen: "MainTabs",
+        params: {
+          screen: "Friends",
+          params: {
+            tab: "requests",
+          },
+        },
+      },
+    });
+
+    expect(normalized?.route).toEqual({
+      screen: "Friends",
+      params: {
+        tab: "requests",
+      },
+    });
+  });
+
+  it("routes message request fallbacks directly to friend requests", () => {
+    const normalized = normalizeNotificationPayload({
+      type: "message_request",
+      conversationId: "chat-9",
+    });
+
+    expect(normalized?.route).toEqual({
+      screen: "Friends",
+      params: {
+        tab: "requests",
+      },
+    });
+  });
+
+  it("does not let story-view notifications fall through to bare MainTabs", () => {
+    const normalized = normalizeNotificationPayload({
+      type: "story_viewed",
+    });
+
+    expect(normalized?.route).toEqual({
+      screen: "MainTabs",
+      params: {
+        screen: "Profile",
+      },
+    });
+  });
+
+  it("ignores bare MainTabs payload routes in favor of typed fallbacks", () => {
+    const normalized = normalizeNotificationPayload({
+      type: "dm_message",
+      actorUid: "user-b",
+      conversationId: "chat-1",
+      route: {
+        screen: "MainTabs",
+      },
+    });
+
+    expect(normalized?.route.screen).toBe("ChatDetail");
+    expect(normalized?.route.params).toEqual(
+      expect.objectContaining({ friendUid: "user-b" }),
+    );
+  });
+
   it("routes gift notifications to purchase history", () => {
     const normalized = normalizeNotificationPayload({
       type: "gift_received",

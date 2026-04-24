@@ -26,6 +26,11 @@ import type { Ban } from "@/types/models";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
 import { createLogger } from "@/utils/log";
+import {
+  logStartupEvent,
+  logStartupMount,
+  logStartupUnmount,
+} from "@/utils/startupTrace";
 const logger = createLogger("components/AppGate");
 
 /** Maximum time (ms) to wait for hydration before force-proceeding */
@@ -49,6 +54,8 @@ export interface AppGateState {
   hasCompleteProfile: boolean;
   isBanned: boolean;
   ban: Ban | null;
+  loadingReason?: string;
+  preservedFromHydrationState?: HydrationState;
 }
 
 export interface AppGateProps {
@@ -86,6 +93,18 @@ export function AppGate({
   // fallthrough to "needs_profile" on timeout.
   const [timedOut, setTimedOut] = useState(false);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hasEnteredReadyRef = useRef(false);
+  const lastReadyUidRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    logStartupMount("AppGate");
+    return () => {
+      logStartupUnmount("AppGate", {
+        lastReadyUid: lastReadyUidRef.current,
+        hasEnteredReady: hasEnteredReadyRef.current,
+      });
+    };
+  }, []);
 
   useEffect(() => {
     timeoutRef.current = setTimeout(() => {
@@ -133,7 +152,7 @@ export function AppGate({
     return () => unsubscribe();
   }, [currentFirebaseUser?.uid]);
 
-  const state = useMemo<AppGateState>(() => {
+  const rawState = useMemo<AppGateState>(() => {
     // Still loading auth (unless timed out)
     if ((authLoading || !authHydrated) && !timedOut) {
       return {
@@ -143,6 +162,7 @@ export function AppGate({
         hasCompleteProfile: false,
         isBanned: false,
         ban: null,
+        loadingReason: authLoading ? "auth_loading" : "auth_not_hydrated",
       };
     }
 
@@ -171,6 +191,9 @@ export function AppGate({
         hasCompleteProfile: false,
         isBanned: false,
         ban: null,
+        loadingReason: !profileHydrated
+          ? "profile_not_hydrated"
+          : "ban_not_checked",
       };
     }
 
@@ -191,6 +214,7 @@ export function AppGate({
         hasCompleteProfile: false,
         isBanned: false,
         ban: null,
+        loadingReason: "profile_fetch_error",
       };
     }
 
@@ -213,6 +237,7 @@ export function AppGate({
         hasCompleteProfile: false,
         isBanned: false,
         ban: null,
+        loadingReason: "hydration_timeout_uncertain_profile",
       };
     }
 
@@ -274,6 +299,7 @@ export function AppGate({
         hasCompleteProfile: false,
         isBanned: false,
         ban: null,
+        loadingReason: "incomplete_profile_uncertain_status",
       };
     }
 
@@ -298,8 +324,74 @@ export function AppGate({
     timedOut,
   ]);
 
+  const shouldPreserveReady =
+    hasEnteredReadyRef.current &&
+    !!currentFirebaseUser?.uid &&
+    lastReadyUidRef.current === currentFirebaseUser.uid &&
+    !!profile?.username &&
+    (rawState.hydrationState === "loading" ||
+      rawState.hydrationState === "fetch_error");
+
+  const state = useMemo<AppGateState>(() => {
+    if (!shouldPreserveReady) return rawState;
+
+    return {
+      hydrationState: "ready",
+      isHydrated: true,
+      isAuthenticated: true,
+      hasCompleteProfile: true,
+      isBanned: false,
+      ban: null,
+      preservedFromHydrationState: rawState.hydrationState,
+      loadingReason: rawState.loadingReason,
+    };
+  }, [rawState, shouldPreserveReady]);
+
+  useEffect(() => {
+    if (state.hydrationState === "ready" && currentFirebaseUser?.uid) {
+      hasEnteredReadyRef.current = true;
+      lastReadyUidRef.current = currentFirebaseUser.uid;
+    } else if (state.hydrationState === "unauthenticated") {
+      hasEnteredReadyRef.current = false;
+      lastReadyUidRef.current = null;
+    }
+  }, [currentFirebaseUser?.uid, state.hydrationState]);
+
+  useEffect(() => {
+    if (!shouldPreserveReady) return;
+
+    logStartupEvent("AppGate preserved ready navigation tree", {
+      rawHydrationState: rawState.hydrationState,
+      loadingReason: rawState.loadingReason ?? null,
+      uid: currentFirebaseUser?.uid ?? null,
+      profileFetchStatus,
+      profileHydrated,
+      banChecked,
+    });
+  }, [
+    banChecked,
+    currentFirebaseUser?.uid,
+    profileFetchStatus,
+    profileHydrated,
+    rawState.hydrationState,
+    rawState.loadingReason,
+    shouldPreserveReady,
+  ]);
+
   // Log state transitions for diagnosing routing issues
   useEffect(() => {
+    logStartupEvent("AppGate state evaluated", {
+      hydrationState: state.hydrationState,
+      rawHydrationState: rawState.hydrationState,
+      loadingReason: state.loadingReason ?? null,
+      preservedFromHydrationState: state.preservedFromHydrationState ?? null,
+      authHydrated,
+      profileHydrated,
+      profileFetchStatus,
+      hasUsername: !!profile?.username,
+      banChecked,
+      uid: currentFirebaseUser?.uid ?? null,
+    });
     logger.info(
       "[AppGate] State: " +
         state.hydrationState +
@@ -314,11 +406,38 @@ export function AppGate({
         " banChecked=" +
         banChecked,
     );
-  }, [state.hydrationState]);
+  }, [
+    authHydrated,
+    banChecked,
+    currentFirebaseUser?.uid,
+    profile?.username,
+    profileFetchStatus,
+    profileHydrated,
+    rawState.hydrationState,
+    state.hydrationState,
+    state.loadingReason,
+    state.preservedFromHydrationState,
+  ]);
 
   // Show loading screen during hydration
   if (!state.isHydrated) {
-    return <LoadingScreen message={loadingMessage} />;
+    return (
+      <LoadingScreen
+        message={loadingMessage}
+        diagnosticReason={state.loadingReason ?? "appgate_not_hydrated"}
+        diagnosticData={{
+          hydrationState: state.hydrationState,
+          rawHydrationState: rawState.hydrationState,
+          authHydrated,
+          profileHydrated,
+          profileFetchStatus,
+          banChecked,
+          uid: currentFirebaseUser?.uid ?? null,
+          hasPreviouslyEnteredReady: hasEnteredReadyRef.current,
+          lastReadyUid: lastReadyUidRef.current,
+        }}
+      />
+    );
   }
 
   // Show banned screen if user is banned
@@ -330,7 +449,21 @@ export function AppGate({
   // CRITICAL: Do NOT pass this through to children as "needs_profile"
   if (state.hydrationState === "fetch_error") {
     return (
-      <LoadingScreen message="Having trouble loading your profile. Retrying…" />
+      <LoadingScreen
+        message="Having trouble loading your profile. Retrying..."
+        diagnosticReason={state.loadingReason ?? "appgate_fetch_error"}
+        diagnosticData={{
+          hydrationState: state.hydrationState,
+          rawHydrationState: rawState.hydrationState,
+          authHydrated,
+          profileHydrated,
+          profileFetchStatus,
+          banChecked,
+          uid: currentFirebaseUser?.uid ?? null,
+          hasPreviouslyEnteredReady: hasEnteredReadyRef.current,
+          lastReadyUid: lastReadyUidRef.current,
+        }}
+      />
     );
   }
 

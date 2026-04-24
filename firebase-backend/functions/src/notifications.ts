@@ -430,12 +430,9 @@ export const onMessageRequestCreatedNotification = functions.firestore
       conversationId: chatId,
       conversationScope: "dm",
       route: {
-        screen: "MainTabs",
+        screen: "Friends",
         params: {
-          screen: "Friends",
-          params: {
-            tab: "requests",
-          },
+          tab: "requests",
         },
       },
       data: {

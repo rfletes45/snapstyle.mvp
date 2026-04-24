@@ -12,6 +12,26 @@ import { removePushToken } from "./notifications";
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("services/auth");
+
+const EXPLICIT_LOGOUT_INTENT_WINDOW_MS = 60_000;
+let explicitLogoutStartedAt = 0;
+
+export function markExplicitLogoutStarted(now: number = Date.now()): void {
+  explicitLogoutStartedAt = now;
+}
+
+export function consumeExplicitLogoutIntent(now: number = Date.now()): boolean {
+  if (
+    explicitLogoutStartedAt > 0 &&
+    now - explicitLogoutStartedAt < EXPLICIT_LOGOUT_INTENT_WINDOW_MS
+  ) {
+    explicitLogoutStartedAt = 0;
+    return true;
+  }
+
+  return false;
+}
+
 /**
  * Sign up a new user with email and password
  * @param email User's email
@@ -80,6 +100,7 @@ export async function logout(): Promise<Result<void>> {
       }
     }
 
+    markExplicitLogoutStarted();
     await signOut(auth);
     logger.info("✅ [auth] User logged out");
     return ok(undefined);

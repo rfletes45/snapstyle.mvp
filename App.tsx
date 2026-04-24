@@ -29,6 +29,7 @@ import {
   logStartupMount,
   logStartupUnmount,
 } from "@/utils/startupTrace";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar as ExpoStatusBar } from "expo-status-bar";
 import * as SystemUI from "expo-system-ui";
@@ -47,6 +48,8 @@ SplashScreen.preventAutoHideAsync().catch(() => {
 });
 
 logStartupEvent("App module evaluated");
+
+const STARTUP_BOOT_COUNTER_KEY = "@vibe/startup_boot_counter_v1";
 
 // Initialize Firebase synchronously before rendering
 logStartupEvent("Firebase initialization starting");
@@ -316,6 +319,25 @@ function ThemedRootWrapper({ children }: { children: React.ReactNode }) {
 export default function App() {
   useEffect(() => {
     logStartupMount("AppRoot");
+    AsyncStorage.getItem(STARTUP_BOOT_COUNTER_KEY)
+      .then((raw) => {
+        const previousCount = raw ? Number.parseInt(raw, 10) : 0;
+        const nextCount = Number.isFinite(previousCount)
+          ? previousCount + 1
+          : 1;
+        return AsyncStorage.setItem(
+          STARTUP_BOOT_COUNTER_KEY,
+          String(nextCount),
+        ).then(() => {
+          logStartupEvent("Persistent app boot counter recorded", {
+            bootCount: nextCount,
+          });
+        });
+      })
+      .catch((error) => {
+        logStartupError("Persistent app boot counter failed", error);
+      });
+
     return () => {
       logStartupUnmount("AppRoot");
     };

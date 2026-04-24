@@ -16,9 +16,14 @@ const mockCleanupPresence = jest.fn();
 const mockInitializePresence = jest.fn();
 const mockSetPresenceOnline = jest.fn();
 const mockMarkUserNotificationRead = jest.fn();
+const mockConsumeExplicitLogoutIntent = jest.fn();
 
 jest.mock("../../src/services/firebase", () => ({
   getAuthInstance: () => mockGetAuthInstance(),
+}));
+
+jest.mock("../../src/services/auth", () => ({
+  consumeExplicitLogoutIntent: () => mockConsumeExplicitLogoutIntent(),
 }));
 
 jest.mock("../../src/services/navigationRef", () => ({
@@ -55,6 +60,10 @@ jest.mock("../../src/services/userNotifications", () => ({
     mockMarkUserNotificationRead(...args),
 }));
 
+jest.mock("../../src/services/users", () => ({
+  backfillUserEmailIfMissing: jest.fn(),
+}));
+
 jest.mock("../../src/utils/startupTrace", () => ({
   getStartupSessionId: () => "test-startup-session",
   logStartupEvent: jest.fn(),
@@ -63,16 +72,29 @@ jest.mock("../../src/utils/startupTrace", () => ({
   logStartupError: jest.fn(),
 }));
 
-import { AuthProvider } from "../../src/store/AuthContext";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { AuthProvider, useAuth } from "../../src/store/AuthContext";
+
+const HANDLED_NOTIFICATION_RESPONSES_KEY =
+  "@vibe/handled_notification_responses_v1";
+const DEFAULT_NOTIFICATION_RESPONSE_KEY =
+  "expo-notification-request-1|expo.modules.notifications.actions.DEFAULT|notification:message_request:abc123|notif-doc-1";
+
+async function flushMicrotasks(count = 5) {
+  for (let i = 0; i < count; i += 1) {
+    await Promise.resolve();
+  }
+}
 
 describe("AuthContext notification startup replay", () => {
   let authStateChangedCallback:
     | ((user: any) => Promise<void> | void)
     | undefined;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     jest.useFakeTimers();
     jest.clearAllMocks();
+    await AsyncStorage.clear();
 
     authStateChangedCallback = undefined;
 
@@ -88,14 +110,15 @@ describe("AuthContext notification startup replay", () => {
       dedupeKey: "notification:message_request:abc123",
       notificationId: "notif-doc-1",
       route: {
-        screen: "MainTabs",
+        screen: "Friends",
         params: {
-          screen: "Messages",
+          tab: "requests",
         },
       },
     });
     mockShouldHandleNotificationByDedupeKey.mockReturnValue(true);
     mockMarkUserNotificationRead.mockResolvedValue(undefined);
+    mockConsumeExplicitLogoutIntent.mockReturnValue(false);
 
     mockGetAuthInstance.mockReturnValue({
       currentUser: null,
@@ -135,13 +158,13 @@ describe("AuthContext notification startup replay", () => {
           <React.Fragment />
         </AuthProvider>,
       );
-      await Promise.resolve();
+      await flushMicrotasks();
     });
 
     expect(mockGetLastNotificationResponse).toHaveBeenCalledTimes(1);
     expect(mockNavigate).toHaveBeenCalledTimes(1);
-    expect(mockNavigate).toHaveBeenCalledWith("MainTabs", {
-      screen: "Messages",
+    expect(mockNavigate).toHaveBeenCalledWith("Friends", {
+      tab: "requests",
     });
     expect(mockClearLastNotificationResponse).toHaveBeenCalledTimes(1);
 
@@ -153,7 +176,7 @@ describe("AuthContext notification startup replay", () => {
 
     await act(async () => {
       await authStateChangedCallback?.(firstUser);
-      await Promise.resolve();
+      await flushMicrotasks();
     });
 
     const secondUserObjectSameUid = {
@@ -164,12 +187,132 @@ describe("AuthContext notification startup replay", () => {
 
     await act(async () => {
       await authStateChangedCallback?.(secondUserObjectSameUid);
-      await Promise.resolve();
+      await flushMicrotasks();
     });
 
     expect(mockGetLastNotificationResponse).toHaveBeenCalledTimes(1);
     expect(mockNavigate).toHaveBeenCalledTimes(1);
     expect(mockClearLastNotificationResponse).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      tree.unmount();
+    });
+  });
+
+  it("ignores a cached notification response already handled in a previous launch", async () => {
+    await AsyncStorage.setItem(
+      HANDLED_NOTIFICATION_RESPONSES_KEY,
+      JSON.stringify([
+        {
+          key: DEFAULT_NOTIFICATION_RESPONSE_KEY,
+          handledAt: Date.now(),
+        },
+      ]),
+    );
+
+    mockGetLastNotificationResponse.mockReturnValue({
+      actionIdentifier: "expo.modules.notifications.actions.DEFAULT",
+      notification: {
+        request: {
+          identifier: "expo-notification-request-1",
+          content: {
+            data: {
+              type: "message_request",
+              senderId: "friend-1",
+            },
+          },
+        },
+      },
+    });
+
+    let tree!: renderer.ReactTestRenderer;
+    await act(async () => {
+      tree = renderer.create(
+        <AuthProvider>
+          <React.Fragment />
+        </AuthProvider>,
+      );
+      await flushMicrotasks();
+    });
+
+    expect(mockGetLastNotificationResponse).toHaveBeenCalledTimes(1);
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(mockClearLastNotificationResponse).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      tree.unmount();
+    });
+  });
+
+  it("does not commit a transient auth null before the same user is restored", async () => {
+    mockGetLastNotificationResponse.mockReturnValue(null);
+
+    const observedUids: Array<string | null> = [];
+    function Probe() {
+      const { currentFirebaseUser } = useAuth();
+      React.useEffect(() => {
+        observedUids.push(currentFirebaseUser?.uid ?? null);
+      }, [currentFirebaseUser?.uid]);
+      return null;
+    }
+
+    let tree!: renderer.ReactTestRenderer;
+    await act(async () => {
+      tree = renderer.create(
+        <AuthProvider>
+          <Probe />
+        </AuthProvider>,
+      );
+      await flushMicrotasks();
+    });
+
+    const firstUser = {
+      uid: "user-1",
+      email: "user1@example.com",
+      getIdTokenResult: jest.fn().mockResolvedValue({ claims: {} }),
+    };
+
+    await act(async () => {
+      await authStateChangedCallback?.(firstUser);
+      await flushMicrotasks();
+    });
+
+    expect(observedUids[observedUids.length - 1]).toBe("user-1");
+    const nullCountAfterInitialRestore = observedUids.filter(
+      (uid) => uid === null,
+    ).length;
+
+    await act(async () => {
+      await authStateChangedCallback?.(null);
+      await flushMicrotasks();
+    });
+
+    expect(mockConsumeExplicitLogoutIntent).toHaveBeenCalledTimes(1);
+    expect(observedUids[observedUids.length - 1]).toBe("user-1");
+
+    const restoredSameUser = {
+      uid: "user-1",
+      email: "user1@example.com",
+      getIdTokenResult: jest.fn().mockResolvedValue({ claims: {} }),
+    };
+
+    await act(async () => {
+      await authStateChangedCallback?.(restoredSameUser);
+      await flushMicrotasks();
+    });
+
+    act(() => {
+      jest.advanceTimersByTime(2_000);
+    });
+
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    expect(observedUids[observedUids.length - 1]).toBe("user-1");
+    expect(observedUids.filter((uid) => uid === null)).toHaveLength(
+      nullCountAfterInitialRestore,
+    );
 
     act(() => {
       tree.unmount();

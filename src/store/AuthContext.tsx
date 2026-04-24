@@ -1,4 +1,5 @@
 import { getAuthInstance } from "@/services/firebase";
+import { consumeExplicitLogoutIntent } from "@/services/auth";
 import { navigate as globalNavigate } from "@/services/navigationRef";
 import {
   addNotificationReceivedListener,
@@ -12,6 +13,7 @@ import {
 import {
   normalizeNotificationPayload,
   shouldHandleNotificationByDedupeKey,
+  type CanonicalNotification,
 } from "@/services/notifications/normalizeNotification";
 import {
   cleanupPresence,
@@ -20,6 +22,7 @@ import {
 } from "@/services/presence";
 import { markUserNotificationRead } from "@/services/userNotifications";
 import { backfillUserEmailIfMissing } from "@/services/users";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Notifications from "expo-notifications";
 import { User as FirebaseUser } from "firebase/auth";
 import React, {
@@ -40,6 +43,109 @@ import {
   logStartupUnmount,
 } from "@/utils/startupTrace";
 const logger = createLogger("store/AuthContext");
+
+const HANDLED_NOTIFICATION_RESPONSES_KEY =
+  "@vibe/handled_notification_responses_v1";
+const HANDLED_NOTIFICATION_RESPONSE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const MAX_HANDLED_NOTIFICATION_RESPONSES = 50;
+const TRANSIENT_AUTH_NULL_GRACE_MS = 1_500;
+
+type HandledNotificationResponseEntry = {
+  key: string;
+  handledAt: number;
+};
+
+function isHandledNotificationResponseEntry(
+  value: unknown,
+): value is HandledNotificationResponseEntry {
+  if (!value || typeof value !== "object") return false;
+  const entry = value as Partial<HandledNotificationResponseEntry>;
+  return typeof entry.key === "string" && typeof entry.handledAt === "number";
+}
+
+function getPayloadStringValue(
+  payload: Record<string, unknown> | undefined,
+  key: string,
+): string | undefined {
+  const value = payload?.[key];
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function buildNotificationResponseKey(
+  response: Notifications.NotificationResponse,
+  normalized: CanonicalNotification,
+): string {
+  const data = response.notification.request.content.data as
+    | Record<string, unknown>
+    | undefined;
+  const notificationId =
+    normalized.notificationId ?? getPayloadStringValue(data, "notificationId");
+
+  return [
+    response.notification.request.identifier,
+    response.actionIdentifier,
+    normalized.dedupeKey,
+    notificationId ?? "",
+  ].join("|");
+}
+
+async function readHandledNotificationResponses(
+  now: number = Date.now(),
+): Promise<Map<string, number>> {
+  const raw = await AsyncStorage.getItem(HANDLED_NOTIFICATION_RESPONSES_KEY);
+  if (!raw) return new Map();
+
+  const parsed = JSON.parse(raw) as unknown;
+  if (!Array.isArray(parsed)) return new Map();
+
+  const entries = new Map<string, number>();
+  for (const entry of parsed) {
+    if (!isHandledNotificationResponseEntry(entry)) continue;
+    if (now - entry.handledAt > HANDLED_NOTIFICATION_RESPONSE_TTL_MS) continue;
+    entries.set(entry.key, entry.handledAt);
+  }
+
+  return entries;
+}
+
+async function hasHandledNotificationResponse(
+  key: string,
+): Promise<boolean> {
+  try {
+    const entries = await readHandledNotificationResponses();
+    return entries.has(key);
+  } catch (error) {
+    logger.warn(
+      "[AuthContext] Failed to read handled notification responses:",
+      error,
+    );
+    return false;
+  }
+}
+
+async function rememberHandledNotificationResponse(
+  key: string,
+): Promise<void> {
+  try {
+    const entries = await readHandledNotificationResponses();
+    entries.set(key, Date.now());
+    const serialized = Array.from(entries.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, MAX_HANDLED_NOTIFICATION_RESPONSES)
+      .map(([entryKey, handledAt]) => ({ key: entryKey, handledAt }));
+
+    await AsyncStorage.setItem(
+      HANDLED_NOTIFICATION_RESPONSES_KEY,
+      JSON.stringify(serialized),
+    );
+  } catch (error) {
+    logger.warn(
+      "[AuthContext] Failed to persist handled notification response:",
+      error,
+    );
+  }
+}
+
 export interface AuthContextType {
   currentFirebaseUser: FirebaseUser | null;
   loading: boolean;
@@ -68,11 +174,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const previousUserIdRef = useRef<string | null>(null);
   const recentTapKeysRef = useRef<Map<string, number>>(new Map());
   const currentUserIdRef = useRef<string | null>(null);
+  const pendingAuthNullTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
   const currentUserId = currentFirebaseUser?.uid ?? null;
 
   useEffect(() => {
     logStartupMount("AuthProvider");
     return () => {
+      if (pendingAuthNullTimerRef.current) {
+        clearTimeout(pendingAuthNullTimerRef.current);
+        pendingAuthNullTimerRef.current = null;
+      }
       logStartupUnmount("AuthProvider");
     };
   }, []);
@@ -172,6 +285,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           );
           return;
         }
+
+        const responseKey = buildNotificationResponseKey(response, normalized);
+        if (await hasHandledNotificationResponse(responseKey)) {
+          logStartupEvent("Notification response replay ignored", {
+            source,
+            dedupeKey: normalized.dedupeKey,
+            responseKey,
+          });
+          logger.info(
+            "[AuthContext] Skipping previously handled notification response",
+            {
+              data: {
+                source,
+                startupSessionId: getStartupSessionId(),
+                dedupeKey: normalized.dedupeKey,
+                responseKey,
+              },
+            },
+          );
+          return;
+        }
+
+        await rememberHandledNotificationResponse(responseKey);
 
         const activeUserId = currentUserIdRef.current;
         if (activeUserId && normalized.notificationId) {
@@ -416,11 +552,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const unsubscribe = auth.onAuthStateChanged(
         async (user: any) => {
           const previousUid = currentUserIdRef.current;
-          currentUserIdRef.current = user?.uid ?? null;
+          const nextUid = user?.uid ?? null;
           logStartupEvent("Auth state changed", {
             previousUid,
-            nextUid: user?.uid ?? null,
-            sameUid: previousUid === (user?.uid ?? null),
+            nextUid,
+            sameUid: previousUid === nextUid,
             email: user?.email ?? null,
           });
           logger.info(
@@ -430,11 +566,54 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               data: {
                 startupSessionId: getStartupSessionId(),
                 previousUid,
-                nextUid: user?.uid ?? null,
-                sameUid: previousUid === (user?.uid ?? null),
+                nextUid,
+                sameUid: previousUid === nextUid,
               },
             },
           );
+          if (user && pendingAuthNullTimerRef.current) {
+            clearTimeout(pendingAuthNullTimerRef.current);
+            pendingAuthNullTimerRef.current = null;
+            logStartupEvent("Auth transient null recovered", {
+              previousUid,
+              recoveredUid: user.uid,
+            });
+          }
+
+          if (!user && previousUid && !consumeExplicitLogoutIntent()) {
+            if (pendingAuthNullTimerRef.current) {
+              clearTimeout(pendingAuthNullTimerRef.current);
+            }
+
+            logStartupEvent("Auth null transition delayed", {
+              previousUid,
+              graceMs: TRANSIENT_AUTH_NULL_GRACE_MS,
+            });
+
+            // Keep the current user visible for a short grace period. In
+            // standalone iOS builds Firebase can transiently report null
+            // during restoration/refresh; committing that immediately causes
+            // UserProvider/AppGate to tear down the navigation tree.
+            pendingAuthNullTimerRef.current = setTimeout(() => {
+              pendingAuthNullTimerRef.current = null;
+              currentUserIdRef.current = null;
+              logStartupEvent("Auth null transition committed", {
+                previousUid,
+                graceMs: TRANSIENT_AUTH_NULL_GRACE_MS,
+              });
+              setCurrentFirebaseUser(null);
+              setCustomClaims(null);
+              setLoading(false);
+              setIsHydrated(true);
+              cleanupPresence();
+            }, TRANSIENT_AUTH_NULL_GRACE_MS);
+
+            setLoading(false);
+            setIsHydrated(true);
+            return;
+          }
+
+          currentUserIdRef.current = nextUid;
           setCurrentFirebaseUser(user);
 
           // IMPORTANT: Mark auth as hydrated IMMEDIATELY so that AppGate

@@ -15,6 +15,11 @@ import React, {
 import { useAuth } from "./AuthContext";
 
 import { createLogger } from "@/utils/log";
+import {
+  logStartupEvent,
+  logStartupMount,
+  logStartupUnmount,
+} from "@/utils/startupTrace";
 const logger = createLogger("store/UserContext");
 
 /**
@@ -100,6 +105,33 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
 
   const retryCountRef = useRef(0);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    logStartupMount("UserProvider");
+    return () => {
+      logStartupUnmount("UserProvider");
+    };
+  }, []);
+
+  useEffect(() => {
+    logStartupEvent("UserProvider state changed", {
+      authHydrated,
+      currentUid: currentFirebaseUser?.uid ?? null,
+      profileUid: profile?.uid ?? null,
+      isHydrated,
+      loading,
+      profileFetchStatus,
+      hasUsername: !!profile?.username,
+    });
+  }, [
+    authHydrated,
+    currentFirebaseUser?.uid,
+    isHydrated,
+    loading,
+    profile?.uid,
+    profile?.username,
+    profileFetchStatus,
+  ]);
 
   // Stale-request guard: incremented each time refreshProfile starts.
   // If the generation changes while an async fetch is in-flight, the

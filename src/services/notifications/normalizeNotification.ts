@@ -50,6 +50,105 @@ function asRoute(value: unknown): CanonicalNotificationRoute | undefined {
   };
 }
 
+const APP_TAB_SCREEN_NAMES = new Set(["Messages", "Calls", "Profile"]);
+
+const MAIN_STACK_SCREEN_NAMES = new Set([
+  "Friends",
+  "ChatDetail",
+  "GroupChat",
+  "ThreadView",
+  "GroupChatCreate",
+  "GroupChatInfo",
+  "ChatSettings",
+  "InboxSettings",
+  "SnapViewer",
+  "Camera",
+  "DirectCall",
+  "VoiceChannel",
+  "CallSettings",
+  "CallInfo",
+  "UserProfile",
+  "SetStatus",
+  "MutualFriendsList",
+  "PremiumShop",
+  "PurchaseHistory",
+  "CosmeticsShop",
+  "Customization",
+  "ActivityFeed",
+  "GameLobbyV4",
+  "GamePlayV4",
+  "GameOverV4",
+  "GameDetailV4",
+  "GameLeaderboardV4",
+  "GameStatsV4",
+  "AchievementsHub",
+  "AchievementSection",
+  "ProfileAchievements",
+  "LevelRewards",
+  "Wallet",
+  "GamesHub",
+  "GroupPermissions",
+  "BlockedUsers",
+]);
+
+function sanitizeNotificationRoute(
+  route: CanonicalNotificationRoute | undefined,
+): CanonicalNotificationRoute | undefined {
+  if (!route) return undefined;
+
+  if (route.screen === "MainTabs") {
+    const tabParams = asRecord(route.params);
+    const nestedScreen = asString(tabParams?.screen);
+    if (!nestedScreen) return undefined;
+
+    const nestedParams = asRecord(tabParams?.params) ?? undefined;
+    if (APP_TAB_SCREEN_NAMES.has(nestedScreen)) {
+      return {
+        screen: "MainTabs",
+        params: {
+          screen: nestedScreen,
+          ...(nestedParams ? { params: nestedParams } : {}),
+        },
+      };
+    }
+
+    // Older backend payloads incorrectly nested root-stack screens under
+    // MainTabs. React Navigation treats those as invalid tab targets and falls
+    // through to the Messages tab, so repair them before dispatching.
+    if (MAIN_STACK_SCREEN_NAMES.has(nestedScreen)) {
+      return {
+        screen: nestedScreen,
+        params: nestedParams,
+      };
+    }
+
+    return undefined;
+  }
+
+  if (APP_TAB_SCREEN_NAMES.has(route.screen)) {
+    return {
+      screen: "MainTabs",
+      params: {
+        screen: route.screen,
+        ...(route.params ? { params: route.params } : {}),
+      },
+    };
+  }
+
+  if (MAIN_STACK_SCREEN_NAMES.has(route.screen)) {
+    return route;
+  }
+
+  return undefined;
+}
+
+function resolveNotificationRoute(
+  routeFromPayload: CanonicalNotificationRoute | undefined,
+  fallback: CanonicalNotificationRoute,
+): CanonicalNotificationRoute {
+  return sanitizeNotificationRoute(routeFromPayload) ?? fallback;
+}
+
 function buildDedupeKey(
   payload: Record<string, unknown>,
   fallback: string,
@@ -80,15 +179,16 @@ export function normalizeNotificationPayload(
       type: "dm_message",
       notificationId,
       dedupeKey: buildDedupeKey(payload, `dm_message:${chatId ?? senderId}`),
-      route:
-        routeFromPayload ??
-        ({
+      route: resolveNotificationRoute(
+        routeFromPayload,
+        {
           screen: "ChatDetail",
           params: {
             friendUid: senderId,
             initialData: chatId ? { chatId } : undefined,
           },
-        } satisfies CanonicalNotificationRoute),
+        },
+      ),
     };
   }
 
@@ -105,9 +205,9 @@ export function normalizeNotificationPayload(
       type: "group_message",
       notificationId,
       dedupeKey: buildDedupeKey(payload, `group_message:${groupId}`),
-      route:
-        routeFromPayload ??
-        ({
+      route: resolveNotificationRoute(
+        routeFromPayload,
+        {
           screen: "GroupChat",
           params: {
             groupId,
@@ -116,7 +216,8 @@ export function normalizeNotificationPayload(
               ? { highlightMessageId: messageId }
               : {}),
           },
-        } satisfies CanonicalNotificationRoute),
+        },
+      ),
     };
   }
 
@@ -129,17 +230,12 @@ export function normalizeNotificationPayload(
         payload,
         `message_request:${chatId ?? "inbox"}`,
       ),
-      route:
-        routeFromPayload ??
-        ({
-          screen: "MainTabs",
-          params: {
-            screen: "Friends",
-            params: {
-              tab: "requests",
-            },
-          },
-        } satisfies CanonicalNotificationRoute),
+      route: resolveNotificationRoute(routeFromPayload, {
+        screen: "Friends",
+        params: {
+          tab: "requests",
+        },
+      }),
     };
   }
 
@@ -148,17 +244,12 @@ export function normalizeNotificationPayload(
       type: "friend_request",
       notificationId,
       dedupeKey: buildDedupeKey(payload, "friend_request"),
-      route:
-        routeFromPayload ??
-        ({
-          screen: "MainTabs",
-          params: {
-            screen: "Friends",
-            params: {
-              tab: "requests",
-            },
-          },
-        } satisfies CanonicalNotificationRoute),
+      route: resolveNotificationRoute(routeFromPayload, {
+        screen: "Friends",
+        params: {
+          tab: "requests",
+        },
+      }),
     };
   }
 
@@ -167,14 +258,15 @@ export function normalizeNotificationPayload(
       type: "friend_request_accepted",
       notificationId,
       dedupeKey: buildDedupeKey(payload, "friend_request_accepted"),
-      route:
-        routeFromPayload ??
-        ({
+      route: resolveNotificationRoute(
+        routeFromPayload,
+        {
           screen: "Friends",
           params: {
             tab: "all",
           },
-        } satisfies CanonicalNotificationRoute),
+        },
+      ),
     };
   }
 
@@ -186,12 +278,13 @@ export function normalizeNotificationPayload(
       type: rawType,
       notificationId,
       dedupeKey: buildDedupeKey(payload, `${rawType}:${inviteId}`),
-      route:
-        routeFromPayload ??
-        ({
+      route: resolveNotificationRoute(
+        routeFromPayload,
+        {
           screen: "GameLobbyV4",
           params: { inviteId },
-        } satisfies CanonicalNotificationRoute),
+        },
+      ),
     };
   }
 
@@ -203,15 +296,16 @@ export function normalizeNotificationPayload(
       type: "game_turn",
       notificationId,
       dedupeKey: buildDedupeKey(payload, `game_turn:${sessionId}`),
-      route:
-        routeFromPayload ??
-        ({
+      route: resolveNotificationRoute(
+        routeFromPayload,
+        {
           screen: "GamePlayV4",
           params: {
             sessionId,
             gameId: asString(payload.gameId),
           },
-        } satisfies CanonicalNotificationRoute),
+        },
+      ),
     };
   }
 
@@ -223,12 +317,13 @@ export function normalizeNotificationPayload(
       type: "game_resolved",
       notificationId,
       dedupeKey: buildDedupeKey(payload, `game_resolved:${sessionId}`),
-      route:
-        routeFromPayload ??
-        ({
+      route: resolveNotificationRoute(
+        routeFromPayload,
+        {
           screen: "GameOverV4",
           params: { sessionId },
-        } satisfies CanonicalNotificationRoute),
+        },
+      ),
     };
   }
 
@@ -241,16 +336,17 @@ export function normalizeNotificationPayload(
         payload,
         `achievement_unlocked:${sectionId ?? "hub"}`,
       ),
-      route:
-        routeFromPayload ??
-        (sectionId
+      route: resolveNotificationRoute(
+        routeFromPayload,
+        sectionId
           ? {
               screen: "AchievementSection",
               params: { sectionId },
             }
           : {
               screen: "AchievementsHub",
-            }),
+            },
+      ),
     };
   }
 
@@ -260,11 +356,12 @@ export function normalizeNotificationPayload(
       type: rawType,
       notificationId,
       dedupeKey: buildDedupeKey(payload, `${rawType}:${giftId ?? "history"}`),
-      route:
-        routeFromPayload ??
-        ({
+      route: resolveNotificationRoute(
+        routeFromPayload,
+        {
           screen: "PurchaseHistory",
-        } satisfies CanonicalNotificationRoute),
+        },
+      ),
     };
   }
 
@@ -281,11 +378,12 @@ export function normalizeNotificationPayload(
         payload,
         `${rawType}:${friendshipId ?? "streak"}`,
       ),
-      route:
-        routeFromPayload ??
-        ({
+      route: resolveNotificationRoute(
+        routeFromPayload,
+        {
           screen: "Friends",
-        } satisfies CanonicalNotificationRoute),
+        },
+      ),
     };
   }
 
@@ -294,11 +392,12 @@ export function normalizeNotificationPayload(
       type: "cosmetic_unlock",
       notificationId,
       dedupeKey: buildDedupeKey(payload, "cosmetic_unlock"),
-      route:
-        routeFromPayload ??
-        ({
+      route: resolveNotificationRoute(
+        routeFromPayload,
+        {
           screen: "Friends",
-        } satisfies CanonicalNotificationRoute),
+        },
+      ),
     };
   }
 
@@ -307,11 +406,15 @@ export function normalizeNotificationPayload(
       type: "story_viewed",
       notificationId,
       dedupeKey: buildDedupeKey(payload, "story_viewed"),
-      route:
-        routeFromPayload ??
-        ({
+      route: resolveNotificationRoute(
+        routeFromPayload,
+        {
           screen: "MainTabs",
-        } satisfies CanonicalNotificationRoute),
+          params: {
+            screen: "Profile",
+          },
+        },
+      ),
     };
   }
 

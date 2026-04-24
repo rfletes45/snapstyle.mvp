@@ -733,6 +733,26 @@ function HydrationStateLogger({
   return null;
 }
 
+function NavigationLifecycleLogger() {
+  useEffect(() => {
+    logStartupMount("NavigationContainer");
+    return () => {
+      let currentRouteName: string | null = null;
+      try {
+        currentRouteName = navigationRef.getCurrentRoute()?.name ?? null;
+      } catch {
+        currentRouteName = null;
+      }
+
+      logStartupUnmount("NavigationContainer", {
+        currentRouteName,
+      });
+    };
+  }, []);
+
+  return null;
+}
+
 interface RootNavigatorProps {
   navigationRef?: React.RefObject<NavigationContainerRef<RootStackParamList> | null>;
   onRouteChange?: (routeName: keyof RootStackParamList | undefined) => void;
@@ -931,6 +951,7 @@ export default function RootNavigator({
           onReady={handleReady}
           onStateChange={handleStateChange}
         >
+          <NavigationLifecycleLogger />
           <HydrationStateLogger hydrationState={hydrationState} />
           {hydrationState === "ready" ? (
             <>

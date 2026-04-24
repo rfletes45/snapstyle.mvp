@@ -15,19 +15,54 @@ import React from "react";
 import { View, StyleSheet, Text } from "react-native";
 import { ActivityIndicator, useTheme } from "react-native-paper";
 import { Spacing, BorderRadius } from "@/constants/theme";
+import {
+  logStartupEvent,
+  logStartupMount,
+  logStartupUnmount,
+} from "@/utils/startupTrace";
 
 export interface LoadingScreenProps {
   /** Optional message to show below spinner */
   message?: string;
   /** Show as full screen (default) or inline */
   fullScreen?: boolean;
+  /** Diagnostic reason for startup/root loading breadcrumbs */
+  diagnosticReason?: string;
+  /** Extra safe diagnostic context */
+  diagnosticData?: Record<string, unknown>;
 }
 
 export function LoadingScreen({
   message = "Just a moment...",
   fullScreen = true,
+  diagnosticReason = "unspecified",
+  diagnosticData,
 }: LoadingScreenProps) {
   const theme = useTheme();
+
+  React.useEffect(() => {
+    logStartupMount("LoadingScreen", {
+      message,
+      fullScreen,
+      diagnosticReason,
+      ...(diagnosticData ?? {}),
+    });
+
+    return () => {
+      logStartupUnmount("LoadingScreen", {
+        message,
+        diagnosticReason,
+      });
+    };
+  }, []);
+
+  React.useEffect(() => {
+    logStartupEvent("LoadingScreen reason changed", {
+      message,
+      diagnosticReason,
+      ...(diagnosticData ?? {}),
+    });
+  }, [diagnosticData, diagnosticReason, message]);
 
   return (
     <View
