@@ -178,7 +178,7 @@ export const FEED_LAYOUT: FeedLayoutTokens = {
   gutterGap: 10,
   contentIndent: 50, // 0 + 40 + 10
   avatarSize: 40,
-  groupGap: 14,
+  groupGap: 12,
   withinGroupGap: 0,
   rowPaddingV: 2,
   rowPaddingH: 12,

@@ -76,11 +76,12 @@ export default function DirectCallButton({
           onPress={() => handleCall("audio")}
           disabled={isDisabled}
           activeOpacity={0.7}
+          hitSlop={{ top: 6, right: 6, bottom: 6, left: 6 }}
         >
           <MaterialCommunityIcons
             name="phone"
             size={size}
-            color={isDisabled ? colors.textSecondary : colors.text}
+            color={colors.textSecondary}
           />
         </TouchableOpacity>
       )}
@@ -91,11 +92,12 @@ export default function DirectCallButton({
           onPress={() => handleCall("video")}
           disabled={isDisabled}
           activeOpacity={0.7}
+          hitSlop={{ top: 6, right: 6, bottom: 6, left: 6 }}
         >
           <MaterialCommunityIcons
             name="video"
             size={size}
-            color={isDisabled ? colors.textSecondary : colors.text}
+            color={colors.textSecondary}
           />
         </TouchableOpacity>
       )}
@@ -107,7 +109,7 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
+    gap: 4,
   },
   button: {
     padding: 8,

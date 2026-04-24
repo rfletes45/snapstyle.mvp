@@ -71,6 +71,7 @@ const DEFAULT_STATE: VoiceRecordingState = {
   hoverTarget: "none",
   durationFormatted: "0:00",
 };
+const RECORDING_GUIDE_DASHES = ["a", "b", "c", "d", "e", "f", "g", "h", "i"];
 
 const VoiceRecordingHostContext = createContext<VoiceRecordingHostValue | null>(
   null,
@@ -250,7 +251,21 @@ export function VoiceRecordingOverlay() {
 
       {/* Middle filler — keeps flex layout stable between cancel and
           the (optional) right-side locked controls. */}
-      <View style={styles.middleSlot} pointerEvents="none" />
+      <View style={styles.middleSlot} pointerEvents="none">
+        {!isLocked && (
+          <View style={styles.recordingGuide} pointerEvents="none">
+            {RECORDING_GUIDE_DASHES.map((dashKey) => (
+              <View
+                key={dashKey}
+                style={[
+                  styles.guideDash,
+                  { backgroundColor: theme.colors.onSurfaceVariant },
+                ]}
+              />
+            ))}
+          </View>
+        )}
+      </View>
 
       {/* Absolute-centered lock target — horizontally centered in the
           live overlay bounds (matches textInputContainer). */}
@@ -330,6 +345,24 @@ const styles = StyleSheet.create({
   },
   middleSlot: {
     flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingLeft: 8,
+    paddingRight: 44,
+  },
+  recordingGuide: {
+    width: "70%",
+    maxWidth: 180,
+    minWidth: 64,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  guideDash: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    opacity: 0.28,
   },
   // Timer pill floats above the composer's top edge, horizontally
   // centered over the lock icon.  Its wrapper uses bottom:"100%" to

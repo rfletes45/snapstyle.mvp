@@ -20,7 +20,7 @@ import { createLogger, isDebugEnabled } from "@/utils/log";
 import { CommonActions, useNavigation } from "@react-navigation/native";
 import React, { useCallback, useEffect, useRef } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import { Appbar, IconButton } from "react-native-paper";
+import { IconButton } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 // =============================================================================
@@ -112,15 +112,8 @@ export const InboxHeader = React.memo(function InboxHeader({
       ]}
     >
       {/* Absolutely centered title */}
-      <View
-        style={[styles.titleOverlay, { top: safeTop + 6, bottom: 0 }]}
-        pointerEvents="none"
-      >
-        <Appbar.Content
-          title="Messages"
-          titleStyle={[styles.title, { color: colors.text }]}
-          style={styles.titleContent}
-        />
+      <View style={[styles.titleOverlay, { top: safeTop }]} pointerEvents="none">
+        <Text style={[styles.title, { color: colors.text }]}>Messages</Text>
       </View>
 
       {/* Left: User Avatar + Search Button */}
@@ -247,15 +240,16 @@ const styles = StyleSheet.create({
     position: "absolute",
     left: 0,
     right: 0,
+    height: 50,
     justifyContent: "center",
     alignItems: "center",
   },
-  titleContent: {
-    alignItems: "center",
-  },
   title: {
-    fontSize: 20,
+    fontSize: 21,
     fontWeight: "700",
     letterSpacing: 0.3,
+    lineHeight: 25,
+    includeFontPadding: false,
+    textAlignVertical: "center",
   },
 });

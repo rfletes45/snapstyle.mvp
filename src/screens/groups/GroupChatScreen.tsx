@@ -2519,6 +2519,8 @@ export default function GroupChatScreen({ route, navigation }: Props) {
         <IconButton
           icon="dots-vertical"
           onPress={() => navigation.navigate("GroupChatInfo", { groupId })}
+          iconColor={colors.textMuted}
+          style={styles.headerIconButton}
         />
       </View>
     ),
@@ -2906,10 +2908,16 @@ const styles = StyleSheet.create({
   headerRightRow: {
     flexDirection: "row",
     alignItems: "center",
+    gap: 2,
   },
   callButton: {
     padding: 8,
-    marginRight: -2,
+    marginRight: 0,
+  },
+  headerIconButton: {
+    margin: 0,
+    width: 40,
+    height: 40,
   },
   messageContainer: { marginBottom: 14, width: "100%" },
   groupedMessageContainer: {}, // Visual grouping (hides some elements) — no spacing change

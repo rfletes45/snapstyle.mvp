@@ -246,7 +246,13 @@ function ChatDMHeaderMenu({
 
   return (
     <>
-      <IconButton icon="dots-vertical" size={24} onPress={handleOpen} />
+      <IconButton
+        icon="dots-vertical"
+        size={24}
+        iconColor={theme.colors.onSurfaceVariant}
+        onPress={handleOpen}
+        style={styles.headerIconButton}
+      />
       <DraggableBottomSheet
         open={visible}
         onClose={handleClose}
@@ -1925,7 +1931,7 @@ export default function ChatScreen({
                   { color: theme.colors.onSurfaceVariant },
                 ]}
               >
-                You can't send messages in this conversation.
+                {"You can't send messages in this conversation."}
               </Text>
             </View>
           ) : (
@@ -2093,6 +2099,12 @@ const styles = StyleSheet.create({
   headerRightRow: {
     flexDirection: "row",
     alignItems: "center",
+    gap: 2,
+  },
+  headerIconButton: {
+    margin: 0,
+    width: 40,
+    height: 40,
   },
   emptyStateContainer: {
     transform: [{ scaleY: -1 }],

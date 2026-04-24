@@ -323,7 +323,6 @@ export const ConversationItem = memo(function ConversationItem({
       style={[
         styles.container,
         { backgroundColor: colors.background },
-        isUnread && { backgroundColor: colors.primary + "08" },
       ]}
       onPress={handlePress}
       onPressIn={handlePressIn}
@@ -345,7 +344,7 @@ export const ConversationItem = memo(function ConversationItem({
             source={{ uri: avatarUrl }}
             style={[
               styles.avatarPlaceholder,
-              { width: 48, height: 48, borderRadius: 24 },
+              { width: 50, height: 50, borderRadius: 25 },
             ]}
             debugLabel="ConversationAvatar"
           />
@@ -358,7 +357,7 @@ export const ConversationItem = memo(function ConversationItem({
           >
             <MaterialCommunityIcons
               name="account-group"
-              size={26}
+              size={27}
               color={colors.textSecondary}
             />
           </View>
@@ -367,7 +366,7 @@ export const ConversationItem = memo(function ConversationItem({
             pictureUrl={profilePictureUrl || avatarUrl}
             name={name}
             decorationId={decorationId}
-            size={44}
+            size={46}
           />
         )}
 
@@ -427,7 +426,7 @@ export const ConversationItem = memo(function ConversationItem({
           )}
           <MaterialCommunityIcons
             name="chevron-right"
-            size={18}
+            size={19}
             color={colors.textMuted}
             style={styles.chevron}
           />
@@ -455,7 +454,7 @@ export const ConversationItem = memo(function ConversationItem({
 
           {unreadBadgeText && (
             <Badge
-              size={18}
+              size={20}
               style={[
                 styles.badge,
                 {
@@ -482,18 +481,18 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 10,
-    paddingVertical: 2,
-    minHeight: 60,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    minHeight: 66,
   },
   avatarContainer: {
     position: "relative",
-    marginRight: 10,
+    marginRight: 12,
   },
   avatarPlaceholder: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 50,
+    height: 50,
+    borderRadius: 25,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -525,7 +524,7 @@ const styles = StyleSheet.create({
     marginRight: 2,
   },
   name: {
-    fontSize: 15,
+    fontSize: 15.5,
     fontWeight: "500",
     flex: 1,
   },
@@ -533,7 +532,7 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   time: {
-    fontSize: 12,
+    fontSize: 12.5,
   },
   bottomRow: {
     flexDirection: "row",
@@ -541,8 +540,8 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   preview: {
-    fontSize: 13,
-    lineHeight: 17,
+    fontSize: 13.5,
+    lineHeight: 18,
     flex: 1,
     marginRight: Spacing.xs,
   },

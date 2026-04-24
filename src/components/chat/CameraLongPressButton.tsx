@@ -207,7 +207,7 @@ export function CameraLongPressButton({
     ? theme.colors.onSurfaceDisabled
     : isImagePickerArmed
       ? "#FFFFFF"
-      : "#888";
+      : theme.colors.onSurfaceVariant;
 
   return (
     <TouchableWithoutFeedback

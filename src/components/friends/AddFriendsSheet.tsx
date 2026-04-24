@@ -86,6 +86,7 @@ export default function AddFriendsSheet({
   const { colors } = useTheme();
   const { currentFirebaseUser } = useAuth();
   const { suggestions, loading: sugLoading, dismiss } = useFriendSuggestions();
+  const sectionCardBg = colors.surface;
 
   const handlers: Record<string, () => void> = {
     share: onShareInvite,
@@ -129,7 +130,13 @@ export default function AddFriendsSheet({
           {TILES.map((tile) => (
             <TouchableOpacity
               key={tile.key}
-              style={[styles.tile, { backgroundColor: colors.surfaceVariant }]}
+              style={[
+                styles.tile,
+                {
+                  backgroundColor: sectionCardBg,
+                  borderColor: colors.outlineVariant,
+                },
+              ]}
               onPress={handlers[tile.key]}
               activeOpacity={0.7}
               accessibilityLabel={tile.label}
@@ -194,7 +201,10 @@ export default function AddFriendsSheet({
                   <TouchableOpacity
                     style={[
                       styles.recCard,
-                      { backgroundColor: colors.surfaceVariant },
+                      {
+                        backgroundColor: sectionCardBg,
+                        borderColor: colors.outlineVariant,
+                      },
                     ]}
                     onPress={() => onNavigateProfile?.(item.uid)}
                     activeOpacity={0.7}
@@ -287,6 +297,7 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.lg,
     paddingHorizontal: Spacing.sm,
     borderRadius: BorderRadius.lg,
+    borderWidth: StyleSheet.hairlineWidth,
   },
   iconCircle: {
     width: 56,
@@ -324,6 +335,7 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.md,
     paddingHorizontal: Spacing.sm,
     borderRadius: BorderRadius.lg,
+    borderWidth: StyleSheet.hairlineWidth,
     ...Platform.select({
       ios: {
         shadowColor: "#000",

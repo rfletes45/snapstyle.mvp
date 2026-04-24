@@ -74,6 +74,7 @@ export default function CallHistoryRow({
     entry.entryType,
     colors.primary,
     colors.error,
+    colors.success,
   ]);
 
   // Primary title
@@ -183,6 +184,12 @@ export default function CallHistoryRow({
           <Text style={[styles.time, { color: colors.textSecondary }]}>
             {timeLabel}
           </Text>
+          <MaterialCommunityIcons
+            name="chevron-right"
+            size={18}
+            color={colors.textMuted}
+            style={styles.chevron}
+          />
         </View>
 
         <View style={styles.subtitleRow}>
@@ -201,13 +208,6 @@ export default function CallHistoryRow({
         </View>
       </View>
 
-      {/* Tap affordance */}
-      <MaterialCommunityIcons
-        name="chevron-right"
-        size={18}
-        color={colors.textMuted}
-        style={styles.chevron}
-      />
     </TouchableOpacity>
   );
 }
@@ -301,6 +301,6 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   chevron: {
-    marginLeft: 4,
+    marginLeft: 3,
   },
 });

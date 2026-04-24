@@ -589,26 +589,12 @@ export default function FriendsScreen({ navigation }: any) {
   const uid = currentFirebaseUser?.uid;
   const theme = useTheme();
   const isDark = useIsDark();
-  // ── Friends-screen surface swap ───────────────────────────────
-  // In LIGHT mode we invert the page vs card relationship so the page
-  // reads as a soft grey and the header + friend islands read as clean
-  // white elevated surfaces. In DARK mode the default "dark page, lighter
-  // island" relationship is already correct, so we leave it untouched.
-  // The swap is done locally on the `colors` object so every descendant
-  // that reads `colors.background` / `colors.surface` (including sticky
-  // section headers, cards, menu popovers) picks it up automatically
-  // without touching the global theme tokens.
-  const colors = useMemo(
-    () =>
-      isDark
-        ? theme.colors
-        : {
-            ...theme.colors,
-            background: theme.colors.surface,
-            surface: theme.colors.background,
-          },
-    [theme.colors, isDark],
-  );
+  // ── Friends-screen header/search surfaces ─────────────────────
+  // Keep the header/page on the theme background. In light mode this makes the
+  // header white like the other primary screens, while the search pill gets a
+  // softer grey treatment below.
+  const colors = theme.colors;
+  const searchBackground = isDark ? colors.surface : colors.surfaceVariant;
   const sectionListRef = useRef<SectionList>(null);
   const insets = useSafeAreaInsets();
 
@@ -1546,7 +1532,7 @@ export default function FriendsScreen({ navigation }: any) {
           <Animated.View
             style={[
               styles.searchAbsolute,
-              { backgroundColor: colors.surface },
+              { backgroundColor: searchBackground },
               searchBarAnimStyle,
             ]}
           >
