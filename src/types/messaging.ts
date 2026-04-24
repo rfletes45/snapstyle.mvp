@@ -15,6 +15,8 @@
  * @module types/messaging
  */
 
+import type { SenderStyle } from "@/cosmetics/types";
+import { SCORECARD_SENTINEL, SCORECARD_VISIBLE_TEXT } from "@/gamesV4/services/scorecardWire";
 import { AvatarConfig } from "./models";
 
 // =============================================================================
@@ -146,14 +148,7 @@ export interface MessageV2 {
    * Used by recipients to render the sender's bubble color, font, etc.
    * Missing on historical messages — fall back to sender profile lookup.
    */
-  senderStyle?: {
-    bubbleColorId?: string | null;
-    bubbleColorHex?: string | null;
-    fontId?: string | null;
-    fontKey?: string | null;
-    animalThemeId?: string | null;
-    v: 1;
-  };
+  senderStyle?: SenderStyle;
 
   /** Delivery status used by local/outbox UI */
   status?: MessageStatusV2;
@@ -1549,6 +1544,13 @@ export function isOwnMessage(message: MessageV2, currentUid: string): boolean {
 export function getMessagePreviewText(message: MessageV2): string {
   if (message.deletedForAll) {
     return "This message was deleted";
+  }
+
+  if (
+    typeof message.text === "string" &&
+    message.text.startsWith(SCORECARD_SENTINEL)
+  ) {
+    return SCORECARD_VISIBLE_TEXT;
   }
 
   if (message.kind === "text" && message.text) {

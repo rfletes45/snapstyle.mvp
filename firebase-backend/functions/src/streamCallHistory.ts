@@ -13,7 +13,10 @@ import * as crypto from "crypto";
 import * as admin from "firebase-admin";
 import * as functions from "firebase-functions";
 
-import { handleTranscriptionWebhookEvent } from "./callTranscripts";
+import {
+  handleTranscriptionWebhookEvent,
+  startTranscriptionForCallSession,
+} from "./callTranscripts";
 
 const db = admin.firestore();
 
@@ -25,6 +28,7 @@ interface StreamCallHistoryEntry {
   id: string;
   userId: string;
   callId: string;
+  sessionId: string | null;
   entryType: EntryType;
   direction: EntryDirection;
   result: EntryResult;
@@ -101,6 +105,20 @@ export const streamCallWebhook = functions.https.onRequest(async (req, res) => {
       return;
     }
 
+    if (eventType === "call.session_started") {
+      const call = event.call;
+      if (!call?.id) {
+        res.status(400).send("Missing call data");
+        return;
+      }
+
+      const result = await startTranscriptionForCallSession(call);
+      res
+        .status(result.ok ? 200 : 500)
+        .send(`OK - transcript-start:${result.reason}`);
+      return;
+    }
+
     if (
       eventType !== "call.session_ended" &&
       eventType !== "call.rejected" &&
@@ -164,6 +182,8 @@ function writeSessionEndedEntries(
         id: `${call.id}_${participant.user_id}`,
         userId: participant.user_id,
         callId: call.id,
+        sessionId:
+          typeof call.session?.id === "string" ? call.session.id : null,
         entryType: "voice_room",
         direction: "joined",
         result: "left",
@@ -375,6 +395,10 @@ function buildDirectEntry(params: {
     id: params.call.id,
     userId: params.userId,
     callId: params.call.id,
+    sessionId:
+      typeof params.call?.session?.id === "string"
+        ? params.call.session.id
+        : null,
     entryType:
       params.call.custom?.mode === "video" ? "direct_video" : "direct_audio",
     direction: params.direction,

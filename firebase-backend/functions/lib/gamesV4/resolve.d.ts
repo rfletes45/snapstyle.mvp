@@ -19,7 +19,7 @@
  *
  * @module gamesV4/resolve
  */
-import type { FinalScoreboardEntry, GameId, GameResultV4, ResolutionType } from "./types";
+import type { FinalScoreboardEntry, GameId, GameResultV4, GameSessionV4, ResolutionType } from "./types";
 export interface ResolveInput {
     sessionId: string;
     resolutionType: ResolutionType;
@@ -81,3 +81,16 @@ export interface PBDelta {
     higherIsBetter: boolean;
     improved: boolean;
 }
+/**
+ * Write a trusted inline scorecard message to the hosting DM or group.
+ *
+ * The message is authored by the session **host** (not `system`) so it
+ * reads as a real in-chat message from the host — matching the manual
+ * share-sheet flow, where the scorecard is authored by the sharing user.
+ *
+ * Deterministic doc id = `scorecard_{sessionId}` + `.create()` makes this
+ * idempotent: a duplicate resolve/retry cannot double-post. `kind: "text"`
+ * lets the standard renderer's trusted scorecard decode mount the rich
+ * card — no special system-message wiring required.
+ */
+export declare function postGameScorecardToChat(db: FirebaseFirestore.Firestore, session: GameSessionV4, result: GameResultV4): Promise<void>;

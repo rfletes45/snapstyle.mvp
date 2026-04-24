@@ -10,6 +10,24 @@
  * @module functions/messaging
  */
 import * as functions from "firebase-functions";
+interface SenderStyleV1 {
+    bubbleColorId?: string | null;
+    bubbleColorHex?: string | null;
+    fontId?: string | null;
+    fontKey?: string | null;
+    fontColorId?: string | null;
+    fontColorHex?: string | null;
+    animalThemeId?: string | null;
+    v: 1;
+}
+interface ChatAppearanceSnapshot {
+    bubbleColorId?: string | null;
+    fontId?: string | null;
+    fontColorId?: string | null;
+    animalThemeId?: string | null;
+}
+export declare function normalizeSenderStyleSnapshot(senderStyle: SenderStyleV1 | null | undefined): SenderStyleV1 | null;
+export declare function buildSenderStyleFromChatAppearance(chatAppearance: ChatAppearanceSnapshot | null | undefined): SenderStyleV1 | null;
 /**
  * Idempotent message creation with server-authoritative timestamp
  *

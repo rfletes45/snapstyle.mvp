@@ -3,8 +3,8 @@
  *
  * Rendered in two contexts:
  *
- *  1. `GameOverScreenV4` — off-screen via a `<ViewShot>` wrapper so the
- *     card can be captured to a PNG and shared via the system share sheet.
+ *  1. `GameOverScreenV4` — inside the in-app scorecard share flow, where the
+ *     structured payload is sent into a selected DM or group.
  *  2. Inline in chats — wrapped by `ChatScorecardMessage`, which gives
  *     the card the full message frame (avatar, sender name, timestamp,
  *     alignment) so it reads as a true authored message in the
@@ -274,8 +274,9 @@ interface ScoreEntry {
 
 /**
  * Small gold crown overlaid on top-right of a winner's profile picture.
- * Tilted so the bottom of the crown leans left — toward the center of
- * the pfp — matching the product spec (~250° visual reference).
+ * Tilted so the bottom of the crown leans right — toward the center of
+ * the pfp from its top-right anchor — matching the intended product
+ * orientation.
  * Rendered above both the base pfp and its decoration overlay.
  */
 const WinnerCrown: React.FC<{ size: number }> = ({ size }) => {
@@ -290,7 +291,7 @@ const WinnerCrown: React.FC<{ size: number }> = ({ size }) => {
           // snugly at the corner with its bottom pointing toward center.
           top: -Math.round(iconSize * 0.45),
           right: -Math.round(iconSize * 0.2),
-          transform: [{ rotate: "-20deg" }],
+          transform: [{ rotate: "20deg" }],
         },
       ]}
     >

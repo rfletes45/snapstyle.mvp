@@ -764,10 +764,10 @@ export function CallSettingsScreen() {
             )}
         </View>
 
-        {/* Transcription (privacy-first, opt-in) */}
+        {/* Transcription (opt-in, direct audio only) */}
         {renderSectionHeader(
           "Transcription",
-          "Local-only transcripts for 1:1 audio calls",
+          "Opt-in transcripts for 1:1 audio calls",
         )}
         <View
           style={[
@@ -777,7 +777,7 @@ export function CallSettingsScreen() {
         >
           {renderToggle(
             "Audio Call Transcriptions",
-            "Save transcripts to this device for 1:1 audio calls when both participants have this enabled. Transcripts are never created for video calls or voice rooms.",
+            "When both participants enable this, 1:1 audio calls can be transcribed and later saved on this device. Stream processes the transcript first; SnapStyle then imports it and deletes the original Stream transcript when possible. Transcripts are never created for video calls or voice rooms.",
             settings.audioCallTranscriptionsEnabled,
             (value) => updateSetting("audioCallTranscriptionsEnabled", value),
             "document-text-outline",

@@ -226,7 +226,7 @@ export function PinnedInviteBar({
         style={[
           styles.chip,
           {
-            backgroundColor: theme.isDark ? "#1C1C1E" : "#F2F2F7",
+            backgroundColor: theme.colors.surfaceVariant,
             borderColor: isYourTurn ? "#FF6B35" : "transparent",
             borderWidth: isYourTurn ? 1.5 : 0,
           },
@@ -244,7 +244,7 @@ export function PinnedInviteBar({
           color={statusColor}
         />
         <Text
-          style={[styles.chipName, { color: theme.isDark ? "#FFF" : "#000" }]}
+          style={[styles.chipName, { color: theme.colors.text }]}
           numberOfLines={1}
         >
           {meta?.displayName ?? item.gameId}
@@ -262,7 +262,7 @@ export function PinnedInviteBar({
       style={[
         styles.container,
         {
-          backgroundColor: theme.isDark ? "#000" : theme.colors.background,
+          backgroundColor: theme.colors.background,
           borderBottomColor: theme.isDark ? "#333" : "#E0E0E0",
         },
       ]}

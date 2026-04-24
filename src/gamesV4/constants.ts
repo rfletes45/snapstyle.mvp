@@ -155,7 +155,7 @@ export const GAME_METADATA: Record<GameId, GameMetadata> = {
     maxPlayers: 1,
     supportsSpectate: false,
     icon: "numeric",
-    thumbnail: require("../../assets/images/games/2048_Thumbnail.png"),
+    thumbnail: require("../../assets/images/games/2048_Icon.png"),
   },
   brick_breaker: {
     gameId: "brick_breaker",
@@ -165,7 +165,7 @@ export const GAME_METADATA: Record<GameId, GameMetadata> = {
     maxPlayers: 1,
     supportsSpectate: false,
     icon: "grid-large",
-    thumbnail: require("../../assets/images/games/Brick_Breaker_Thumbnail.png"),
+    thumbnail: require("../../assets/images/games/Brick_Breaker_Icon.png"),
   },
   word_master: {
     gameId: "word_master",
@@ -184,7 +184,7 @@ export const GAME_METADATA: Record<GameId, GameMetadata> = {
     maxPlayers: 1,
     supportsSpectate: false,
     icon: "bomb",
-    thumbnail: require("../../assets/images/games/Minesweeper_Thumbnail.png"),
+    thumbnail: require("../../assets/images/games/Minesweeper_Icon.png"),
   },
   lights_out: {
     gameId: "lights_out",
@@ -205,6 +205,7 @@ export const GAME_METADATA: Record<GameId, GameMetadata> = {
     maxPlayers: 2,
     supportsSpectate: true,
     icon: "grid",
+    thumbnail: require("../../assets/images/games/Tic_Tac_Toe_Icon.png"),
   },
   chess: {
     gameId: "chess",
@@ -214,6 +215,7 @@ export const GAME_METADATA: Record<GameId, GameMetadata> = {
     maxPlayers: 2,
     supportsSpectate: true,
     icon: "chess-king",
+    thumbnail: require("../../assets/images/games/Chess_Icon.png"),
   },
   checkers: {
     gameId: "checkers",
@@ -250,6 +252,7 @@ export const GAME_METADATA: Record<GameId, GameMetadata> = {
     maxPlayers: 2,
     supportsSpectate: true,
     icon: "circle-half-full",
+    thumbnail: require("../../assets/images/games/Reversi_Icon.png"),
   },
   dots_and_boxes: {
     gameId: "dots_and_boxes",
@@ -259,6 +262,7 @@ export const GAME_METADATA: Record<GameId, GameMetadata> = {
     maxPlayers: 2,
     supportsSpectate: true,
     icon: "dots-square",
+    thumbnail: require("../../assets/images/games/Dots_and_Boxes_Icon.png"),
   },
   crazy_eights: {
     gameId: "crazy_eights",
@@ -268,6 +272,7 @@ export const GAME_METADATA: Record<GameId, GameMetadata> = {
     maxPlayers: 6,
     supportsSpectate: true,
     icon: "cards-playing-outline",
+    thumbnail: require("../../assets/images/games/Crazy_Eights_Icon.png"),
   },
 
   // Realtime and additional multiplayer catalog entries
@@ -288,6 +293,7 @@ export const GAME_METADATA: Record<GameId, GameMetadata> = {
     maxPlayers: 2,
     supportsSpectate: true,
     icon: "ship-wheel",
+    thumbnail: require("../../assets/images/games/Battleship_Icon.png"),
   },
   sketch_party_game: {
     gameId: "sketch_party_game",
@@ -351,7 +357,7 @@ export const GAME_METADATA: Record<GameId, GameMetadata> = {
     maxPlayers: 1,
     supportsSpectate: false,
     icon: "cards-playing-spade-multiple",
-    thumbnail: require("../../assets/images/games/Solitaire_Thumbnail.png"),
+    thumbnail: require("../../assets/images/games/Solitaire_Icon.png"),
   },
   hex: {
     gameId: "hex",
@@ -361,6 +367,7 @@ export const GAME_METADATA: Record<GameId, GameMetadata> = {
     maxPlayers: 2,
     supportsSpectate: true,
     icon: "hexagon-outline",
+    thumbnail: require("../../assets/images/games/Hex_Icon.png"),
   },
   dead_drop: {
     gameId: "dead_drop",
@@ -379,6 +386,7 @@ export const GAME_METADATA: Record<GameId, GameMetadata> = {
     maxPlayers: 6,
     supportsSpectate: true,
     icon: "city-variant-outline",
+    thumbnail: require("../../assets/images/games/Metro_Magnate_Icon.png"),
   },
 };
 
@@ -414,10 +422,13 @@ export const IMPLEMENTED_GAME_IDS = new Set<GameId>([
 
 /**
  * Games hidden from the catalog UI.
- * These are Coming Soon games that are not yet ready for display.
- * Bounce Blitz and Checkers remain visible as Coming Soon.
+ * These are Coming Soon games that are not yet ready for display, plus
+ * a couple of implemented-but-retired entries we do not want surfaced on
+ * the main Games screen.
  */
 export const HIDDEN_GAME_IDS = new Set<GameId>([
+  "bounce_blitz",
+  "checkers",
   "word_master",
   "lights_out",
   "gomoku",

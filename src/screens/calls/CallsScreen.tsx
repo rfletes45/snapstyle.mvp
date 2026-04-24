@@ -109,8 +109,7 @@ export default function CallsScreen() {
       navigation.navigate("CallInfo", {
         entryId: entry.id,
         callId: entry.callId,
-        // sessionId is not currently persisted on the history entry;
-        // CallInfoScreen falls back to the "latest session" local lookup.
+        sessionId: entry.sessionId ?? undefined,
       });
     },
     [navigation],

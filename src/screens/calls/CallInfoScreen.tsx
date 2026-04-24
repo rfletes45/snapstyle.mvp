@@ -28,7 +28,11 @@ import {
   getTranscriptSegments,
   upsertTranscriptMeta,
 } from "@/services/calls/callTranscriptDb";
-import { fetchAndPersistTranscript } from "@/services/calls/callTranscriptService";
+import {
+  fetchAndPersistTranscript,
+  getTranscriptAvailability,
+  resolveTranscriptPolicy,
+} from "@/services/calls/callTranscriptService";
 import { prepareGroupChatNavigation } from "@/services/chat/threadIdentityWarmup";
 import { getAuthInstance } from "@/services/firebase";
 import { getStreamCallHistoryEntryById } from "@/services/stream";
@@ -36,7 +40,6 @@ import { useAppTheme } from "@/store/ThemeContext";
 import type {
   CallTranscriptMeta,
   CallTranscriptSegment,
-  CallTranscriptStatus,
 } from "@/types/callTranscript";
 import type { MainStackParamList } from "@/types/navigation/root";
 import type { StreamCallHistoryEntry } from "@/types/streamCallHistory";
@@ -96,60 +99,141 @@ export default function CallInfoScreen({ route, navigation }: Props) {
   // Load transcript meta (only for audio direct)
   // -------------------------------------------------------------------------
   const refreshLocalTranscript = useCallback(async () => {
-    if (!ownerUid || !callId) return;
+    if (!ownerUid || !callId || !isAudioDirect) return;
     try {
+      const localSettings = await callSettingsService.getSettings();
       const m = sessionId
         ? await getTranscriptMeta(callId, sessionId, ownerUid)
         : await getLatestTranscriptMetaForCall(callId, ownerUid);
+
       setMeta(m);
-      if (m && m.transcriptStatus === "saved_local") {
+      if (m?.transcriptStatus === "saved_local") {
         const segs = await getTranscriptSegments(m.callId, m.sessionId);
         setSegments(segs);
-      } else {
-        setSegments([]);
+        return;
       }
+
+      setSegments([]);
+
+      if (m?.transcriptStatus === "deleted_local") {
+        return;
+      }
+
+      if (!sessionId) {
+        return;
+      }
+
+      if (!localSettings.audioCallTranscriptionsEnabled) {
+        const disabledMeta: CallTranscriptMeta = {
+          callId,
+          sessionId,
+          ownerUid,
+          entryId,
+          transcriptStatus: "disabled_by_setting",
+          serverExpiresAt: null,
+          localSavedAt: m?.localSavedAt ?? null,
+          deletedFromServerAt: m?.deletedFromServerAt ?? null,
+          lastError: null,
+          updatedAt: Date.now(),
+        };
+        await upsertTranscriptMeta(disabledMeta);
+        setMeta(disabledMeta);
+        return;
+      }
+
+      const availability = await getTranscriptAvailability({
+        callId,
+        sessionId,
+      });
+
+      if (availability.status === "processing") {
+        const processingMeta: CallTranscriptMeta = {
+          callId,
+          sessionId,
+          ownerUid,
+          entryId,
+          transcriptStatus: "processing",
+          serverExpiresAt: availability.serverExpiresAt,
+          localSavedAt: m?.localSavedAt ?? null,
+          deletedFromServerAt: m?.deletedFromServerAt ?? null,
+          lastError: null,
+          updatedAt: Date.now(),
+        };
+        await upsertTranscriptMeta(processingMeta);
+        setMeta(processingMeta);
+        return;
+      }
+
+      if (availability.status === "ready") {
+        const readyMeta: CallTranscriptMeta = {
+          callId,
+          sessionId,
+          ownerUid,
+          entryId,
+          transcriptStatus: "ready_remote",
+          serverExpiresAt: availability.serverExpiresAt,
+          localSavedAt: m?.localSavedAt ?? null,
+          deletedFromServerAt: m?.deletedFromServerAt ?? null,
+          lastError: null,
+          updatedAt: Date.now(),
+        };
+        await upsertTranscriptMeta(readyMeta);
+        setMeta(readyMeta);
+        return;
+      }
+
+      if (availability.status === "expired") {
+        const expiredMeta: CallTranscriptMeta = {
+          callId,
+          sessionId,
+          ownerUid,
+          entryId,
+          transcriptStatus: "expired",
+          serverExpiresAt: availability.serverExpiresAt,
+          localSavedAt: m?.localSavedAt ?? null,
+          deletedFromServerAt: m?.deletedFromServerAt ?? null,
+          lastError: null,
+          updatedAt: Date.now(),
+        };
+        await upsertTranscriptMeta(expiredMeta);
+        setMeta(expiredMeta);
+        return;
+      }
+
+      const policy = await resolveTranscriptPolicy({
+        mode: "audio",
+        isDirect: true,
+        otherUserId: entry?.otherUserId ?? null,
+      });
+      const unavailableMeta: CallTranscriptMeta = {
+        callId,
+        sessionId,
+        ownerUid,
+        entryId,
+        transcriptStatus: policy.allowed
+          ? "failed"
+          : policy.reason === "local_disabled"
+            ? "disabled_by_setting"
+            : "disabled_by_policy",
+        serverExpiresAt: null,
+        localSavedAt: m?.localSavedAt ?? null,
+        deletedFromServerAt: m?.deletedFromServerAt ?? null,
+        lastError: policy.allowed
+          ? "Transcript was not found for this call."
+          : null,
+        updatedAt: Date.now(),
+      };
+      await upsertTranscriptMeta(unavailableMeta);
+      setMeta(unavailableMeta);
     } catch (err) {
       console.warn("[CallInfoScreen] refreshLocalTranscript failed", err);
     }
-  }, [callId, sessionId, ownerUid]);
+  }, [callId, entry?.otherUserId, entryId, isAudioDirect, ownerUid, sessionId]);
 
   useEffect(() => {
     if (!isAudioDirect) return;
     void refreshLocalTranscript();
   }, [isAudioDirect, refreshLocalTranscript]);
-
-  // Seed a meta row if none exists yet — so the UI can reflect
-  // "disabled_by_setting" without a download attempt.
-  useEffect(() => {
-    (async () => {
-      if (!isAudioDirect || !ownerUid || meta || !sessionId) return;
-      const settings = callSettingsService.getSettingsSync();
-      const status: CallTranscriptStatus =
-        settings.audioCallTranscriptionsEnabled
-          ? "processing"
-          : "disabled_by_setting";
-      await upsertTranscriptMeta({
-        callId,
-        sessionId,
-        ownerUid,
-        entryId,
-        transcriptStatus: status,
-        serverExpiresAt: null,
-        localSavedAt: null,
-        deletedFromServerAt: null,
-        lastError: null,
-      });
-      void refreshLocalTranscript();
-    })();
-  }, [
-    isAudioDirect,
-    ownerUid,
-    meta,
-    callId,
-    sessionId,
-    entryId,
-    refreshLocalTranscript,
-  ]);
 
   // -------------------------------------------------------------------------
   // Actions
@@ -265,7 +349,29 @@ export default function CallInfoScreen({ route, navigation }: Props) {
     // return for safety against future refactors.
     if (!isAudioDirect) return null;
 
-    const status = meta?.transcriptStatus ?? "processing";
+    if (!sessionId && meta?.transcriptStatus !== "saved_local") {
+      return (
+        <InfoBlock
+          colors={colors}
+          icon="information-outline"
+          title="Transcript unavailable for this call record"
+          subtitle="This history entry does not include a Stream session ID. New completed calls will include it automatically."
+        />
+      );
+    }
+
+    if (!meta) {
+      return (
+        <InfoBlock
+          colors={colors}
+          icon="progress-clock"
+          title="Checking transcript status"
+          subtitle="Fetching the latest transcript state for this call."
+        />
+      );
+    }
+
+    const status = meta.transcriptStatus;
 
     if (status === "disabled_by_setting") {
       return (

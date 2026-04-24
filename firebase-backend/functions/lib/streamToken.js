@@ -47,6 +47,7 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ensureStreamUsers = exports.getStreamVideoToken = void 0;
+exports.getStreamClient = getStreamClient;
 const node_sdk_1 = require("@stream-io/node-sdk");
 const admin = __importStar(require("firebase-admin"));
 const functions = __importStar(require("firebase-functions"));

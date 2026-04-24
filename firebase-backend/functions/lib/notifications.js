@@ -36,6 +36,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.onPushTokenRegistered = exports.onMessageRequestCreatedNotification = exports.onNewGroupMessageV2 = exports.onNewMessage = void 0;
 const admin = __importStar(require("firebase-admin"));
 const functions = __importStar(require("firebase-functions"));
+const messagePreview_1 = require("./messagePreview");
 const notificationCenter_1 = require("./notificationCenter");
 const streaks_1 = require("./streaks");
 const db = admin.firestore();
@@ -88,20 +89,6 @@ async function revokeDuplicateLegacyRootTokens(ownerUid, token) {
         await Promise.all(staleRootWrites);
         functions.logger.info(`[onPushTokenRegistered] Cleared ${staleRootWrites.length} stale legacy root token(s) for ${ownerUid}`);
     }
-}
-function buildMessagePreview(kind, text) {
-    if (kind === "text" && text) {
-        return text.length > 120 ? `${text.slice(0, 117)}...` : text;
-    }
-    if (kind === "media")
-        return "Sent a photo";
-    if (kind === "voice")
-        return "Sent a voice message";
-    if (kind === "file")
-        return "Sent a file";
-    if (kind === "animal")
-        return "Sent an animal sticker";
-    return text || "New message";
 }
 async function getUserDisplayName(uid) {
     try {
@@ -250,7 +237,11 @@ exports.onNewMessage = functions.firestore
         ? message.senderName
         : await getUserDisplayName(senderId);
     const { notificationPreview } = await getInboxSettings(recipientUid);
-    const previewText = buildMessagePreview(String(message.kind || message.type || "text"), message.text || message.content);
+    const previewText = (0, messagePreview_1.buildMessagePreviewText)({
+        kind: String(message.kind || message.type || "text"),
+        text: message.text || message.content,
+        maxTextLength: 120,
+    });
     const copy = buildDmCopy({
         senderName,
         previewText,
@@ -317,7 +308,11 @@ exports.onNewGroupMessageV2 = functions.firestore
     const senderName = typeof message.senderName === "string"
         ? message.senderName
         : await getUserDisplayName(senderId);
-    const previewText = buildMessagePreview(String(message.kind || message.type || "text"), message.text || message.content);
+    const previewText = (0, messagePreview_1.buildMessagePreviewText)({
+        kind: String(message.kind || message.type || "text"),
+        text: message.text || message.content,
+        maxTextLength: 120,
+    });
     // Collect sender's push tokens so we can exclude them from delivery.
     const senderTokens = await getUserPushTokens(senderId);
     const senderDeviceId = typeof message.senderDeviceId === "string" && message.senderDeviceId

@@ -80,7 +80,7 @@ export async function resolveTranscriptPolicy(params: {
   }
 
   // Local setting check — fast bail
-  const local = callSettingsService.getSettingsSync();
+  const local = await callSettingsService.getSettings();
   if (!local.audioCallTranscriptionsEnabled) {
     return { allowed: false, reason: "local_disabled" };
   }

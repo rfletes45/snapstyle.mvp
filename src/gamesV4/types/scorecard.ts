@@ -4,11 +4,14 @@
  * This is the minimal, self-contained bundle of data required to render a
  * `<GameScorecard />` anywhere in the app:
  *
- *  • The share card on `GameOverScreenV4` (captured via ViewShot).
- *  • The auto-posted inline card in group chats (`MessageV2.gameScorecard`).
+ *  • The inline card in chats, rendered from a trusted sentinel-encoded
+ *    `kind: "text"` message.
+ *  • The in-app share flow from `GameOverScreenV4`, which sends the same
+ *    structured payload through `sendMessageV2`.
  *
  * The payload must stay JSON-serializable and free of Firestore-specific
- * types so the backend can write it inside a standard `MessageV2` doc.
+ * types so both the backend auto-post path and the client share path can
+ * carry it inside a standard `MessageV2` document.
  *
  * @module gamesV4/types/scorecard
  */

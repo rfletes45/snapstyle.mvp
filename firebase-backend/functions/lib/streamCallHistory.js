@@ -89,6 +89,18 @@ exports.streamCallWebhook = functions.https.onRequest(async (req, res) => {
                 .send(`OK - transcript:${result.reason}`);
             return;
         }
+        if (eventType === "call.session_started") {
+            const call = event.call;
+            if (!call?.id) {
+                res.status(400).send("Missing call data");
+                return;
+            }
+            const result = await (0, callTranscripts_1.startTranscriptionForCallSession)(call);
+            res
+                .status(result.ok ? 200 : 500)
+                .send(`OK - transcript-start:${result.reason}`);
+            return;
+        }
         if (eventType !== "call.session_ended" &&
             eventType !== "call.rejected" &&
             eventType !== "call.missed") {
@@ -141,6 +153,7 @@ function writeSessionEndedEntries(batch, call) {
                 id: `${call.id}_${participant.user_id}`,
                 userId: participant.user_id,
                 callId: call.id,
+                sessionId: typeof call.session?.id === "string" ? call.session.id : null,
                 entryType: "voice_room",
                 direction: "joined",
                 result: "left",
@@ -297,6 +310,9 @@ function buildDirectEntry(params) {
         id: params.call.id,
         userId: params.userId,
         callId: params.call.id,
+        sessionId: typeof params.call?.session?.id === "string"
+            ? params.call.session.id
+            : null,
         entryType: params.call.custom?.mode === "video" ? "direct_video" : "direct_audio",
         direction: params.direction,
         result: params.result,

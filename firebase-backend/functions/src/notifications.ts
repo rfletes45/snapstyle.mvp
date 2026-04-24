@@ -1,5 +1,6 @@
 import * as admin from "firebase-admin";
 import * as functions from "firebase-functions";
+import { buildMessagePreviewText } from "./messagePreview";
 import { notifyUser } from "./notificationCenter";
 import { updateStreakOnMessage } from "./streaks";
 
@@ -75,17 +76,6 @@ async function revokeDuplicateLegacyRootTokens(
 
 type NotificationPreviewMode = "full" | "sender_only" | "generic";
 type NotifyLevel = "all" | "mentions" | "none";
-
-function buildMessagePreview(kind: string, text?: string): string {
-  if (kind === "text" && text) {
-    return text.length > 120 ? `${text.slice(0, 117)}...` : text;
-  }
-  if (kind === "media") return "Sent a photo";
-  if (kind === "voice") return "Sent a voice message";
-  if (kind === "file") return "Sent a file";
-  if (kind === "animal") return "Sent an animal sticker";
-  return text || "New message";
-}
 
 async function getUserDisplayName(uid: string): Promise<string> {
   try {
@@ -268,10 +258,11 @@ export const onNewMessage = functions.firestore
         ? message.senderName
         : await getUserDisplayName(senderId);
     const { notificationPreview } = await getInboxSettings(recipientUid);
-    const previewText = buildMessagePreview(
-      String(message.kind || message.type || "text"),
-      message.text || message.content,
-    );
+    const previewText = buildMessagePreviewText({
+      kind: String(message.kind || message.type || "text"),
+      text: message.text || message.content,
+      maxTextLength: 120,
+    });
     const copy = buildDmCopy({
       senderName,
       previewText,
@@ -346,10 +337,11 @@ export const onNewGroupMessageV2 = functions.firestore
       typeof message.senderName === "string"
         ? message.senderName
         : await getUserDisplayName(senderId);
-    const previewText = buildMessagePreview(
-      String(message.kind || message.type || "text"),
-      message.text || message.content,
-    );
+    const previewText = buildMessagePreviewText({
+      kind: String(message.kind || message.type || "text"),
+      text: message.text || message.content,
+      maxTextLength: 120,
+    });
 
     // Collect sender's push tokens so we can exclude them from delivery.
     const senderTokens = await getUserPushTokens(senderId);

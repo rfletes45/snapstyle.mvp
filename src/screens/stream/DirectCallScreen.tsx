@@ -59,8 +59,6 @@ import { useStableCallInsets } from "@/components/stream/useStableCallInsets";
 import { VideoRenderErrorBoundary } from "@/components/stream/VideoRenderErrorBoundary";
 import {
   forceDisableTranscriptionOnCall,
-  resolveTranscriptPolicy,
-  startCallTranscriptionIfEligible,
   stopCallTranscription,
 } from "@/services/calls/callTranscriptService";
 
@@ -200,12 +198,14 @@ function DirectCallContent({
   const { colors } = useAppTheme();
   const {
     useCallCallingState,
+    useIsCallTranscribingInProgress,
     useParticipants,
     useMicrophoneState,
     useCameraState,
   } = useCallStateHooks();
 
   const callingState = useCallCallingState();
+  const isTranscribing = useIsCallTranscribingInProgress();
   const participants = useParticipants();
   const { optimisticIsMute: isMuted, microphone } = useMicrophoneState();
   const {
@@ -281,16 +281,12 @@ function DirectCallContent({
   }, [isJoined, call]);
 
   // --------------------------------------------------------------------------
-  // Transcription lifecycle (1:1 direct AUDIO calls only).
-  // Resolves effective policy (local + remote setting, fail-closed),
-  // starts transcription explicitly after JOINED, and stops it when the
-  // user disables the setting mid-call or when the call ends.
+  // Transcription guardrails (1:1 direct AUDIO calls only).
+  // Start is now owned by the backend on `call.session_started`, so the
+  // screen only reflects Stream's real transcribing state and stops it if
+  // the local user disables the feature mid-call.
   // --------------------------------------------------------------------------
-  const [isTranscribing, setIsTranscribing] = useState(false);
-  const transcriptionStartedRef = useRef(false);
   const videoForcedOffRef = useRef(false);
-  const otherUserIdForTranscription =
-    participants.find((p) => !p.isLocalParticipant)?.userId ?? null;
 
   useEffect(() => {
     if (!call) return;
@@ -305,65 +301,18 @@ function DirectCallContent({
       }
       return;
     }
-
-    if (!isJoined || transcriptionStartedRef.current) return;
-
-    let cancelled = false;
-    (async () => {
-      const policy = await resolveTranscriptPolicy({
-        mode: "audio",
-        isDirect: true,
-        otherUserId: otherUserIdForTranscription,
-      });
-      if (cancelled) return;
-      // Between await and here the user may have toggled the setting
-      // off — re-check the local flag before actually starting.
-      if (
-        !callSettingsService.getSettingsSync().audioCallTranscriptionsEnabled
-      ) {
-        return;
-      }
-      const started = await startCallTranscriptionIfEligible(call, policy);
-      if (cancelled) return;
-      if (started) {
-        transcriptionStartedRef.current = true;
-        setIsTranscribing(true);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [call, isVideo, isJoined, otherUserIdForTranscription]);
-
-  // Best-effort stop when the screen unmounts or the call reference
-  // changes. Stream auto-stops transcription when the call ends, but
-  // calling stop explicitly is safe and avoids lingering state if the
-  // user backgrounded the app during a reconnect loop.
-  useEffect(() => {
-    return () => {
-      if (call && transcriptionStartedRef.current) {
-        void stopCallTranscription(call);
-        transcriptionStartedRef.current = false;
-      }
-    };
-  }, [call]);
+  }, [call, isVideo]);
 
   // React to the user disabling transcription mid-call.
   useEffect(() => {
     if (!call || isVideo) return;
     const unsub = callSettingsService.addListener((settings) => {
-      if (
-        transcriptionStartedRef.current &&
-        !settings.audioCallTranscriptionsEnabled
-      ) {
+      if (isTranscribing && !settings.audioCallTranscriptionsEnabled) {
         void stopCallTranscription(call);
-        transcriptionStartedRef.current = false;
-        setIsTranscribing(false);
       }
     });
     return unsub;
-  }, [call, isVideo]);
+  }, [call, isTranscribing, isVideo]);
 
   // Speaker toggle state — tracked locally (SDK doesn't provide useSpeakerState on RN)
   const [isSpeakerOn, setIsSpeakerOn] = useState(isVideo); // Default speaker ON for video

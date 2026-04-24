@@ -17,6 +17,10 @@
 
 import * as admin from "firebase-admin";
 import * as functions from "firebase-functions";
+import {
+  SCORECARD_VISIBLE_TEXT,
+  sanitizeMessagePreviewText,
+} from "./messagePreview";
 
 function getDb() {
   return admin.firestore();
@@ -30,12 +34,21 @@ function getDb() {
  * Build a short preview string for the inbox entry.
  */
 function buildPreview(kind: string, text?: string): string {
+  const sanitizedText = sanitizeMessagePreviewText(text);
   // Scorecards embed a JSON sentinel in their `text` field. Never leak
   // that into the inbox preview — substitute the generic label.
-  if (text && text.startsWith("[SCORECARD_V1]")) {
-    return "Game Scorecard";
+  if (sanitizedText === SCORECARD_VISIBLE_TEXT) {
+    return SCORECARD_VISIBLE_TEXT;
   }
-  if (kind === "text" && text) {
+  if (kind === "text" && sanitizedText) {
+    return sanitizedText.length > 80
+      ? sanitizedText.substring(0, 80) + "..."
+      : sanitizedText;
+  }
+  if (kind === "system") {
+    return sanitizedText || "System message";
+  }
+  if (kind === "text" && sanitizedText) {
     return text.length > 80 ? text.substring(0, 80) + "…" : text;
   }
   if (kind === "media") return "📷 Photo";
@@ -44,8 +57,7 @@ function buildPreview(kind: string, text?: string): string {
   if (kind === "voice") return "🎤 Voice message";
   if (kind === "file") return "📎 File";
   if (kind === "game") return "🎮 Game";
-  if (kind === "system") return text || "System message";
-  return text || "New message";
+  return sanitizedText || "New message";
 }
 
 /**

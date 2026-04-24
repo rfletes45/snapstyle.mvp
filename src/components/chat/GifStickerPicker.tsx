@@ -34,6 +34,7 @@ import { useAppTheme } from "@/store/ThemeContext";
 import { chatPerf } from "@/utils/chatPerf";
 import { createLogger } from "@/utils/log";
 import { buildRemoteImageSource } from "@/utils/remoteImageSource";
+import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import React, {
   forwardRef,
@@ -1012,15 +1013,12 @@ export const GifStickerPicker = forwardRef<
               { backgroundColor: surfaceVariantColor },
             ]}
           >
-            <Text
-              style={{
-                color: onSurfaceVariantColor,
-                fontSize: 16,
-                marginRight: 8,
-              }}
-            >
-              🔍
-            </Text>
+            <Ionicons
+              name="search"
+              size={16}
+              color={onSurfaceVariantColor}
+              style={{ marginRight: 8 }}
+            />
             <TextInput
               style={[styles.searchInput, { color: onSurfaceColor }]}
               placeholder="Search KLIPY"
@@ -1188,15 +1186,12 @@ export const GifStickerPicker = forwardRef<
               { backgroundColor: surfaceVariantColor },
             ]}
           >
-            <Text
-              style={{
-                color: onSurfaceVariantColor,
-                fontSize: 16,
-                marginRight: 8,
-              }}
-            >
-              🔍
-            </Text>
+            <Ionicons
+              name="search"
+              size={16}
+              color={onSurfaceVariantColor}
+              style={{ marginRight: 8 }}
+            />
             <TextInput
               style={[styles.searchInput, { color: onSurfaceColor }]}
               placeholder="Search Stickers"

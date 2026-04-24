@@ -105,7 +105,9 @@ export const GamePickerModal = forwardRef<
   const initialSnapIndex = keyboardHeight ? 0 : 1;
 
   const sections = useMemo(() => {
-    const all = Object.values(GAME_METADATA);
+    const all = Object.values(GAME_METADATA).filter((g) =>
+      IMPLEMENTED_GAME_IDS.has(g.gameId),
+    );
     const filtered = multiplayerOnly
       ? all.filter((g) => g.maxPlayers > 1)
       : all;

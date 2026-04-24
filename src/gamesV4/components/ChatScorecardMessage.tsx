@@ -33,10 +33,15 @@ import {
 } from "react-native";
 import { useTheme } from "react-native-paper";
 
+import { FEED_LAYOUT } from "@/chat/displayMode";
 import { ReplyBubble, SwipeableMessage } from "@/components/chat";
 import { MessageHighlightOverlay } from "@/components/chat/MessageHighlightOverlay";
 import { ReactionPills } from "@/components/chat/ReactionBar";
 import { ThreadIndicator } from "@/components/chat/ThreadIndicator";
+import {
+  DM_STACKED_CARD_PADDING_H,
+  GROUP_STACKED_CARD_PADDING_H,
+} from "@/components/chat/groupedCardMetrics";
 import { ProfilePictureWithDecoration } from "@/components/profile/ProfilePicture";
 import GameScorecard from "@/gamesV4/components/GameScorecard";
 import type { GameScorecardPayload } from "@/gamesV4/types";
@@ -80,8 +85,9 @@ export interface ChatScorecardMessageProps {
   isGroupedWithNext?: boolean;
 }
 
+const F = FEED_LAYOUT;
 const AVATAR_SIZE = 36;
-const STACKED_AVATAR_SIZE = 36;
+const STACKED_AVATAR_SIZE = F.avatarSize;
 
 export const ChatScorecardMessage: React.FC<ChatScorecardMessageProps> =
   React.memo(
@@ -194,6 +200,15 @@ export const ChatScorecardMessage: React.FC<ChatScorecardMessageProps> =
         const authorColor = isOwn
           ? theme.colors.primary
           : theme.colors.secondary;
+        const cardPaddingTop = isGroupedWithPrevious ? 2 : F.rowPaddingV + 4;
+        const cardPaddingBottom = isGroupedWithNext
+          ? hasReactions
+            ? 4
+            : 2
+          : F.rowPaddingV + 4;
+        const stackedCardPaddingH = isGroupChat
+          ? GROUP_STACKED_CARD_PADDING_H
+          : DM_STACKED_CARD_PADDING_H;
 
         // Grouped-card shell — scorecards in group chats must remain
         // readable over whatever wallpaper/background a group has set,
@@ -204,25 +219,21 @@ export const ChatScorecardMessage: React.FC<ChatScorecardMessageProps> =
         const cardSurfaceBg = theme.colors.background;
         const topRadius = isGroupedWithPrevious ? 6 : 18;
         const bottomRadius = isGroupedWithNext ? 6 : 18;
-        const groupedCardStyle = isGroupChat
-          ? {
-              backgroundColor: cardSurfaceBg,
-              borderTopLeftRadius: topRadius,
-              borderTopRightRadius: topRadius,
-              borderBottomLeftRadius: bottomRadius,
-              borderBottomRightRadius: bottomRadius,
-              paddingHorizontal: 10,
-              paddingTop: isGroupedWithPrevious ? 2 : 8,
-              paddingBottom: isGroupedWithNext ? 2 : 8,
-              marginTop: isGroupedWithPrevious ? 1 : 2,
-              marginBottom: isGroupedWithNext ? 1 : 2,
-              // Stacked mode always left-aligns content against the
-              // avatar gutter (Discord-style), regardless of sender.
-              // `alignSelf: flex-start` shrinks the shell to hug the
-              // 280px card instead of stretching to the full row width.
-              alignSelf: "flex-start" as const,
-            }
-          : null;
+        const groupedCardStyle = {
+          backgroundColor: cardSurfaceBg,
+          borderTopLeftRadius: topRadius,
+          borderTopRightRadius: topRadius,
+          borderBottomLeftRadius: bottomRadius,
+          borderBottomRightRadius: bottomRadius,
+          paddingHorizontal: stackedCardPaddingH,
+          paddingTop: cardPaddingTop,
+          paddingBottom: cardPaddingBottom,
+          // Stacked mode always left-aligns content against the
+          // avatar gutter (Discord-style), regardless of sender.
+          // `alignSelf: flex-start` shrinks the shell to hug the
+          // 280px card instead of stretching to the full row width.
+          alignSelf: "flex-start" as const,
+        };
 
         return (
           <SwipeableMessage
@@ -234,8 +245,11 @@ export const ChatScorecardMessage: React.FC<ChatScorecardMessageProps> =
             <View
               style={[
                 s.stackedRow,
-                isGroupedWithPrevious && s.stackedRowGrouped,
-                isGroupedWithNext && s.stackedRowGroupedTight,
+                {
+                  marginTop: isGroupedWithPrevious
+                    ? F.withinGroupGap
+                    : F.groupGap,
+                },
               ]}
             >
               <MessageHighlightOverlay isHighlighted={isHighlighted} />
@@ -261,7 +275,7 @@ export const ChatScorecardMessage: React.FC<ChatScorecardMessageProps> =
                       </Text>
                       <Text
                         style={[
-                          s.timestampText,
+                          s.headerTimestamp,
                           { color: theme.colors.onSurface + "99" },
                         ]}
                       >
@@ -404,20 +418,15 @@ const s = StyleSheet.create({
   stackedRow: {
     flexDirection: "row",
     alignItems: "flex-start",
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    marginTop: 6,
-  },
-  stackedRowGrouped: {
-    marginTop: 0,
-    paddingTop: 2,
-  },
-  stackedRowGroupedTight: {
-    paddingBottom: 2,
+    paddingLeft: F.rowPaddingH - 6,
+    paddingRight: F.rowPaddingH + 6,
   },
   stackedGutter: {
-    width: STACKED_AVATAR_SIZE + 8,
+    width: F.gutterWidth,
+    marginRight: F.gutterGap,
+    alignItems: "center",
     paddingTop: 2,
+    transform: [{ translateX: 4 }],
   },
   stackedContent: {
     flex: 1,
@@ -425,14 +434,19 @@ const s = StyleSheet.create({
   stackedNameRow: {
     flexDirection: "row",
     alignItems: "baseline",
-    marginBottom: 4,
+    marginBottom: 1,
   },
   authorName: {
-    fontSize: 13,
-    fontWeight: "700",
-    marginRight: 8,
+    fontSize: F.authorNameFontSize,
+    fontWeight: "600",
+    flexShrink: 1,
   },
   scorecardWrap: {
     alignItems: "flex-start",
+  },
+  headerTimestamp: {
+    fontSize: F.timestampFontSize,
+    marginLeft: 8,
+    opacity: 0.6,
   },
 });

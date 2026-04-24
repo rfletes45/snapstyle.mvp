@@ -1,6 +1,6 @@
 # Games V4 System - Architecture, Lifecycle, and Operations Reference
 
-> Source of truth: the checked-out workspace on 2026-03-18.
+> Source of truth: the checked-out workspace on 2026-04-23.
 > This document describes the system that is implemented today, including active exceptions, duplicated metadata, dormant infrastructure, and realtime special cases.
 > Companion: [GAME_INTEGRATION_GUIDE_V4.md](GAME_INTEGRATION_GUIDE_V4.md).
 
@@ -37,6 +37,7 @@ The current V4 game system is not one uniform framework. It is three related run
 Current snapshot in this workspace:
 
 - 26 canonical `GameId` values exist in `src/gamesV4/types/common.ts`.
+- 26 catalog entries exist in `GAME_METADATA` in `src/gamesV4/constants.ts`.
 - 17 games are enabled in `IMPLEMENTED_GAME_IDS` in `src/gamesV4/constants.ts`.
 - 18 client adapters are registered in `src/gamesV4/adapters/index.ts` (17 enabled + 1 disabled `minigolf_duels`).
 - 18 backend adapters are registered in `firebase-backend/functions/src/gamesV4/adapters.ts` (same 18).
@@ -44,6 +45,8 @@ Current snapshot in this workspace:
 - 16 user callables, 2 admin callables, 3 Firestore triggers, and 1 scheduled watchdog job are exported from `firebase-backend/functions/src/gamesV4/index.ts`.
 - 1 standalone realtime server package exists at `colyseus-server/`, and it currently hosts 3 rooms: `sketch_party`, `pong_game`, and `knockout_game`.
 - 19 achievement sections exist in the client mirror: 18 game sections plus the shared `milestones` section.
+- Chat-hosted multiplayer sessions now auto-post a trusted inline scorecard message into the hosting DM or group after successful resolution unless the host disabled `autoSendScorecards` for that conversation.
+- `GameOverScreenV4` also exposes an in-app scorecard share sheet for manual shares into any DM or group. This is not an OS share-sheet or image-capture flow.
 
 What this document is for:
 
@@ -107,6 +110,7 @@ Catalog / Hub / Chat entry points
   -> active session state
   -> terminal resolution
   -> result / PB / XP / achievements / leaderboards / wallet claims
+  -> optional hosted-chat scorecard auto-post or manual scorecard share
 
 Firebase-backed games:
   Firestore session docs are live authority during play.
@@ -133,6 +137,7 @@ Sketch Party:
 | Private state | Per-player hidden state                                             | `GameSessionsV4/{sessionId}/PrivateState/{uid}`           |
 | Move doc      | Append-only move ledger entry                                       | `GameSessionsV4/{sessionId}/Moves/{moveId}`               |
 | Result        | Terminal result payload                                             | `GameResultsV4/{sessionId}`                               |
+| Scorecard     | Trusted chat message envelope carrying a structured game result card | `src/gamesV4/types/scorecard.ts`, chat message docs       |
 | PB            | Personal best plus play and win counters                            | `Users/{uid}/GamePB/{gameId}`                             |
 | Achievement   | Earned or claimed achievement doc                                   | `Users/{uid}/Achievements/{type}`                         |
 | Section badge | Claimed completion badge for a section                              | `Users/{uid}/AchievementSections/{sectionId}`             |
@@ -150,6 +155,7 @@ These are the assumptions the current code depends on.
 6. `GAME_METADATA`, `IMPLEMENTED_GAME_IDS`, adapter metadata, dispatcher mappings, backend invite metadata, leaderboard descriptors, and achievement sections must stay aligned.
 7. Turn notifications apply only to turn-based games.
 8. Solo exit means suspend, not resolve, unless the user explicitly resigns, archives, or restarts.
+9. Rich scorecards must come from trusted structured payloads, not raw chat text. Auto-posts use `clientId: "server"` and manual shares re-enter chat through validated `server-share:*` messages.
 
 ### 2.3 What is standardized versus game-specific
 
@@ -176,7 +182,7 @@ Game-specific or partially standardized:
 
 ## 3. Game Inventory and Classification
 
-`GAME_METADATA` contains all 25 catalog entries. That does not mean all 25 are playable.
+`GAME_METADATA` contains all 26 catalog entries. That does not mean all 26 are playable.
 
 ### 3.1 Enabled and wired in the current workspace
 
@@ -196,9 +202,9 @@ Game-specific or partially standardized:
 | `hex`                | `turnBased`         | Firebase turn-based                 | Enabled, complete             | Standard deterministic board-game pattern.                                                                                                                                                                                                                                                                                |
 | `sketch_party_game`  | `realtime`          | Hybrid Firebase + Colyseus          | Enabled, custom realtime path | Live gameplay authority sits in Colyseus, not Firestore.                                                                                                                                                                                                                                                                  |
 | `pong_game`          | `realtime`          | Hybrid Firebase + Colyseus          | Enabled, complete             | 1v1 paddle game. Colyseus room with server-authoritative physics and client-side extrapolation.                                                                                                                                                                                                                           |
-| `knockout_game`      | `realtime`          | Hybrid Firebase + Colyseus          | Enabled, complete             | Physics-based multiplayer combat, 2–8 players with spectate support.                                                                                                                                                                                                                                                      |
+| `knockout_game`      | `realtime`          | Hybrid Firebase + Colyseus          | Enabled, complete             | Physics-based multiplayer combat, 2â€“8 players with spectate support.                                                                                                                                                                                                                                                      |
 | `dead_drop`          | `turnBased`         | Firebase turn-based + private state | Enabled, complete             | Deduction game, 4-player only with hidden team assignments and spymaster key map.                                                                                                                                                                                                                                         |
-| `metro_magnate`      | `turnBased`         | Firebase turn-based                 | Enabled, core-complete        | Property empire board game, 2–6 players. 36-space loop board with 6 sectors, auctions, improvements, and bankruptcy. 18 achievements. Take 6 hardened: 140 tests, 0 TS errors. **Known deferred**: multi-creditor debt (`pay_each`/`collect_from_each`), bank-bankruptcy auctions. These are scope limitations, not bugs. |
+| `metro_magnate`      | `turnBased`         | Firebase turn-based                 | Enabled, core-complete        | Property empire board game, 2â€“6 players. 36-space loop board with 6 sectors, auctions, improvements, and bankruptcy. 18 achievements. Take 6 hardened: 140 tests, 0 TS errors. **Known deferred**: multi-creditor debt (`pay_each`/`collect_from_each`), bank-bankruptcy auctions. These are scope limitations, not bugs. |
 
 ### 3.2 Implemented but intentionally disabled
 
@@ -349,6 +355,7 @@ Primary files:
 - `src/gamesV4/types/session.ts`
 - `src/gamesV4/types/result.ts`
 - `src/gamesV4/types/invite.ts`
+- `src/gamesV4/types/scorecard.ts`
 - `src/services/userNotifications.ts`
 
 Important client contracts:
@@ -356,6 +363,7 @@ Important client contracts:
 - `GameAdapterV4`
 - `GameSessionV4`
 - `GameResultV4`
+- `GameScorecardPayload`
 - `MoveValidationResult`
 - `SettingsFieldDef`
 
@@ -462,6 +470,30 @@ Important entry components outside `src/gamesV4/screens/`:
 - `src/screens/groups/GroupChatScreen.tsx`
 - `src/navigation/RootNavigator.tsx`
 
+### 5.8 Scorecard surfaces and chat bridge
+
+Primary files:
+
+- `src/gamesV4/components/GameScorecard.tsx`
+- `src/gamesV4/components/ScorecardShareSheetModal.tsx`
+- `src/gamesV4/components/ChatScorecardMessage.tsx`
+- `src/gamesV4/services/scorecardWire.ts`
+- `src/gamesV4/screens/GameOverScreenV4.tsx`
+
+Responsibilities:
+
+- define the structured scorecard payload contract
+- render the reusable scorecard card itself
+- wrap the card as a first-class chat message when it appears in DMs or groups
+- open the in-app multi-conversation share sheet from `GameOverScreenV4`
+- provide the trusted sentinel wire-format decoder and sanitizers used by chat surfaces
+
+Important nuance:
+
+- `GameScorecard.tsx` is presentational only; it does not decide whether a scorecard is trusted
+- `ChatScorecardMessage.tsx` gives scorecards normal chat-message affordances such as reactions, long-press, thread indicators, swipe-to-reply, and grouped-card behavior
+- `GameOverScreenV4` builds manual-share payloads from the resolved result plus session/profile snapshots; the backend resolve pipeline separately builds auto-post payloads for hosted multiplayer chats
+
 ---
 
 ## 6. Backend Layer Map
@@ -521,6 +553,8 @@ Key behavior worth documenting:
 
 - join verifies conversation membership before the transaction
 - host-only start creates the session and initial state atomically
+- host-only start persists hosted-chat linkage into the session via `conversationId`, `conversationScope`, and `hostId`
+- player slots also snapshot display data used later by scorecards and result surfaces, including `displayName`, `profilePictureUrl`, and `decorationId`
 - lobby settings are adapter-validated when `validateSettings()` exists
 - host cannot leave the lobby; host must cancel
 - spectators are generic at the lobby level, but actual gameplay support still depends on game metadata and adapter design
@@ -584,12 +618,42 @@ This file is the core of the ecosystem.
 7. PB updates
 8. invite unpin
 9. `rewardsProcessed` finalization
-10. achievement and resolved notifications
+10. achievement notifications
+11. resolved notifications
+12. hosted-chat scorecard auto-post when the session is multiplayer, chat-linked, and the host preference allows it
 
 Important design implications:
 
 - if a game ends and does not arrive here, PBs, leaderboards, XP, achievements, and wallet-claim surfaces will diverge
 - even realtime games must re-enter here through `resolveRealtimeSessionV4()`
+
+### 6.6.1 Automatic scorecard posting
+
+Primary file:
+
+- `firebase-backend/functions/src/gamesV4/resolve.ts`
+
+Current behavior:
+
+- auto-post runs after result persistence and reward processing, not before
+- only hosted multiplayer sessions are eligible: `runtimeType !== "solo"` plus a real `conversationId` and `conversationScope`
+- both DMs and groups are supported
+- the host's per-conversation `MembersPrivate/{hostId}.autoSendScorecards` flag gates the post; missing means enabled
+- the write is idempotent through deterministic message ID `scorecard_{sessionId}` plus `.create()` semantics
+- the message is authored as the host, not as `system`, even when the host lost the game
+- the chat message uses `kind: "text"`, `clientId: "server"`, and generic fallback text `Game Scorecard`
+
+Payload sourcing in the auto-post path:
+
+- authoritative result data comes from `GameResultsV4/{sessionId}`
+- `decorationId` is patched in from `session.players[]`
+- `winnerEquippedBackgroundId` is fetched best-effort when there is exactly one winner
+- `senderEquippedBackgroundId` is not included in the auto-post payload
+
+Operational implication:
+
+- scorecards are downstream of result finalization, not parallel to it
+- a broken resolve path means no auto-post, because the scorecard post is intentionally coupled to the same shared terminal pipeline that owns PBs, XP, achievements, and leaderboards
 
 ### 6.7 Notifications
 
@@ -652,6 +716,8 @@ Important caveat:
 | `GameSessionsV4/{sessionId}/PrivateState/{uid}`         | Cloud Functions                           | hidden state for Battleship, Crazy Eights, and Dead Drop               |
 | `GameSessionsV4/{sessionId}/Moves/{moveId}`             | client create + Cloud Functions update    | move ledger                                                            |
 | `GameResultsV4/{sessionId}`                             | resolution pipeline                       | terminal payload used by game-over, history, PB, and reward surfaces   |
+| `Chats/{chatId}/Messages/scorecard_{sessionId}`         | resolution pipeline                       | hosted-DM multiplayer auto-posted scorecard                            |
+| `Groups/{groupId}/Messages/scorecard_{sessionId}`       | resolution pipeline                       | hosted-group multiplayer auto-posted scorecard                         |
 | `LeaderboardsV4/{gameId}/Weeks/{weekKey}/Entries/{uid}` | resolution pipeline                       | weekly leaderboard entry                                               |
 | `Users/{uid}/GamePB/{gameId}`                           | resolution pipeline                       | PB plus `totalPlays` and `totalWins`                                   |
 | `Users/{uid}/Achievements/{type}`                       | resolution pipeline + claim callable      | achievement earn and claim state                                       |
@@ -668,6 +734,9 @@ Fields that matter most in `GameSessionV4`:
 
 - `runtimeType`
 - `status`
+- `conversationId`
+- `conversationScope`
+- `hostId`
 - `players`
 - `participantUids`
 - `spectatorUids`
@@ -685,6 +754,7 @@ Two common mistakes:
 
 - assuming `players` alone is enough for queries or rules; the backend also maintains `participantUids`
 - assuming `currentTurnPlayerId` is meaningful for realtime games; for realtime it is usually `null`
+- assuming `conversationScope: "dm"` means a real DM for solo sessions; solo callables populate type-required chat fields, but solo sessions are not actually chat-hosted
 
 ### 7.3 Public versus private state
 
@@ -735,8 +805,76 @@ Why it exists:
 - Firestore rules cannot iterate lists of maps well
 - UI surfaces need stable snapshots even if a profile changes later
 - invite bars and lobbies need names without N extra profile reads
+- scorecards and result screens need stable avatar, name, and decoration snapshots after the match ends
 
-### 7.6 Firestore state in realtime games
+### 7.6 Scorecard payload contract and sourcing
+
+Primary type:
+
+- `src/gamesV4/types/scorecard.ts`
+
+Current payload fields:
+
+- `v`
+- `sessionId`
+- `gameId`
+- `gameTitle`
+- `runtimeType`
+- `resolutionType`
+- `winnerIds`
+- `scoreboard[]`
+- `durationMs`
+- `createdAt`
+- optional `winnerEquippedBackgroundId`
+- optional `senderEquippedBackgroundId`
+
+Scoreboard entry fields:
+
+- `uid`
+- `displayName`
+- optional `profilePictureUrl`
+- optional `decorationId`
+- `score`
+- `placement`
+
+Current sourcing rules:
+
+- `winnerIds`, `resolutionType`, `durationMs`, and the base scoreboard come from `GameResultsV4/{sessionId}`
+- `gameTitle` resolves from `GAME_METADATA`
+- `decorationId` is threaded from `session.players[]`
+- `winnerEquippedBackgroundId` is fetched best-effort for a sole winner
+- `senderEquippedBackgroundId` is supplied only by the manual share path from `GameOverScreenV4`
+
+### 7.7 Authoritative versus presentational scorecard fields
+
+Authoritative scorecard fields:
+
+- `sessionId`
+- `gameId`
+- `gameTitle`
+- `runtimeType`
+- `resolutionType`
+- `winnerIds`
+- `scoreboard[].uid`
+- `scoreboard[].displayName`
+- `scoreboard[].score`
+- `scoreboard[].placement`
+- `durationMs`
+
+Presentational or best-effort fields:
+
+- `scoreboard[].profilePictureUrl`
+- `scoreboard[].decorationId`
+- `winnerEquippedBackgroundId`
+- `senderEquippedBackgroundId`
+- client-side winner crown overlay in `GameScorecard.tsx`
+
+Design implication:
+
+- the scorecard can personalize avatars, decorations, and backgrounds without changing who actually won
+- raw chat text is not authoritative for scorecards; the trusted structured payload is
+
+### 7.8 Firestore state in realtime games
 
 This is one of the easiest places to make a wrong assumption.
 
@@ -768,6 +906,8 @@ ChatScreen or GroupChatScreen
   -> submitTurnMoveV4 / resignSessionV4
   -> resolveSessionV4Internal
   -> GameResultsV4/{sessionId}
+  -> optional Chats/{chatId}/Messages/scorecard_{sessionId}
+     or Groups/{groupId}/Messages/scorecard_{sessionId}
   -> GameOverV4
 ```
 
@@ -831,6 +971,7 @@ Important lobby details:
 - host cancel and admin clear are available from the overflow menu
 - cancelled or hard-deleted invites force the lobby to navigate back
 - read-only settings still render for non-host players and spectators when supported by the panel
+- session creation preserves hosted-chat context so post-game flows can route back to the originating DM or group and auto-post scorecards there later
 
 ### 8.5 Result and reward write flow
 
@@ -849,9 +990,46 @@ Terminal condition detected
      -> mark rewardsProcessed
      -> write achievement in-app notifications
      -> send resolved notifications
+     -> optionally post trusted scorecard message into hosting DM/group
 ```
 
 This shared flow is why a broken resolve path affects almost every downstream system at once.
+
+### 8.5.1 Hosted-chat scorecard auto-post flow
+
+```text
+resolveSessionV4Internal
+  -> postGameScorecardToChat()
+  -> read host MembersPrivate/{hostId}.autoSendScorecards
+  -> skip if disabled
+  -> build payload from result + session snapshots
+  -> write deterministic message id scorecard_{sessionId}
+  -> bump conversation lastMessage* summary fields
+```
+
+Important behavior:
+
+- only multiplayer sessions auto-post
+- both DMs and groups are eligible
+- host identity is the authored sender identity for the auto-posted message
+- duplicate resolve or retry paths do not intentionally create duplicate scorecards because the message ID is deterministic
+
+### 8.5.2 Manual Game Over share flow
+
+```text
+GameOverScreenV4
+  -> subscribe to result + session
+  -> build GameScorecardPayload from result + session + local profile context
+  -> open ScorecardShareSheetModal
+  -> sendMessage(kind: "text", scorecardPayload)
+  -> sendMessageV2 validates payload and stamps trusted server-share clientId
+```
+
+Important behavior:
+
+- manual share is available even when auto-post is not
+- solo games use this path for scorecards because they have no hosting chat to auto-post into
+- manual shares are authored by the sharing user, not by the original host unless the host is the one sharing
 
 ### 8.6 Realtime Sketch Party flow
 
@@ -958,6 +1136,23 @@ This is intentional. It is not a bug in the shell.
 - spectators can watch only when the invite and adapter allow it
 - lobby membership comes from invite docs; active gameplay membership comes from session docs
 - in Sketch Party, room membership is additionally checked against Firebase `participantUids`
+
+### 9.5 Scorecard ownership and trust rules
+
+Games own scorecard generation and timing; chat owns scorecard rendering once a trusted message exists.
+
+Current ownership rules:
+
+- auto-posted multiplayer scorecards are authored as the session host
+- the auto-post sender can therefore be the loser; authored sender identity and winner identity are separate concepts
+- manual shares are authored by the user who tapped Share on `GameOverScreenV4`
+- solo scorecards have no auto-post path because solo sessions are not truly chat-hosted
+
+Current trust rules:
+
+- raw text is never enough to trigger rich scorecard rendering
+- the trusted render path requires `clientId: "server"` or validated `server-share:*`
+- games should treat `GameResultsV4/{sessionId}` as the authoritative source and chat scorecards as a downstream projection of that result
 
 ---
 
@@ -1177,10 +1372,10 @@ thumbnail-backed cards instead of the default icon-based card style.
 
 Current games with thumbnails (as of 2026-04-15):
 
-- `play_2048` — `assets/images/games/2048_Thumbnail.png`
-- `brick_breaker` — `assets/images/games/Brick_Breaker_Thumbnail.png`
-- `minesweeper` — `assets/images/games/Minesweeper_Thumbnail.png`
-- `solitaire_klondike` — `assets/images/games/Solitaire_Thumbnail.png`
+- `play_2048` â€” `assets/images/games/2048_Thumbnail.png`
+- `brick_breaker` â€” `assets/images/games/Brick_Breaker_Thumbnail.png`
+- `minesweeper` â€” `assets/images/games/Minesweeper_Thumbnail.png`
+- `solitaire_klondike` â€” `assets/images/games/Solitaire_Thumbnail.png`
 
 Thumbnail card design:
 
@@ -1189,12 +1384,12 @@ Thumbnail card design:
 - The old icon box (`catalogIcon`) and separate `catalogName`/`playNowBadge` text
   are removed; replaced by a bottom overlay banner
 - Bottom banner: white at 25% opacity (`rgba(255,255,255,0.25)`), centered text
-  with game title (bold) and CTA ("Play Now" / "Resume" / "Starting…")
+  with game title (bold) and CTA ("Play Now" / "Resume" / "Startingâ€¦")
 - Text uses white color with subtle text shadow for readability over artwork
 
 Adding a new thumbnail:
 
-1. Place a 1200×1200 px PNG in `assets/images/games/<Game>_Thumbnail.png`
+1. Place a 1200Ã—1200 px PNG in `assets/images/games/<Game>_Thumbnail.png`
 2. Add `thumbnail: require("../../assets/images/games/<Game>_Thumbnail.png")`
    to the game's `GAME_METADATA` entry in `src/gamesV4/constants.ts`
 3. The hub will automatically render the thumbnail card style
@@ -1235,6 +1430,16 @@ It currently:
 - lists newly unlocked achievements and routes to claim surfaces
 - returns to chat or hub depending on conversation context
 - creates rematches differently for solo versus chat-linked games
+- builds a `GameScorecardPayload` for manual sharing
+- resolves best-effort winner background personalization and current-user sender background personalization
+- threads `decorationId` from session player snapshots into the scorecard scoreboard
+- opens `ScorecardShareSheetModal` for in-app DM/group sharing
+
+Important current reality:
+
+- there is no OS share sheet in the active flow
+- there is no image capture / `ViewShot` share path in the active flow
+- manual share uses the same trusted structured chat-message contract that inline scorecards use in chat
 
 Rematch behavior matrix:
 
@@ -1243,6 +1448,14 @@ Rematch behavior matrix:
 | solo                        | create a fresh solo session                                         |
 | chat-linked multiplayer     | create a new invite in the same conversation and route back to chat |
 | persistent solo future case | button label changes to `Start New Run`                             |
+
+### 11.5.1 Scorecard share behavior matrix
+
+| Context | Auto-post into hosting chat | Manual share from Game Over | Personalization source |
+| ------- | --------------------------- | --------------------------- | ---------------------- |
+| solo | No | Yes | sender background |
+| hosted multiplayer DM | Yes, if host left `autoSendScorecards` enabled | Yes | auto-post uses winner background; manual share also carries sender background |
+| hosted multiplayer group | Yes, if host left `autoSendScorecards` enabled | Yes | auto-post uses winner background; manual share also carries sender background |
 
 ---
 
@@ -1519,9 +1732,9 @@ Impact:
 
 Files involved:
 
-- `firebase-backend/functions/src/gamesV4/helpers.ts` — `currentWeekKey()`
-- `src/types/models.ts` — `getCurrentWeekKey()` (canonical client implementation)
-- `src/gamesV4/hooks/useLeaderboardV4.ts` — imports from `models.ts`
+- `firebase-backend/functions/src/gamesV4/helpers.ts` â€” `currentWeekKey()`
+- `src/types/models.ts` â€” `getCurrentWeekKey()` (canonical client implementation)
+- `src/gamesV4/hooks/useLeaderboardV4.ts` â€” imports from `models.ts`
 
 The client previously had a **divergent** algorithm in `models.ts` that incorrectly added `oneJan.getDay()` to the day count. This was fixed and deduplicated: `useLeaderboardV4` now imports from `models.ts` instead of defining its own copy.
 
@@ -1558,8 +1771,8 @@ Impact:
 
 - A timer starts when the room enters `waiting_for_players`.
 - If the timer expires before the full roster connects:
-  - If fewer than `minPlayers` have connected → the room is cancelled (`"cancelled"` reason).
-  - If `minPlayers` or more have connected → the match starts with the available players.
+  - If fewer than `minPlayers` have connected â†’ the room is cancelled (`"cancelled"` reason).
+  - If `minPlayers` or more have connected â†’ the match starts with the available players.
 - The timer is cleared if the match starts normally.
 
 Current values:
@@ -1595,6 +1808,34 @@ Reality today:
 
 Future docs should not claim a universal prohibition unless the code is changed to enforce one.
 
+### 13.8 Scorecard notification preview sanitization is still incomplete
+
+Cross-system reality today:
+
+- scorecards intentionally use generic visible text `Game Scorecard` for inbox rows, reply snippets, and copy surfaces
+- auto-posted scorecards also write generic `lastMessageText` into the hosting chat or group
+- but `firebase-backend/functions/src/notifications.ts` still builds DM/group message previews from raw `message.text`
+
+Impact:
+
+- push previews can still leak the sentinel-encoded scorecard wire payload
+- this is a chat+games integration gap, not an intended scorecard behavior
+
+### 13.9 Some source comments still describe the older scorecard architecture
+
+Files involved:
+
+- `src/gamesV4/services/scorecardWire.ts`
+- `src/gamesV4/components/GameScorecard.tsx`
+
+Reality:
+
+- current implementation uses `kind: "text"` scorecard messages, not `kind: "system"`
+- current implementation supports hosted DMs as well as groups
+- current implementation uses an in-app share sheet from `GameOverScreenV4`, not an OS share sheet / `ViewShot` pipeline
+
+The code paths are correct; the stale comments are the drift.
+
 ---
 
 ## 14. Testing and Operations Surface
@@ -1626,6 +1867,7 @@ Resolution and backend logic:
 Most important current test gap:
 
 - there is no socket-level Colyseus integration test suite for Sketch Party room behavior
+- there is no dedicated automated suite covering scorecard auto-post idempotency, host preference gating, or scorecard preview sanitization parity across chat surfaces
 
 That means realtime confidence still depends on:
 
@@ -1646,6 +1888,8 @@ When something looks wrong in production, the first checks are usually:
 - invite status and pin state
 - session status and `rewardsProcessed`
 - result existence
+- presence or absence of `Chats/{chatId}/Messages/scorecard_{sessionId}` or `Groups/{groupId}/Messages/scorecard_{sessionId}`
+- host `MembersPrivate/{hostId}.autoSendScorecards` in the hosting conversation
 - PB and leaderboard writes
 - fresh `GamePresence` docs suppressing a turn notification
 - realtime-resolution bridge doc for Sketch Party
@@ -1677,3 +1921,4 @@ npm run build
 7. If you touch week keys, change both the backend helper and the client hook together or extract them to one shared implementation.
 8. If you change result score semantics for a game, also re-check its scoreboard descriptor, leaderboard descriptor, PB interpretation, and achievement evaluators.
 9. If you make docs cleaner than the code, call out the inconsistency explicitly instead of papering over it.
+10. If you change scorecards, update both `docs/CHAT_SYSTEM.md` and this document, preserve the trusted structured-payload model, and keep hosted-chat auto-posting idempotent and host-gated.

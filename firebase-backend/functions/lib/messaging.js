@@ -45,9 +45,12 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.toggleReactionV2Function = exports.sendMessageV2Function = exports.editMessageV2Function = exports.deleteMessageForAllV2Function = exports.toggleReactionV2 = exports.deleteMessageForAllV2 = exports.editMessageV2 = exports.sendMessageV2 = void 0;
+exports.normalizeSenderStyleSnapshot = normalizeSenderStyleSnapshot;
+exports.buildSenderStyleFromChatAppearance = buildSenderStyleFromChatAppearance;
 const admin = __importStar(require("firebase-admin"));
 const functions = __importStar(require("firebase-functions"));
 const chatMedia_1 = require("./chatMedia");
+const messagePreview_1 = require("./messagePreview");
 const messageRequests_1 = require("./messageRequests");
 const rateLimiter_1 = require("./rateLimiter");
 // Lazy initialization to avoid "app not initialized" error
@@ -65,6 +68,35 @@ const ENABLE_GLOBAL_RATE_LIMIT = false;
 /** Enable group settings enforcement — slow mode, announcement-only,
  *  media permissions, @mention all (Segment 9). */
 const ENABLE_GROUP_SETTINGS_ENFORCEMENT = false;
+function normalizeSenderStyleSnapshot(senderStyle) {
+    if (!senderStyle || typeof senderStyle !== "object" || senderStyle.v !== 1) {
+        return null;
+    }
+    return {
+        bubbleColorId: senderStyle.bubbleColorId ?? null,
+        bubbleColorHex: senderStyle.bubbleColorHex ?? null,
+        fontId: senderStyle.fontId ?? null,
+        fontKey: senderStyle.fontKey ?? null,
+        fontColorId: senderStyle.fontColorId ?? null,
+        fontColorHex: senderStyle.fontColorHex ?? null,
+        animalThemeId: senderStyle.animalThemeId ?? null,
+        v: 1,
+    };
+}
+function buildSenderStyleFromChatAppearance(chatAppearance) {
+    if (!chatAppearance)
+        return null;
+    return {
+        bubbleColorId: chatAppearance.bubbleColorId ?? null,
+        bubbleColorHex: null,
+        fontId: chatAppearance.fontId ?? null,
+        fontKey: null,
+        fontColorId: chatAppearance.fontColorId ?? null,
+        fontColorHex: null,
+        animalThemeId: chatAppearance.animalThemeId ?? null,
+        v: 1,
+    };
+}
 const OWNER_PERMISSIONS_SERVER = {
     SEND_MESSAGES: true,
     DELETE_OWN_MESSAGES: true,
@@ -803,15 +835,9 @@ exports.sendMessageV2 = functions.https.onCall(async (data, context) => {
         messageData.attachments = attachments;
     }
     // Stamp sender's chat style if provided by client
-    if (senderStyle && typeof senderStyle === "object" && senderStyle.v === 1) {
-        messageData.senderStyle = {
-            bubbleColorId: senderStyle.bubbleColorId ?? null,
-            bubbleColorHex: senderStyle.bubbleColorHex ?? null,
-            fontId: senderStyle.fontId ?? null,
-            fontKey: senderStyle.fontKey ?? null,
-            animalThemeId: senderStyle.animalThemeId ?? null,
-            v: 1,
-        };
+    const normalizedSenderStyle = normalizeSenderStyleSnapshot(senderStyle);
+    if (normalizedSenderStyle) {
+        messageData.senderStyle = normalizedSenderStyle;
     }
     // Segment 3: Staged media pipeline — commit staged attachments to final
     // paths, strip download tokens, and store path-only references.
@@ -830,13 +856,10 @@ exports.sendMessageV2 = functions.https.onCall(async (data, context) => {
             // Server-side fallback: if client didn't send senderStyle, build it
             // from the sender's chatAppearance profile field.
             if (!messageData.senderStyle && senderProfile.chatAppearance) {
-                const ca = senderProfile.chatAppearance;
-                messageData.senderStyle = {
-                    bubbleColorId: ca.bubbleColorId ?? null,
-                    fontId: ca.fontId ?? null,
-                    animalThemeId: ca.animalThemeId ?? null,
-                    v: 1,
-                };
+                const fallbackSenderStyle = buildSenderStyleFromChatAppearance(senderProfile.chatAppearance);
+                if (fallbackSenderStyle) {
+                    messageData.senderStyle = fallbackSenderStyle;
+                }
             }
         }
     }
@@ -844,13 +867,10 @@ exports.sendMessageV2 = functions.https.onCall(async (data, context) => {
     if (scope === "dm" && !messageData.senderStyle) {
         const senderProfile = await getUserProfile(senderId);
         if (senderProfile?.chatAppearance) {
-            const ca = senderProfile.chatAppearance;
-            messageData.senderStyle = {
-                bubbleColorId: ca.bubbleColorId ?? null,
-                fontId: ca.fontId ?? null,
-                animalThemeId: ca.animalThemeId ?? null,
-                v: 1,
-            };
+            const fallbackSenderStyle = buildSenderStyleFromChatAppearance(senderProfile.chatAppearance);
+            if (fallbackSenderStyle) {
+                messageData.senderStyle = fallbackSenderStyle;
+            }
         }
     }
     // 9. Write message document
@@ -921,8 +941,14 @@ exports.sendMessageV2Function = exports.sendMessageV2;
  * Generate preview text for conversation list
  */
 function getPreviewText(kind, text, attachments) {
-    if (kind === "text" && text) {
-        return text.length > 50 ? text.substring(0, 50) + "..." : text;
+    const sanitizedText = (0, messagePreview_1.sanitizeMessagePreviewText)(text);
+    if (sanitizedText === messagePreview_1.SCORECARD_VISIBLE_TEXT) {
+        return messagePreview_1.SCORECARD_VISIBLE_TEXT;
+    }
+    if (kind === "text" && sanitizedText) {
+        return sanitizedText.length > 50
+            ? sanitizedText.substring(0, 50) + "..."
+            : sanitizedText;
     }
     if (kind === "media") {
         const count = attachments?.length || 1;
@@ -938,10 +964,10 @@ function getPreviewText(kind, text, attachments) {
     if (kind === "file")
         return "📎 File";
     if (kind === "system")
-        return text || "System message";
+        return sanitizedText || "System message";
     if (kind === "animal")
         return "🐾 Animal sticker";
-    return text || "";
+    return sanitizedText || "";
 }
 // =============================================================================
 // H7: Edit Message Cloud Function

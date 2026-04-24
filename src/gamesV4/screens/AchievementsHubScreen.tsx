@@ -541,11 +541,6 @@ export default function AchievementsHubScreen() {
                 onPress={() => setActiveFilter(chip.key)}
                 activeOpacity={0.7}
               >
-                <MaterialCommunityIcons
-                  name={chip.icon as any}
-                  size={14}
-                  color={isActive ? "#FFF" : colors.textSecondary}
-                />
                 <Text
                   style={[
                     styles.filterChipText,
@@ -599,13 +594,6 @@ export default function AchievementsHubScreen() {
                 ]}
               >
                 <View style={styles.heroTopRow}>
-                  <View style={styles.heroIconWrap}>
-                    <MaterialCommunityIcons
-                      name="trophy"
-                      size={32}
-                      color="#FFD700"
-                    />
-                  </View>
                   <View style={styles.heroInfo}>
                     <Text style={[styles.heroTitle, { color: colors.text }]}>
                       {earnedSet.size} of {totalAchievements}

@@ -33,7 +33,7 @@ function getStreamConfig(): { apiKey: string; apiSecret: string } {
 }
 
 let _streamClient: StreamClient | null = null;
-function getStreamClient(): StreamClient {
+export function getStreamClient(): StreamClient {
   if (!_streamClient) {
     const { apiKey, apiSecret } = getStreamConfig();
     _streamClient = new StreamClient(apiKey, apiSecret);

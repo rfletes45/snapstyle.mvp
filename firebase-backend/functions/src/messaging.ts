@@ -13,6 +13,10 @@
 import * as admin from "firebase-admin";
 import * as functions from "firebase-functions";
 import { commitStagedAttachments } from "./chatMedia";
+import {
+  SCORECARD_VISIBLE_TEXT,
+  sanitizeMessagePreviewText,
+} from "./messagePreview";
 import { checkDmAcceptance } from "./messageRequests";
 import { checkGlobalRateLimit } from "./rateLimiter";
 
@@ -34,6 +38,60 @@ const ENABLE_GLOBAL_RATE_LIMIT = false;
 /** Enable group settings enforcement — slow mode, announcement-only,
  *  media permissions, @mention all (Segment 9). */
 const ENABLE_GROUP_SETTINGS_ENFORCEMENT = false;
+
+interface SenderStyleV1 {
+  bubbleColorId?: string | null;
+  bubbleColorHex?: string | null;
+  fontId?: string | null;
+  fontKey?: string | null;
+  fontColorId?: string | null;
+  fontColorHex?: string | null;
+  animalThemeId?: string | null;
+  v: 1;
+}
+
+interface ChatAppearanceSnapshot {
+  bubbleColorId?: string | null;
+  fontId?: string | null;
+  fontColorId?: string | null;
+  animalThemeId?: string | null;
+}
+
+export function normalizeSenderStyleSnapshot(
+  senderStyle: SenderStyleV1 | null | undefined,
+): SenderStyleV1 | null {
+  if (!senderStyle || typeof senderStyle !== "object" || senderStyle.v !== 1) {
+    return null;
+  }
+
+  return {
+    bubbleColorId: senderStyle.bubbleColorId ?? null,
+    bubbleColorHex: senderStyle.bubbleColorHex ?? null,
+    fontId: senderStyle.fontId ?? null,
+    fontKey: senderStyle.fontKey ?? null,
+    fontColorId: senderStyle.fontColorId ?? null,
+    fontColorHex: senderStyle.fontColorHex ?? null,
+    animalThemeId: senderStyle.animalThemeId ?? null,
+    v: 1,
+  };
+}
+
+export function buildSenderStyleFromChatAppearance(
+  chatAppearance: ChatAppearanceSnapshot | null | undefined,
+): SenderStyleV1 | null {
+  if (!chatAppearance) return null;
+
+  return {
+    bubbleColorId: chatAppearance.bubbleColorId ?? null,
+    bubbleColorHex: null,
+    fontId: chatAppearance.fontId ?? null,
+    fontKey: null,
+    fontColorId: chatAppearance.fontColorId ?? null,
+    fontColorHex: null,
+    animalThemeId: chatAppearance.animalThemeId ?? null,
+    v: 1,
+  };
+}
 
 // =============================================================================
 // Group Settings Types (Segment 9 — mirrored from client)
@@ -443,6 +501,7 @@ async function getUserProfile(uid: string): Promise<{
   chatAppearance?: {
     bubbleColorId?: string | null;
     fontId?: string | null;
+    fontColorId?: string | null;
     animalThemeId?: string | null;
   };
 } | null> {
@@ -593,15 +652,8 @@ interface SendMessageV2Input {
    * sender's own device from push and in-app targeting.
    */
   senderDeviceId?: string;
-  /** Sender's chat style snapshot (bubble color, font, animal theme) */
-  senderStyle?: {
-    bubbleColorId?: string | null;
-    bubbleColorHex?: string | null;
-    fontId?: string | null;
-    fontKey?: string | null;
-    animalThemeId?: string | null;
-    v: 1;
-  };
+  /** Sender's chat style snapshot (bubble color, font, font color, animal theme) */
+  senderStyle?: SenderStyleV1;
   /**
    * Trusted game-scorecard share payload. When present the server
    * validates the schema, overrides `text` with a generic label, and
@@ -1179,15 +1231,9 @@ export const sendMessageV2 = functions.https.onCall(
     }
 
     // Stamp sender's chat style if provided by client
-    if (senderStyle && typeof senderStyle === "object" && senderStyle.v === 1) {
-      messageData.senderStyle = {
-        bubbleColorId: senderStyle.bubbleColorId ?? null,
-        bubbleColorHex: senderStyle.bubbleColorHex ?? null,
-        fontId: senderStyle.fontId ?? null,
-        fontKey: senderStyle.fontKey ?? null,
-        animalThemeId: senderStyle.animalThemeId ?? null,
-        v: 1,
-      };
+    const normalizedSenderStyle = normalizeSenderStyleSnapshot(senderStyle);
+    if (normalizedSenderStyle) {
+      messageData.senderStyle = normalizedSenderStyle;
     }
 
     // Segment 3: Staged media pipeline — commit staged attachments to final
@@ -1216,17 +1262,12 @@ export const sendMessageV2 = functions.https.onCall(
         // Server-side fallback: if client didn't send senderStyle, build it
         // from the sender's chatAppearance profile field.
         if (!messageData.senderStyle && senderProfile.chatAppearance) {
-          const ca = senderProfile.chatAppearance as {
-            bubbleColorId?: string | null;
-            fontId?: string | null;
-            animalThemeId?: string | null;
-          };
-          messageData.senderStyle = {
-            bubbleColorId: ca.bubbleColorId ?? null,
-            fontId: ca.fontId ?? null,
-            animalThemeId: ca.animalThemeId ?? null,
-            v: 1,
-          };
+          const fallbackSenderStyle = buildSenderStyleFromChatAppearance(
+            senderProfile.chatAppearance as ChatAppearanceSnapshot,
+          );
+          if (fallbackSenderStyle) {
+            messageData.senderStyle = fallbackSenderStyle;
+          }
         }
       }
     }
@@ -1235,17 +1276,12 @@ export const sendMessageV2 = functions.https.onCall(
     if (scope === "dm" && !messageData.senderStyle) {
       const senderProfile = await getUserProfile(senderId);
       if (senderProfile?.chatAppearance) {
-        const ca = senderProfile.chatAppearance as {
-          bubbleColorId?: string | null;
-          fontId?: string | null;
-          animalThemeId?: string | null;
-        };
-        messageData.senderStyle = {
-          bubbleColorId: ca.bubbleColorId ?? null,
-          fontId: ca.fontId ?? null,
-          animalThemeId: ca.animalThemeId ?? null,
-          v: 1,
-        };
+        const fallbackSenderStyle = buildSenderStyleFromChatAppearance(
+          senderProfile.chatAppearance as ChatAppearanceSnapshot,
+        );
+        if (fallbackSenderStyle) {
+          messageData.senderStyle = fallbackSenderStyle;
+        }
       }
     }
 
@@ -1342,8 +1378,14 @@ function getPreviewText(
   text?: string,
   attachments?: Array<{ kind?: string }>,
 ): string {
-  if (kind === "text" && text) {
-    return text.length > 50 ? text.substring(0, 50) + "..." : text;
+  const sanitizedText = sanitizeMessagePreviewText(text);
+  if (sanitizedText === SCORECARD_VISIBLE_TEXT) {
+    return SCORECARD_VISIBLE_TEXT;
+  }
+  if (kind === "text" && sanitizedText) {
+    return sanitizedText.length > 50
+      ? sanitizedText.substring(0, 50) + "..."
+      : sanitizedText;
   }
 
   if (kind === "media") {
@@ -1356,10 +1398,10 @@ function getPreviewText(
 
   if (kind === "voice") return "🎤 Voice message";
   if (kind === "file") return "📎 File";
-  if (kind === "system") return text || "System message";
+  if (kind === "system") return sanitizedText || "System message";
   if (kind === "animal") return "🐾 Animal sticker";
 
-  return text || "";
+  return sanitizedText || "";
 }
 
 // =============================================================================

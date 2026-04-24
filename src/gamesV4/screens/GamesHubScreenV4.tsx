@@ -54,6 +54,7 @@ import React, {
 import {
   ActivityIndicator,
   Alert,
+  Image,
   ImageBackground,
   RefreshControl,
   ScrollView,
@@ -72,7 +73,6 @@ type Nav = NativeStackNavigationProp<MainStackParamList>;
 
 interface GameSection {
   title: string;
-  emoji: string;
   data: GameMetadata[];
 }
 
@@ -210,12 +210,10 @@ export default function GamesHubScreenV4() {
     const realtime = all.filter((g) => g.runtimeType === "realtime");
 
     const result: GameSection[] = [];
-    if (solo.length > 0)
-      result.push({ title: "Solo", emoji: "🎯", data: solo });
+    if (solo.length > 0) result.push({ title: "Solo", data: solo });
     if (turnBased.length > 0)
-      result.push({ title: "Turn-Based", emoji: "♟️", data: turnBased });
-    if (realtime.length > 0)
-      result.push({ title: "Realtime", emoji: "⚡", data: realtime });
+      result.push({ title: "Turn-Based", data: turnBased });
+    if (realtime.length > 0) result.push({ title: "Realtime", data: realtime });
     return result;
   }, []);
 
@@ -659,14 +657,22 @@ export default function GamesHubScreenV4() {
                     <View
                       style={[styles.inviteIcon, { backgroundColor: accentBg }]}
                     >
-                      <MaterialCommunityIcons
-                        name={
-                          (meta?.icon ??
-                            "gamepad-variant") as keyof typeof MaterialCommunityIcons.glyphMap
-                        }
-                        size={24}
-                        color={theme.colors.primary}
-                      />
+                      {meta?.thumbnail ? (
+                        <Image
+                          source={meta.thumbnail}
+                          style={styles.inviteIconImage}
+                          resizeMode="cover"
+                        />
+                      ) : (
+                        <MaterialCommunityIcons
+                          name={
+                            (meta?.icon ??
+                              "gamepad-variant") as keyof typeof MaterialCommunityIcons.glyphMap
+                          }
+                          size={24}
+                          color={theme.colors.primary}
+                        />
+                      )}
                     </View>
                     <View style={styles.inviteInfo}>
                       <Text style={[styles.inviteName, { color: textColor }]}>
@@ -735,7 +741,7 @@ export default function GamesHubScreenV4() {
                     { color: textColor, marginBottom: 0 },
                   ]}
                 >
-                  {section.emoji} {section.title.toUpperCase()}
+                  {section.title.toUpperCase()}
                 </Text>
                 <MaterialCommunityIcons
                   name={isCollapsed ? "chevron-down" : "chevron-up"}
@@ -757,18 +763,17 @@ export default function GamesHubScreenV4() {
                     const isImplemented = IMPLEMENTED_GAME_IDS.has(game.gameId);
                     const isLaunching = launchingSolo === game.gameId;
                     const isSolo = game.runtimeType === "solo";
-                    const hasActiveSession = !!activeSoloSessions[game.gameId];
-                    const isPersistent = isPersistentSoloGame(game.gameId);
                     const isMastered = masteredGameIds.has(game.gameId);
                     const hasThumbnail = !!game.thumbnail;
 
-                    // ── Solo game with full-bleed thumbnail ──────────
-                    if (hasThumbnail && isSolo) {
-                      return (
+                    // Unified app-icon-style tile: square box with optional
+                    // thumbnail, display name rendered below the tile.
+                    return (
+                      <View key={game.gameId} style={styles.catalogCell}>
                         <TouchableOpacity
-                          key={game.gameId}
                           style={[
-                            styles.thumbnailCard,
+                            styles.tileBox,
+                            { backgroundColor: cardBg },
                             !isImplemented && { opacity: 0.5 },
                             isMastered && {
                               borderColor: "#DAA520",
@@ -777,144 +782,44 @@ export default function GamesHubScreenV4() {
                           ]}
                           onPress={() => handleGameTap(game.gameId)}
                           onLongPress={
-                            isImplemented
+                            isSolo && isImplemented
                               ? () => handleSoloLongPress(game.gameId)
                               : undefined
                           }
                           activeOpacity={isImplemented ? 0.7 : 1}
                           disabled={isLaunching}
                         >
-                          <ImageBackground
-                            source={game.thumbnail}
-                            style={styles.thumbnailBg}
-                            imageStyle={styles.thumbnailImage}
-                            resizeMode="cover"
-                          >
-                            {isLaunching && (
-                              <View style={styles.thumbnailLoadingOverlay}>
-                                <ActivityIndicator size="small" color="#FFF" />
-                              </View>
-                            )}
-                            {/* Bottom frosted banner */}
-                            <View style={styles.thumbnailBanner}>
-                              <Text
-                                style={styles.thumbnailBannerTitle}
-                                numberOfLines={1}
-                              >
-                                {game.displayName}
-                              </Text>
-                              <Text style={styles.thumbnailBannerCta}>
-                                {isLaunching
-                                  ? "Starting…"
-                                  : !isImplemented
-                                    ? "Coming Soon"
-                                    : hasActiveSession && isPersistent
-                                      ? "Resume"
-                                      : "Play Now"}
-                              </Text>
+                          {hasThumbnail ? (
+                            <ImageBackground
+                              source={game.thumbnail}
+                              style={styles.tileThumb}
+                              resizeMode="cover"
+                            >
+                              {isLaunching && (
+                                <View style={styles.tileLoadingOverlay}>
+                                  <ActivityIndicator
+                                    size="small"
+                                    color="#FFF"
+                                  />
+                                </View>
+                              )}
+                            </ImageBackground>
+                          ) : isLaunching ? (
+                            <View style={styles.tileLoadingOverlay}>
+                              <ActivityIndicator
+                                size="small"
+                                color={theme.colors.primary}
+                              />
                             </View>
-                          </ImageBackground>
+                          ) : null}
                         </TouchableOpacity>
-                      );
-                    }
-
-                    // ── Default card (multiplayer / no thumbnail) ────
-                    return (
-                      <TouchableOpacity
-                        key={game.gameId}
-                        style={[
-                          styles.catalogCard,
-                          { backgroundColor: cardBg },
-                          !isImplemented && { opacity: 0.5 },
-                          isMastered && {
-                            borderColor: "#DAA520",
-                            borderWidth: 2,
-                          },
-                        ]}
-                        onPress={() => handleGameTap(game.gameId)}
-                        onLongPress={
-                          isSolo && isImplemented
-                            ? () => handleSoloLongPress(game.gameId)
-                            : undefined
-                        }
-                        activeOpacity={isImplemented ? 0.7 : 1}
-                        disabled={isLaunching}
-                      >
-                        {isLaunching ? (
-                          <View
-                            style={[
-                              styles.catalogIcon,
-                              { backgroundColor: accentBg },
-                            ]}
-                          >
-                            <ActivityIndicator
-                              size="small"
-                              color={theme.colors.primary}
-                            />
-                          </View>
-                        ) : (
-                          <View
-                            style={[
-                              styles.catalogIcon,
-                              { backgroundColor: accentBg },
-                            ]}
-                          >
-                            <MaterialCommunityIcons
-                              name={
-                                game.icon as keyof typeof MaterialCommunityIcons.glyphMap
-                              }
-                              size={28}
-                              color={
-                                isImplemented
-                                  ? theme.colors.primary
-                                  : subtextColor
-                              }
-                            />
-                          </View>
-                        )}
                         <Text
-                          style={[styles.catalogName, { color: textColor }]}
-                          numberOfLines={1}
+                          style={[styles.tileName, { color: textColor }]}
+                          numberOfLines={2}
                         >
                           {game.displayName}
                         </Text>
-                        {isImplemented ? (
-                          isSolo ? (
-                            <Text
-                              style={[
-                                styles.playNowBadge,
-                                { color: theme.colors.primary },
-                              ]}
-                            >
-                              {isLaunching
-                                ? "Starting…"
-                                : hasActiveSession && isPersistent
-                                  ? "Resume"
-                                  : "Play Now"}
-                            </Text>
-                          ) : (
-                            <Text
-                              style={[
-                                styles.catalogPlayers,
-                                { color: subtextColor },
-                              ]}
-                            >
-                              {game.minPlayers === game.maxPlayers
-                                ? `${game.minPlayers}P`
-                                : `${game.minPlayers}–${game.maxPlayers}P`}
-                            </Text>
-                          )
-                        ) : (
-                          <Text
-                            style={[
-                              styles.comingSoonBadge,
-                              { color: subtextColor },
-                            ]}
-                          >
-                            Coming Soon
-                          </Text>
-                        )}
-                      </TouchableOpacity>
+                      </View>
                     );
                   })}
                 </View>
@@ -1026,6 +931,11 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     marginRight: 12,
+    overflow: "hidden",
+  },
+  inviteIconImage: {
+    width: "100%",
+    height: "100%",
   },
   inviteInfo: {
     flex: 1,
@@ -1085,7 +995,35 @@ const styles = StyleSheet.create({
   catalogGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 10,
+    justifyContent: "space-between",
+    rowGap: 16,
+  },
+  catalogCell: {
+    width: "31%",
+    alignItems: "center",
+  },
+  tileBox: {
+    width: "100%",
+    aspectRatio: 1,
+    borderRadius: 16,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "#D1D5DB",
+  },
+  tileThumb: {
+    flex: 1,
+  },
+  tileLoadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.15)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  tileName: {
+    marginTop: 8,
+    fontSize: 12,
+    fontWeight: "600",
+    textAlign: "center",
   },
   catalogCard: {
     width: "31%",

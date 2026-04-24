@@ -11,7 +11,9 @@
  *
  * @module functions/streamToken
  */
+import { StreamClient } from "@stream-io/node-sdk";
 import * as functions from "firebase-functions";
+export declare function getStreamClient(): StreamClient;
 /**
  * Authenticated callable that returns a Stream Video user token.
  * Also upserts the authenticated user in Stream so they are guaranteed

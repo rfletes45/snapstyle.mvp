@@ -32,6 +32,8 @@ export interface StreamCallHistoryEntry {
   userId: string;
   /** Stream call ID */
   callId: string;
+  /** Stream call session ID for completed sessions when available */
+  sessionId?: string | null;
 
   // Classification
   entryType: CallEntryType;

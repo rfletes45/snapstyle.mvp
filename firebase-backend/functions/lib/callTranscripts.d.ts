@@ -28,6 +28,10 @@ export declare function handleTranscriptionWebhookEvent(event: any): Promise<{
     ok: boolean;
     reason: string;
 }>;
+export declare function startTranscriptionForCallSession(call: any): Promise<{
+    ok: boolean;
+    reason: string;
+}>;
 export declare const streamTranscriptionWebhook: functions.HttpsFunction;
 /**
  * Resolve whether the caller + callee pair can transcribe together.

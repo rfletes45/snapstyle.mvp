@@ -1,23 +1,22 @@
 /**
  * Games V4 — scorecard wire format.
  *
- * The resolve pipeline auto-posts multiplayer group game results as a
- * `kind: "system"` chat message. To keep the post compatible with the
- * existing message sync path (Firestore → local SQLite → renderer) we
- * encode the structured payload **inside the `text` field** using a
- * sentinel prefix:
+ * Scorecards travel through chat as trusted `kind: "text"` messages whose
+ * rich payload is encoded inside the normal `text` field with a sentinel
+ * prefix. This keeps scorecards compatible with the existing message sync
+ * path (Firestore → local SQLite → renderer) without introducing a
+ * separate message schema just for game cards:
  *
  * ```
  * [SCORECARD_V1]{"v":1,"sessionId":"…", …}
- * 🎮 Minesweeper — Bob won!
+ * Game Scorecard
  * ```
  *
- * - Line 1 is machine-parsable; the renderer strips it and draws a rich
+ * - Line 1 is machine-parsable; trusted clients decode it and draw a rich
  *   `<GameScorecard />` card.
- * - Line 2 is the human-readable fallback surfaced to any path that
- *   doesn't know about scorecards yet (inbox preview ignores the
- *   message text in favour of `lastMessageText` on the group doc; search
- *   and pinned-message sheets will still read the plain sentence).
+ * - Line 2 is the generic human-readable fallback surfaced to paths that
+ *   do not render the card directly (preview text, copy surfaces, legacy
+ *   clients).
  *
  * Keeping the format text-based means nothing in the messaging
  * pipeline (rate limiter, attachments, replication, search, etc.) needs
@@ -106,7 +105,7 @@ export function encodeScorecardText(
 /**
  * Parse a message text body and return the scorecard payload if one is
  * embedded, otherwise null. Tolerant of malformed JSON so historical /
- * corrupted messages simply render as plain system text.
+ * corrupted messages simply render as plain text.
  */
 export function decodeScorecardText(
   text: string | null | undefined,

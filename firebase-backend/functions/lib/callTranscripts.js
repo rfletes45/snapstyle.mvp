@@ -60,9 +60,11 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.cleanupExpiredCallTranscripts = exports.ackCallTranscript = exports.getCallTranscript = exports.getCallTranscriptPolicy = exports.streamTranscriptionWebhook = void 0;
 exports.handleTranscriptionWebhookEvent = handleTranscriptionWebhookEvent;
+exports.startTranscriptionForCallSession = startTranscriptionForCallSession;
 const crypto = __importStar(require("crypto"));
 const admin = __importStar(require("firebase-admin"));
 const functions = __importStar(require("firebase-functions"));
+const streamToken_1 = require("./streamToken");
 const db = admin.firestore();
 // ---------------------------------------------------------------------------
 // Config
@@ -116,6 +118,124 @@ function participantUidsFromCall(call) {
     return members
         .map((m) => m?.user_id ?? m?.user?.id ?? m?.id)
         .filter((uid) => typeof uid === "string");
+}
+function transcriptDocId(callId, sessionId) {
+    return `${callId}__${sessionId}`;
+}
+function normalizeMode(value) {
+    return value === "audio" || value === "video" ? value : null;
+}
+function parseCallCid(callCid) {
+    if (!callCid)
+        return null;
+    const separatorIndex = callCid.indexOf(":");
+    if (separatorIndex <= 0 || separatorIndex >= callCid.length - 1) {
+        return null;
+    }
+    return {
+        type: decodeURIComponent(callCid.slice(0, separatorIndex)),
+        id: decodeURIComponent(callCid.slice(separatorIndex + 1)),
+    };
+}
+async function fetchCallFromStream(callCid) {
+    const parsed = parseCallCid(callCid);
+    if (!parsed)
+        return null;
+    try {
+        const res = await (0, streamToken_1.getStreamClient)().video.call(parsed.type, parsed.id).get();
+        return {
+            ...res.call,
+            id: parsed.id,
+            type: parsed.type,
+            members: res.members,
+        };
+    }
+    catch (err) {
+        functions.logger.error("[transcriptStream] failed to fetch call", {
+            callCid,
+            err: String(err),
+        });
+        return null;
+    }
+}
+async function deleteStreamTranscriptIfExists(params) {
+    const parsed = parseCallCid(params.callCid);
+    if (!parsed || !params.filename)
+        return;
+    try {
+        await (0, streamToken_1.getStreamClient)()
+            .video.call(parsed.type, parsed.id)
+            .deleteTranscription({
+            session: params.sessionId,
+            filename: params.filename,
+        });
+    }
+    catch (err) {
+        functions.logger.warn("[transcriptStream] delete failed", {
+            callCid: params.callCid,
+            sessionId: params.sessionId,
+            filename: params.filename,
+            err: String(err),
+        });
+    }
+}
+async function resolveTranscriptStartPolicy(participants) {
+    if (participants.length !== 2) {
+        return { allowed: false, reason: "unresolved" };
+    }
+    try {
+        const [firstSnap, secondSnap] = await Promise.all([
+            db.doc(`Users/${participants[0]}/Settings/calls`).get(),
+            db.doc(`Users/${participants[1]}/Settings/calls`).get(),
+        ]);
+        const firstEnabled = firstSnap.exists
+            ? Boolean(firstSnap.data()?.audioCallTranscriptionsEnabled)
+            : false;
+        const secondEnabled = secondSnap.exists
+            ? Boolean(secondSnap.data()?.audioCallTranscriptionsEnabled)
+            : false;
+        if (!firstEnabled || !secondEnabled) {
+            return { allowed: false, reason: "participant_disabled" };
+        }
+        return { allowed: true, reason: "ok" };
+    }
+    catch (err) {
+        functions.logger.warn("[transcriptPolicy] participant lookup failed", {
+            participants,
+            err: String(err),
+        });
+        return { allowed: false, reason: "unresolved" };
+    }
+}
+function buildTranscriptDoc(params) {
+    const now = Date.now();
+    return {
+        callId: params.callId,
+        sessionId: params.sessionId,
+        participants: params.participants,
+        acks: params.existing?.acks ?? {},
+        status: params.status,
+        source: "external",
+        storagePath: params.storagePath,
+        downloadUrl: params.downloadUrl,
+        serverExpiresAt: params.existing?.serverExpiresAt ?? now + SERVER_RETENTION_MS,
+        createdAt: params.existing?.createdAt ?? now,
+        updatedAt: now,
+        deletedAt: null,
+        streamMeta: {
+            callType: params.callType,
+            createdBy: params.createdBy,
+            mode: params.mode,
+        },
+        lastError: params.lastError,
+    };
+}
+async function persistTranscriptDoc(doc) {
+    const batch = db.batch();
+    const docRef = db.collection(COLLECTION).doc(transcriptDocId(doc.callId, doc.sessionId));
+    batch.set(docRef, doc, { merge: true });
+    writeParticipantIndex(doc, batch);
+    await batch.commit();
 }
 // ---------------------------------------------------------------------------
 // App-owned Storage helpers
@@ -234,119 +354,224 @@ async function handleTranscriptionWebhookEvent(event) {
         eventType !== "call.transcription_failed") {
         return { ok: true, reason: "ignored_event_type" };
     }
-    const call = event.call;
-    if (!call?.id)
+    const callCid = typeof event?.call_cid === "string" ? event.call_cid : null;
+    const parsedCallCid = parseCallCid(callCid);
+    if (!parsedCallCid)
         return { ok: false, reason: "missing_call" };
-    const eligibility = isTranscriptEligible(call);
-    if (!eligibility.eligible) {
-        functions.logger.info("[transcriptWebhook] ineligible call — dropping (no Firestore write)", { callId: call.id, reason: eligibility.reason });
-        return { ok: true, reason: `ineligible_${eligibility.reason}` };
-    }
-    const sessionId = event.session_id ?? call.session?.id ?? call.session_id ?? call.id;
-    const docId = `${call.id}__${sessionId}`;
+    const transcription = event?.call_transcription ?? null;
+    const sessionId = typeof transcription?.session_id === "string"
+        ? transcription.session_id
+        : typeof event?.session_id === "string"
+            ? event.session_id
+            : null;
+    if (!sessionId)
+        return { ok: false, reason: "missing_session" };
+    const docId = transcriptDocId(parsedCallCid.id, sessionId);
     const docRef = db.collection(COLLECTION).doc(docId);
-    const now = Date.now();
     // Idempotency — skip duplicate deliveries after we've already finalized.
     const existingSnap = await docRef.get();
+    const existing = existingSnap.exists
+        ? existingSnap.data()
+        : null;
     if (existingSnap.exists) {
-        const prior = existingSnap.data();
-        if (prior.status === "ready" || prior.status === "deleted") {
+        if (existing?.status === "ready" || existing?.status === "deleted") {
             return { ok: true, reason: "duplicate_delivery" };
         }
     }
-    const participants = participantUidsFromCall(call);
-    const streamUrl = event.transcription?.url ?? event.transcript?.url ?? event.url ?? null;
-    const baseMeta = {
-        callId: call.id,
-        sessionId,
-        participants,
-        acks: existingSnap.exists
-            ? existingSnap.data().acks || {}
-            : {},
-        createdAt: existingSnap.exists
-            ? existingSnap.data().createdAt
-            : now,
-        serverExpiresAt: now + SERVER_RETENTION_MS,
-        updatedAt: now,
-        deletedAt: null,
-        streamMeta: {
-            callType: call.type ?? null,
-            createdBy: call.created_by?.id ?? null,
-            mode: call.custom?.mode ?? null,
-        },
-        source: "external",
-    };
+    let call = existing ? null : await fetchCallFromStream(callCid);
+    if (call) {
+        const eligibility = isTranscriptEligible(call);
+        if (!eligibility.eligible) {
+            functions.logger.info("[transcriptWebhook] ineligible call — dropping (no Firestore write)", { callId: parsedCallCid.id, reason: eligibility.reason });
+            return { ok: true, reason: `ineligible_${eligibility.reason}` };
+        }
+    }
+    const participants = existing?.participants ?? (call ? participantUidsFromCall(call) : []);
+    if (participants.length !== 2) {
+        return { ok: false, reason: "missing_participants" };
+    }
+    const callType = existing?.streamMeta.callType ?? call?.type ?? parsedCallCid.type;
+    const createdBy = existing?.streamMeta.createdBy ?? call?.created_by?.id ?? null;
+    const mode = existing?.streamMeta.mode ?? normalizeMode(call?.custom?.mode);
+    const streamUrl = typeof transcription?.url === "string" ? transcription.url : null;
+    const streamFilename = typeof transcription?.filename === "string" ? transcription.filename : null;
     // --- Failure path -------------------------------------------------------
     if (eventType === "call.transcription_failed") {
-        const failedDoc = {
-            ...baseMeta,
-            acks: {},
+        await persistTranscriptDoc(buildTranscriptDoc({
+            callId: parsedCallCid.id,
+            sessionId,
+            participants,
+            callType,
+            createdBy,
+            mode,
             status: "failed",
+            existing,
             storagePath: null,
             downloadUrl: null,
-            lastError: event.reason ?? "transcription_failed",
-        };
-        const batch = db.batch();
-        batch.set(docRef, failedDoc, { merge: true });
-        writeParticipantIndex(failedDoc, batch);
-        await batch.commit();
+            lastError: (typeof event?.error === "string" && event.error) ||
+                "transcription_failed",
+        }));
         return { ok: true, reason: "failure_recorded" };
     }
     // --- No URL yet → record processing so client can poll ------------------
     if (!streamUrl) {
-        const processingDoc = {
-            ...baseMeta,
+        await persistTranscriptDoc(buildTranscriptDoc({
+            callId: parsedCallCid.id,
+            sessionId,
+            participants,
+            callType,
+            createdBy,
+            mode,
             status: "processing",
+            existing,
             storagePath: null,
             downloadUrl: null,
             lastError: null,
-        };
-        const batch = db.batch();
-        batch.set(docRef, processingDoc, { merge: true });
-        writeParticipantIndex(processingDoc, batch);
-        await batch.commit();
+        }));
         return { ok: true, reason: "processing_no_url" };
     }
     // --- Success path — rehost into app-owned Storage -----------------------
-    const rehost = await rehostTranscriptToAppStorage(streamUrl, call.id, sessionId);
+    const rehost = await rehostTranscriptToAppStorage(streamUrl, parsedCallCid.id, sessionId);
     if (!rehost) {
         // Rehost failed. Record as failed rather than exposing a Stream URL.
-        const failedDoc = {
-            ...baseMeta,
-            acks: {},
+        await persistTranscriptDoc(buildTranscriptDoc({
+            callId: parsedCallCid.id,
+            sessionId,
+            participants,
+            callType,
+            createdBy,
+            mode,
             status: "failed",
+            existing,
             storagePath: null,
             downloadUrl: null,
             lastError: "rehost_failed",
-        };
-        const batch = db.batch();
-        batch.set(docRef, failedDoc, { merge: true });
-        writeParticipantIndex(failedDoc, batch);
-        await batch.commit();
+        }));
         functions.logger.error("[transcriptWebhook] rehost failed", {
-            callId: call.id,
+            callId: parsedCallCid.id,
             sessionId,
         });
         return { ok: false, reason: "rehost_failed" };
     }
-    const readyDoc = {
-        ...baseMeta,
+    await deleteStreamTranscriptIfExists({
+        callCid,
+        sessionId,
+        filename: streamFilename,
+    });
+    await persistTranscriptDoc(buildTranscriptDoc({
+        callId: parsedCallCid.id,
+        sessionId,
+        participants,
+        callType,
+        createdBy,
+        mode,
         status: "ready",
+        existing,
         storagePath: rehost.storagePath,
         downloadUrl: null,
         lastError: null,
-    };
-    const batch = db.batch();
-    batch.set(docRef, readyDoc, { merge: true });
-    writeParticipantIndex(readyDoc, batch);
-    await batch.commit();
+    }));
     functions.logger.info("[transcriptWebhook] rehosted + ready", {
-        callId: call.id,
+        callId: parsedCallCid.id,
         sessionId,
         bytes: rehost.bytes,
         storagePath: rehost.storagePath,
     });
     return { ok: true, reason: "ready" };
+}
+async function startTranscriptionForCallSession(call) {
+    const eligibility = isTranscriptEligible(call);
+    if (!eligibility.eligible) {
+        return { ok: true, reason: `ineligible_${eligibility.reason}` };
+    }
+    const sessionId = typeof call?.session?.id === "string"
+        ? call.session.id
+        : typeof call?.session_id === "string"
+            ? call.session_id
+            : null;
+    if (!sessionId) {
+        return { ok: false, reason: "missing_session" };
+    }
+    const participants = participantUidsFromCall(call);
+    if (participants.length !== 2) {
+        return { ok: false, reason: "missing_participants" };
+    }
+    const docRef = db.collection(COLLECTION).doc(transcriptDocId(call.id, sessionId));
+    const existingSnap = await docRef.get();
+    const existing = existingSnap.exists
+        ? existingSnap.data()
+        : null;
+    if (existing &&
+        (existing.status === "processing" ||
+            existing.status === "ready" ||
+            existing.status === "deleted")) {
+        return { ok: true, reason: "already_started" };
+    }
+    const policy = await resolveTranscriptStartPolicy(participants);
+    if (!policy.allowed) {
+        return { ok: true, reason: `policy_${policy.reason}` };
+    }
+    const streamCall = (0, streamToken_1.getStreamClient)().video.call(call.type ?? "default", call.id);
+    try {
+        await streamCall.update({
+            settings_override: {
+                transcription: {
+                    mode: "available",
+                    closed_caption_mode: "disabled",
+                },
+            },
+        });
+    }
+    catch (err) {
+        functions.logger.warn("[transcriptStart] failed to enable call settings", {
+            callId: call.id,
+            sessionId,
+            err: String(err),
+        });
+    }
+    try {
+        await streamCall.startTranscription();
+    }
+    catch (err) {
+        await persistTranscriptDoc(buildTranscriptDoc({
+            callId: call.id,
+            sessionId,
+            participants,
+            callType: call.type ?? null,
+            createdBy: call.created_by?.id ?? null,
+            mode: normalizeMode(call.custom?.mode),
+            status: "failed",
+            existing,
+            storagePath: null,
+            downloadUrl: null,
+            lastError: String(err),
+        }));
+        functions.logger.error("[transcriptStart] start failed", {
+            callId: call.id,
+            sessionId,
+            err: String(err),
+        });
+        return { ok: false, reason: "start_failed" };
+    }
+    await persistTranscriptDoc(buildTranscriptDoc({
+        callId: call.id,
+        sessionId,
+        participants,
+        callType: call.type ?? null,
+        createdBy: call.created_by?.id ?? null,
+        mode: normalizeMode(call.custom?.mode),
+        status: "processing",
+        existing,
+        storagePath: null,
+        downloadUrl: null,
+        lastError: null,
+    }));
+    functions.logger.info("[transcriptStart] transcription started", {
+        callId: call.id,
+        sessionId,
+        participants,
+    });
+    return { ok: true, reason: "started" };
 }
 // ---------------------------------------------------------------------------
 // Standalone webhook (pointable directly at from Stream dashboard).

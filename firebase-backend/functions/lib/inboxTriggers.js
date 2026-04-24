@@ -52,6 +52,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.onGroupMemberStateChanged = exports.onDMMemberStateChanged = exports.markInboxRead = exports.onGroupMessageInbox = exports.onDMMessageInbox = void 0;
 const admin = __importStar(require("firebase-admin"));
 const functions = __importStar(require("firebase-functions"));
+const messagePreview_1 = require("./messagePreview");
 function getDb() {
     return admin.firestore();
 }
@@ -62,12 +63,21 @@ function getDb() {
  * Build a short preview string for the inbox entry.
  */
 function buildPreview(kind, text) {
+    const sanitizedText = (0, messagePreview_1.sanitizeMessagePreviewText)(text);
     // Scorecards embed a JSON sentinel in their `text` field. Never leak
     // that into the inbox preview — substitute the generic label.
-    if (text && text.startsWith("[SCORECARD_V1]")) {
-        return "Game Scorecard";
+    if (sanitizedText === messagePreview_1.SCORECARD_VISIBLE_TEXT) {
+        return messagePreview_1.SCORECARD_VISIBLE_TEXT;
     }
-    if (kind === "text" && text) {
+    if (kind === "text" && sanitizedText) {
+        return sanitizedText.length > 80
+            ? sanitizedText.substring(0, 80) + "..."
+            : sanitizedText;
+    }
+    if (kind === "system") {
+        return sanitizedText || "System message";
+    }
+    if (kind === "text" && sanitizedText) {
         return text.length > 80 ? text.substring(0, 80) + "…" : text;
     }
     if (kind === "media")
@@ -82,9 +92,7 @@ function buildPreview(kind, text) {
         return "📎 File";
     if (kind === "game")
         return "🎮 Game";
-    if (kind === "system")
-        return text || "System message";
-    return text || "New message";
+    return sanitizedText || "New message";
 }
 /**
  * Get all member UIDs of a group by listing the Members subcollection.

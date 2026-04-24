@@ -1,11 +1,12 @@
 # Chat System — Complete Reference
 
 > Consolidated chat system documentation for SnapStyle MVP.
-> Covers architecture, rendering, composer, reactions, keyboard, GIF integration,
-> custom font colors, data contracts, inbox/unread, threading, notifications,
-> performance, known issues, and sustaining roadmap.
+> Covers architecture, rendering, scorecards, composer, voice recording,
+> keyboard behavior, reactions, GIF integration, custom font colors,
+> data contracts, inbox/unread, threading, notifications, performance,
+> known issues, and sustaining roadmap.
 
-Last verified: 2026-04-15
+Last verified: 2026-04-23
 
 ---
 
@@ -54,6 +55,10 @@ Last verified: 2026-04-15
 | Display modes (Bubbles + Stacked)          | Implemented, viewer-side setting                             |
 | Grouped card system                        | Implemented with adaptive width snapping and corner rounding |
 | Composer toolbar customization             | Implemented with drag-and-drop editing                       |
+| Inline game scorecards in chat             | Implemented with trusted structured payload + rich renderer  |
+| Multiline composer growth                  | Implemented (1-5 visible lines, then internal scroll)        |
+| Voice recording inside composer shell      | Implemented                                                  |
+| Keyboard scroll container                  | Shared fallback path is primary; KCSV scroll component off   |
 | GIF picker (KLIPY)                         | Implemented behind feature flag                              |
 | Custom font colors                         | Implemented with 16-color catalog                            |
 | Reactions                                  | Implemented with optimistic UI                               |
@@ -66,6 +71,7 @@ This document covers:
 - Inbox and unread behavior
 - Message requests
 - Reactions, voice notes, mentions, attachments, and scheduled messages
+- Inline game scorecards as a chat-rendered cross-system surface
 - Composer toolbar customization
 - Keyboard architecture
 - GIF/sticker integration
@@ -96,48 +102,48 @@ This means:
 ### High-Level System Map
 
 ```
-┌──────────────────────────────────────────────────────────────────┐
-│                     Navigation Layer                             │
-│  MainTab → InboxStack → ChatListScreenV2                         │
-│         │                 ├─ ChatScreen (DM)          ← MainStack│
-│         │                 ├─ GroupChatScreen (group)   ← MainStack│
-│         │                 └─ ThreadScreen             ← MainStack│
-│         │                                                        │
-│         └─ freezeOnBlur: true (inactive screens frozen)          │
-└──────────────────────────────────────────────────────────────────┘
-         │
-         ▼
-┌──────────────────────────────────────────────────────────────────┐
-│                     Runtime Layer                                │
-│  useChat ─┬─ useLocalMessages (native, SQLite-first)             │
-│           └─ useUnifiedMessages (web, Firestore fallback)        │
-│                                                                  │
-│  useInboxData ─┬─ fan-out mode (subscribe Chats + Groups)        │
-│                └─ aggregated mode (Users/{uid}/Inbox/*)           │
-│                                                                  │
-│  useUnifiedInboxRequests (friend + group + message requests)     │
-└──────────────────────────────────────────────────────────────────┘
-         │
-         ▼
-┌──────────────────────────────────────────────────────────────────┐
-│                     Render Layer                                 │
-│  buildTimeline() → TimelineItem[] (grouping flags + dividers)    │
-│         │                                                        │
-│         ├─ Bubble mode → DMMessageItem / GroupChatScreen inline   │
-│         └─ Stacked mode → StackedMessageRenderer /               │
-│                           GroupStackedMessageRenderer             │
-│              └─ Grouped Card System (CardWidthTracker, snap,     │
-│                 adaptive corner rounding)                        │
-└──────────────────────────────────────────────────────────────────┘
-         │
-         ▼
-┌──────────────────────────────────────────────────────────────────┐
-│                     Backend Layer                                │
-│  sendMessageV2 (Cloud Function) → Firestore write + triggers     │
-│  inboxTriggers → per-user aggregated inbox update                │
-│  toggleReactionV2 → reaction subcollection + summary update      │
-│  notificationCenter → channel routing (in-app / push / none)     │
-└──────────────────────────────────────────────────────────────────┘
++------------------------------------------------------------------+
+¦                     Navigation Layer                             ¦
+¦  MainTab ? InboxStack ? ChatListScreenV2                         ¦
+¦         ¦                 +- ChatScreen (DM)          ? MainStack¦
+¦         ¦                 +- GroupChatScreen (group)   ? MainStack¦
+¦         ¦                 +- ThreadScreen             ? MainStack¦
+¦         ¦                                                        ¦
+¦         +- freezeOnBlur: true (inactive screens frozen)          ¦
++------------------------------------------------------------------+
+         ¦
+         ?
++------------------------------------------------------------------+
+¦                     Runtime Layer                                ¦
+¦  useChat --- useLocalMessages (native, SQLite-first)             ¦
+¦           +- useUnifiedMessages (web, Firestore fallback)        ¦
+¦                                                                  ¦
+¦  useInboxData --- fan-out mode (subscribe Chats + Groups)        ¦
+¦                +- aggregated mode (Users/{uid}/Inbox/*)           ¦
+¦                                                                  ¦
+¦  useUnifiedInboxRequests (friend + group + message requests)     ¦
++------------------------------------------------------------------+
+         ¦
+         ?
++------------------------------------------------------------------+
+¦                     Render Layer                                 ¦
+¦  buildTimeline() ? TimelineItem[] (grouping flags + dividers)    ¦
+¦         ¦                                                        ¦
+¦         +- Bubble mode ? DMMessageItem / GroupChatScreen inline   ¦
+¦         +- Stacked mode ? StackedMessageRenderer /               ¦
+¦                           GroupStackedMessageRenderer             ¦
+¦              +- Grouped Card System (CardWidthTracker, snap,     ¦
+¦                 adaptive corner rounding)                        ¦
++------------------------------------------------------------------+
+         ¦
+         ?
++------------------------------------------------------------------+
+¦                     Backend Layer                                ¦
+¦  sendMessageV2 (Cloud Function) ? Firestore write + triggers     ¦
+¦  inboxTriggers ? per-user aggregated inbox update                ¦
+¦  toggleReactionV2 ? reaction subcollection + summary update      ¦
+¦  notificationCenter ? channel routing (in-app / push / none)     ¦
++------------------------------------------------------------------+
 ```
 
 ---
@@ -164,11 +170,16 @@ This means:
 | `src/components/chat/ChatHeader.tsx`                  | Shared header scaffold                                         |
 | `src/components/chat/ChatMessageList.tsx`             | Inverted FlatList wrapper                                      |
 | `src/components/chat/ChatComposer.tsx`                | Composer UI (text input, toolbar, attachments)                 |
+| `src/components/chat/NativeComposerInput.tsx`         | iOS native UITextView-backed composer path                     |
 | `src/components/chat/CameraLongPressButton.tsx`       | Dual-action camera button: tap camera, hold to arm photos      |
 | `src/components/chat/AnimalLongPressButton.tsx`       | Dual-action animal button: tap quick picker, hold full catalog |
-| `src/components/chat/ChatMessageRenderer.tsx`         | DM entry point — delegates to Stacked or Bubble renderer       |
+| `src/components/chat/VoiceRecordButton.tsx`           | Hold-to-record gesture owner for voice messages                |
+| `src/components/chat/VoiceRecordingHost.tsx`          | Composer-scoped recording overlay + measurement bridge         |
+| `src/components/chat/ChatMessageRenderer.tsx`         | DM entry point - delegates to Stacked or Bubble renderer       |
 | `src/components/chat/MessageActionsSheet.tsx`         | Long-press action sheet with quick reactions                   |
 | `src/components/chat/SystemMessageChip.tsx`           | System message presentation                                    |
+| `src/gamesV4/components/ChatScorecardMessage.tsx`     | First-class chat wrapper for trusted game scorecards           |
+| `src/gamesV4/components/GameScorecard.tsx`            | Rich scorecard card rendered inline in chat                    |
 | `src/components/DMMessageItem.tsx`                    | DM bubble-mode message renderer                                |
 | `src/components/chat/StackedMessageRenderer.tsx`      | DM stacked-mode message renderer with card containers          |
 | `src/components/chat/GroupStackedMessageRenderer.tsx` | Group stacked-mode message renderer with card containers       |
@@ -189,12 +200,14 @@ This means:
 | `src/hooks/useLocalMessages.ts`                       | SQLite-first message runtime (native)                     |
 | `src/hooks/useUnifiedMessages.ts`                     | Firestore-first message runtime (web fallback)            |
 | `src/hooks/useUnifiedChatScreen.ts`                   | Shared screen scaffold hook                               |
+| `src/hooks/useChatComposer.ts`                        | Unified composer state (text, mentions, attachments, voice) |
 | `src/hooks/useInboxData.ts`                           | Inbox runtime selector (fan-out or aggregated)            |
 | `src/hooks/useInboxAggregation.ts`                    | Aggregated inbox mode                                     |
 | `src/hooks/useUnifiedInboxRequests.ts`                | Unified requests stream                                   |
 | `src/hooks/useConversationActions.ts`                 | Conversation action handlers                              |
 | `src/hooks/useFontColor.ts`                           | Custom font color hook                                    |
-| `src/hooks/useChatKeyboard.ts`                        | Keyboard SharedValues + JS state                          |
+| `src/contexts/ComposerSheetContext.tsx`               | Picker-sheet replacement, handoff floor, interaction gates |
+| `src/store/ChatKeyboardPreferenceContext.tsx`         | Global auto-open keyboard preference                      |
 | `src/services/chat/normalizeMessage.ts`               | Canonical message normalization                           |
 | `src/services/chat/normalizeInboxRow.ts`              | Canonical inbox row normalization                         |
 | `src/services/chat/fanoutInboxNormalization.ts`       | Fan-out inbox normalizers                                 |
@@ -208,11 +221,12 @@ This means:
 | `src/services/messaging/subscribe.ts`                 | Firestore realtime subscriptions                          |
 | `src/services/messaging/messageMerge.ts`              | Merge helper                                              |
 | `src/services/reactions.ts`                           | Reaction service (toggle, subscribe, optimistic)          |
+| `src/gamesV4/services/scorecardWire.ts`               | Trusted scorecard wire format + preview sanitization      |
 | `src/services/notifications/normalizeNotification.ts` | Notification payload adapter                              |
 | `src/services/profileService.ts`                      | Profile + equip/unequip font color                        |
 | `src/services/groupMembers.ts`                        | Group member state normalization                          |
 | `src/services/scheduledMessages.ts`                   | Scheduled messages service                                |
-| `src/hooks/chat/useTwoPhaseListConfig.ts`             | Two-phase FlatList config (conservative → full)           |
+| `src/hooks/chat/useTwoPhaseListConfig.ts`             | Two-phase FlatList config (conservative ? full)           |
 | `src/services/outbox.ts`                              | Optimistic outbox (web)                                   |
 | `src/services/messageList.ts`                         | Message list service (web)                                |
 | `src/services/sync/syncEngine.ts`                     | SQLite sync engine (native)                               |
@@ -324,18 +338,18 @@ All paths use `normalizeRemoteImageUrl()` (trims whitespace) before interacting 
 
 ```
 handleConversationPressIn (touch-down, ~150-300ms before navigation)
-├─ prefetchImages([normalizedUrl])        → Image.prefetch("memory-disk")
-└─ prepareGroupChatNavigation()           → fire-and-forget
-    └─ prepareGroupThreadEntry()
-        ├─ warmIdentityImageUrls([bgUrl]) → Image.loadAsync(normalizedUrl)
-        └─ (runs in parallel with member fetch)
++- prefetchImages([normalizedUrl])        ? Image.prefetch("memory-disk")
++- prepareGroupChatNavigation()           ? fire-and-forget
+    +- prepareGroupThreadEntry()
+        +- warmIdentityImageUrls([bgUrl]) ? Image.loadAsync(normalizedUrl)
+        +- (runs in parallel with member fetch)
 
 handleConversationPress (tap complete)
-└─ navigation.navigate("GroupChat", { initialGroupData })
-    └─ GroupChatScreen mounts
-        ├─ useState initializer seeds group.backgroundUrl from initialGroupData
-        ├─ usePrefetch(groupBackgroundUrls) schedules Image.prefetch()
-        └─ AppImage renders with buildRemoteImageSource(group.backgroundUrl)
++- navigation.navigate("GroupChat", { initialGroupData })
+    +- GroupChatScreen mounts
+        +- useState initializer seeds group.backgroundUrl from initialGroupData
+        +- usePrefetch(groupBackgroundUrls) schedules Image.prefetch()
+        +- AppImage renders with buildRemoteImageSource(group.backgroundUrl)
 ```
 
 #### Rendering
@@ -367,13 +381,13 @@ The `isGroupMember` membership check remains gated on `InteractionManager.runAft
 
 ### Screen Freeze on Blur
 
-The `MainStack` navigator uses `freezeOnBlur: true`, which freezes inactive screens via `react-native-screens`. When navigating Chat → Thread or Chat → GroupInfo, the chat screen receives no React re-renders, effects, or state updates. Return-to-chat is near-instant (native view unfreeze).
+The `MainStack` navigator uses `freezeOnBlur: true`, which freezes inactive screens via `react-native-screens`. When navigating Chat ? Thread or Chat ? GroupInfo, the chat screen receives no React re-renders, effects, or state updates. Return-to-chat is near-instant (native view unfreeze).
 
 Note: `freezeOnBlur` only applies to screens already in the back stack. When the user navigates **back** (e.g., from GroupChat to Inbox), GroupChatScreen is popped and unmounted — each navigation to GroupChat creates a fresh component instance.
 
 ### Performance Instrumentation
 
-Performance is instrumented via `chatPerf` (`src/utils/chatPerf.ts`) at mount, focus, and `buildTimeline` call sites. Console logs tagged `⏱ chatPerf`.
+Performance is instrumented via `chatPerf` (`src/utils/chatPerf.ts`) at mount, focus, and `buildTimeline` call sites. Console logs tagged `? chatPerf`.
 
 Key measurement points:
 
@@ -438,7 +452,7 @@ The requests tab in `ChatListScreenV2` renders this single typed stream with:
 
 ### Notification Runtime
 
-- **Push tap normalization and navigation**: `src/store/AuthContext.tsx` → adapter: `src/services/notifications/normalizeNotification.ts`
+- **Push tap normalization and navigation**: `src/store/AuthContext.tsx` ? adapter: `src/services/notifications/normalizeNotification.ts`
 - **Foreground in-app notifications**: `src/store/InAppNotificationsContext.tsx` with listeners for friend requests, chat updates, group updates, and `Users/{uid}/InAppNotificationsV4`
 - **Legacy DM/group push triggers**: `firebase-backend/functions/src/notifications.ts`
 
@@ -475,8 +489,9 @@ The main DM and group detail screens share these top-level building blocks:
 1. `useUnifiedChatScreen` exposes canonical `MessageV2[]`
 2. Screens derive any scope-specific display metadata
 3. `buildTimeline.ts` inserts grouping flags and date dividers
-4. System messages render through `SystemMessageChip`
-5. Non-system messages render through shared/canonical message components
+4. True system messages render through `SystemMessageChip`
+5. Trusted scorecard messages are decoded with `getTrustedScorecardPayload()` and render through `ChatScorecardMessage`
+6. All other messages render through shared/canonical message components
 
 ### Shared Send Flow
 
@@ -496,8 +511,8 @@ Scope-specific behavior is injected instead of forked:
 
 The runtime split is:
 
-- **Native**: `useChat` → `useLocalMessages` → SQLite + sync engine
-- **Web**: `useChat` → `useUnifiedMessages` → Firestore compatibility services
+- **Native**: `useChat` ? `useLocalMessages` ? SQLite + sync engine
+- **Web**: `useChat` ? `useUnifiedMessages` ? Firestore compatibility services
 
 Both screen types consume the same `useChat` surface even though the storage backend differs by platform.
 
@@ -506,6 +521,7 @@ Both screen types consume the same `useChat` surface even though the storage bac
 **Universal chat logic** (should stay shared):
 
 - Message envelope and normalization
+- Scorecard trust gate plus scorecard preview/copy sanitization
 - Timeline/date-divider construction
 - Top-level header scaffold
 - List virtualization and return-to-bottom behavior
@@ -544,22 +560,29 @@ Both screen types consume the same `useChat` surface even though the storage bac
 
 Migration detail: group reads still tolerate legacy `typingExpiresAt`; group writes stamp both `typingAt` and `typingExpiresAt` for compatibility. New code should treat `typingAt` as the canonical field.
 
-**Private state** (`MembersPrivate/{uid}`) — owner-only source for:
+**Private state** (`MembersPrivate/{uid}`) - owner-only source for:
 
 - Mute/archive/pin
 - Private unread watermarks
 - Notification overrides
+- Auto-send scorecards for hosted games in this specific conversation
 - Show-member-chat-styles
+
+Important scope distinctions:
+
+- `autoSendScorecards` is per-conversation and defaults to enabled when missing. It only affects scorecard auto-posting for games the current user hosted.
+- `showMemberChatStyles` is group-only and affects how incoming member styles are rendered, not how scorecards or system cards are authored.
+- "Open Keyboard on Chat Open" is not a per-chat setting. It is a global preference stored at `Users/{uid}.autoOpenKeyboardOnChat` and mirrored into AsyncStorage by `ChatKeyboardPreferenceContext`.
 
 ### Render Architecture
 
 **DM rendering**: Canonical `MessageV2` all the way down:
 
-- `ChatScreen.tsx` → `ChatMessageRenderer.tsx` → `DMMessageItem.tsx` (bubble) or `StackedMessageRenderer.tsx` (stacked)
+- `ChatScreen.tsx` ? `ChatMessageRenderer.tsx` ? `DMMessageItem.tsx` (bubble) or `StackedMessageRenderer.tsx` (stacked)
 
 **Group rendering**: `MessageV2` with multi-sender identity, mentions, permissions-aware actions:
 
-- `GroupChatScreen.tsx` → `GroupStackedMessageRenderer.tsx` (stacked) or inline bubble renderer
+- `GroupChatScreen.tsx` ? `GroupStackedMessageRenderer.tsx` (stacked) or inline bubble renderer
 
 ### Reaction Subscription Stability
 
@@ -572,30 +595,30 @@ Both chat screens stabilize their reaction `useEffect` dependency using a `react
 #### Layer Model
 
 ```
-┌──────────────────────────────────────────────────────────────────┐
-│  Layer 1 — fixedHeroBg (absolute, zIndex: 0, pointerEvents: none)│
-│  Background image + LinearGradient only. No interactive elements.│
-└──────────────────────────────────────────────────────────────────┘
-         ▼ (painted first)
-┌──────────────────────────────────────────────────────────────────┐
-│  Layer 2 — Animated.ScrollView                                   │
-│  ┌────────────────────────────────────────────────────────────┐  │
-│  │  Spacer (height: heroSpacerHeight)                         │  │
-│  │    └─ Animated.View (heroFixedContent)                     │  │
-│  │         translateY: +scrollY  → stays visually fixed       │  │
-│  │         Contains: avatar, name, edit buttons, voice room   │  │
-│  └────────────────────────────────────────────────────────────┘  │
-│  ┌────────────────────────────────────────────────────────────┐  │
-│  │  Content sheet (opaque bg, minHeight: windowHeight)        │  │
-│  │    Members, settings, permissions, leave/delete buttons    │  │
-│  │    Painted AFTER spacer → covers hero via painter's order  │  │
-│  └────────────────────────────────────────────────────────────┘  │
-└──────────────────────────────────────────────────────────────────┘
-         ▲ (painted last)
-┌──────────────────────────────────────────────────────────────────┐
-│  Floating header (absolute, zIndex: 10)                          │
-│  Back button + animated title opacity                            │
-└──────────────────────────────────────────────────────────────────┘
++------------------------------------------------------------------+
+¦  Layer 1 — fixedHeroBg (absolute, zIndex: 0, pointerEvents: none)¦
+¦  Background image + LinearGradient only. No interactive elements.¦
++------------------------------------------------------------------+
+         ? (painted first)
++------------------------------------------------------------------+
+¦  Layer 2 — Animated.ScrollView                                   ¦
+¦  +------------------------------------------------------------+  ¦
+¦  ¦  Spacer (height: heroSpacerHeight)                         ¦  ¦
+¦  ¦    +- Animated.View (heroFixedContent)                     ¦  ¦
+¦  ¦         translateY: +scrollY  ? stays visually fixed       ¦  ¦
+¦  ¦         Contains: avatar, name, edit buttons, voice room   ¦  ¦
+¦  +------------------------------------------------------------+  ¦
+¦  +------------------------------------------------------------+  ¦
+¦  ¦  Content sheet (opaque bg, minHeight: windowHeight)        ¦  ¦
+¦  ¦    Members, settings, permissions, leave/delete buttons    ¦  ¦
+¦  ¦    Painted AFTER spacer ? covers hero via painter's order  ¦  ¦
+¦  +------------------------------------------------------------+  ¦
++------------------------------------------------------------------+
+         ? (painted last)
++------------------------------------------------------------------+
+¦  Floating header (absolute, zIndex: 10)                          ¦
+¦  Back button + animated title opacity                            ¦
++------------------------------------------------------------------+
 ```
 
 #### How the Counter-Translate Works
@@ -626,7 +649,7 @@ The content sheet is the next sibling after the spacer inside the ScrollView. Be
 
 #### Measurement Flow
 
-1. `handleHeroLayout` fires `onLayout` → sets `heroContentHeight`
+1. `handleHeroLayout` fires `onLayout` ? sets `heroContentHeight`
 2. `heroBgHeight` = `heroContentHeight + HERO_BG_EXTENSION` (or fallback)
 3. `heroSpacerHeight` = `heroContentHeight` (or `HERO_FALLBACK_HEIGHT`)
 4. `HERO_FALLBACK_HEIGHT` = `TOTAL_HEADER_HEIGHT + 280` — used before first layout measurement
@@ -709,18 +732,18 @@ Display mode is a **viewer-side** setting — each user sees the mode they chose
 
 ```
 User toggles display mode in ChatSettingsScreen
-    │
-    ▼
+    ¦
+    ?
 dual-write: AsyncStorage (instant) + Firestore Users/{uid} (persistent)
-    │
-    ▼
+    ¦
+    ?
 useConversationDisplayMode() reads combined source
-    │
-    ▼
+    ¦
+    ?
 ChatMessageRenderer / GroupChatScreen selects renderer
-    │
-    ├─ "bubbles" → DMMessageItem / inline bubble views
-    └─ "stacked" → StackedMessageRenderer / GroupStackedMessageRenderer
+    ¦
+    +- "bubbles" ? DMMessageItem / inline bubble views
+    +- "stacked" ? StackedMessageRenderer / GroupStackedMessageRenderer
 ```
 
 ### Feed Layout Tokens (`FEED_LAYOUT` from `displayMode.ts`)
@@ -845,6 +868,7 @@ The grouped card system wraps consecutive messages from the same sender into vis
 - Group boundary corners (first message's top, last message's bottom) are always rounded
 - Thread indicators for mid-group messages render **inline** inside the card
 - Cards render immediately at full opacity with deterministic flag-based corners
+- Trusted scorecard rows in stacked group chats keep the same group boundary logic via `ChatScorecardMessage`, which mirrors the grouped-card surface/corner rules around the fixed-width `<GameScorecard />`
 
 ### Grouping Rules
 
@@ -861,60 +885,60 @@ Grouping is determined by `buildTimeline()` in `src/chat/buildTimeline.ts`. Two 
 ### Architecture Diagram
 
 ```
-┌──────────────────────────────────────────────────────────────────┐
-│ GroupChatScreen / ChatScreen (parent)                            │
-│                                                                  │
-│  ┌─ CardWidthTracker (single instance per conversation) ───────┐ │
-│  │  - nodes: Map<messageId, CardWidthNode>                     │ │
-│  │    (CardWidthNode: { width?, prevId?, nextId? })            │ │
-│  │  - listeners: Map<messageId, Set<snapshot callback>>        │ │
-│  └─────────────────────────────────────────────────────────────┘ │
-│                                                                  │
-│  ┌─ FlatList (inverted) ───────────────────────────────────────┐ │
-│  │  renderItem → for each TimelineItem:                        │ │
-│  │    ├─ type: "date-divider" → <DateDivider />                │ │
-│  │    └─ type: "message" →                                     │ │
-│  │        ├─ Compute groupPrevMessageId / groupNextMessageId   │ │
-│  │        └─ <GroupStackedMessageRenderer /> (group chats)      │ │
-│  │           or <StackedMessageRenderer /> (DMs)                │ │
-│  │             └─ useGroupedCardLayout() hook                   │ │
-│  │               └─ cardWrapper View (background, radii, snap)  │ │
-│  │                 └─ cardContent View (onLayout → width track) │ │
-│  │                   ├─ MessageHighlightOverlay                │ │
-│  │                   ├─ Author header (group-start only)       │ │
-│  │                   ├─ Reply preview (StackedReplyReference)  │ │
-│  │                   ├─ Message content (text / image / voice) │ │
-│  │                   ├─ Reaction pills                         │ │
-│  │                   └─ ThreadIndicator (inline, mid-group)    │ │
-│  │               └─ ThreadIndicator (external, group-end/solo) │ │
-│  └──────────────────────────────────────────────────────────────┘ │
-└──────────────────────────────────────────────────────────────────┘
++------------------------------------------------------------------+
+¦ GroupChatScreen / ChatScreen (parent)                            ¦
+¦                                                                  ¦
+¦  +- CardWidthTracker (single instance per conversation) -------+ ¦
+¦  ¦  - nodes: Map<messageId, CardWidthNode>                     ¦ ¦
+¦  ¦    (CardWidthNode: { width?, prevId?, nextId? })            ¦ ¦
+¦  ¦  - listeners: Map<messageId, Set<snapshot callback>>        ¦ ¦
+¦  +-------------------------------------------------------------+ ¦
+¦                                                                  ¦
+¦  +- FlatList (inverted) ---------------------------------------+ ¦
+¦  ¦  renderItem ? for each TimelineItem:                        ¦ ¦
+¦  ¦    +- type: "date-divider" ? <DateDivider />                ¦ ¦
+¦  ¦    +- type: "message" ?                                     ¦ ¦
+¦  ¦        +- Compute groupPrevMessageId / groupNextMessageId   ¦ ¦
+¦  ¦        +- <GroupStackedMessageRenderer /> (group chats)      ¦ ¦
+¦  ¦           or <StackedMessageRenderer /> (DMs)                ¦ ¦
+¦  ¦             +- useGroupedCardLayout() hook                   ¦ ¦
+¦  ¦               +- cardWrapper View (background, radii, snap)  ¦ ¦
+¦  ¦                 +- cardContent View (onLayout ? width track) ¦ ¦
+¦  ¦                   +- MessageHighlightOverlay                ¦ ¦
+¦  ¦                   +- Author header (group-start only)       ¦ ¦
+¦  ¦                   +- Reply preview (StackedReplyReference)  ¦ ¦
+¦  ¦                   +- Message content (text / image / voice) ¦ ¦
+¦  ¦                   +- Reaction pills                         ¦ ¦
+¦  ¦                   +- ThreadIndicator (inline, mid-group)    ¦ ¦
+¦  ¦               +- ThreadIndicator (external, group-end/solo) ¦ ¦
+¦  +--------------------------------------------------------------+ ¦
++------------------------------------------------------------------+
 ```
 
 ### Row Grid Structure
 
 ```
-┌──────────────────────────────────────────────────────────┐
-│ feedRow (width: 100%, paddingHorizontal: 8)              │
-│                                                          │
-│  ┌──────────┐  ┌──────────────────────────────────────┐  │
-│  │  gutter   │  │  contentColumn (flex: 1)             │  │
-│  │  (40px)   │  │                                      │  │
-│  │  + gap    │  │  ┌─ cardWrapper (outer) ───────────┐ │  │
-│  │  (14px)   │  │  │  alignSelf: "flex-start"       │ │  │
-│  │           │  │  │  backgroundColor: background   │ │  │
-│  │  [avatar] │  │  │  overflow: "hidden"             │ │  │
-│  │  or       │  │  │  [adaptive border radii]        │ │  │
-│  │  [spacer] │  │  │  [minWidth: snapMinWidth]       │ │  │
-│  │           │  │  │                                 │ │  │
-│  │           │  │  │  ┌─ cardContent (inner) ──────┐ │ │  │
-│  │           │  │  │  │  paddingH: 12, paddingV: 6 │ │ │  │
-│  │           │  │  │  │  onLayout → width tracking  │ │ │  │
-│  │           │  │  │  │  [message content]          │ │ │  │
-│  │           │  │  │  └────────────────────────────┘ │ │  │
-│  │           │  │  └─────────────────────────────────┘ │  │
-│  └──────────┘  └──────────────────────────────────────┘  │
-└──────────────────────────────────────────────────────────┘
++----------------------------------------------------------+
+¦ feedRow (width: 100%, paddingHorizontal: 8)              ¦
+¦                                                          ¦
+¦  +----------+  +--------------------------------------+  ¦
+¦  ¦  gutter   ¦  ¦  contentColumn (flex: 1)             ¦  ¦
+¦  ¦  (40px)   ¦  ¦                                      ¦  ¦
+¦  ¦  + gap    ¦  ¦  +- cardWrapper (outer) -----------+ ¦  ¦
+¦  ¦  (14px)   ¦  ¦  ¦  alignSelf: "flex-start"       ¦ ¦  ¦
+¦  ¦           ¦  ¦  ¦  backgroundColor: background   ¦ ¦  ¦
+¦  ¦  [avatar] ¦  ¦  ¦  overflow: "hidden"             ¦ ¦  ¦
+¦  ¦  or       ¦  ¦  ¦  [adaptive border radii]        ¦ ¦  ¦
+¦  ¦  [spacer] ¦  ¦  ¦  [minWidth: snapMinWidth]       ¦ ¦  ¦
+¦  ¦           ¦  ¦  ¦                                 ¦ ¦  ¦
+¦  ¦           ¦  ¦  ¦  +- cardContent (inner) ------+ ¦ ¦  ¦
+¦  ¦           ¦  ¦  ¦  ¦  paddingH: 12, paddingV: 6 ¦ ¦ ¦  ¦
+¦  ¦           ¦  ¦  ¦  ¦  onLayout ? width tracking  ¦ ¦ ¦  ¦
+¦  ¦           ¦  ¦  ¦  ¦  [message content]          ¦ ¦ ¦  ¦
+¦  ¦           ¦  ¦  ¦  +----------------------------+ ¦ ¦  ¦
+¦  ¦           ¦  ¦  +---------------------------------+ ¦  ¦
+¦  +----------+  +--------------------------------------+  ¦
++----------------------------------------------------------+
 ```
 
 - **Group-start rows**: Avatar in gutter, author name + timestamp in header
@@ -988,7 +1012,7 @@ Width snapping uses a **cluster-based** algorithm. The tracker walks the entire 
 
 All messages in a snap cluster are expanded to the width of the widest member via `minWidth` on the outer `cardWrapper`.
 
-Snapping is transitive: if A↔B and B↔C are each within threshold, all three snap to `max(A, B, C)` even if `|A - C| > threshold`.
+Snapping is transitive: if A?B and B?C are each within threshold, all three snap to `max(A, B, C)` even if `|A - C| > threshold`.
 
 ### Adaptive Corner Rounding
 
@@ -1012,10 +1036,10 @@ GROUPED MESSAGES:
 | ---------------- | ------------ | ------------ | ------------ |
 | **Top-Left**     | `8`          | `0`          | `0`          |
 | **Bottom-Left**  | `0`          | `8`          | `0`          |
-| **Top-Right**    | `8` (always) | Width rule ↓ | Width rule ↓ |
-| **Bottom-Right** | Width rule ↓ | `8` (always) | Width rule ↓ |
+| **Top-Right**    | `8` (always) | Width rule ? | Width rule ? |
+| **Bottom-Right** | Width rule ? | `8` (always) | Width rule ? |
 
-**Width rule**: `currentWidth > adjacentWidth` → `8` (rounded); else → `0` (flat)
+**Width rule**: `currentWidth > adjacentWidth` ? `8` (rounded); else ? `0` (flat)
 
 ### useGroupedCardLayout Hook
 
@@ -1111,7 +1135,7 @@ Built internally from raw primitive props via `useMemo` in `GroupStackedMessageR
 
 While card layout logic is shared, the renderers differ in:
 
-- **GroupStackedMessageRenderer**: Raw grouping flag primitives → internal `useMemo` VM. `@mention` row highlighting. `MessageWithMentions` for text. Stable parent callbacks.
+- **GroupStackedMessageRenderer**: Raw grouping flag primitives ? internal `useMemo` VM. `@mention` row highlighting. `MessageWithMentions` for text. Stable parent callbacks.
 - **StackedMessageRenderer**: `useTheme()` from react-native-paper. No mention highlighting. Plain `Text`. `useLinkPreviews` hook. Direct `navigation.navigate` for threads.
 
 ---
@@ -1127,6 +1151,52 @@ The main composer component (`ChatComposer.tsx`) handles:
 - Voice recording
 - Customizable toolbar
 - `overflow: "visible"`, `minHeight: 40`, total height ~56px
+
+### Multiline Text Box Contract
+
+The current composer grows upward from a one-line shell to a five-line shell, then hands overflow to the input's internal scroll view.
+
+Current implementation details:
+
+- `ChatComposer.tsx` clamps the text-box shell with `COMPOSER_MIN_HEIGHT = 40` and `COMPOSER_MAX_HEIGHT = 130`
+- the growth contract is owned by the text-input container, not by the outer chat screen
+- the fallback React Native `TextInput` path is multiline and relies on native internal scrolling once the shell hits max height
+- the iOS native path uses `NativeComposerInput.tsx`, which listens to the native view's `onContentSizeChange` and applies an explicit height between `40` and `130` so Yoga expands correctly
+- `ChatComposer.tsx` itself does not run a JS `onContentSizeChange` measurement loop
+- send clears the current input buffer immediately, then refocuses once so the keyboard stays open without the older multi-timeout flicker workaround
+
+Practical result:
+
+- line 1 to line 5 expands the composer shell
+- once the user goes past that height, the shell stays capped and the text view scrolls internally
+- chat layout reacts to the shell height because the composer itself changes height, rather than because the screen measures text manually
+
+### Voice Recording Inside the Composer
+
+Voice recording is no longer a separate floating strip. The recording UI is rendered inside the same text-box shell.
+
+Ownership split:
+
+- `VoiceRecordButton.tsx` owns the gesture and recorder lifecycle
+- `useVoiceRecorder.ts` owns recorder permissions, timing, duration tracking, and completion payloads
+- `VoiceRecordingHost.tsx` bridges host bounds and recording state from the mic button back up to the composer
+- `VoiceRecordingOverlay` is rendered as the last child of `textInputContainer`, so the text box visually transforms into the recording surface
+
+Current interaction model:
+
+- mic is shown only when there is no text, no attachment payload, and no overriding right accessory competing for that slot
+- press-and-hold starts recording
+- drag left over the far-left X target arms cancel
+- drag up over the centered lock target arms lock
+- release cancels, locks, or stops-and-sends depending on hover target
+- when locked, the mic hides and the overlay's right-side discard/send controls take over
+- on web, voice recording uses a click-to-toggle path instead of press-and-hold
+
+Layout details that matter:
+
+- the overlay background intentionally matches the composer shell background
+- the timer pill sits above the composer and is centered over the lock target
+- because the overlay measures the real `textInputContainer` bounds, cancel/lock/timer placement adapts automatically to toolbar width, composer resizing, and left/right accessory changes
 
 ### Composer Toolbar Customization
 
@@ -1192,9 +1262,9 @@ The `camera` toolbar item is a **single dual-behavior item** backed by `CameraLo
 
 Camera behavior:
 
-- **Quick tap** → opens the normal camera (`handleCaptureFromCamera()`)
-- **Hold** → arms image-picker mode after `425 ms`
-- **Release after arming** → opens the photo library (`handleAddAttachment()`)
+- **Quick tap** ? opens the normal camera (`handleCaptureFromCamera()`)
+- **Hold** ? arms image-picker mode after `425 ms`
+- **Release after arming** ? opens the photo library (`handleAddAttachment()`)
 
 When the hold crosses the image-picker threshold, the camera button updates **before** the picker opens:
 
@@ -1212,9 +1282,9 @@ The `animal` toolbar item is now a **single dual-behavior item** backed by `Anim
 
 Animal behavior:
 
-- **Quick tap** → opens the lightweight anchored animal picker bubble in chat
-- **Hold** → arms alternate animal-picker mode after `425 ms`
-- **Release after arming** → opens the full animal catalog via `Customization` → `chat_animal_theme`
+- **Quick tap** ? opens the lightweight anchored animal picker bubble in chat
+- **Hold** ? arms alternate animal-picker mode after `425 ms`
+- **Release after arming** ? opens the full animal catalog via `Customization` ? `chat_animal_theme`
 
 When the hold crosses the alternate-picker threshold, the animal button updates **before** navigation happens:
 
@@ -1283,19 +1353,19 @@ Toolbar picker buttons (GIF, Emoji, Sticker, Game, GifSticker) are code-split vi
 `src/components/chat/pickerPreload.ts` maintains a singleton cache of `import()` promises per picker module and warms initial picker data/image caches:
 
 ```
-preloadPickersForToolbar(["gif", "emoji", "sticker"]) → starts imports
-  ├─ getGifPickerImport()      → import("./GifPicker")         [cached]
-  ├─ getEmojiPickerImport()    → import("./FullEmojiPicker")   [cached]
-  └─ getStickerPickerImport()  → import("./StickerPicker")     [cached]
+preloadPickersForToolbar(["gif", "emoji", "sticker"]) ? starts imports
+  +- getGifPickerImport()      ? import("./GifPicker")         [cached]
+  +- getEmojiPickerImport()    ? import("./FullEmojiPicker")   [cached]
+  +- getStickerPickerImport()  ? import("./StickerPicker")     [cached]
 
 warmGifPickerData()
-  ├─ fetchTrending({ limit: 30 })
-  ├─ getCategories()
-  └─ prefetchImages(first preview/category URLs)
+  +- fetchTrending({ limit: 30 })
+  +- getCategories()
+  +- prefetchImages(first preview/category URLs)
 
 warmStickerPickerData()
-  ├─ fetchTrendingStickers({ limit: 30 })
-  └─ prefetchImages(first preview URLs)
+  +- fetchTrendingStickers({ limit: 30 })
+  +- prefetchImages(first preview URLs)
 ```
 
 Each button component's `React.lazy()` factory calls the same getter (e.g., `React.lazy(() => getGifPickerImport())`), so when the user taps the button, `React.lazy` resolves instantly from the cached promise. Once the import has resolved, the button keeps the picker component mounted with `open={false}` and `warmupEnabled={true}`. The picker renders a `DraggableBottomSheet` with `keepMountedWhenClosed`, so the Portal, sheet host, search bar, list, and first-frame layout all warm in the background rather than on the tap that the user feels.
@@ -1317,97 +1387,98 @@ Each button component's `React.lazy()` factory calls the same getter (e.g., `Rea
 
 ### Executive Summary
 
-The keyboard architecture has gone through 3 iterations trying to solve a fundamental problem: making the chat composer track the keyboard smoothly while the inverted FlatList also resizes correctly.
+The current keyboard stack is built around one shared fallback container, not
+around a native KCSV-first path.
 
-### Runtime Environment
+What is true today:
 
-- **Expo Go**: KCSV (KeyboardChatScrollView) is NOT available — requires native build
-- Available: KSV (KeyboardStickyView), KAV (KeyboardAvoidingView), `useReanimatedKeyboardAnimation`, `useKeyboardHandler`
-- `KeyboardProvider` already wraps the app
+- `KeyboardProvider` still wraps the app
+- `useReanimatedKeyboardAnimationCompat()` is the live keyboard-height source
+- native builds still benefit from keyboard-controller shared values when available
+- Expo Go falls back to React Native keyboard events via `src/utils/optionalKeyboardController.tsx`
+- `ChatKeyboardScrollView.tsx` still contains the KCSV codepath, but `kcsvAvailable` is intentionally hardcoded to `false`
 
-### Expo Go Keyboard Fallback
+### Why the Current Stack Exists
 
-`src/utils/optionalKeyboardController.tsx` provides `useFallbackKeyboardAnimation()` — a compatibility bridge that feeds RN `Keyboard.addListener` events into Reanimated shared values so chat screens animate correctly in Expo Go. Uses `keyboardWillShow`/`keyboardWillHide` on iOS; `keyboardDidShow`/`keyboardDidHide` on Android. Shared values animate via `withTiming` for smooth transitions.
+The chat screens need all of these at once:
 
-### The Fundamental Problem
+1. An inverted `FlatList` that keeps the newest rows anchored at the bottom.
+2. A composer that sits flush above the keyboard.
+3. A message viewport that actually shrinks when the keyboard opens.
+4. A bottom safe-area spacer when the keyboard is closed.
+5. Smooth keyboard dismiss and picker-sheet handoff on iOS.
 
-Both KSV and KAV are designed for "simple" keyboard avoidance. The chat screen requires a specific combination of:
+The older KAV/KSV-style approaches did not hold those constraints together
+cleanly. The current production path favors a simpler animated layout
+container over a scroll-wrapper trick.
 
-1. **Inverted FlatList** — newest messages at bottom, `maintainVisibleContentPosition` active
-2. **Composer at bottom** — must sit flush above the keyboard when open
-3. **Message list must resize** — visible area must shrink when keyboard opens
-4. **Conditional safe area** — bottom safe area needed when keyboard closed, not when open
-5. **Interactive keyboard dismiss** — iOS drag-to-dismiss must be smooth
+### Active Production Path
 
-### Why KSV Fails
+All three chat screens now share one keyboard stack:
 
-KSV uses `translateY` (visual-only transform). It doesn't trigger flex layout changes. The FlatList still occupies the same pixel count. Only the footer moves — floating over the bottom messages.
+- `ChatKeyboardContainer` resolves to the fallback container in every build.
+- The active path is an animated `paddingBottom` layout driven by shared
+  keyboard values plus picker-sheet state.
+- `ChatFooterWrapper` keeps the composer attached to the same bottom region.
+- `renderScrollComponent` resolves to a plain `ScrollView` wrapper because the
+  KCSV scroll component is deliberately disabled.
+- `ComposerSheetContext` coordinates keyboard-to-sheet replacement, handoff
+  floor, and interaction gates so picker sheets and the keyboard do not fight.
 
-### Why KAV `behavior: "height"` Fails
+### Why the KCSV Scroll Component Is Off
 
-KAV's `"height"` behavior sets explicit `height` + `flex: 0`. This triggers layout change, BUT:
+`ChatKeyboardScrollView.tsx` keeps the KCSV code around, but it is not the
+active runtime because it produced visible list motion during sheet-to-keyboard
+and keyboard-to-sheet transitions.
 
-- Layout is async (Reanimated UI thread vs RN Yoga JS thread) → 1+ frame lag → jitter
-- Digital flex transition: `flex: 1` → `{ height: X, flex: 0 }` is discontinuous
-- Safe-area spacer stays visible (gap issue)
-- Frame measurement issues with stale `initialFrame`
+The current fallback path won because:
 
-### Current Architecture (KCSV + Fallback)
+- it kept the composer flush to the keyboard without visual drift
+- it caused less chat-list motion during picker transitions
+- it matched Expo Go behavior better
+- it still preserved the useful native piece: shared keyboard-height values
 
-All three chat screens (ChatScreen, GroupChatScreen, ThreadScreen) now use `ChatKeyboardContainer` which routes to native KCSV when available or to a `FallbackKeyboardContainer` (animated `paddingBottom`) in Expo Go. `ChatFooterWrapper` positions the composer via `KeyboardStickyView` on the KCSV path or inherits the fallback container's padding. The FlatList receives `renderScrollComponent` which resolves to `KeyboardChatScrollView` (native 60fps inset-driven) or plain `ScrollView`.
+### Composer and List Coordination
 
-**Note:** The older KAV `behavior="height"` approach described in prior doc versions has been fully replaced.
+The message list and composer now coordinate through layout ownership rather
+than through ad hoc screen measurement:
 
-### Chat Screen Flex Stack
+- the composer changes its own height as text grows
+- the keyboard container animates the bottom region
+- the safe-area spacer is part of the shared footer stack
+- `maintainVisibleContentPosition` keeps doing its normal list job instead of
+  being asked to fake keyboard avoidance
 
-| Element            | Height     | Notes                      |
-| ------------------ | ---------- | -------------------------- |
-| ChatHeader         | ~56px      | Fixed                      |
-| PinnedInviteBar    | ~48px or 0 | Conditional                |
-| ChatMessageList    | Remaining  | Inverted FlatList, flex: 1 |
-| NetworkBanner      | ~28px or 0 | Animated                   |
-| TypingBar/Bubble   | ~24px or 0 | Conditional                |
-| ChatComposer       | ~56px      | minHeight: 40saw           |
-| Safe-area spacer   | ~34px      | Always rendered            |
-| ScrollReturnButton | —          | position: absolute         |
+The result is that composer growth, keyboard movement, and picker replacement
+all flow through the same shared bottom region.
 
-### Requirements
+### Global Keyboard Preference
 
-Must have:
+The "Open Keyboard on Chat Open" toggle is global, not per-conversation.
 
-1. Messages must scroll up when keyboard opens (FlatList shrinks)
-2. Composer flush above keyboard (no gap)
-3. Composer above safe area when keyboard closed
-4. Smooth animation (no jitter/stutter)
-5. Interactive dismiss works (iOS drag-to-dismiss)
-6. Works in Expo Go
-7. `maintainVisibleContentPosition` must not fight keyboard
-8. Works in both stacked and bubble display modes
-9. Works for both ChatScreen (DM) and GroupChatScreen
+Implementation:
 
-### Native KCSV Path (Active)
+- context: `src/store/ChatKeyboardPreferenceContext.tsx`
+- local persistence: AsyncStorage key `@vibe/auto_open_keyboard_on_chat`
+- cloud mirror: `Users/{uid}.autoOpenKeyboardOnChat`
+- default: enabled when missing
 
-All three chat screens use the native **KCSV + KSV** architecture when `isKCSVAvailable` is true (native build with `expo-dev-client`):
-
-- `KeyboardChatScrollView` handles `contentInset` on the UI thread (zero layout reflow)
-- `KeyboardStickyView` handles footer positioning with smooth `translateY`
-- `setChatScrollViewConfig()` configures offset and lift behavior per screen
-- `useRenderChatScrollComponent()` provides the scroll component factory
-
-When KCSV is unavailable (Expo Go), the system falls back to `FallbackKeyboardContainer` with `useFallbackKeyboardAnimation()` driving Reanimated shared values from RN `Keyboard` events.
+`ChatScreen.tsx` and `GroupChatScreen.tsx` both honor that preference when
+deciding whether to focus the composer on entry.
 
 ### Key Files
 
-| File                                             | Role                                                             |
-| ------------------------------------------------ | ---------------------------------------------------------------- |
-| `src/components/chat/ChatKeyboardScrollView.tsx` | KCSV adapter + ChatFooterWrapper + isKCSVAvailable               |
-| `src/components/chat/ChatMessageList.tsx`        | Inverted FlatList                                                |
-| `src/components/chat/ChatComposer.tsx`           | Composer UI                                                      |
-| `src/hooks/chat/useChatKeyboard.ts`              | Keyboard SharedValues + JS state                                 |
-| `src/screens/chat/ChatScreen.tsx`                | DM — ChatKeyboardContainer + KCSV scroll + ChatFooterWrapper     |
-| `src/screens/groups/GroupChatScreen.tsx`         | Group — same KCSV pattern                                        |
-| `src/screens/chat/ThreadScreen.tsx`              | Thread — ChatKeyboardContainer + KCSV scroll + ChatFooterWrapper |
-| `src/utils/optionalKeyboardController.tsx`       | Expo Go keyboard fallback (Keyboard→SharedValue bridge)          |
+| File | Role |
+| ---- | ---- |
+| `src/components/chat/ChatKeyboardScrollView.tsx` | Active fallback container, footer wrapper, dormant KCSV switch |
+| `src/components/chat/ChatMessageList.tsx` | Inverted list wrapper |
+| `src/components/chat/ChatComposer.tsx` | Composer UI and height-owning text shell |
+| `src/contexts/ComposerSheetContext.tsx` | Keyboard-replacement sheet state, handoff floor, interaction gate |
+| `src/screens/chat/ChatScreen.tsx` | DM screen using the shared keyboard stack |
+| `src/screens/groups/GroupChatScreen.tsx` | Group screen using the shared keyboard stack |
+| `src/screens/chat/ThreadScreen.tsx` | Thread screen using the same footer/container pattern |
+| `src/store/ChatKeyboardPreferenceContext.tsx` | Global auto-open keyboard preference |
+| `src/utils/optionalKeyboardController.tsx` | Expo Go keyboard fallback feeding shared values |
 
 ---
 
@@ -1415,88 +1486,111 @@ When KCSV is unavailable (Expo Go), the system falls back to `FallbackKeyboardCo
 
 ### UX Flow
 
-1. **Long-press a message** → `MessageActionsSheet` opens
-2. **Quick reactions** — 6 curated emojis (👍 ❤️ 😂 😮 😢 🔥) at top of sheet
-3. **"+" button** — Opens full emoji picker (`rn-emoji-keyboard`) with categories, search, recent, skin tones
-4. **Selecting an emoji** closes picker/sheet, calls `toggleReactionV2` on server
-5. **Reaction pills** appear below message bubble (emoji + count). Tapping toggles participation
-6. **Tapping own pill** removes reaction
+1. Long-press a message and open `MessageActionsSheet`.
+2. Use one of the 6 curated quick reactions at the top of the sheet.
+3. Use the `+` button to open the full `rn-emoji-keyboard` picker.
+4. Select an emoji and call `toggleReactionV2`.
+5. Render reaction pills below the message row.
+6. Tap an existing pill to toggle participation.
 
 ### Data Model
 
-**Message document** (`reactionsSummary`):
+Message docs carry a denormalized summary:
 
-```
+```text
 Chats/{chatId}/Messages/{messageId}
 Groups/{groupId}/Messages/{messageId}
-  └─ reactionsSummary: Record<string, number>  // { "🔥": 2, "❤️": 1 }
+  -> reactionsSummary: Record<string, number>
 ```
 
-**Reactions subcollection**:
+Per-message detail lives in a subcollection:
 
-```
+```text
 .../Messages/{messageId}/Reactions/{emoji}
-  ├─ emoji: string
-  ├─ uids: string[]
-  ├─ count: number
-  └─ updatedAt: number
+  -> emoji
+  -> uids[]
+  -> count
+  -> updatedAt
 ```
 
-- Document ID = emoji character
-- Max 20 unique emojis per message
-- Max 10 users displayed per emoji in detail sheet
+Operational limits enforced in the stack today:
+
+- document ID is the emoji itself
+- max 20 unique emojis per message
+- max 10 users are shown per emoji tab in the detail sheet
 
 ### Service Layer
 
-| Function                                | Description                                          |
-| --------------------------------------- | ---------------------------------------------------- |
-| `toggleReaction()`                      | Calls `toggleReactionV2` Cloud Function              |
-| `applyOptimisticReaction()`             | Pure function: computes next reactions array locally |
-| `subscribeToReactions()`                | Real-time Firestore listener for one message         |
-| `subscribeToMultipleMessageReactions()` | Batch subscription for visible messages              |
-| `getReactions()`                        | One-shot fetch                                       |
-| `parseReactionsFromMessage()`           | Parse denormalized summary into `ReactionSummary[]`  |
+Everything routes through `src/services/reactions.ts`.
 
-All in `src/services/reactions.ts`.
+| Function | What it owns |
+| ---- | ---- |
+| `toggleReaction()` | Calls the backend function |
+| `applyOptimisticReaction()` | Pure optimistic state transform |
+| `subscribeToReactions()` | Real-time listener for one message |
+| `subscribeToMultipleMessageReactions()` | Batched visible-row subscription |
+| `getReactions()` | One-shot fetch |
+| `parseReactionsFromMessage()` | Converts `reactionsSummary` into `ReactionSummary[]` |
 
-### Cloud Function (`toggleReactionV2`)
+### Backend Function
 
-- **Input**: `{ conversationId, scope, messageId, emoji }`
-- **Validation**: Auth, membership, rate limit (10/min), emoji ≤ 10 chars
-- **Logic**: Firestore transaction — adds/removes UID, updates denormalized `reactionsSummary`
-- **Output**: `{ success, action: "added"|"removed", reactionsSummary }`
+`toggleReactionV2` validates:
 
-### Optimistic Updates
+- auth
+- conversation membership
+- emoji length
+- basic rate limits
 
-1. User taps reaction → `applyOptimisticReaction()` computes next local state (pure function)
-2. Parent screen calls `setMessageReactions()` immediately with optimistic result
-3. Cloud Function call is fired in background (fire-and-forget)
-4. On success: Firestore listener overwrites with authoritative state (usually identical)
-5. On failure: `applyOptimisticReaction()` called again to roll back
+Then it runs a Firestore transaction that adds or removes the current UID and
+updates `reactionsSummary`.
 
-**Key details:**
+### Optimistic Behavior
 
-- **Per-emoji debounce**: `inflight` ref Set prevents double-taps on same emoji
-- **`optimisticIds` ref**: Messages with optimistic reactions are always included in subscription set (fixes first-reaction blindspot)
-- **No blocking state**: Replaced old `loadingEmoji` state with per-emoji inflight ref
+The reaction path is intentionally optimistic:
 
-### Subscription Stability
+1. The local array is updated immediately.
+2. The server call runs in the background.
+3. The Firestore listener later overwrites local state with the authoritative row.
+4. Failures roll back through the same pure updater.
 
-Both chat screens use a `reactionTargetKey` — a `useMemo`-derived sorted comma-joined string of visible message IDs — as the `useEffect` dependency. Only rebuilds when the set of message IDs actually changes.
+Implementation details that matter:
 
-### Animations
+- an inflight set prevents rapid double-taps on the same emoji
+- optimistic messages are forced into the subscription set so the first added
+  reaction is not missed
+- the screens stabilize their subscription dependency with a sorted
+  `reactionTargetKey`, so effects do not rebuild on every `messages` array
+  identity change
 
-- **Pill tap**: Spring scale (`withSequence(withSpring(1.25), withSpring(1))`)
-- **Pill enter/exit**: `FadeIn.duration(200)` / `FadeOut.duration(150)`
-- **Layout transitions**: `LinearTransition.springify()`
-- **Haptic feedback**: `expo-haptics` `ImpactFeedbackStyle.Light`
-- **Theme-aware**: `primaryContainer`/`primary` for own reactions, `surfaceVariant` for others
+### Detail Sheet vs Long-Press Preview
 
-### Known Limitations
+These surfaces have distinct responsibilities:
 
-- Denormalized `reactionsSummary` doesn't include per-user data — `hasReacted` is always `false` from summary alone. Full reaction subscriptions needed for accurate state.
-- `ReactionDetailSheet` batch-fetches all reactor profiles on open using `batchFetchProfiles()` (Firestore `documentId() in [...]` query, max 30 per chunk). Profiles are cached in `profileCache.ts` with 5-minute TTL. Tab switching resolves from cache synchronously.
-- If Cloud Function fails silently, optimistic state persists until Firestore listener delivers authoritative data.
+- `ReactionDetailSheet.tsx` is a reactor list only. It does not show message
+  preview text.
+- `MessageActionsSheet.tsx` owns long-press preview text, copy text, and reply
+  metadata derivation.
+- `SwipeableMessage.tsx` mirrors the same reply-snippet sanitization rules for
+  swipe-to-reply.
+
+That split matters for scorecards: the scorecard row can still be reacted to,
+but any text-based surface normalizes it to `Game Scorecard` rather than
+showing the raw wire payload.
+
+### Animations and Limits
+
+- reaction pills use spring scale on tap
+- pill enter and exit use fade transitions
+- layout changes use `LinearTransition.springify()`
+- `expo-haptics` light impact is used for quick feedback
+
+Current non-blocking limitations:
+
+- `reactionsSummary` does not contain per-user membership, so summary-only rows
+  cannot know `hasReacted` without subscribing
+- `ReactionDetailSheet` resolves profile details in batches on open
+- if the server call fails but the real-time listener is delayed, optimistic
+  state can linger briefly
 
 ---
 
@@ -1504,69 +1598,38 @@ Both chat screens use a `reactionTargetKey` — a `useMemo`-derived sorted comma
 
 ### Architecture
 
-```
-UI Layer (GifPicker, GifGrid, GifPreview)
-    │
-    ▼
-Service Layer (gifService.ts, gifCacheService.ts)
-    │
-    ▼
-KLIPY API (external)
+```text
+GifPicker / GifGrid / GifPreview
+  -> gifService.ts + gifCacheService.ts
+  -> KLIPY API
 ```
 
-### Feature Flag
+### Current Behavior
 
-GIF picker visibility is controlled by a feature flag. When disabled, the GIF toolbar item is hidden.
+- visibility is feature-flagged
+- toolbar buttons are code-split and eagerly preloaded by the composer
+- trending and category data are warmed in the background
+- preview assets are prefetched into the `expo-image` cache
+- sending a GIF uses the normal message pipeline with a `kind: "media"`
+  attachment backed by the remote URL
 
-### KLIPY API Endpoints
+### Provider and Cache Model
 
-| Endpoint                            | Purpose           |
-| ----------------------------------- | ----------------- |
-| `GET /v1/gifs/trending`             | Trending GIFs     |
-| `GET /v1/gifs/search?q={query}`     | Search GIFs       |
-| `GET /v1/gifs/{id}`                 | GIF details       |
-| `GET /v1/gifs/categories`           | Category listing  |
-| `GET /v1/stickers/trending`         | Trending stickers |
-| `GET /v1/stickers/search?q={query}` | Search stickers   |
+`gifService.ts` abstracts the provider so the UI is not coupled directly to
+KLIPY's API shape.
 
-### Authentication
+`gifCacheService.ts` currently handles:
 
-API key sent via `X-API-Key` header. Key stored in app config, not hardcoded.
+- in-memory search caching
+- trending cache with TTL
+- category cache for the session
 
-### Rate Limits
+### Limits
 
-- 100 requests/minute per API key
-- Client-side debounce on search (300ms)
-
-### Provider Pattern
-
-`gifService.ts` abstracts the KLIPY API behind a provider interface, enabling future provider swaps without UI changes.
-
-### Caching Strategy
-
-`gifCacheService.ts` implements:
-
-- In-memory LRU cache for search results
-- Trending results cached with 5-minute TTL
-- Category list cached for session duration
-
-### Message Flow
-
-1. User opens GIF picker from composer toolbar
-2. Trending GIFs load on open
-3. User searches or browses categories
-4. User taps a GIF → picker closes
-5. GIF URL + metadata passed to send flow
-6. Message sent with `kind: "media"` and GIF attachment
-7. Recipients render GIF inline via cached URL
-
-### Known Limitations
-
-1. No offline GIF browsing (requires network)
-2. Search results limited to 50 per query
-3. GIF file size not enforced client-side (server handles)
-4. Attribution requirements per KLIPY terms
-5. No GIF favorites/recents persistence across sessions
+1. No offline GIF browsing.
+2. Search still depends on network-backed provider results.
+3. File-size enforcement remains server-side.
+4. Favorites and recents are not yet persisted across sessions.
 
 ---
 
@@ -1574,114 +1637,170 @@ API key sent via `X-API-Key` header. Key stored in app config, not hardcoded.
 
 ### Overview
 
-Users can select a custom font color for chat messages through the Customization Hub. Default is **theme-adaptive** (changes with active theme). Custom colors are **fixed** (stay the same regardless of theme).
+Custom font color is implemented as part of chat cosmetics, not as a special
+message renderer exception.
 
-### Data Model
+Current model:
 
-**ChatAppearance** (per-user, Firestore at `Users/{uid}.chatAppearance`):
+- user preference lives on `Users/{uid}.chatAppearance`
+- outgoing messages stamp a sender-style snapshot
+- incoming rows resolve color from the stamped snapshot first
+- missing data falls back to theme-adaptive defaults
+
+### Core Contracts
+
+`ChatAppearance` is stored per user:
 
 ```typescript
 interface ChatAppearance {
   bubbleColorId: string | null;
   fontId: string | null;
-  fontColorId: string | null; // null = theme-adaptive default
+  fontColorId: string | null;
   animalThemeId: string | null;
 }
 ```
 
-**SenderStyle** (per-message stamp):
+Operational sender-style stamping comes from `buildSenderStyle()` in
+`src/cosmetics/chatAppearanceResolver.ts`, which can include:
 
-```typescript
-interface SenderStyle {
-  fontColorId?: string | null;
-  fontColorHex?: string | null; // Pre-resolved hex for forward-compat
-  v: 1;
-}
-```
+- `bubbleColorId`
+- `bubbleColorHex`
+- `fontId`
+- `fontKey`
+- `fontColorId`
+- `fontColorHex`
+- `animalThemeId`
+- `v`
 
-Stamped on every outgoing message via `buildSenderStyle()` so recipients render custom font color without fetching profiles.
+### Rendering Rules
 
-### Resolution Logic
+| Mode | Default | Custom |
+| ---- | ---- | ---- |
+| Stacked | theme `onSurface` | fixed `fontColorHex` |
+| Bubble | contrast-computed text color | fixed `fontColorHex` overrides |
 
-**Outgoing**: `resolveOutgoingChatStyle()` resolves `fontColorId` → hex via cosmetic catalog → `CHAT_FONT_COLORS` map → catalog metadata → `null` (theme-adaptive).
-
-**Incoming**: `resolveIncomingBubbleStyle()` prefers `senderStyle.fontColorHex` → catalog lookup → metadata → `null`.
-
-### Rendering Behavior
-
-| Mode    | Default                             | Custom                        |
-| ------- | ----------------------------------- | ----------------------------- |
-| Stacked | `theme.colors.onSurface` (adapts)   | Fixed hex from `fontColorHex` |
-| Bubble  | Contrast-computed `bubbleTextColor` | `fontColorHex` overrides      |
-
-Custom font color applies to chat message body text only. Does NOT apply to error text, button labels, badges, status indicators, navigation labels, placeholder text, or timestamps/metadata.
-
-### Color Catalog
-
-16 curated colors across rarity tiers:
-
-| Tier         | Colors                                               | Acquisition |
-| ------------ | ---------------------------------------------------- | ----------- |
-| Free/Starter | Snow (#FFFFFF), Charcoal (#2D2D2D), Silver (#B0B0B0) | Default     |
-| Common       | Sky Blue, Lavender, Mint, Rose, Peach                | 150 tokens  |
-| Uncommon     | Coral, Gold, Aqua, Lime                              | 250 tokens  |
-| Rare         | Neon Pink, Electric Blue, Emerald                    | 400 tokens  |
-
-### Hooks
-
-- `useFontColor()` — centralized hook: `{ textColor, textSecondaryColor, isCustom, customHex, chatTextColor }`
-- `resolveFontColor()` — standalone utility for non-hook contexts
+Custom font color applies to message body text only. It does not recolor
+timestamps, metadata rows, badges, placeholders, or navigation chrome.
 
 ### Backward Compatibility
 
-- `sanitizeChatAppearance()` uses spread with defaults — old users without `fontColorId` get `null` (theme-adaptive)
-- `senderStyle` fields are optional — old messages render with theme defaults
-- No breaking changes to existing rendering
+- missing `fontColorId` means theme-adaptive default
+- historical rows without sender-style data still render correctly
+- catalog lookup remains best-effort, with resolved hex values providing
+  forward compatibility
 
 ---
 
 ## 15. Message Features
 
-### Reactions
+### 15.1 Scorecards
 
-See [Section 12](#12-reaction-system) for full details.
+Scorecards are a chat surface, not a new `MessageKind`.
 
-### Voice Messages
+Render path:
 
-- Recorder: `useVoiceRecorder.ts`
-- Send surface: shared send helpers in `src/chat/sendDraft.ts`
-- Playback: `VoiceMessagePlayer.tsx`
+- transport is a `kind: "text"` message
+- the raw `text` field carries a sentinel-prefixed JSON envelope
+- trust comes from `clientId`, not from the text body
+- DM and group screens call `getTrustedScorecardPayload()` before the normal
+  system-message fallback
+- trusted rows render through `ChatScorecardMessage`, which wraps
+  `<GameScorecard />` in the normal message frame
 
-### Mentions (Group Only)
+What the wrapper participates in:
 
-- Stored on message as `mentionUids` and `mentionSpans`
-- Compose-time suggestions: `MentionAutocomplete.tsx`
-- Rendering: `MessageWithMentions` component in group stacked renderer
+- sender avatar and display name
+- timestamps and self/other alignment
+- swipe-to-reply
+- long-press actions
+- inline reactions
+- thread indicators
+- grouped stacked-card behavior
+- accessibility labels
 
-### Attachments
+Grouped behavior matters in stacked mode:
 
-Two-phase flow:
+- group scorecards mirror the grouped-card surface and corner rules
+- the fixed-width scorecard card still slots cleanly into grouped runs
+- scorecards do not bypass the normal grouping pipeline
 
-1. Client uploads to `chat-staging/...`
-2. `sendMessageV2` finalizes into `chat-media/...`
+Text-based fallback behavior:
 
-Constraints enforced server-side in `chatMedia.ts`. DM and group screens share attachment send orchestration for tray attachments, direct camera sends, and direct gallery sends.
+- inbox rows collapse scorecards to `Game Scorecard`
+- aggregated inbox docs do the same
+- long-press preview text, reply snippets, and clipboard copy also collapse to
+  `Game Scorecard`
+- `ReactionDetailSheet` never shows message text, so there is no extra preview
+  path there
 
-### Scheduled Messages
+Security and privacy hardening:
 
-- Client service: `src/services/scheduledMessages.ts`
-- Management screen: `ScheduledMessagesScreen.tsx`
-- Backend processing remains a legacy-style proxy but is still active
+- plain sentinel text is not enough to render a rich scorecard
+- `sendMessageV2` rejects user-authored sentinel text unless a structured
+  `scorecardPayload` is provided
+- the server revalidates and rebuilds the wire text itself
+- SQLite preserves trusted scorecard `clientId` values via the `client_id`
+  migration, so rich scorecards survive local hydration
 
-### Message Requests
+Current caveat:
 
-Always on — no client-side feature flag.
+- DM and group push preview code still has one raw-text path that can leak the
+  scorecard envelope. See [Section 23](#23-known-issues--risks).
 
-- Backend enforcement: `messageRequests.ts`
-- Client subscription: `useMessageRequests.ts`
-- Merge surface: `useUnifiedInboxRequests.ts`
+### 15.2 Voice Messages
 
----
+Voice messages have two separate concerns:
+
+- compose-time recording UI
+- transcript-time playback
+
+Compose-time ownership:
+
+- `ChatComposer.tsx`
+- `VoiceRecordButton.tsx`
+- `VoiceRecordingHost.tsx`
+- `useVoiceRecorder.ts`
+
+Send path:
+
+- `sendVoiceRecordingMessage()` in `src/chat/sendDraft.ts`
+- message kind is `voice`
+- audio metadata travels through the attachment path
+
+Playback ownership stays with the voice-message rendering components rather
+than the composer.
+
+### 15.3 Mentions
+
+Group mentions are still a group-only feature.
+
+- stored as `mentionUids` and `mentionSpans`
+- compose-time suggestions come from the group mention autocomplete path
+- stacked group rendering uses mention-aware text rendering
+
+### 15.4 Attachments
+
+Attachments still use the shared DM/group orchestration path:
+
+1. client-side staging and selection
+2. upload and finalization through the messaging backend
+3. render through the canonical attachment-capable message rows
+
+Constraints are enforced server-side in `chatMedia.ts`.
+
+### 15.5 Scheduled Messages
+
+- client service: `src/services/scheduledMessages.ts`
+- management UI: `ScheduledMessagesScreen.tsx`
+- backend processing remains active through the existing scheduled-message path
+
+### 15.6 Message Requests
+
+Message requests are always on.
+
+- backend enforcement lives in `messageRequests.ts`
+- client subscription flows through the unified inbox-request surfaces
+- there is no longer a client feature flag around the request system
 
 ## 16. Data Contracts
 
@@ -1697,31 +1816,24 @@ interface MessageV2 {
   senderId: string;
   senderName?: string;
   kind: "text" | "media" | "voice" | "file" | "system" | "animal";
-
   text?: string;
   animalId?: string;
-
   createdAt: number;
   serverReceivedAt: number;
   editedAt?: number;
-
   replyTo?: ReplyToMetadata;
   threadRootId?: string | null;
   replyCount?: number;
   lastReplyAt?: number;
-
-  attachments?: AttachmentV2[];
-  mentionUids?: string[];
-  mentionSpans?: MentionSpan[];
-  reactionsSummary?: Record<string, number>;
-
   deletedForAll?: { by: string; at: number };
   hiddenFor?: string[];
+  mentionUids?: string[];
+  mentionSpans?: MentionSpan[];
+  attachments?: AttachmentV2[];
   linkPreview?: LinkPreviewV2;
-
   clientId: string;
   idempotencyKey: string;
-
+  reactionsSummary?: Record<string, number>;
   senderStyle?: {
     bubbleColorId?: string | null;
     bubbleColorHex?: string | null;
@@ -1732,18 +1844,87 @@ interface MessageV2 {
     animalThemeId?: string | null;
     v: 1;
   };
-
-  status?: "sending" | "sent" | "delivered" | "failed";
-  isLocal?: boolean;
+  status?: "sending" | "sent" | "delivered" | "read" | "failed";
 }
 ```
 
 Normalization boundaries:
 
-- SQLite → `MessageV2`: `normalizeMessageFromLocalRow`
-- Firestore → `MessageV2`: `normalizeMessageFromFirestoreDoc`
+- SQLite to `MessageV2`: `normalizeMessageFromLocalRow()`
+- Firestore to `MessageV2`: `normalizeMessageFromFirestoreDoc()`
 
-Both in `src/services/chat/normalizeMessage.ts`.
+Both live in `src/services/chat/normalizeMessage.ts`.
+
+### Sender-Style Note
+
+There is a live cross-module sharp edge here:
+
+- `src/types/messaging.ts` declares an inline `senderStyle` shape
+- `src/cosmetics/types.ts` defines the operational `SenderStyle` contract used
+  by `buildSenderStyle()`
+
+At runtime, sender-style data can include the richer cosmetics fields,
+including `fontColorId` and `fontColorHex`. Treat the cosmetics type as the
+operationally richer contract even though the messaging type still lags it.
+
+### Scorecard Transport Contract
+
+Scorecards do not add a new message kind. They travel as a trusted text
+envelope plus a structured send-time payload.
+
+Send-time contract:
+
+- client calls `sendMessage()` with `kind: "text"` and `scorecardPayload`
+- backend validates the structured payload
+- backend rewrites `text` to
+  `"[SCORECARD_V1]{json}\nGame Scorecard"`
+- backend stamps trusted `clientId = "server-share:{senderUid}"`
+
+Resolver auto-post contract:
+
+- the games resolve pipeline writes the same on-wire text envelope directly
+- those rows use `clientId = "server"`
+
+Client trust model:
+
+- `getTrustedScorecardPayload()` trusts only `clientId === "server"` or
+  `clientId` starting with `server-share:`
+- `isScorecardMessage()` is intentionally broader for sanitization, so preview
+  and copy surfaces still collapse sentinel-prefixed text even before trust is
+  proven
+- SQLite persists `clientId` via the `client_id` column so trusted scorecards
+  stay trusted after local hydration
+
+### Scorecard Payload Contract
+
+Type source: `src/gamesV4/types/scorecard.ts`
+
+```typescript
+interface GameScorecardPayload {
+  v: 1;
+  sessionId: string;
+  gameId: string;
+  gameTitle: string;
+  runtimeType: "solo" | "turnBased" | "realtime";
+  resolutionType: string;
+  winnerIds: string[];
+  scoreboard: Array<{
+    uid: string;
+    displayName: string;
+    profilePictureUrl?: string | null;
+    decorationId?: string | null;
+    score: number;
+    placement: number;
+  }>;
+  durationMs: number;
+  createdAt: number;
+  winnerEquippedBackgroundId?: string | null;
+  senderEquippedBackgroundId?: string | null;
+}
+```
+
+Important detail: this payload is not stored as a top-level `MessageV2`
+property. It is embedded into the sentinel-encoded `text` field.
 
 ### Reply Contract (`ReplyToMetadata`)
 
@@ -1761,153 +1942,82 @@ interface ReplyToMetadata {
 }
 ```
 
-Thread root behavior: `threadRootId` points to root; root carries `replyCount` and `lastReplyAt`.
+Thread roots still use `threadRootId`, `replyCount`, and `lastReplyAt`.
 
 ### Inbox Row Contract (`InboxConversation`)
 
-```typescript
-interface InboxConversation {
-  id: string;
-  type: "dm" | "group";
-  name: string;
-  avatarUrl: string | null;
-
-  avatarConfig?: AvatarConfig;
-  profilePictureUrl?: string | null;
-  decorationId?: string | null;
-  avatarIds?: string[];
-
-  otherUserId?: string;
-  participantCount?: number;
-
-  lastMessage: {
-    text: string;
-    senderName: string;
-    timestamp: number;
-    type: "text" | "image" | "voice" | "attachment";
-  } | null;
-
-  memberState: MemberStatePrivate;
-  unreadCount: number;
-  hasMentions: boolean;
-  isOnline?: boolean;
-  createdAt: number;
-}
-```
+The inbox row contract intentionally presents scorecards as generic text
+previews rather than as a dedicated scorecard type.
 
 Construction paths:
 
-- Fan-out: `normalizeFanoutDMConversation` / `normalizeFanoutGroupConversation` in `fanoutInboxNormalization.ts`
-- Aggregated: `normalizeConversationFromInboxEntry` in `normalizeInboxRow.ts`
+- fan-out: `normalizeFanoutDMConversation()` and
+  `normalizeFanoutGroupConversation()`
+- aggregated: `normalizeConversationFromInboxEntry()`
+
+Key fields:
+
+- conversation identity and scope
+- avatar and decoration snapshots
+- `lastMessage` preview bundle
+- `memberState`
+- unread state and mention hints
 
 ### Aggregated Inbox Entry (`InboxEntry`)
 
 Path: `Users/{uid}/Inbox/{threadId}`
 
-```typescript
-interface InboxEntry {
-  threadId: string; // dm:{chatId} or group:{groupId}
-  scope: "dm" | "group";
-  conversationId: string;
-  lastActivityAt: number;
-  lastSenderId: string;
-  lastMessageKind: string;
-  lastMessagePreview: string;
-  unreadCount: number;
-  unreadSince?: number;
+Key fields today:
 
-  pinnedAt?: number | null;
-  archived: boolean;
-  mutedUntil?: number | null;
-  notifyLevel: "all" | "mentions" | "none";
-
-  groupName?: string;
-  avatarPath?: string;
-  memberCount?: number;
-
-  lastSenderName?: string;
-
-  otherUserName?: string;
-  otherUserId?: string;
-}
-```
+- `threadId`
+- `scope`
+- `conversationId`
+- `lastActivityAt`
+- `lastSenderId`
+- `lastMessageKind`
+- `lastMessagePreview`
+- `unreadCount`
+- pin, archive, mute, and notify settings
 
 Write source: `firebase-backend/functions/src/inboxTriggers.ts`
 
 ### Member State Contract (`MemberStatePrivate`)
 
-```typescript
-interface MemberStatePrivate {
-  uid: string;
-  archived?: boolean;
-  mutedUntil?: number | null;
-  notifyLevel?: "all" | "mentions" | "none";
+`MembersPrivate/{uid}` currently carries:
 
-  sendReadReceipts?: boolean;
-  lastSeenAtPrivate: number;
-  lastMarkedUnreadAt?: number;
+- archive, pin, and mute state
+- notify level
+- private unread watermarks
+- `sendReadReceipts`
+- `autoSendScorecards`
+- `showMemberChatStyles` for groups
 
-  pinnedAt?: number | null;
-  deletedAt?: number | null;
-  hiddenUntilNewMessage?: boolean;
+Important scope note:
 
-  showMemberChatStyles?: boolean;
-}
-```
-
-Public state (`Members/{uid}`) publishes read/delivery/typing markers if enabled.
+- `autoSendScorecards` is per-conversation and defaults to enabled when absent
+- `showMemberChatStyles` is group-only
 
 ### Message Request Contract
 
-```typescript
-interface MessageRequest {
-  chatId: string;
-  requesterId: string;
-  requesterName: string;
-  requesterAvatarConfig: AvatarConfig;
-  status: "pending" | "accepted" | "declined";
-  createdAt: number;
-  resolvedAt?: number;
-  messagePreview: string;
-  messageKind: string;
-}
-```
+Message requests still normalize into one shared inbox-request union.
 
-### Unified Requests Union
+Core request fields:
 
-```typescript
-type UnifiedInboxRequestItem =
-  | {
-      id: string;
-      kind: "friend_request";
-      createdAt: number;
-      friendRequest: FriendRequestWithUser;
-    }
-  | {
-      id: string;
-      kind: "group_invite";
-      createdAt: number;
-      groupInvite: GroupInvite;
-    }
-  | {
-      id: string;
-      kind: "message_request";
-      createdAt: number;
-      messageRequest: MessageRequest;
-    };
-```
-
-Merge semantics: dedupe key `${kind}:${id}`, sort by `createdAt desc` then `id asc`.
+- requester identity snapshot
+- status
+- created and resolved timestamps
+- preview text and message kind
 
 ### Canonical Notification Contract
 
-`CanonicalNotification` output fields:
+`normalizeNotificationPayload()` produces a canonical notification model with:
 
-- `type`: `message`, `group_message`, `friend_request`, `game_turn`, `achievement_unlocked`
-- `dedupeKey`
-- `route { screen, params }`
+- a normalized type
+- a dedupe key
+- canonical route data
 
----
+That canonical model is what push taps and in-app notification surfaces route
+from.
 
 ## 17. Inbox & Unread System
 
@@ -1938,11 +2048,11 @@ Inputs:
 
 Rules (in strict order):
 
-1. If `recentlyReadAt` is still in TTL window → unread is `0`
-2. If `lastMarkedUnreadAt > lastSeenAtPrivate` → unread is `1`
-3. If `lastActivityAt > lastSeenAtPrivate + tolerance` → unread is `1`
-4. If no private watermark and unread hint exists → unread is `1`
-5. Otherwise → unread is `0`
+1. If `recentlyReadAt` is still in TTL window ? unread is `0`
+2. If `lastMarkedUnreadAt > lastSeenAtPrivate` ? unread is `1`
+3. If `lastActivityAt > lastSeenAtPrivate + tolerance` ? unread is `1`
+4. If no private watermark and unread hint exists ? unread is `1`
+5. Otherwise ? unread is `0`
 
 ### Unread Badge Rendering
 
@@ -1992,65 +2102,96 @@ Thread subscriptions are lifecycle-scoped via `src/screens/chat/threadLifecycle.
 
 ### Notification Flow
 
-1. Raw payload arrives from push or in-app collection
-2. `normalizeNotificationPayload` maps raw variants to canonical route and dedupe key
-3. Dedupe checks prevent duplicate handling in short windows
-4. Route navigation executes from canonical notification model
+1. Raw payload arrives from push delivery or the in-app collection.
+2. `normalizeNotificationPayload()` maps variants into the canonical route model.
+3. Dedupe logic short-circuits duplicate handling windows.
+4. Navigation executes from the canonical notification contract.
 
 ### Normalization Layer
 
-File: `src/services/notifications/normalizeNotification.ts`
+Primary file: `src/services/notifications/normalizeNotification.ts`
 
-Functions:
+Key responsibilities:
 
-- `normalizeNotificationPayload`
-- `shouldHandleNotificationByDedupeKey`
+- normalize mixed payload shapes into one route contract
+- emit a stable dedupe key
+- hide provider-specific quirks from the rest of the app
 
 ### Integration Points
 
-- Push tap: `AuthContext.tsx` → adapter → navigation
-- In-app: `InAppNotificationsContext.tsx` → listeners → in-app display
-- Notification center: `notificationCenter.ts` handles channel routing (in_app/push/none)
+- push taps: auth/bootstrap notification handling -> canonical adapter -> navigation
+- in-app notifications: in-app context -> canonical adapter -> route handling
+- channel routing: backend notification center chooses `in_app`, `push`, or `none`
 
----
+### Preview Modes
+
+Inbox settings still control preview behavior for message notifications:
+
+- `full`
+- `sender_only`
+- `generic`
+
+DM and group message push copy is built in
+`firebase-backend/functions/src/notifications.ts`.
+
+### Scorecard Preview Caveat
+
+Inbox rows and aggregated inbox entries sanitize scorecards to
+`Game Scorecard`, but the legacy DM/group push preview builder still reads raw
+`message.text`. That means full-preview message notifications can still leak
+scorecard wire text today. This is a known gap, not the intended privacy
+contract.
 
 ## 20. Backend Integration
 
 ### Messaging Function Layer
 
-File: `firebase-backend/functions/src/messaging.ts`
+Primary file: `firebase-backend/functions/src/messaging.ts`
 
 Responsibilities:
 
-- Auth and membership checks
-- Block checks
-- Rate limiting
-- Message request gating integration
-- Idempotent message write semantics
+- auth and membership checks
+- block checks
+- rate limiting
+- idempotent message write semantics
+- message-request gating
+- reserved `clientId` rejection for server-authored namespaces
+- structured scorecard validation plus server-side wire-text rebuild
 
 ### Inbox Trigger Layer
 
-File: `firebase-backend/functions/src/inboxTriggers.ts`
+Primary file: `firebase-backend/functions/src/inboxTriggers.ts`
 
 Responsibilities:
 
-- Update per-user aggregated inbox docs on DM/group message creation
-- Reset sender unread, increment recipients unread
-- Maintain preview and snapshot fields (including `lastSenderName` for group messages)
-- Expose `markInboxRead` callable to clear unread hints
-- `onDMMemberStateChanged` — `onUpdate` trigger for `Chats/{chatId}/MembersPrivate/{uid}` that syncs pin/archive/mute/notifyLevel/deletedAt/hiddenUntilNewMessage/lastSeenAtPrivate/lastMarkedUnreadAt to the user's aggregated inbox entry
-- `onGroupMemberStateChanged` — same pattern for `Groups/{groupId}/MembersPrivate/{uid}`
+- update per-user aggregated inbox docs for DM and group message creation
+- reset sender unread and increment recipient unread
+- maintain preview and snapshot fields such as `lastSenderName`
+- sanitize scorecard previews to `Game Scorecard` before they reach aggregated inbox docs
+- keep inbox rows aligned with member-private pin/archive/mute/read-state changes
+
+### Scorecard-Specific Backend Hardening
+
+The current scorecard trust split spans chat and games:
+
+- `sendMessageV2` rejects user attempts to send `clientId: "server"` or
+  `clientId: "server-share:*"`
+- user-authored sentinel text without structured `scorecardPayload` is rejected
+- when `scorecardPayload` is present, the server rebuilds the stored wire text
+  itself and stamps a trusted `clientId`
+- aggregated inbox previews are sanitized, but push-notification preview
+  sanitization is still incomplete
 
 ### Backend Contract Expectations
 
-Screen-level assumptions that should remain true:
+These assumptions should remain true:
 
-- `sendMessageV2` is authoritative for DM and group writes
-- Optimistic/native rows must reconcile back into `MessageV2`
-- Member-private watermarks remain the unread authority
-- Inbox aggregation docs remain derived hints, not the source of truth
-
----
+- `sendMessageV2` remains authoritative for DM and group writes
+- optimistic/native rows reconcile back into canonical `MessageV2`
+- member-private watermarks remain the unread authority
+- inbox aggregation docs remain derived hints, not the source of truth
+- scorecards remain trusted structured payloads, not plain text that happens to
+  look like one
 
 ## 21. Performance & Instrumentation
 
@@ -2058,7 +2199,7 @@ Screen-level assumptions that should remain true:
 
 File: `src/utils/chatPerf.ts`
 
-Lightweight perf instrumentation with console logs tagged `⏱ chatPerf`.
+Lightweight perf instrumentation with console logs tagged `? chatPerf`.
 
 Key measurement points:
 
@@ -2116,7 +2257,7 @@ Five toolbar picker sheets (GIF, Emoji, Sticker, Game, GifSticker) are code-spli
 
 1. **switchingRef guard**: `ComposerSheetContext.activateSheet()` uses a `switchingRef` flag when transitioning between pickers. When one picker replaces another, the old sheet's close callback fires but `deactivateSheet()` skips resetting the shared animated values (`sheetTranslateY`, `isSheetActive`, etc.) because they are about to be overwritten by the incoming sheet.
 
-2. **Portal overlap via requestAnimationFrame**: The old sheet's teardown (`prev()`) is deferred by one frame using `requestAnimationFrame`. This ensures the new sheet's Portal registers with `PortalManager` (via `componentDidMount`) before the old one unregisters (via `componentWillUnmount`), preventing the gap where neither Portal is visible. React Native Paper's Portal uses class lifecycle methods → `PortalManager.setState`, which re-renders one frame later; without overlap the old sheet disappears before the new one appears.
+2. **Portal overlap via requestAnimationFrame**: The old sheet's teardown (`prev()`) is deferred by one frame using `requestAnimationFrame`. This ensures the new sheet's Portal registers with `PortalManager` (via `componentDidMount`) before the old one unregisters (via `componentWillUnmount`), preventing the gap where neither Portal is visible. React Native Paper's Portal uses class lifecycle methods ? `PortalManager.setState`, which re-renders one frame later; without overlap the old sheet disappears before the new one appears.
 
 3. **Pre-positioned translateY on mount**: `DraggableBottomSheet` initializes its internal `translateY` from `sharedTranslateY.value` (when provided, i.e. keyboard-replacement mode) instead of always starting at `SCREEN_HEIGHT`. This means the new sheet renders at the correct snap position on its very first frame, instead of rendering off-screen and then jumping to the snap position when the `useEffect` fires.
 
@@ -2165,10 +2306,10 @@ Key invariant: `warmRemoteImage()` always calls `Image.loadAsync()` — it does 
 4. Scroll pagination and receive realtime updates concurrently, ordering stable
 5. Open thread view and navigate away/back, no leaked listeners
 6. Notification tap routes to correct destination without duplicate navigation
-7. Long-press message → quick reaction tray appears with 6 emojis
-8. Tap quick reaction → pill appears below correct message
-9. Tap "+" → full emoji picker with categories and search
-10. Tap own reaction pill → reaction removed
+7. Long-press message ? quick reaction tray appears with 6 emojis
+8. Tap quick reaction ? pill appears below correct message
+9. Tap "+" ? full emoji picker with categories and search
+10. Tap own reaction pill ? reaction removed
 11. Reactions work for text, image, voice, and animal messages
 12. Both display modes (bubbles/stacked) render correctly
 13. Grouped cards snap correctly and corner rounding adapts
@@ -2179,6 +2320,11 @@ Key invariant: `warmRemoteImage()` always calls `Image.loadAsync()` — it does 
 18. Hold on animal button flips to the alternate picker icon, turns purple, triggers one light haptic, and opens the full animal picker before edit mode can steal the gesture
 19. GIF picker loads and sends GIF messages
 20. Custom font color applies in both display modes
+21. Auto-posted or manually shared scorecards render as rich cards in DM and group chats
+22. Inbox conversation previews show Game Scorecard instead of raw sentinel text
+23. Long-press, swipe-to-reply, and copy on scorecards all use the generic fallback label
+24. Chat settings Auto-send Scorecards toggle suppresses hosted-game auto-posts only for that conversation
+25. Voice recording lock, cancel, timer placement, and locked-mode send/discard controls behave inside the composer shell
 
 ---
 
@@ -2186,95 +2332,129 @@ Key invariant: `warmRemoteImage()` always calls `Image.loadAsync()` — it does 
 
 ### Resolved Risk Ledger
 
-All major Phase 3+ risks have been resolved:
+All major Phase 3+ risks below this line are either fixed or intentionally
+retired:
 
-| Risk                                              | Status    | Resolution                                            |
-| ------------------------------------------------- | --------- | ----------------------------------------------------- |
-| Dual-runtime contract drift (SQLite vs Firestore) | **Fixed** | Canonical normalization layer, shared ordering/dedupe |
-| Inbox path drift (fan-out vs aggregated)          | **Fixed** | Shared row normalization, unread computation          |
-| Requests-tab source fragmentation                 | **Fixed** | Unified typed request stream                          |
-| Notification payload mismatch and dedupe          | **Fixed** | Canonical notification adapter                        |
-| Group chat runtime crash (timestamp)              | **Fixed** | Hardened Firestore timestamp parsing                  |
-| Text-node rendering warning                       | **Fixed** | Guarded slot/children rendering                       |
-| GroupChatInfoScreen hero buttons not pressable    | **Fixed** | Counter-translate cover-sheet architecture (see §6)   |
-| Group background slow on reopen                   | **Fixed** | Removed stale ImageRef cache; always re-warm (see §4) |
-| Toolbar picker ~3s spinner on first tap           | **Fixed** | Eager preload on composer mount (see §10)             |
+| Risk | Status | Resolution |
+| ---- | ------ | ---------- |
+| Dual-runtime contract drift (SQLite vs Firestore) | **Fixed** | Canonical normalization layer and shared ordering/dedupe |
+| Inbox path drift (fan-out vs aggregated) | **Fixed** | Shared row normalization and unread computation |
+| Requests-tab source fragmentation | **Fixed** | Unified typed request stream |
+| Notification payload mismatch and dedupe | **Fixed** | Canonical notification adapter |
+| Group chat runtime crash (timestamp) | **Fixed** | Hardened Firestore timestamp parsing |
+| Text-node rendering warning | **Fixed** | Guarded slot/children rendering |
+| GroupChatInfoScreen hero buttons not pressable | **Fixed** | Counter-translate cover-sheet architecture |
+| Group background slow on reopen | **Fixed** | Removed stale image-ref cache and always re-warm |
+| Toolbar picker first-open spinner | **Fixed** | Eager preload on composer mount |
+| KAV-based keyboard layout jitter | **Fixed** | Shared fallback keyboard container replaced the old KAV path |
 
 ### Current Non-Blocking Risks
 
-#### Legacy push trigger overlap (Resolved — Dead Code Removed)
+#### Scorecard push previews can still leak wire text (Medium)
 
-`CHAT_LEGACY_PUSH_ENABLED` was previously documented as a gating flag but was never implemented in code. Investigation confirmed that legacy push triggers in `legacy.ts` were **dead code** — `index.ts` only imports the canonical triggers from `notifications.ts`, which route through `notificationCenter.ts` with atomic dedupe via `dedupeKey`.
+`firebase-backend/functions/src/notifications.ts` still builds DM/group
+preview copy from raw `message.text`. Scorecards intentionally store a sentinel
+plus JSON in `text`, so full-preview notifications can still surface raw wire
+payload instead of `Game Scorecard`.
 
-**Resolution (2026-04-13)**: The dead triggers (`onNewMessage`, `onNewGroupMessageV2`, `onNewFriendRequest`) and their private helpers (~450 LOC) were removed from `legacy.ts`. Live functions preserved: `onStoryViewed`, `onDeleteMessage`, `seedShopCatalog`, scheduled jobs.
+Mitigation already in place:
 
-#### Full repo type-check not usable as chat gate (Medium)
+- inbox rows sanitize scorecards
+- aggregated inbox triggers sanitize scorecards
+- long-press, reply, and copy surfaces sanitize scorecards
 
-Unrelated TypeScript errors outside chat reduce confidence in `npx tsc --noEmit` as a chat regression gate.
+Missing parity:
 
-**Mitigation**: targeted chat unit/integration suites are green.
+- DM/group push preview copy
+- any other preview surface that reads raw message text without calling the
+  scorecard sanitizers
 
-#### Aggregated inbox enrichments (Mostly Resolved)
+#### Dedicated scorecard regression coverage is still thin (Medium)
 
-Aggregated docs now include `lastSenderName` for group message previews. Client-side `useInboxAggregation` hydrates DM avatars via `batchFetchProfiles`, filters with `isDMVisible`/`isGroupVisible`, and caches results in AsyncStorage for cold-start performance. Backend `onUpdate` triggers sync pin/archive/mute/deletedAt/hiddenUntilNewMessage/lastSeenAtPrivate/lastMarkedUnreadAt changes to inbox entries, enabling the client to skip per-entry `MembersPrivate` reads for synced entries.
+There is no dedicated automated suite yet for:
 
-**Remaining gap**: Group avatar arrays (`avatarIds`) still require client-side lookups.
+- scorecard preview sanitization across every chat surface
+- trusted `clientId` persistence through SQLite hydration
+- hosted-game auto-post plus per-chat `autoSendScorecards` gating
+- duplicate-post prevention for the scorecard message path
 
-#### Keyboard jitter on KAV (Resolved)
+#### Sender-style type drift is still live (Low)
 
-All chat screens migrated from KAV to KCSV-native architecture. Native builds use `KeyboardChatScrollView` for 60fps inset-driven keyboard sync. Expo Go fallback uses animated `paddingBottom` from `Keyboard.addListener` events.
+`src/types/messaging.ts` and `src/cosmetics/types.ts` are still slightly out of
+sync around the richer `SenderStyle` shape, especially the font-color fields.
+Runtime code already tolerates the richer payload, but the cross-module type
+contract is still looser than it should be.
+
+#### KCSV scroll component is intentionally disabled (Informational)
+
+`ChatKeyboardScrollView.tsx` hardcodes `kcsvAvailable = false`. This is not an
+accidental native regression. The KCSV scroll component was intentionally
+disabled because it caused visible list motion during sheet-to-keyboard
+transitions. Native builds still use keyboard-controller shared values through
+`useReanimatedKeyboardAnimationCompat()`.
 
 #### Expo Go keyboard fallback uses post-layout events on Android (Low)
 
-`useFallbackKeyboardAnimation()` uses `keyboardDidShow`/`keyboardDidHide` on Android (post-layout events) rather than `keyboardWillShow`/`keyboardWillHide` (iOS-only). This causes slight visual lag on Android in Expo Go. No workaround without a native module.
-
-**Mitigation**: Dev-client builds use KCSV which handles this natively.
-
----
+`useFallbackKeyboardAnimation()` uses `keyboardDidShow` and `keyboardDidHide`
+on Android rather than iOS-style will-show events. That produces slight visual
+lag on Android in Expo Go. No cleaner workaround exists without a native
+module.
 
 ## 24. Sustaining Roadmap
 
-### S1 — Notification Migration Guardrails (Resolved — Cleaned Up)
+### S1 - Notification Migration Guardrails (Resolved - Cleaned Up)
 
-Legacy dead push triggers (`onNewMessage`, `onNewGroupMessageV2`, `onNewFriendRequest`) and their private helpers (~450 LOC) were removed from `legacy.ts` on 2026-04-13. Canonical triggers in `notifications.ts` route through `notificationCenter.ts` with atomic dedupe. No duplicate delivery risk exists.
+Legacy dead push triggers were removed from the legacy path. Canonical triggers
+in `notifications.ts` now route through `notificationCenter.ts` with atomic
+dedupe.
 
-### S2 — High-Volume Merge Stress Testing (Medium)
+### S2 - High-Volume Merge Stress Testing (Medium)
 
-Add larger synthetic fixtures, repeat modified-snapshot merges with overlapping page windows, assert stable identity.
+Add larger synthetic fixtures, repeat modified-snapshot merges with overlapping
+page windows, and assert stable identity.
 
-Targets:
+Primary targets:
 
 - `__tests__/integration/unifiedChat.test.ts`
 - `__tests__/services/chatV2.mergeMessagesWithOutbox.test.ts`
 
-### S3 — Inbox Parity Telemetry (Blockers Resolved)
+### S3 - Inbox Parity Telemetry (Complete)
 
-Debug-mode shadow comparison utility implemented in `src/services/chat/inboxParityTelemetry.ts`. Compares fan-out and aggregated inbox results and logs divergences in conversation count, unread state, sort order, pin/archive/mute parity.
+Debug-mode shadow comparison in
+`src/services/chat/inboxParityTelemetry.ts` compares fan-out and aggregated
+inbox results and logs divergences in conversation count, unread state, sort
+order, and pin/archive/mute parity.
 
-**Aggregated inbox blockers — all 5 resolved (2026-04-13):**
+### S4 - Aggregated Inbox Enrichment (Low, Optional)
 
-1. ~~No visibility filtering~~ → `useInboxAggregation` now filters with `isDMVisible()`/`isGroupVisible()`
-2. ~~No avatar/profile hydration~~ → DM rows hydrated via `batchFetchProfiles`; avatars resolved from profile cache
-3. ~~No group message sender name~~ → `inboxTriggers.ts` now writes `lastSenderName`; `normalizeConversationFromInboxEntry` uses it
-4. ~~Backend triggers don't sync pin/archive/mute~~ → `onDMMemberStateChanged` and `onGroupMemberStateChanged` `onUpdate` triggers deployed; now also sync `lastSeenAtPrivate`, `lastMarkedUnreadAt`, `deletedAt`, `hiddenUntilNewMessage` — enabling client to skip per-entry `MembersPrivate` reads
-5. ~~No cold-start AsyncStorage cache~~ → `loadAggCache`/`saveAggCache` with 5-min TTL added
-6. ~~Per-entry MembersPrivate N+1 reads~~ → `buildMemberStateFromEntry` constructs state from synced Inbox fields; falls back to `getMemberPrivateStateForEntry` only for pre-sync entries
+Evaluate adding richer avatar and profile snapshots to `InboxEntry` from the
+trigger layer.
 
-**Status**: Flag flipped to `true` on 2026-04-13. Dev-mode parity telemetry runs both paths in shadow to detect drift. Rollback: set `CHAT_INBOX_AGGREGATION = false` in `featureFlags.ts`.
+### S5 - Thread Lifecycle Reliability Sweep (Medium)
 
-### S4 — Aggregated Inbox Enrichment (Low, Optional)
+Add route-churn tests for rapid thread switching. Verify no callback execution
+after cleanup and confirm unsubscribe counts match subscribe counts.
 
-Evaluate adding richer avatar/profile snapshots to `InboxEntry` from triggers.
+### S6 - Scorecard Preview Parity and Regression Coverage (Medium)
 
-### S5 — Thread Lifecycle Reliability Sweep (Medium)
+Add explicit coverage for the cross-system scorecard surface:
 
-Add route churn tests for rapid thread switching. Verify no callback execution after cleanup. Confirm unsubscribe counts match subscribe counts.
+- sanitize scorecards in every preview surface, including DM/group push copy
+- add regression tests for reply, copy, and preview sanitization
+- add hosted-game auto-post tests covering `autoSendScorecards` gating and
+  duplicate-post protection
+- add local-cache trust tests to prove `client_id` persistence keeps
+  scorecards trusted after SQLite hydration
 
----
+### S7 - Sender-Style Type Alignment (Low)
+
+Align the richer cosmetics `SenderStyle` contract with the messaging-layer
+message type so docs, runtime writes, and TypeScript all describe the same
+payload.
 
 ## 25. Historical Checkpoints
 
-These checkpoints record the Phase 2→3+ cleanup effort:
+These checkpoints record the Phase 2?3+ cleanup effort:
 
 | Checkpoint | Date       | Theme                                                                                                                                                                                                                       | Status   |
 | ---------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
@@ -2293,6 +2473,7 @@ These checkpoints record the Phase 2→3+ cleanup effort:
 | C13        | 2026-04-13 | KCSV native path confirmed for all screens, ThreadScreen scroll routing complete, aggregated inbox flag flipped, parity telemetry wired, merge/lifecycle stress tests (+15 tests)                                           | Complete |
 | C14        | 2026-04-13 | Group background reopen regression fixed (stale ImageRef cache removed), composer picker eager preload added, background warmup pipeline fully normalized (cache-key alignment, dark fallback, priority high, transition 0) | Complete |
 | C15        | 2026-04-13 | Picker presentation polish: resolved component cache bypasses React.lazy Suspense flash, switchingRef in ComposerSheetContext prevents visual gap during picker-to-picker transitions                                       | Complete |
+| C16        | 2026-04-22 | Scorecards promoted to a first-class chat surface, reply/copy/inbox sanitization hardened, multiline composer growth documented to actual implementation, KCSV scroll component intentionally disabled in favor of the shared fallback path | Complete |
 
 ---
 
@@ -2322,3 +2503,5 @@ Good extension seams:
 - If you find old docs/comments mentioning a DM-only `MessageWithProfile` render pipeline, they are stale
 - If you change group typing behavior, preserve `typingAt` as canonical field; keep `typingExpiresAt` as temporary compatibility
 - If you need a new DM/group difference, add it at the screen-configuration layer first — do not fork the full render pipeline
+
+

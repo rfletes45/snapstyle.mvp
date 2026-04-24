@@ -156,14 +156,7 @@ interface SendMessageV2Params {
   traceId?: string;
   scorecardPayload?: import("@/gamesV4/types").GameScorecardPayload;
   senderDeviceId?: string;
-  senderStyle?: {
-    bubbleColorId?: string | null;
-    bubbleColorHex?: string | null;
-    fontId?: string | null;
-    fontKey?: string | null;
-    animalThemeId?: string | null;
-    v: 1;
-  };
+  senderStyle?: SenderStyle;
 }
 
 interface SendMessageV2Response {

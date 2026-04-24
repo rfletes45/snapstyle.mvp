@@ -56,7 +56,9 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.resolveSessionV4Internal = resolveSessionV4Internal;
 exports.retryRewardsForSession = retryRewardsForSession;
+exports.postGameScorecardToChat = postGameScorecardToChat;
 const admin = __importStar(require("firebase-admin"));
+const messagePreview_1 = require("../messagePreview");
 const achievements_1 = require("./achievements");
 const adapters_1 = require("./adapters");
 const helpers_1 = require("./helpers");
@@ -236,6 +238,14 @@ async function resolveSessionV4Internal(input) {
         .collection(types_1.COLLECTIONS.GAME_RESULTS)
         .doc(input.sessionId);
     await resultRef.set(result);
+    const scorecardAutoPostPromise = session.runtimeType !== "solo" &&
+        session.conversationId &&
+        (session.conversationScope === "group" ||
+            session.conversationScope === "dm")
+        ? postGameScorecardToChat(db, session, result).catch((err) => {
+            console.error(`[resolveV4] Failed to auto-post scorecard to ${session.conversationScope} ${session.conversationId}:`, err);
+        })
+        : null;
     // ─── Phase 4.5: Evaluate achievements (deferred from Phase 3) ─────
     // This runs AFTER the result doc is written so the client sees
     // scoreboard/XP immediately. Achievement unlocks are patched in.
@@ -323,16 +333,8 @@ async function resolveSessionV4Internal(input) {
     // per-chat `autoSendScorecards` preference (stored on their
     // MembersPrivate doc) gates the post — defaults to enabled when the
     // field is absent.
-    if ((session.conversationScope === "group" ||
-        session.conversationScope === "dm") &&
-        session.runtimeType !== "solo" &&
-        session.conversationId) {
-        try {
-            await postGameScorecardToChat(db, session, result);
-        }
-        catch (err) {
-            console.error(`[resolveV4] Failed to auto-post scorecard to ${session.conversationScope} ${session.conversationId}:`, err);
-        }
+    if (scorecardAutoPostPromise) {
+        await scorecardAutoPostPromise;
     }
     console.log(`[resolveV4] Session ${input.sessionId} resolved as ${input.resolutionType}. ` +
         `XP awarded to ${xpAwards.length} players.`);
@@ -954,11 +956,10 @@ async function notifyFriendsBeatenByDeltas(db, session, deltas, scoreboard) {
     }));
 }
 // =============================================================================
-// Auto-post scorecard to group chat
+// Auto-post scorecard to hosting conversation
 // =============================================================================
 /**
- * Write a message to `Groups/{groupId}/Messages` containing a
- * `gameScorecard` payload clients can render inline.
+ * Write a trusted inline scorecard message to the hosting DM or group.
  *
  * The message is authored by the session **host** (not `system`) so it
  * reads as a real in-chat message from the host — matching the manual
@@ -966,8 +967,8 @@ async function notifyFriendsBeatenByDeltas(db, session, deltas, scoreboard) {
  *
  * Deterministic doc id = `scorecard_{sessionId}` + `.create()` makes this
  * idempotent: a duplicate resolve/retry cannot double-post. `kind: "text"`
- * lets the standard renderer's scorecard decode short-circuit mount the
- * rich card — no special system-message wiring required.
+ * lets the standard renderer's trusted scorecard decode mount the rich
+ * card — no special system-message wiring required.
  */
 async function postGameScorecardToChat(db, session, result) {
     const conversationId = session.conversationId;
@@ -1001,12 +1002,6 @@ async function postGameScorecardToChat(db, session, result) {
         .doc(conversationId)
         .collection("Messages")
         .doc(messageId);
-    // Idempotency: skip if already posted.
-    const existing = await messageRef.get();
-    if (existing.exists) {
-        console.log(`[resolveV4] Scorecard message already exists for ${session.sessionId}, skipping.`);
-        return;
-    }
     const gameTitle = (0, notifications_1.getGameDisplayName)(session.gameId);
     // Thread equipped decorationId from PlayerSlot onto scoreboard so the
     // client scorecard renderer can draw pfp decorations per player.
@@ -1031,7 +1026,7 @@ async function postGameScorecardToChat(db, session, result) {
     // The rich in-chat card reads its data from the JSON payload encoded
     // on line 1 of `wireText`; the human-readable line 2 is only used by
     // clients that don't yet know about scorecards.
-    const fallbackText = "Game Scorecard";
+    const fallbackText = messagePreview_1.SCORECARD_VISIBLE_TEXT;
     const now = admin.firestore.Timestamp.now();
     const createdAtMs = now.toMillis();
     // Personalization: when there is exactly one winner, fetch their
@@ -1069,8 +1064,7 @@ async function postGameScorecardToChat(db, session, result) {
     // Sentinel-encoded wire format — mirrors `encodeScorecardText()` in
     // `src/gamesV4/services/scorecardWire.ts`. First line is machine-
     // parsed by the renderer; second line is the human-readable fallback.
-    const SCORECARD_SENTINEL = "[SCORECARD_V1]";
-    const wireText = `${SCORECARD_SENTINEL}${JSON.stringify(scorecardPayload)}\n${fallbackText}`;
+    const wireText = `${messagePreview_1.SCORECARD_SENTINEL}${JSON.stringify(scorecardPayload)}\n${fallbackText}`;
     // Host identity — auto-posted multiplayer scorecards are authored by
     // the session host so the message feels like a real post from that
     // user. Fall back to the scoreboard entry (same uid) for displayName /
