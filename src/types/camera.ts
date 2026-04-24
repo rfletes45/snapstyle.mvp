@@ -56,6 +56,10 @@ export interface CapturedMedia {
   };
   fileSize: number; // In bytes
   mimeType: string;
+  filterId?: string;
+  filterIntensity?: number;
+  filterSchemaVersion?: number;
+  filterFlattened?: boolean;
   exif?: {
     latitude?: number;
     longitude?: number;

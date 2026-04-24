@@ -204,19 +204,21 @@ export function useRecording(cameraRef: React.RefObject<any>) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const startRecordingVideo = useCallback(async () => {
+  const startRecordingVideo = useCallback(async (): Promise<boolean> => {
     try {
       if (!cameraRef.current) {
         throw new Error("Camera not ready");
       }
 
-      dispatchStart();
       await CameraService.startVideoRecording(cameraRef.current, settings);
+      dispatchStart();
+      return true;
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Failed to start recording";
       setRecordingError(errorMessage);
       dispatchStop();
+      return false;
     }
   }, [dispatchStart, dispatchStop, cameraRef, settings]);
 
@@ -234,6 +236,9 @@ export function useRecording(cameraRef: React.RefObject<any>) {
         const errorMessage =
           error instanceof Error ? error.message : "Failed to stop recording";
         setRecordingError(errorMessage);
+        if (!CameraService.hasActiveVideoRecording()) {
+          dispatchStop();
+        }
         return null;
       }
     }, [dispatchStop, cameraRef]);

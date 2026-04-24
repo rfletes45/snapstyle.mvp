@@ -278,6 +278,103 @@ export async function capturePhoto(
 
 /** Module-level store for the in-flight recording promise. */
 let _activeRecordingPromise: Promise<{ uri: string }> | null = null;
+let _activeRecordingStartedAt = 0;
+
+const MIN_RECORDING_STOP_DELAY_MS = 450;
+const RECORDING_START_CONFIRMATION_TIMEOUT_MS = 300;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function isCameraNotReadyStopError(error: unknown): boolean {
+  const message = getErrorMessage(error).toLowerCase();
+  return (
+    message.includes("camera is not ready") ||
+    message.includes("oncameraready")
+  );
+}
+
+async function requestNativeStopRecording(cameraRef: any): Promise<void> {
+  const stopRecording = cameraRef?.stopRecording;
+  if (typeof stopRecording !== "function") {
+    throw new Error("Camera ref does not support stopRecording");
+  }
+
+  const elapsed = Date.now() - _activeRecordingStartedAt;
+  if (elapsed < MIN_RECORDING_STOP_DELAY_MS) {
+    await sleep(MIN_RECORDING_STOP_DELAY_MS - elapsed);
+  }
+
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const maybePromise = stopRecording.call(cameraRef);
+      if (
+        maybePromise &&
+        typeof (maybePromise as Promise<void>).then === "function"
+      ) {
+        await maybePromise;
+      }
+      return;
+    } catch (error) {
+      lastError = error;
+      if (!isCameraNotReadyStopError(error) || attempt === 2) {
+        break;
+      }
+      await sleep(180 * (attempt + 1));
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("Failed to stop native recording");
+}
+
+async function createConfirmedRecordingPromise(
+  cameraRef: any,
+  maxDuration: number,
+): Promise<{ recordingPromise: Promise<{ uri: string }> }> {
+  const recordingPromise = (cameraRef as any).recordAsync({
+    maxDuration,
+    // 'mute' controls whether audio is recorded
+    mute: false,
+  });
+  if (
+    !recordingPromise ||
+    typeof (recordingPromise as Promise<{ uri: string }>).then !== "function"
+  ) {
+    throw new Error("Camera ref did not return a recording promise");
+  }
+
+  const activeRecordingPromise = recordingPromise as Promise<{ uri: string }>;
+
+  const startStatus = await Promise.race([
+    activeRecordingPromise.then(
+      () => "completed" as const,
+      (error) => {
+        throw error;
+      },
+    ),
+    sleep(RECORDING_START_CONFIRMATION_TIMEOUT_MS).then(
+      () => "recording" as const,
+    ),
+  ]);
+
+  if (startStatus === "completed") {
+    throw new Error("Video recording ended before it became active");
+  }
+
+  return { recordingPromise: activeRecordingPromise };
+}
+
+export function hasActiveVideoRecording(): boolean {
+  return _activeRecordingPromise !== null;
+}
 
 export async function startVideoRecording(
   cameraRef: any,
@@ -290,16 +387,35 @@ export async function startVideoRecording(
   try {
     const maxDuration = 60; // seconds
 
-    // recordAsync returns a promise that resolves when recording stops
-    _activeRecordingPromise = (cameraRef as any).recordAsync({
-      maxDuration,
-      // 'mute' controls whether audio is recorded
-      mute: false,
-    });
+    let lastError: unknown;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        _activeRecordingStartedAt = Date.now();
+        const { recordingPromise } = await createConfirmedRecordingPromise(
+          cameraRef,
+          maxDuration,
+        );
+        _activeRecordingPromise = recordingPromise;
+        logger.info("[Camera Service] Video recording started");
+        return;
+      } catch (error) {
+        lastError = error;
+        _activeRecordingPromise = null;
+        _activeRecordingStartedAt = 0;
 
-    logger.info("[Camera Service] Video recording started");
+        if (!isCameraNotReadyStopError(error) || attempt === 2) {
+          break;
+        }
+        await sleep(220 * (attempt + 1));
+      }
+    }
+
+    throw lastError instanceof Error
+      ? lastError
+      : new Error("Failed to start recording");
   } catch (error) {
     _activeRecordingPromise = null;
+    _activeRecordingStartedAt = 0;
     logger.error("[Camera Service] Failed to start recording:", error);
     throw error;
   }
@@ -315,16 +431,29 @@ export async function stopVideoRecording(
     throw new Error("Camera reference not initialized");
   }
 
-  try {
-    // Tell the camera to stop; this causes recordAsync()'s promise to resolve
-    (cameraRef as any).stopRecording();
+  let preserveActiveRecordingForRetry = false;
 
+  try {
     if (!_activeRecordingPromise) {
       throw new Error("No active recording to stop");
     }
 
-    const videoData = await _activeRecordingPromise;
+    const recordingPromise = _activeRecordingPromise;
+
+    // Tell the camera to stop; this causes recordAsync()'s promise to resolve.
+    // Do not clear the active promise if the native stop command itself fails;
+    // keeping it lets a subsequent tap retry the stop instead of cascading into
+    // "No active recording to stop".
+    try {
+      await requestNativeStopRecording(cameraRef);
+    } catch (error) {
+      preserveActiveRecordingForRetry = isCameraNotReadyStopError(error);
+      throw error;
+    }
+
+    const videoData = await recordingPromise;
     _activeRecordingPromise = null;
+    _activeRecordingStartedAt = 0;
 
     logger.info(`[Camera Service] Video recording stopped: ${videoData.uri}`);
 
@@ -344,7 +473,10 @@ export async function stopVideoRecording(
 
     return media;
   } catch (error) {
-    _activeRecordingPromise = null;
+    if (!preserveActiveRecordingForRetry) {
+      _activeRecordingPromise = null;
+      _activeRecordingStartedAt = 0;
+    }
     logger.error("[Camera Service] Failed to stop recording:", error);
     throw error;
   }

@@ -88,6 +88,16 @@ export const USE_LOCAL_STORAGE = !IS_WEB || EXPERIMENTAL_WEB_SQLITE;
  */
 export const USE_VISION_CAMERA = true;
 
+/**
+ * Experimental true live GPU filter preview.
+ *
+ * The production-safe camera filter path keeps VisionCamera on the native
+ * preview fast path and renders a cheap overlay above it. Turning this on
+ * re-enables VisionCamera + Skia frame processing for live preview only.
+ * Leave false for TestFlight until it has been proven on real devices.
+ */
+export const CAMERA_FILTERS_TRUE_LIVE_PREVIEW = false;
+
 // =============================================================================
 // Games V4 Feature Flag
 // =============================================================================

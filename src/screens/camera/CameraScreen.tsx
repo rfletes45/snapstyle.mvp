@@ -18,11 +18,7 @@
  *   - DraggableItem uses Animated.ValueXY for real-time 60 fps dragging
  */
 
-import CameraFilterOverlay, {
-  getCachedFilterOverlayColor,
-  getFilterOverlayColorCacheCount,
-  getOrCreateFilterOverlayColor,
-} from "@/components/camera/CameraFilterOverlay";
+import CameraFilterOverlay from "@/components/camera/CameraFilterOverlay";
 import DrawingCanvas, {
   type DrawnPath,
 } from "@/components/camera/DrawingCanvas";
@@ -31,7 +27,11 @@ import SkiaFilteredImage, {
   SkiaFilterThumbnail,
   type SkiaFilteredImageRef,
 } from "@/components/camera/SkiaFilteredImage";
-import { USE_VISION_CAMERA } from "@/constants/featureFlags";
+import {
+  CAMERA_FILTERS_TRUE_LIVE_PREVIEW,
+  USE_VISION_CAMERA,
+} from "@/constants/featureFlags";
+import { useCameraFilterController } from "@/hooks/camera/useCameraFilterController";
 import {
   useCamera,
   useCameraPermissions,
@@ -39,11 +39,11 @@ import {
   useRecording,
 } from "@/hooks/camera/useCameraHooks";
 import * as CameraService from "@/services/camera/cameraService";
-import { FILTER_LIBRARY } from "@/services/camera/filterService";
+import type { CameraFilterDefinition } from "@/services/camera/filters/filterRegistry";
+import { CAMERA_FILTERS } from "@/services/camera/filters/filterRegistry";
 import { useCameraState, useEditorState } from "@/store/CameraContext";
 import type {
   CapturedMedia,
-  FilterConfig,
   OverlayElement,
   PollElement,
   StickerElement,
@@ -51,6 +51,7 @@ import type {
 } from "@/types/camera";
 import { generateUUID } from "@/utils/uuid";
 import { Ionicons } from "@expo/vector-icons";
+import { ImageFormat } from "@shopify/react-native-skia";
 import Slider from "@react-native-community/slider";
 import {
   useIsFocused,
@@ -59,7 +60,6 @@ import {
 } from "@react-navigation/native";
 import * as Haptics from "expo-haptics";
 import React, {
-  startTransition,
   useCallback,
   useEffect,
   useMemo,
@@ -71,7 +71,6 @@ import {
   AppState,
   Dimensions,
   FlatList,
-  InteractionManager,
   KeyboardAvoidingView,
   Linking,
   Modal,
@@ -95,7 +94,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import ViewShot, { captureRef } from "react-native-view-shot";
 
-import { createLogger } from "@/utils/log";
+import { createLogger, isDebugEnabled } from "@/utils/log";
 
 // ---------------------------------------------------------------------------
 // Dynamic camera imports – runtime fallback strategy
@@ -156,27 +155,11 @@ export interface CameraScreenParams {
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get("window");
 
-// "None" placeholder filter prepended to the library
-const NONE_FILTER: FilterConfig = {
-  id: "none",
-  name: "Normal",
-  category: "vintage",
-  brightness: 0,
-  contrast: 1,
-  saturation: 1,
-  hue: 0,
-};
+const ALL_FILTERS = CAMERA_FILTERS;
 
-const ALL_FILTERS: FilterConfig[] = [NONE_FILTER, ...FILTER_LIBRARY];
-
-// Filter picker tuning: swatches are warmed in tiny background chunks and the
-// list only mounts the visible strip up front. This keeps filter opening off
-// the camera preview's critical path in native iOS builds.
 const FILTER_PICKER_INITIAL_NUM_TO_RENDER = 5;
 const FILTER_PICKER_MAX_TO_RENDER_PER_BATCH = 2;
 const FILTER_PICKER_WINDOW_SIZE = 3;
-const FILTER_PICKER_SWATCH_WARMUP_BATCH_SIZE = 2;
-const FILTER_PICKER_SWATCH_WARN_MS = 12;
 const FILTER_PICKER_STALL_WARN_MS = 120;
 
 function nowMs(): number {
@@ -188,6 +171,15 @@ function nowMs(): number {
 
 const TIMER_OPTIONS = [0, 3, 10] as const;
 type TimerOption = (typeof TIMER_OPTIONS)[number];
+type ExpoCameraMode = "picture" | "video";
+
+const EXPO_CAMERA_ANDROID_READY_TIMEOUT_MS = 1800;
+const EXPO_CAMERA_ANDROID_MODE_SETTLE_MS = 120;
+const EXPO_CAMERA_IOS_MODE_SETTLE_MS = 500;
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 type EditTool = "none" | "text" | "draw" | "filter" | "sticker" | "poll";
 
@@ -419,7 +411,6 @@ const CameraScreen: React.FC = () => {
     useCameraState();
   const {
     overlayElements,
-    appliedFilters,
     canUndo,
     canRedo,
     addElement,
@@ -445,11 +436,22 @@ const CameraScreen: React.FC = () => {
   const { isCapturing, capturePhoto } = usePhotoCapture(cameraRef);
   const { recordingState, startRecording, stopRecording } =
     useRecording(cameraRef);
+  const usingExpoCameraFallback = !LiveFilterCamera && !!CameraView;
+
+  useEffect(() => {
+    if (!isDebugEnabled("CAMERA_FILTERS")) {
+      return;
+    }
+
+    logger.debug(
+      `[Camera Filters] backend=${LiveFilterCamera ? "vision-camera" : CameraView ? "expo-camera" : "none"} preview=${CAMERA_FILTERS_TRUE_LIVE_PREVIEW ? "true-live-flag" : "safe-overlay"}`,
+    );
+  }, []);
 
   // ==========================================================================
   // LOCAL STATE - Camera mode
   // ==========================================================================
-  const [selectedFilterIndex, setSelectedFilterIndex] = useState(0);
+  const filterController = useCameraFilterController();
   const [showGrid, setShowGrid] = useState(false);
   const [showExposure, setShowExposure] = useState(false);
   const [exposureValue, setExposureValue] = useState(0);
@@ -457,22 +459,15 @@ const CameraScreen: React.FC = () => {
   const [countdown, setCountdown] = useState<number | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [showFilterPicker, setShowFilterPicker] = useState(false);
-  const [filterPickerCacheVersion, setFilterPickerCacheVersion] = useState(0);
-  // Latched once the user expresses filter intent (opens picker, or picks a
-  // filter).  Tells LiveFilterCamera to pre-warm the Skia frame-processor
-  // pipeline with an identity paint so the first real filter tap does NOT
-  // trigger a native capture-session reconfiguration.  Once true, stays
-  // true for the life of this screen so we never flap the pipeline
-  // mid-session.
-  const [pipelineWarmed, setPipelineWarmed] = useState(false);
+  const [expoCameraMode, setExpoCameraMode] =
+    useState<ExpoCameraMode>("picture");
 
   const showFilterPickerRef = useRef(false);
   const filterPickerOpenStartedAtRef = useRef<number | null>(null);
-  const filterPickerCachedAtOpenRef = useRef(0);
   const filterPickerLoggedVisibleItemsRef = useRef(false);
-  const filterPickerWarmupStartedRef = useRef(false);
-  const filterPickerWarmupDoneRef = useRef(false);
-  const filterPickerWarmupRafRef = useRef<number | null>(null);
+  const expoCameraModeRef = useRef<ExpoCameraMode>("picture");
+  const expoReadyGenerationRef = useRef(0);
+  const expoReadyWaitersRef = useRef<Array<() => void>>([]);
 
   // ==========================================================================
   // LOCAL STATE - Editor mode
@@ -528,10 +523,6 @@ const CameraScreen: React.FC = () => {
   /** Tracks drawing history for per-stroke undo (separate from element undo). */
   const drawPathsHistory = useRef<DrawnPath[][]>([]);
 
-  // Filter (editor)
-  const [selectedFilterId, setSelectedFilterId] = useState<string>("none");
-  const [filterIntensity, setFilterIntensity] = useState(1.0);
-
   // Sticker
   const [showStickerPicker, setShowStickerPicker] = useState(false);
 
@@ -556,6 +547,7 @@ const CameraScreen: React.FC = () => {
 
   // Save to library success
   const [showSavedBadge, setShowSavedBadge] = useState(false);
+  const [isStoppingRecording, setIsStoppingRecording] = useState(false);
 
   // Measured preview container dimensions (accounts for toolbar/bottom bar)
   const [previewLayout, setPreviewLayout] = useState<{
@@ -574,18 +566,20 @@ const CameraScreen: React.FC = () => {
     [],
   );
 
-  // -- Active live filter -----------------------------------------------------
-  const activeFilter: FilterConfig | null = useMemo(() => {
-    const f = ALL_FILTERS[selectedFilterIndex];
-    return f && f.id !== "none" ? f : null;
-  }, [selectedFilterIndex]);
+  const {
+    selectedFilter,
+    selectedFilterId,
+    filterIntensity,
+    hasActiveFilter,
+    previewStyle: activeFilterPreviewStyle,
+    exportPayload: filterExportPayload,
+    snapMetadataPayload: filterMetadataPayload,
+    setSelectedFilterId,
+    setFilterIntensity,
+    resetFilter,
+  } = filterController;
 
-  // NOTE (2026-04-20 freeze fix): we intentionally do NOT mirror
-  // `activeFilter` into CameraContext (`selectFilter(...)`) anymore.  That
-  // global dispatch re-rendered every consumer of the camera context on
-  // every filter tap, cascading new props into LiveFilterCamera.  The
-  // active filter is already passed directly into LiveFilterCamera via
-  // prop, so the mirror was pure duplicate state.
+  const activeFilter = hasActiveFilter ? selectedFilter : null;
 
   // -- Haptic helpers ---------------------------------------------------------
   const triggerHaptic = useCallback(
@@ -610,9 +604,12 @@ const CameraScreen: React.FC = () => {
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         const duration = nowMs() - startedAt;
-        if (duration > FILTER_PICKER_STALL_WARN_MS) {
+        if (
+          duration > FILTER_PICKER_STALL_WARN_MS &&
+          isDebugEnabled("CAMERA_FILTERS")
+        ) {
           logger.warn(
-            `[Camera Filter Perf] ${label} stalled for ${duration.toFixed(1)}ms`,
+            `[Camera Filters] ${label} stalled for ${duration.toFixed(1)}ms`,
           );
         }
       });
@@ -624,8 +621,13 @@ const CameraScreen: React.FC = () => {
   }).current;
 
   const handleFilterPickerViewableItemsChanged = useRef(
-    ({ viewableItems }: { viewableItems: { item?: FilterConfig }[] }) => {
+    ({
+      viewableItems,
+    }: {
+      viewableItems: { item?: CameraFilterDefinition }[];
+    }) => {
       if (
+        !isDebugEnabled("CAMERA_FILTERS") ||
         !showFilterPickerRef.current ||
         filterPickerLoggedVisibleItemsRef.current
       ) {
@@ -641,97 +643,93 @@ const CameraScreen: React.FC = () => {
       }
 
       filterPickerLoggedVisibleItemsRef.current = true;
-      logger.warn(
-        `[Camera Filter Perf] picker visible swatches ${visibleIds.length}/${ALL_FILTERS.length}: ${visibleIds.join(", ")}`,
+      logger.debug(
+        `[Camera Filters] picker visible filters ${visibleIds.length}/${ALL_FILTERS.length}: ${visibleIds.join(", ")}`,
       );
     },
   ).current;
 
-  useEffect(() => {
-    if (
-      !cameraReady ||
-      filterPickerWarmupStartedRef.current ||
-      filterPickerWarmupDoneRef.current
-    ) {
-      return;
-    }
-
-    const pendingFilters = ALL_FILTERS.filter(
-      (filter) =>
-        filter.id !== "none" &&
-        getCachedFilterOverlayColor(filter, 1.0) === undefined,
-    );
-
-    if (!pendingFilters.length) {
-      filterPickerWarmupDoneRef.current = true;
-      return;
-    }
-
-    filterPickerWarmupStartedRef.current = true;
-    let cancelled = false;
-    let nextIndex = 0;
-    const warmupStartedAt = nowMs();
-    let interactionHandle: { cancel?: () => void } | null = null;
-
-    const runWarmupChunk = () => {
-      if (cancelled) {
-        return;
+  const waitForNextExpoCameraReady = useCallback(
+    (previousGeneration: number): Promise<void> => {
+      if (expoReadyGenerationRef.current > previousGeneration) {
+        return Promise.resolve();
       }
 
-      const chunkStartedAt = nowMs();
-      let computedCount = 0;
+      return new Promise((resolve) => {
+        let settled = false;
+        let timeout: ReturnType<typeof setTimeout> | undefined;
 
-      while (
-        nextIndex < pendingFilters.length &&
-        computedCount < FILTER_PICKER_SWATCH_WARMUP_BATCH_SIZE
-      ) {
-        getOrCreateFilterOverlayColor(pendingFilters[nextIndex], 1.0);
-        nextIndex += 1;
-        computedCount += 1;
-      }
+        const finish = () => {
+          if (settled) return;
+          settled = true;
+          if (timeout) {
+            clearTimeout(timeout);
+          }
+          expoReadyWaitersRef.current = expoReadyWaitersRef.current.filter(
+            (waiter) => waiter !== finish,
+          );
+          resolve();
+        };
 
-      const chunkDuration = nowMs() - chunkStartedAt;
-      if (chunkDuration > FILTER_PICKER_SWATCH_WARN_MS) {
-        logger.warn(
-          `[Camera Filter Perf] swatch warmup chunk ${computedCount} took ${chunkDuration.toFixed(1)}ms (${nextIndex}/${pendingFilters.length})`,
+        timeout = setTimeout(
+          finish,
+          EXPO_CAMERA_ANDROID_READY_TIMEOUT_MS,
         );
-      }
+        expoReadyWaitersRef.current.push(finish);
+      });
+    },
+    [],
+  );
 
-      if (computedCount > 0 && showFilterPickerRef.current) {
-        startTransition(() => {
-          setFilterPickerCacheVersion((version) => version + 1);
-        });
-      }
+  const handleNativeCameraReady = useCallback(() => {
+    expoReadyGenerationRef.current += 1;
+    const waiters = expoReadyWaitersRef.current;
+    expoReadyWaitersRef.current = [];
+    waiters.forEach((resolve) => resolve());
+    onCameraReady();
+  }, [onCameraReady]);
 
-      if (nextIndex < pendingFilters.length) {
-        filterPickerWarmupRafRef.current =
-          requestAnimationFrame(runWarmupChunk);
+  const ensureExpoCameraMode = useCallback(
+    async (mode: ExpoCameraMode) => {
+      if (!usingExpoCameraFallback) {
         return;
       }
 
-      filterPickerWarmupDoneRef.current = true;
-      filterPickerWarmupRafRef.current = null;
-      logger.warn(
-        `[Camera Filter Perf] swatch warmup complete ${pendingFilters.length}/${ALL_FILTERS.length - 1} in ${(nowMs() - warmupStartedAt).toFixed(1)}ms`,
-      );
-    };
+      if (expoCameraModeRef.current !== mode) {
+        const previousGeneration = expoReadyGenerationRef.current;
+        expoCameraModeRef.current = mode;
+        setExpoCameraMode(mode);
 
-    interactionHandle = InteractionManager.runAfterInteractions(() => {
-      filterPickerWarmupRafRef.current = requestAnimationFrame(runWarmupChunk);
-    });
+        if (isDebugEnabled("CAMERA_FILTERS")) {
+          logger.debug(`[Camera] Expo camera mode -> ${mode}`);
+        }
 
+        if (Platform.OS === "android") {
+          await waitForNextExpoCameraReady(previousGeneration);
+          await wait(EXPO_CAMERA_ANDROID_MODE_SETTLE_MS);
+        } else {
+          // Expo Camera on iOS reconfigures the session output for video mode
+          // without emitting a fresh onCameraReady event, so use a short
+          // native-session settle window before calling recordAsync().
+          await wait(EXPO_CAMERA_IOS_MODE_SETTLE_MS);
+        }
+        return;
+      }
+
+      if (mode === "video") {
+        await wait(80);
+      }
+    },
+    [usingExpoCameraFallback, waitForNextExpoCameraReady],
+  );
+
+  useEffect(() => {
     return () => {
-      cancelled = true;
-      interactionHandle?.cancel?.();
-      if (filterPickerWarmupRafRef.current != null) {
-        cancelAnimationFrame(filterPickerWarmupRafRef.current);
-        filterPickerWarmupRafRef.current = null;
-      }
-      if (!filterPickerWarmupDoneRef.current) {
-        filterPickerWarmupStartedRef.current = false;
-      }
+      const waiters = expoReadyWaitersRef.current;
+      expoReadyWaitersRef.current = [];
+      waiters.forEach((resolve) => resolve());
     };
-  }, [cameraReady]);
+  }, []);
 
   // ==========================================================================
   // CAMERA-MODE HANDLERS
@@ -750,6 +748,12 @@ const CameraScreen: React.FC = () => {
     setIsBusy(true);
 
     try {
+      if (isDebugEnabled("CAMERA_FILTERS")) {
+        logger.debug(
+          `[Camera Filters] capture started filter=${filterExportPayload?.filterId ?? "normal"}`,
+        );
+      }
+      await ensureExpoCameraMode("picture");
       triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
 
       // Flash effect
@@ -763,13 +767,16 @@ const CameraScreen: React.FC = () => {
         return;
       }
 
-      // Transfer the live camera filter to the editor immediately
-      const liveFilter = ALL_FILTERS[selectedFilterIndex];
-      if (liveFilter && liveFilter.id !== "none") {
-        setSelectedFilterId(liveFilter.id);
+      if (isDebugEnabled("CAMERA_FILTERS")) {
+        logger.debug("[Camera Filters] capture completed");
+      }
+
+      // Mirror the canonical filter selection into legacy editor metadata.
+      clearAllFilters();
+      if (filterExportPayload) {
         applyEditorFilter({
-          filterId: liveFilter.id,
-          intensity: 1.0,
+          filterId: filterExportPayload.filterId,
+          intensity: filterExportPayload.filterIntensity,
           timestamp: Date.now(),
         });
       }
@@ -792,8 +799,10 @@ const CameraScreen: React.FC = () => {
     isBusy,
     capturePhoto,
     settings,
-    selectedFilterIndex,
+    filterExportPayload,
+    ensureExpoCameraMode,
     applyEditorFilter,
+    clearAllFilters,
     setCurrentSnap,
     setEditorEditMode,
     triggerHaptic,
@@ -836,10 +845,21 @@ const CameraScreen: React.FC = () => {
   const handleStartVideoRecording = useCallback(async () => {
     if (!cameraReady || isBusy || recordingState.isRecording) return;
     setIsBusy(true);
+    setShowFilterPicker(false);
     triggerHaptic(Haptics.ImpactFeedbackStyle.Heavy);
 
     try {
-      await startRecording();
+      if (hasActiveFilter && isDebugEnabled("CAMERA_FILTERS")) {
+        logger.debug(
+          `[Camera Filters] video recording started with ${selectedFilterId} selected; video will remain raw`,
+        );
+      }
+      await ensureExpoCameraMode("video");
+      const didStart = await startRecording();
+      if (!didStart) {
+        setIsBusy(false);
+        return;
+      }
 
       // Start visual timer
       setRecordingSeconds(0);
@@ -861,36 +881,55 @@ const CameraScreen: React.FC = () => {
     isBusy,
     recordingState.isRecording,
     startRecording,
+    ensureExpoCameraMode,
+    hasActiveFilter,
+    selectedFilterId,
     triggerHaptic,
   ]);
 
   const handleStopVideoRecording = useCallback(async () => {
-    if (!recordingState.isRecording) return;
+    if (!recordingState.isRecording || isStoppingRecording) return;
 
-    // Stop timer
-    if (recordingTimerRef.current) {
-      clearInterval(recordingTimerRef.current);
-      recordingTimerRef.current = null;
-    }
-
+    setIsStoppingRecording(true);
     triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
 
     try {
       const media = await stopRecording();
       if (media) {
+        if (recordingTimerRef.current) {
+          clearInterval(recordingTimerRef.current);
+          recordingTimerRef.current = null;
+        }
         media.duration = recordingSeconds * 1000;
         setCurrentSnap(media);
         setEditorEditMode("none");
         setCapturedMedia(media);
+        setRecordingSeconds(0);
       } else {
+        if (!CameraService.hasActiveVideoRecording()) {
+          if (recordingTimerRef.current) {
+            clearInterval(recordingTimerRef.current);
+            recordingTimerRef.current = null;
+          }
+          setRecordingSeconds(0);
+        }
         setIsBusy(false);
       }
     } catch {
-      setIsBusy(false);
+      if (!CameraService.hasActiveVideoRecording()) {
+        if (recordingTimerRef.current) {
+          clearInterval(recordingTimerRef.current);
+          recordingTimerRef.current = null;
+        }
+        setRecordingSeconds(0);
+        setIsBusy(false);
+      }
+    } finally {
+      setIsStoppingRecording(false);
     }
-    setRecordingSeconds(0);
   }, [
     recordingState.isRecording,
+    isStoppingRecording,
     stopRecording,
     recordingSeconds,
     setCurrentSnap,
@@ -990,26 +1029,19 @@ const CameraScreen: React.FC = () => {
 
   const handleOpenFilterPicker = useCallback(() => {
     filterPickerOpenStartedAtRef.current = nowMs();
-    filterPickerCachedAtOpenRef.current = getFilterOverlayColorCacheCount(1.0);
     filterPickerLoggedVisibleItemsRef.current = false;
-    // Pre-warm the Skia frame-processor pipeline now (while the modal
-    // slide masks any transient hitch) so the user's first filter tap
-    // becomes a cheap paint mutation instead of a native capture-session
-    // reconfiguration.
-    setPipelineWarmed((prev) => {
-      if (!prev) {
-        logger.warn(
-          "[Camera Filter Perf] pipeline warm-up triggered (filter picker open)",
-        );
-      }
-      return true;
-    });
+    if (isDebugEnabled("CAMERA_FILTERS")) {
+      logger.debug("[Camera Filters] filter picker opened");
+    }
     setShowFilterPicker(true);
     triggerHaptic();
     scheduleFilterPickerStallProbe("filter picker open");
   }, [scheduleFilterPickerStallProbe, triggerHaptic]);
 
   const handleCloseFilterPicker = useCallback(() => {
+    if (isDebugEnabled("CAMERA_FILTERS")) {
+      logger.debug("[Camera Filters] filter picker closed");
+    }
     setShowFilterPicker(false);
   }, []);
 
@@ -1017,33 +1049,31 @@ const CameraScreen: React.FC = () => {
     const openedAt = filterPickerOpenStartedAtRef.current;
     const openDuration = openedAt == null ? null : nowMs() - openedAt;
     filterPickerOpenStartedAtRef.current = null;
-    logger.warn(
-      `[Camera Filter Perf] picker shown${
-        openDuration == null ? "" : ` in ${openDuration.toFixed(1)}ms`
-      }; cache=${filterPickerCachedAtOpenRef.current}/${ALL_FILTERS.length - 1} -> ${getFilterOverlayColorCacheCount(1.0)}/${ALL_FILTERS.length - 1}`,
-    );
+    if (isDebugEnabled("CAMERA_FILTERS")) {
+      logger.debug(
+        `[Camera Filters] picker shown${
+          openDuration == null ? "" : ` in ${openDuration.toFixed(1)}ms`
+        }`,
+      );
+    }
     scheduleFilterPickerStallProbe("filter picker show");
   }, [scheduleFilterPickerStallProbe]);
 
-  // Filter picker item — swatches only read from cache here. Any expensive
-  // matrix math is warmed outside the render path in tiny background chunks.
+  // Filter picker item: static, registry-backed, and camera-session-free.
   const renderFilterItem = useCallback(
-    ({ item, index }: { item: FilterConfig; index: number }) => {
-      const isSelected = selectedFilterIndex === index;
-      const tintColor =
-        item.id === "none"
-          ? null
-          : (getCachedFilterOverlayColor(item, 1.0) ?? null);
+    ({ item }: { item: CameraFilterDefinition }) => {
+      const isSelected = selectedFilterId === item.id;
+      const tintColor = item.previewTint ?? "rgba(255,255,255,0.08)";
       return (
         <TouchableOpacity
           style={[styles.filterChip, isSelected && styles.filterChipActive]}
           onPress={() => {
-            const previousFilterId =
-              ALL_FILTERS[selectedFilterIndex]?.id ?? "none";
-            logger.warn(
-              `[Camera Filter Perf] filter tap ${previousFilterId} -> ${item.id} (index ${selectedFilterIndex} -> ${index})`,
-            );
-            setSelectedFilterIndex(index);
+            if (isDebugEnabled("CAMERA_FILTERS")) {
+              logger.debug(
+                `[Camera Filters] selected filter ${selectedFilterId} -> ${item.id}`,
+              );
+            }
+            setSelectedFilterId(item.id);
             triggerHaptic();
           }}
           activeOpacity={0.7}
@@ -1054,14 +1084,14 @@ const CameraScreen: React.FC = () => {
               tintColor ? { backgroundColor: tintColor } : undefined,
             ]}
           >
-            {item.id === "none" && (
+            {item.id === "normal" && (
               <Ionicons
                 name="ban-outline"
                 size={18}
                 color="rgba(255,255,255,0.5)"
               />
             )}
-            {isSelected && item.id !== "none" && (
+            {isSelected && item.id !== "normal" && (
               <Ionicons name="checkmark-circle" size={18} color="#007AFF" />
             )}
           </View>
@@ -1072,14 +1102,17 @@ const CameraScreen: React.FC = () => {
             ]}
             numberOfLines={1}
           >
-            {item.name}
+            {item.label}
           </Text>
         </TouchableOpacity>
       );
     },
-    [selectedFilterIndex, triggerHaptic],
+    [selectedFilterId, setSelectedFilterId, triggerHaptic],
   );
-  const filterKeyExtractor = useCallback((item: FilterConfig) => item.id, []);
+  const filterKeyExtractor = useCallback(
+    (item: CameraFilterDefinition) => item.id,
+    [],
+  );
 
   // ==========================================================================
   // EDITOR-MODE HANDLERS
@@ -1153,20 +1186,20 @@ const CameraScreen: React.FC = () => {
 
   // -- Editor filter selection ------------------------------------------------
   const handleSelectEditorFilter = useCallback(
-    (filter: FilterConfig) => {
+    (filter: CameraFilterDefinition) => {
       setSelectedFilterId(filter.id);
-      if (filter.id === "none") {
+      if (filter.id === "normal") {
         clearAllFilters();
       } else {
         applyEditorFilter({
           filterId: filter.id,
-          intensity: filterIntensity,
+          intensity: filter.defaultIntensity,
           timestamp: Date.now(),
         });
       }
       haptic();
     },
-    [filterIntensity, applyEditorFilter, clearAllFilters, haptic],
+    [setSelectedFilterId, applyEditorFilter, clearAllFilters, haptic],
   );
 
   // -- Rotation ---------------------------------------------------------------
@@ -1210,18 +1243,18 @@ const CameraScreen: React.FC = () => {
     drawPathsHistory.current = [];
     setElementPositions({});
     setRotation(0);
-    setSelectedFilterId("none");
+    resetFilter();
     setShowFilterPicker(false);
+    if (usingExpoCameraFallback) {
+      expoCameraModeRef.current = "picture";
+      setExpoCameraMode("picture");
+    }
     clearAllFilters();
     haptic();
-  }, [clearAllFilters, haptic]);
+  }, [clearAllFilters, haptic, resetFilter, usingExpoCameraFallback]);
 
   // -- Computed editor filter (for Skia rendering) ----------------------------
-  const editorFilter = useMemo<FilterConfig | null>(() => {
-    if (selectedFilterId === "none") return null;
-    const f = ALL_FILTERS.find((ff) => ff.id === selectedFilterId);
-    return f ?? null;
-  }, [selectedFilterId]);
+  const editorFilter = capturedMedia?.type === "photo" ? activeFilter : null;
 
   // -- Save to photo library --------------------------------------------------
   const handleSaveToLibrary = useCallback(async () => {
@@ -1231,19 +1264,18 @@ const CameraScreen: React.FC = () => {
 
       // Check if there are overlay elements that need compositing
       const hasOverlays = overlayElements.length > 0 || drawPaths.length > 0;
+      const isPhoto = capturedMedia.type === "photo";
+      const needsPhotoComposite = hasOverlays || Boolean(editorFilter);
 
-      if (!hasOverlays && skiaFilterRef.current && editorFilter) {
+      if (isPhoto && !hasOverlays && skiaFilterRef.current && editorFilter) {
         // No overlays — use Skia's full-resolution snapshot for pixel-perfect export
         try {
           const snapshot = await skiaFilterRef.current.makeSnapshot();
           if (snapshot) {
-            const bytes = snapshot.encodeToBytes();
-            if (bytes) {
+            const base64 = snapshot.encodeToBase64(ImageFormat.JPEG, 95);
+            if (base64) {
               const FileSystem = await import("@/utils/fileSystem");
               const tmpPath = `${FileSystem.cacheDirectory}skia_save_${Date.now()}.jpg`;
-              const base64 = btoa(
-                String.fromCharCode(...new Uint8Array(bytes)),
-              );
               await FileSystem.writeAsStringAsync(tmpPath, base64, {
                 encoding: FileSystem.EncodingType.Base64,
               });
@@ -1260,7 +1292,12 @@ const CameraScreen: React.FC = () => {
       }
 
       // Fall back to ViewShot composite if we haven't got a Skia export
-      if (saveUri === capturedMedia.uri && editorViewShotRef.current) {
+      if (
+        isPhoto &&
+        saveUri === capturedMedia.uri &&
+        needsPhotoComposite &&
+        editorViewShotRef.current
+      ) {
         try {
           const composited = await captureRef(editorViewShotRef, {
             format: "jpg",
@@ -1299,13 +1336,21 @@ const CameraScreen: React.FC = () => {
     } catch (error) {
       logger.error("[Camera] Failed to save to library:", error);
     }
-  }, [capturedMedia, haptic, overlayElements, drawPaths, editorFilter]);
+  }, [
+    capturedMedia,
+    haptic,
+    overlayElements,
+    drawPaths,
+    editorFilter,
+    filterIntensity,
+  ]);
 
   // -- Done / Send / Next -----------------------------------------------------
   const handleDone = useCallback(async () => {
     if (!capturedMedia || isExporting) return;
 
     setIsExporting(true);
+    const exportStartedAt = nowMs();
     try {
       // Flatten the editor view (image + filter + drawings + overlays)
       // into a single composited image.
@@ -1313,24 +1358,31 @@ const CameraScreen: React.FC = () => {
 
       // Check if there are overlay elements that need ViewShot compositing
       const hasOverlays = overlayElements.length > 0 || drawPaths.length > 0;
+      const isPhoto = capturedMedia.type === "photo";
+      const needsPhotoComposite = hasOverlays || Boolean(editorFilter);
 
-      if (!hasOverlays && skiaFilterRef.current && editorFilter) {
+      if (!isPhoto && filterExportPayload && isDebugEnabled("CAMERA_FILTERS")) {
+        logger.debug(
+          `[Camera Filters] skipping ${filterExportPayload.filterId} for video export; video remains raw`,
+        );
+      }
+
+      if (isPhoto && !hasOverlays && skiaFilterRef.current && editorFilter) {
         // No overlays — use Skia full-res snapshot for pixel-perfect export
         try {
           const snapshot = await skiaFilterRef.current.makeSnapshot();
           if (snapshot) {
-            const bytes = snapshot.encodeToBytes();
-            if (bytes) {
+            const base64 = snapshot.encodeToBase64(ImageFormat.JPEG, 92);
+            if (base64) {
               const FileSystem = await import("@/utils/fileSystem");
               const tmpPath = `${FileSystem.cacheDirectory}skia_export_${Date.now()}.jpg`;
-              const base64 = btoa(
-                String.fromCharCode(...new Uint8Array(bytes)),
-              );
               await FileSystem.writeAsStringAsync(tmpPath, base64, {
                 encoding: FileSystem.EncodingType.Base64,
               });
               finalUri = tmpPath;
-              logger.info("[Camera] Skia snapshot exported (full-res)");
+              if (isDebugEnabled("CAMERA_FILTERS")) {
+                logger.debug("[Camera Filters] export path: skia snapshot");
+              }
             }
           }
         } catch (skiaErr) {
@@ -1342,7 +1394,12 @@ const CameraScreen: React.FC = () => {
       }
 
       // Fall back to ViewShot composite for overlays or if Skia failed
-      if (finalUri === capturedMedia.uri && editorViewShotRef.current) {
+      if (
+        isPhoto &&
+        finalUri === capturedMedia.uri &&
+        needsPhotoComposite &&
+        editorViewShotRef.current
+      ) {
         try {
           const composited = await captureRef(editorViewShotRef, {
             format: "jpg",
@@ -1351,7 +1408,9 @@ const CameraScreen: React.FC = () => {
           });
           if (composited) {
             finalUri = composited;
-            logger.info("[Camera] Editor view composited via ViewShot");
+            if (isDebugEnabled("CAMERA_FILTERS")) {
+              logger.debug("[Camera Filters] export path: view-shot");
+            }
           }
         } catch (flattenError) {
           logger.warn(
@@ -1362,16 +1421,31 @@ const CameraScreen: React.FC = () => {
       }
 
       // Compress the final image for smaller upload size (photos only)
-      if (capturedMedia.type === "photo") {
+      if (isPhoto) {
         try {
           const compressed = await CameraService.compressImage(finalUri, 0.82);
           finalUri = compressed.uri;
-          logger.info(
-            `[Camera] Compressed export: ${CameraService.formatFileSize(compressed.size)}`,
-          );
+          if (isDebugEnabled("CAMERA_FILTERS")) {
+            logger.debug(
+              `[Camera Filters] compressed export: ${CameraService.formatFileSize(compressed.size)}`,
+            );
+          }
         } catch {
           // Non-fatal — proceed with uncompressed
         }
+      }
+
+      if (isDebugEnabled("CAMERA_FILTERS")) {
+        logger.debug(
+          `[Camera Filters] export completed in ${(nowMs() - exportStartedAt).toFixed(1)}ms`,
+          {
+            data: {
+              mediaType: capturedMedia.type,
+              filter: isPhoto ? filterMetadataPayload : null,
+              hasOverlays,
+            },
+          },
+        );
       }
 
       // Chat-return flow: hand the captured image back to the calling screen.
@@ -1392,7 +1466,18 @@ const CameraScreen: React.FC = () => {
     } finally {
       setIsExporting(false);
     }
-  }, [capturedMedia, isExporting, params, navigation]);
+  }, [
+    capturedMedia,
+    isExporting,
+    overlayElements,
+    drawPaths,
+    editorFilter,
+    filterExportPayload,
+    filterMetadataPayload,
+    filterIntensity,
+    params,
+    navigation,
+  ]);
 
   // -- Render overlay elements (editor) ---------------------------------------
   const renderOverlayElement = useCallback(
@@ -1510,7 +1595,7 @@ const CameraScreen: React.FC = () => {
 
   // -- Editor filter thumbnail item -------------------------------------------
   const renderFilterThumb = useCallback(
-    ({ item }: { item: FilterConfig }) => {
+    ({ item }: { item: CameraFilterDefinition }) => {
       const isActive = selectedFilterId === item.id;
       return (
         <TouchableOpacity
@@ -1539,7 +1624,7 @@ const CameraScreen: React.FC = () => {
             ]}
             numberOfLines={1}
           >
-            {item.name}
+            {item.label}
           </Text>
         </TouchableOpacity>
       );
@@ -1674,42 +1759,53 @@ const CameraScreen: React.FC = () => {
         <View style={styles.cameraContainer} onLayout={handlePreviewLayout}>
           {isEditorMode && capturedMedia ? (
             /* -- EDITOR: frozen captured image ----------------------------- */
-            <ViewShot
-              ref={editorViewShotRef}
-              options={{ format: "jpg", quality: 0.9 }}
-              style={styles.previewContainer}
-            >
-              {/* Skia-rendered image with real GPU filter */}
-              <SkiaFilteredImage
-                ref={skiaFilterRef}
-                uri={capturedMedia.uri}
-                filter={editorFilter}
-                intensity={filterIntensity}
-                width={previewLayout.width}
-                height={previewLayout.height}
-                rotation={rotation}
-                style={StyleSheet.absoluteFill}
-              />
+            capturedMedia.type === "photo" ? (
+              <ViewShot
+                ref={editorViewShotRef}
+                options={{ format: "jpg", quality: 0.9 }}
+                style={styles.previewContainer}
+              >
+                {/* Skia-rendered image with real GPU filter */}
+                <SkiaFilteredImage
+                  ref={skiaFilterRef}
+                  uri={capturedMedia.uri}
+                  filter={editorFilter}
+                  intensity={filterIntensity}
+                  width={previewLayout.width}
+                  height={previewLayout.height}
+                  rotation={rotation}
+                  style={StyleSheet.absoluteFill}
+                />
 
-              {/* Drawing canvas */}
-              <DrawingCanvas
-                color={drawColor}
-                strokeWidth={
-                  drawEraser ? Math.max(20, drawBrush * 3) : drawBrush
-                }
-                enabled={activeTool === "draw"}
-                eraser={drawEraser}
-                paths={drawPaths}
-                onPathsChange={(newPaths) => {
-                  // Record a snapshot before the change for undo history
-                  drawPathsHistory.current.push(drawPaths);
-                  setDrawPaths(newPaths);
-                }}
-              />
+                {/* Drawing canvas */}
+                <DrawingCanvas
+                  color={drawColor}
+                  strokeWidth={
+                    drawEraser ? Math.max(20, drawBrush * 3) : drawBrush
+                  }
+                  enabled={activeTool === "draw"}
+                  eraser={drawEraser}
+                  paths={drawPaths}
+                  onPathsChange={(newPaths) => {
+                    // Record a snapshot before the change for undo history
+                    drawPathsHistory.current.push(drawPaths);
+                    setDrawPaths(newPaths);
+                  }}
+                />
 
-              {/* Overlay elements (text, stickers, polls) */}
-              {overlayElements.map(renderOverlayElement)}
-            </ViewShot>
+                {/* Overlay elements (text, stickers, polls) */}
+                {overlayElements.map(renderOverlayElement)}
+              </ViewShot>
+            ) : (
+              <View style={styles.videoPreviewContainer}>
+                <Ionicons
+                  name="videocam"
+                  size={48}
+                  color="rgba(255,255,255,0.84)"
+                />
+                <Text style={styles.videoPreviewText}>Video ready</Text>
+              </View>
+            )
           ) : (
             /* -- CAMERA: live camera feed (VisionCamera or expo-camera) -- */
             <TouchableOpacity
@@ -1723,14 +1819,18 @@ const CameraScreen: React.FC = () => {
                 <LiveFilterCamera
                   ref={cameraRef}
                   facing={settings.facing}
-                  filter={activeFilter}
+                  filter={
+                    CAMERA_FILTERS_TRUE_LIVE_PREVIEW ? activeFilter : null
+                  }
+                  filterIntensity={
+                    CAMERA_FILTERS_TRUE_LIVE_PREVIEW ? filterIntensity : 0
+                  }
                   flashMode={settings.flashMode}
                   zoom={settings.zoom}
                   exposure={exposureValue}
                   isActive={isActive}
-                  keepPipelineWarm={pipelineWarmed}
                   style={styles.camera}
-                  onInitialized={onCameraReady}
+                  onInitialized={handleNativeCameraReady}
                   onError={onCameraError}
                 />
               ) : isActive && CameraView ? (
@@ -1738,17 +1838,24 @@ const CameraScreen: React.FC = () => {
                   ref={cameraRef}
                   style={styles.camera}
                   facing={settings.facing}
+                  mode={expoCameraMode}
+                  mute={false}
+                  videoQuality={settings.videoQuality}
                   flash={settings.flashMode}
                   zoom={settings.zoom}
                   exposure={exposureValue}
-                  onCameraReady={onCameraReady}
+                  onCameraReady={handleNativeCameraReady}
                   onMountError={onCameraError}
-                >
-                  {/* Tint-overlay filter approximation for expo-camera */}
-                  <CameraFilterOverlay filter={activeFilter} />
-                </CameraView>
+                />
               ) : (
                 <View style={styles.camera} />
+              )}
+
+              {!recordingState.isRecording && activeFilterPreviewStyle && (
+                <CameraFilterOverlay
+                  filter={activeFilter}
+                  intensity={filterIntensity}
+                />
               )}
 
               {/* --- Shared camera-mode overlays (render on top of camera) --- */}
@@ -2018,7 +2125,7 @@ const CameraScreen: React.FC = () => {
       )}
 
       {/* --- EDITOR: Filter options bar ----------------------------------- */}
-      {isEditorMode && activeTool === "filter" && (
+      {isEditorMode && capturedMedia?.type === "photo" && activeTool === "filter" && (
         <View style={styles.filterOptionsBar}>
           <FlatList
             data={ALL_FILTERS}
@@ -2039,15 +2146,22 @@ const CameraScreen: React.FC = () => {
               index,
             })}
           />
-          {selectedFilterId !== "none" && (
+          {selectedFilterId !== "normal" && (
             <View style={styles.intensityRow}>
               <Text style={styles.intensityLabel}>Intensity</Text>
               <Slider
                 style={styles.intensitySlider}
-                minimumValue={0}
-                maximumValue={1}
+                minimumValue={selectedFilter.minIntensity}
+                maximumValue={selectedFilter.maxIntensity}
                 value={filterIntensity}
-                onValueChange={setFilterIntensity}
+                onValueChange={(value) => {
+                  setFilterIntensity(value);
+                  if (isDebugEnabled("CAMERA_FILTERS")) {
+                    logger.debug(
+                      `[Camera Filters] selected intensity ${value.toFixed(2)}`,
+                    );
+                  }
+                }}
                 minimumTrackTintColor="#007AFF"
                 maximumTrackTintColor="rgba(255,255,255,0.3)"
                 thumbTintColor="#fff"
@@ -2076,12 +2190,14 @@ const CameraScreen: React.FC = () => {
             active={activeTool === "draw"}
             onPress={() => selectTool("draw")}
           />
-          <ToolButton
-            icon="color-palette-outline"
-            label="Filter"
-            active={activeTool === "filter"}
-            onPress={() => selectTool("filter")}
-          />
+          {capturedMedia?.type === "photo" && (
+            <ToolButton
+              icon="color-palette-outline"
+              label="Filter"
+              active={activeTool === "filter"}
+              onPress={() => selectTool("filter")}
+            />
+          )}
           <ToolButton
             icon="happy-outline"
             label="Sticker"
@@ -2139,7 +2255,7 @@ const CameraScreen: React.FC = () => {
           <Ionicons name="color-filter-outline" size={22} color="#fff" />
           {activeFilter && (
             <Text style={styles.filterPickerButtonLabel} numberOfLines={1}>
-              {activeFilter.name}
+              {activeFilter.label}
             </Text>
           )}
           {!activeFilter && (
@@ -2176,7 +2292,6 @@ const CameraScreen: React.FC = () => {
               data={ALL_FILTERS}
               renderItem={renderFilterItem}
               keyExtractor={filterKeyExtractor}
-              extraData={filterPickerCacheVersion}
               horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.filterPickerList}
@@ -2191,6 +2306,32 @@ const CameraScreen: React.FC = () => {
                 index,
               })}
             />
+            {selectedFilterId !== "normal" && (
+              <View style={styles.intensityRow}>
+                <Text style={styles.intensityLabel}>Intensity</Text>
+                <Slider
+                  style={styles.intensitySlider}
+                  minimumValue={selectedFilter.minIntensity}
+                  maximumValue={selectedFilter.maxIntensity}
+                  value={filterIntensity}
+                  onValueChange={(value) => {
+                    setFilterIntensity(value);
+                    if (isDebugEnabled("CAMERA_FILTERS")) {
+                      logger.debug(
+                        `[Camera Filters] selected intensity ${value.toFixed(2)}`,
+                      );
+                    }
+                  }}
+                  minimumTrackTintColor="#007AFF"
+                  maximumTrackTintColor="rgba(255,255,255,0.3)"
+                  thumbTintColor="#fff"
+                  step={0.05}
+                />
+                <Text style={styles.intensityValue}>
+                  {Math.round(filterIntensity * 100)}%
+                </Text>
+              </View>
+            )}
           </View>
         </Modal>
       )}
@@ -2251,7 +2392,9 @@ const CameraScreen: React.FC = () => {
             onLongPress={handleStartVideoRecording}
             delayLongPress={400}
             activeOpacity={0.7}
-            disabled={isBusy && !recordingState.isRecording}
+            disabled={
+              isStoppingRecording || (isBusy && !recordingState.isRecording)
+            }
           >
             <View
               style={[
@@ -2814,6 +2957,18 @@ const styles = StyleSheet.create({
 
   // -- Preview ----------------------------------------------------------------
   previewContainer: { flex: 1, backgroundColor: "#111", overflow: "hidden" },
+  videoPreviewContainer: {
+    flex: 1,
+    backgroundColor: "#111",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 10,
+  },
+  videoPreviewText: {
+    color: "rgba(255,255,255,0.84)",
+    fontSize: 15,
+    fontWeight: "700",
+  },
   editorPreview: { flex: 1, width: "100%" },
   filterOverlay: { ...StyleSheet.absoluteFillObject, zIndex: 1 },
 

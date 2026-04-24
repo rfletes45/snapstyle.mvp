@@ -83,6 +83,8 @@ export const DEBUG_FLAGS = {
   BADGES: false,
   /** Chat composer picker module/data preload timing */
   PICKER_PRELOAD: false,
+  /** Camera filter lifecycle, picker, and export diagnostics */
+  CAMERA_FILTERS: false,
 } as const;
 
 export type DebugFlagKey = keyof typeof DEBUG_FLAGS;
