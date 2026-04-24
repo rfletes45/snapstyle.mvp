@@ -1,6 +1,6 @@
 # Profile Widget System — Master Reference
 
-Last verified against codebase: 2026-04-15
+Last verified against codebase: 2026-04-24
 
 This is the single authoritative document for the profile screen's widget-based customization system. It supersedes and consolidates all prior profile-widget documentation.
 
@@ -278,7 +278,7 @@ Not placed by default (available in gallery): `mutual-friends`, `favorite-game`,
 ### Grid Model
 
 - **4 columns** wide (`GRID_COLUMNS = 4`)
-- Rows grow downward infinitely
+- Rows are normalized through reversed-gravity packing: widgets settle as high as possible and empty vertical space collapses upward
 - **Gutter**: 0px — widgets sit flush against each other (`GRID_GUTTER = 0`). Visual separation is provided by hairline seam lines rendered as overlays at grid boundaries.
 - **Cell height**: 88px (`CELL_HEIGHT = 88`)
 - Widget sizes span multiple columns and rows per `SIZE_PRESETS`
@@ -305,24 +305,15 @@ The reflow engine is **deterministic** — same input always produces same outpu
 
 **Visual order**: widgets sorted by `y` ascending, then `x` ascending, then `instanceId` for tie-breaking.
 
-**`stableRepack(widgets, pinnedId, targetX, targetY, targetSize?)`** — two-phase algorithm:
+**`stableRepack(widgets, pinnedId, targetX, targetY, targetSize?)`** — staged-intent + full packed resolution:
 
-**Phase 1 — Collision-only resolution:**
+1. Stage the active widget at the current drag/resize target. The target row is bounded by the existing board height plus a small buffer, so a user can express "near the end" but cannot push the layout downward forever.
+2. Detect the primary obstructed widget under the active drag pressure using overlap area and the continuous hover probe.
+3. If the primary obstructed widget can fit in the active widget's vacated slot, stage it there. This is the key lateral swap path: two same-size neighboring widgets can trade slots sideways instead of cascading downward.
+4. If the vacated slot cannot be used, the local directional hint can still stage the obstructed widget above or below the active target to preserve drag intent before packing.
+5. Sort the staged widgets by visual order, then pack **all visible widgets** through the same row-first resolver. The active widget is not exempt from compaction.
 
-1. Pin the active widget at its target position
-2. Iterate remaining visible widgets in visual order
-3. For each widget: check if its current position is still valid (no overlap with already-placed widgets)
-   - If valid → keep it exactly in place (no movement)
-
-- If actual collision → relocate to a nearby valid position using `findStablePosition()`
-- If the colliding widget is the **primary obstructed widget under the current drag hover**, the engine may apply a **local directional bias**:
-  - hover over the obstructed widget's **top half** → keep the normal downward-first escape behavior
-  - hover over the obstructed widget's **bottom half** → first try a **supported same-column slot above** that widget
-  - if no valid supported slot exists above, fall back to the normal downward search
-
-4. Only widgets with real collisions are displaced — no broad affected-region partition
-
-This replaces the previous fixed-prefix / affected-suffix approach, which classified widgets as "affected" based on row thresholds and could unnecessarily repack valid higher widgets.
+This replaces the previous collision-only / support-integrity approach, which pinned the dragged widget at an arbitrary low target and only healed some secondary widgets.
 
 **Directional hover intent capture:**
 
@@ -330,70 +321,48 @@ This replaces the previous fixed-prefix / affected-suffix approach, which classi
 - The probe is resolved against the canonical `workingWidgets` layout to identify the **primary obstructed widget** under the current drag pressure
 - That primary obstruction gets a transient `collisionHint` of either `up` or `down`
 - The hint is local to the current drag target; it is not persisted and is not used for resize
-- If the snapped slot stays the same but the drag shifts from the obstructed widget's top half to bottom half (or vice versa), that counts as a new hover target and the dwell window restarts from the canonical working layout
+- If the snapped slot stays the same but the drag shifts from the obstructed widget's top half to bottom half (or vice versa), that counts as a new hover target and preview is recomputed from the canonical working layout
 
-**Phase 2 — Support-integrity upward settle:**
-After collision resolution, the engine runs a **top-to-bottom support-integrity pass** across the visible post-collision layout. Any **non-pinned** widget that no longer has valid direct support/contact above may climb upward one row at a time until it reaches a **supported position** or row 0.
+**Packed placement search:**
 
-- **Support/contact rule**: A widget at `(x, y)` with width `w` is "supported" if:
-  - `y == 0` (top of board), OR
-  - at least one cell in row `y - 1` across columns `x .. x + w - 1` is occupied by another widget
-  - Any partial contact above counts — full-width support is not required
-- Processed in Y-ascending order (top-to-bottom) so each widget settles against finalized positions of widgets above it
-- The actively dragged/resized widget is treated as fixed at the user-selected target; support-heal applies to the other widgets around it
-- The pass starts from the collision-only layout and recomputes support from scratch, so widgets that lose support only after another widget settles are still healed in the same pass
-- Each widget climbs by trying `y - 1` repeatedly, stopping when:
-  - it reaches a supported position (contact above), or
-  - it is blocked (another widget prevents upward movement), or
-  - it reaches row 0
+- `findPackedPosition()` is row-first: for each row, it tries the widget's preferred column first, then every other legal column on that row
+- This means lateral movement is considered before a lower-row fallback
+- Every visible widget participates in the same packed pass, including widgets that were not directly dragged
+- Mixed-size widgets use their real footprint from `SIZE_PRESETS`; a larger widget only lands where its full rectangle fits
 
-This prevents secondary widgets from floating with empty space directly above them, without doing full-board gravity compaction. It is a **vertical support-heal pass**, not cross-column gravity.
+**`stableCompact(widgets)`**: Reversed-gravity compaction — processes all visible widgets in visual order and packs each at the topmost valid position, preferring its current column. Used by hide, restore, add, migration, and general layout normalization.
 
-**What this does NOT do:**
-
-- Does not scan the entire board for remote gaps to fill
-- Does not search different columns during settle
-- Does not pull the actively dropped widget away from the slot the user selected
-- Does not shift higher widgets downward for alignment
-- Does not apply global compaction
-
-**`stableCompact(widgets)`**: Gravity compaction — processes all visible widgets in visual order, packs each at the topmost valid position preferring its current column. Used by `hideWidget`, `restoreWidget`, and `addWidget` to close gaps after element removal/addition. **Not** used in the drag/resize commit path.
-
-**`settleBoardAfterDrop(widgets, pinnedId, targetX, targetY, targetSize?)`**: Delegates to `stableRepack`. Resolves collisions and applies support-seeking upward settle. No global compaction.
+**`settleBoardAfterDrop(widgets, pinnedId, targetX, targetY, targetSize?)`**: Delegates to `stableRepack`. Drag and resize commits resolve local intent, then globally pack to a compact stable layout.
 
 ### Drag Reflow During Interaction
 
-When dragging, the board uses **dwell-based** reflow (not instant):
+When dragging, the board uses **grid-target-based** reflow:
 
-- The user must hover over a target slot for 500ms (`DWELL_MS`) before the preview layout reflows
-- This prevents rapid jittery shuffling while the user drags across cells
-- Hover targets are recorded immediately on every grid-slot change; the board does **not** throttle target capture before arming dwell. This prevents a newly-entered slot from being missed if the user stops moving right after entering it.
+- Preview reflow runs immediately when the meaningful hover target changes
+- Reflow is not recomputed for every raw gesture frame; repeated events inside the same target are ignored
+- Hover targets are recorded immediately on every grid-slot change
 - Hover capture now also tracks a continuous center probe so directional intent can change even when the snapped slot does not
-- When the hover target changes, any prior drag preview branch is discarded immediately and the board renders from the canonical working layout again while the new dwell window runs
-- Each dwell-confirmed preview is recomputed from the current **working layout + current hover target**; preview never chains from an older preview branch
-- The latest hover target is tracked separately so that on drop, the final commit is recomputed from the true final target even if the visible preview is older or dwell has not fired yet
+- Each preview is recomputed from the current **working layout + current hover target**; preview never chains from an older preview branch
+- The latest hover target is tracked separately so that on drop, the final commit is recomputed from the true final target
 - Both preview and commit use the same `stableRepack`/`settleBoardAfterDrop` path, including the same local directional collision hint, so drop results stay predictable
 
 **Directional drag meaning:**
 
-- Hovering the **top half** of an obstructed widget expresses the existing downward-style displacement request
-- Hovering the **bottom half** expresses an upward displacement request for that obstructed widget
-- Upward preference is only honored when the engine finds a **valid supported slot above** in the obstructed widget's current columns
-- If that upward escape path is blocked, the engine falls back to the normal downward search instead of forcing an invalid move
+- Hovering the **top half** of an obstructed widget expresses a below-target displacement request when a lateral vacated-slot swap is not available
+- Hovering the **bottom half** expresses an above-target displacement request when a lateral vacated-slot swap is not available
+- The hint affects staged order only; the final packed layout still obeys full overlap checks and reversed gravity
 
 ### Collision Handling
 
-Widgets cannot overlap. When moving or resizing causes overlap, only the actually colliding widgets are displaced. Higher widgets that are not in collision remain exactly in place — they are never shifted downward for alignment or because they happen to be near the affected region.
+Widgets cannot overlap. When moving or resizing causes overlap, the engine stages the active target, applies a local lateral-swap/displacement hint for the primary obstruction, then repacks the full visible layout.
 
 For drag interactions, the engine now distinguishes the **primary obstructed widget** under the active hover pressure from secondary cascade widgets:
 
-- The primary obstructed widget can receive a local `up` or `down` displacement hint based on whether the hover is in its bottom half or top half
-- An `up` hint only biases that widget's own relocation search; it does **not** turn on global upward compaction
-- The upward bias is intentionally narrow: it first tries a **supported same-column escape above** the obstructed widget
-- If that path fails, the engine falls back to the normal downward-first search
-- Secondary collision cascades still use the standard local collision search, so the board does not reintroduce broad repacking or remote-gap teleporting
+- The primary obstructed widget first tries the active widget's vacated slot when it fits, producing natural sideways swaps
+- If that is not valid, the `up`/`down` hint changes staged order around the active target
+- Secondary widgets are not handled by a separate cascade algorithm; they settle through the same packed pass as every other widget
 
-After the collision-only placement step, the support-integrity pass heals any non-pinned widget that no longer has direct contact above. This is what clears transient floating created when the dragged widget moves away or when an earlier-settled widget removes support from something below it. The pass is vertical-only and does not perform remote gap-filling or full-board gravity.
+After staging, global packing clears transient floating created when the dragged widget moves away or when another widget is displaced. Empty vertical gaps collapse upward across the whole layout.
 
 ### Responsive Behavior
 
@@ -458,10 +427,10 @@ interface BoardState {
 | `hideWidget(id)`                          | Remove button            | Checks `canRemove` from registry; calls `hideWidget()` from engine                              |
 | `restoreWidget(id)`                       | Gallery restore          | Calls `restoreWidget()` from engine; places at bottom                                           |
 | `addWidget(type, size?)`                  | Gallery add              | Checks `maxInstances`; calls `addWidget()` from engine                                          |
-| `updateDragPreview(id, x, y, hoverProbe)` | Continuous during drag   | Dwell-timer (500ms) before reflow; stores latest hover target plus directional collision intent |
+| `updateDragPreview(id, x, y, hoverProbe)` | Continuous during drag   | Resolves preview once per meaningful hover-target change; stores latest hover target plus directional collision intent |
 | `updateResizePreview(id, size)`           | Continuous during resize | 50ms throttle; calls `resolveResize()` for preview                                              |
-| `commitPreview()`                         | Drag/resize end          | Commits preview (collision-resolved + support-settled) as working state; clears preview         |
-| `clearPreview()`                          | Drag/resize cancel       | Discards preview; clears timers                                                                 |
+| `commitPreview()`                         | Drag/resize end          | Commits normalized packed preview as working state; clears preview                              |
+| `clearPreview()`                          | Drag/resize cancel       | Discards preview                                                                                |
 
 ### Edit State Lifecycle
 
@@ -484,17 +453,17 @@ VIEW mode              VIEW mode (original layout restored)
 During a drag:
 
 1. `dragActiveId` is set to the dragged widget's instanceId
-2. `latestHoverRef` always tracks the most recent hover target, even before dwell has confirmed a preview
-3. `previewWidgets` only reflects a dwell-confirmed preview branch for the **current** hover target; when the target changes, stale preview state is cleared immediately
+2. `latestHoverRef` always tracks the most recent hover target
+3. `previewWidgets` only reflects the resolved preview branch for the **current** hover target; when the target changes, stale preview state is cleared immediately
 4. `previewDescriptorRef` records which drag/resize input produced the visible preview so commit logic can ignore stale branches
-5. On drop: drag commit is recomputed from scratch using the current working layout plus `latestHoverRef`; resize commit is recomputed from the working layout plus the previewed size. The committed layout does not reuse stale drag preview state, and the actively dropped widget stays at the final selected target.
+5. On drop: drag commit is recomputed from scratch using the current working layout plus `latestHoverRef`; resize commit is recomputed from the working layout plus the previewed size. The committed layout does not reuse stale drag preview state, and the final board is normalized through reversed-gravity packing.
 
 ### Preview Recompute Rules
 
 - Drag preview is always built from `workingWidgets`, never from `previewWidgets`
 - A previous preview branch is never used as the source for a new hover branch
 - Leaving a hovered collision zone removes the old preview immediately, so transient displacement disappears unless the new target reintroduces it
-- Final drag commit prefers the true latest hover target over any older dwell-confirmed preview branch
+- Final drag commit prefers the true latest hover target over any older preview branch
 - Resize preview still uses throttled live recomputation, but its committed result is also recomputed from the canonical working layout
 
 ### Memoization
@@ -695,10 +664,10 @@ Two board-specific spring configs with `ReduceMotion.Never`:
    - Pan gesture compensates `translateY` by adding scroll delta
 6. Hover slot is computed from gesture translation (accounting for scroll)
 7. A continuous center probe is also captured so the board can infer whether the drag is pressing the obstructed widget's top half or bottom half
-8. Dwell timer: 500ms hovering over same target before preview reflow
-9. If the hover target changes before drop, the old preview branch is cleared immediately and a new dwell window begins from the canonical working layout. A change in directional intent for the same snapped slot also counts as a target change.
-10. On drop: the board recomputes from the current working layout plus the latest hover target and latest local directional hint. It does **not** commit an older preview branch just because one is visible. Collision-only resolution + support-integrity upward settle ensures transient preview pressure cannot leave unsupported secondary widgets behind while preserving the dropped widget's final target slot.
-11. When the hover is over the bottom half of the primary obstructed widget and a valid supported slot exists above it, that widget moves upward out of the way instead of always being pushed downward
+8. Preview reflow runs immediately when the meaningful hover target changes; repeated raw gesture events inside the same target are ignored
+9. If the hover target changes before drop, the old preview branch is cleared immediately and a new preview is computed from the canonical working layout. A change in directional intent for the same snapped slot also counts as a target change.
+10. On drop: the board recomputes from the current working layout plus the latest hover target and latest local directional hint. It does **not** commit an older preview branch just because one is visible. Local collision intent plus global packing ensures transient preview pressure cannot leave stranded secondary widgets behind.
+11. When the primary obstructed widget fits in the dragged widget's vacated slot, it swaps laterally before the engine considers lower-row fallback positions
 12. Widget snaps to committed position with spring animation
 13. Haptic success feedback
 
@@ -709,7 +678,7 @@ Two board-specific spring configs with `ReduceMotion.Never`:
 3. Captures initial size at gesture start — prevents threshold compression
 4. Calculates target size from vertical drag delta using midpoint thresholds between adjacent supported sizes
 5. Preview updates as user drags (via `updateResizePreview`)
-6. On release: commits preview — collision resolution + support-seeking upward settle (same as drag drop)
+6. On release: commits preview — local conflict resolution + global reversed-gravity packing (same as drag drop)
 7. Haptic feedback on size changes
 
 ### Hiding Widgets
@@ -740,7 +709,7 @@ Gallery features:
 
 1. Tap "Done" → haptic success
 2. Calls `exitCustomize()`
-3. Working widgets are saved to Firestore as-is (no re-compaction — the user's arrangement is preserved exactly)
+3. Working widgets are saved to Firestore in their already-normalized packed arrangement
 4. Working + preview state cleared
 5. Mode returns to `"view"`
 
@@ -915,22 +884,21 @@ The resize gesture captures the initial size at gesture start (`capturedInitialS
 
 Preview correctness depends on recomputing from `workingWidgets`, not from the currently visible preview branch. Key nuances:
 
-- Hover targets must be recorded immediately; throttling target capture before dwell can make hover-to-move-out-of-the-way appear broken if the user stops moving right after entering a slot
+- Hover targets must be recorded immediately; repeated raw gesture events inside the same target are ignored, but entering a new target must resolve promptly
 - Directional hover intent is part of the drag target. If the snapped slot stays the same but the drag crosses from the obstructed widget's top half to its bottom half, the target must still be treated as changed so the old preview branch is discarded
 - Drag preview branches must be cleared as soon as the hover target changes; otherwise the UI can keep showing a stale displacement pattern while the user is already hovering somewhere else
 - Final drag commit must prefer the latest hover target over any older preview branch. If this regresses, stale preview displacement can be saved on drop.
 
 ### Fragile Area: Stable Reflow Engine
 
-The `stableRepack` function uses a two-phase approach (collision-only + support-integrity upward settle). Key nuances:
+The `stableRepack` function uses staged drag intent followed by global packed resolution. Key nuances:
 
-- **Stagger flattening**: The settle-upward pass will pull a widget upward until it contacts something above it. This means intentional 1-row staggers (e.g., a 2×2 placed half a row below an adjacent 2×2 with nothing directly above the dropped widget in its column span) will be auto-aligned upward. This is by design — the settle rule treats any empty air above as unsupported.
-- **Column-bound climbing**: The settle-upward pass only moves widgets vertically (same X). A widget that could fit at a valid position in a different column at a higher row will not find it during settle — it stays at the same X and climbs upward. This is intentionally local to avoid remote gap-filling.
-- **Pinned-target preservation**: The active widget is excluded from support-heal, so it remains at the user-selected drop/resize target even if that position would otherwise count as unsupported.
-- **Directional bias scope**: The top-half/bottom-half drag hint only applies to the single primary obstructed widget that is directly under the current drag pressure. Cascading secondary collisions still use the standard local relocation search.
-- **Upward fallback semantics**: Bottom-half hover does **not** force an upward move. The engine only takes the upward path when it finds a valid supported slot above in the obstructed widget's current columns; otherwise it falls back to normal downward relocation.
-- **Search ceiling**: `findStablePosition` searches up to `maxPlacedRow + 20` rows. Extremely long boards could hit this limit, though it's unlikely with the current 14-widget cap.
-- **Cascade support loss**: A widget can start the settle pass supported, then become unsupported after a higher widget climbs away. The pass therefore scans the full visible set top-to-bottom so these secondary unsupported widgets also heal in the same recomputation.
+- **Intent vs final position**: The drag target affects staged order and preferred column, but final rows are decided by the packed resolver. The active widget can settle upward like every other widget.
+- **Lateral swap priority**: The primary obstructed widget tries the active widget's vacated slot before falling into lower rows. This is what makes same-size neighbors swap sideways naturally.
+- **Preferred-column packing**: For each widget, `findPackedPosition()` scans rows from the top. On each row it tries the preferred column first, then every legal column. This preserves familiar column intent while still allowing same-row lateral reflow.
+- **Target row ceiling**: Drag targets are clamped to the current content height plus a small buffer. The board can still place near the end, but raw finger movement cannot grow rows indefinitely.
+- **Mixed-size safety**: Every candidate uses the widget's actual span from `SIZE_PRESETS`; no widget is placed unless the full rectangle is valid.
+- **Global compaction**: All visible widgets participate in the same packed pass, so displaced widgets cannot remain lower than necessary.
 
 ### Fragile Area: Board Width 0
 
@@ -968,7 +936,7 @@ The board renders nothing when `boardWidth === 0` (pre-measurement). If the `onL
 
 **Likely causes:**
 
-- Dwell timer never armed for the actual hovered slot because target capture was throttled or skipped
+- The actual hovered slot was not captured or compared correctly
 - Directional hover intent was not refreshed when the drag crossed from the obstructed widget's top half to bottom half within the same snapped slot
 - A stale preview branch stayed visible after the hover target changed
 - `commitPreview` used an older preview branch instead of recomputing from the latest hover target
@@ -977,9 +945,9 @@ The board renders nothing when `boardWidth === 0` (pre-measurement). If the `onL
 **Where to check:**
 
 - `WidgetWrapper.tsx`: `handleDragUpdate()` → verify the continuous hover probe is being computed from the dragged widget center
-- `useBoardState.ts`: `updateDragPreview()` → dwell timer → `inferCollisionDisplacementHint()` → `resolveConflicts()` call
+- `useBoardState.ts`: `updateDragPreview()` → `inferCollisionDisplacementHint()` → `resolveConflicts()` call
 - `useBoardState.ts`: `commitPreview()` → verify drag commit recomputes from `workingWidgets + latestHoverRef` including `collisionHint`
-- `BoardLayoutEngine.ts`: `inferCollisionDisplacementHint()` and `stableRepack()` → check primary obstruction selection, top-half/bottom-half direction resolution, and the supported upward fallback path
+- `BoardLayoutEngine.ts`: `inferCollisionDisplacementHint()` and `stableRepack()` → check primary obstruction selection, vacated-slot staging, top-half/bottom-half direction resolution, and the packed result
 
 ### Symptom: Widget teleports during drag
 
@@ -1069,14 +1037,14 @@ The board renders nothing when `boardWidth === 0` (pre-measurement). If the `onL
 **Likely causes:**
 
 - A stale drag preview branch was committed after the hover target changed
-- The support-integrity pass did not rerun from the final working-layout + hover-target combination
-- A widget lost support only after another widget settled upward, and the settle pass did not scan the full visible set
+- The packed resolution pass did not rerun from the final working-layout + hover-target combination
+- Persisted or migrated layout was loaded without `stableCompact()`
 
 **Where to check:**
 
 - `useBoardState.ts`: `updateDragPreview()` → confirm old preview is cleared when target changes
 - `useBoardState.ts`: `commitPreview()` → confirm drag commit recomputes from `latestHoverRef`, not from `previewWidgets`
-- `BoardLayoutEngine.ts`: `settleUnsupportedWidgetsUpward()` / `stableRepack()` → confirm unsupported widgets are healed top-to-bottom after collision resolution
+- `BoardLayoutEngine.ts`: `stableRepack()` / `stableCompact()` → confirm all visible widgets pass through row-first packing
 
 ---
 
@@ -1260,8 +1228,8 @@ Legacy fields (`ownedDecorations`, `ownedThemes`) exist for back-compat only.
 | `LAYOUT_SCHEMA_VERSION` | 1         | types.ts                 | Persistence version               |
 | Long-press to customize | 400ms     | WidgetWrapper.tsx        | Enter customize from view         |
 | Long-press to drag      | 200ms     | WidgetWrapper.tsx        | Activate drag in customize        |
-| Dwell before reflow     | 500ms     | useBoardState.ts         | Delay before preview reflows      |
-| Drag preview throttle   | 50ms      | useBoardState.ts         | Minimum update interval           |
+| Drag target reflow      | immediate | useBoardState.ts         | Reflow once per meaningful target |
+| Resize preview throttle | 50ms      | useBoardState.ts         | Minimum update interval           |
 | Extra workspace rows    | 6         | WidgetBoardContainer.tsx | Customize-mode buffer             |
 | Auto-scroll edge        | 80px      | WidgetWrapper.tsx        | Viewport edge trigger zone        |
 | Auto-scroll max speed   | 12px/tick | WidgetWrapper.tsx        | Maximum scroll rate               |
@@ -1294,4 +1262,4 @@ Legacy fields (`ownedDecorations`, `ownedThemes`) exist for back-compat only.
 
 ---
 
-_This document was generated from a full codebase audit on 2026-04-15 and supersedes all prior profile-widget documentation files._
+_This document was refreshed from a full codebase audit on 2026-04-24 and supersedes all prior profile-widget documentation files._

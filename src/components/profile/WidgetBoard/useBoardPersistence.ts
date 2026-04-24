@@ -19,7 +19,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { getFirestoreInstance } from "@/services/firebase";
 import { createLogger } from "@/utils/log";
 
-import { generateDefaultLayout } from "./BoardLayoutEngine";
+import { generateDefaultLayout, stableCompact } from "./BoardLayoutEngine";
 import { getAllWidgetDefinitions, getWidgetDefinition } from "./WidgetRegistry";
 import {
   LAYOUT_SCHEMA_VERSION,
@@ -116,7 +116,7 @@ function validateAndMigrate(data: unknown): WidgetInstance[] | null {
   }
 
   if (validWidgets.length === 0) return null;
-  return validWidgets;
+  return stableCompact(validWidgets);
 }
 
 // =============================================================================

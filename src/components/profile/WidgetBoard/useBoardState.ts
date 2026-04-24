@@ -128,14 +128,12 @@ export function useBoardState(
   const workingWidgetsRef = useRef<WidgetInstance[] | null>(null);
   const previewWidgetsRef = useRef<WidgetInstance[] | null>(null);
   const modeRef = useRef<BoardMode>(mode);
-  // ── Dwell-based hover confirmation ────────────────────────────────────
-  // Track the current hover target slot so we only reflow the board after
-  // the dragged widget has hovered over the same candidate for DWELL_MS.
-  const DWELL_MS = 500;
-  const dwellTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const dwellTargetRef = useRef<DragHoverTarget | null>(null);
+  // ── Drag hover target tracking ─────────────────────────────────────────
+  // Track the current hover target slot so reflow runs once per meaningful
+  // grid target change instead of once per raw gesture event.
+  const hoverTargetRef = useRef<DragHoverTarget | null>(null);
   const previewDescriptorRef = useRef<PreviewDescriptor | null>(null);
-  // Store the latest hover target for commit-on-drop (even if dwell hasn't fired)
+  // Store the latest hover target for commit-on-drop.
   const latestHoverRef = useRef<DragHoverTarget | null>(null);
 
   // The active widget list: preview > working > persisted
@@ -153,29 +151,14 @@ export function useBoardState(
     modeRef.current = mode;
   }, [mode]);
 
-  const clearDwellTimer = useCallback(() => {
-    if (dwellTimerRef.current) {
-      clearTimeout(dwellTimerRef.current);
-    }
-    dwellTimerRef.current = null;
-  }, []);
-
   const clearTransientPreviewState = useCallback(() => {
-    clearDwellTimer();
     resizePreviewThrottleRef.current = 0;
-    dwellTargetRef.current = null;
+    hoverTargetRef.current = null;
     latestHoverRef.current = null;
     previewDescriptorRef.current = null;
     setPreviewWidgets(null);
     setDragActiveId(null);
-  }, [clearDwellTimer]);
-
-  // Clean up dwell timer on unmount or mode change
-  useEffect(() => {
-    return () => {
-      clearDwellTimer();
-    };
-  }, [clearDwellTimer, mode]);
+  }, []);
 
   // ── Derived State ─────────────────────────────────────────────────────
 
@@ -205,7 +188,7 @@ export function useBoardState(
     setWorkingWidgets([...persistence.widgets]);
     previewDescriptorRef.current = null;
     latestHoverRef.current = null;
-    dwellTargetRef.current = null;
+    hoverTargetRef.current = null;
     setMode("customize");
   }, [mode, persistence.widgets]);
 
@@ -213,10 +196,8 @@ export function useBoardState(
     clearTransientPreviewState();
     const sourceWidgets = workingWidgetsRef.current;
     if (sourceWidgets) {
-      // Save the exact layout the user sees — no additional compaction pass.
-      // Every operation (drag, resize, add, remove) already produces a valid
-      // layout through the stable repack engine, so re-compacting here would
-      // risk reshuffling the board after the user has finished arranging it.
+      // Save the exact packed layout the user sees. Drag, resize, add, remove,
+      // and migration paths already normalize through the board engine.
       await persistence.save(sourceWidgets);
       setWorkingWidgets(null);
     }
@@ -342,51 +323,39 @@ export function useBoardState(
       latestHoverRef.current = nextTarget;
 
       // Check whether the hover target changed
-      const prev = dwellTargetRef.current;
+      const prev = hoverTargetRef.current;
       const targetChanged = !isSameDragHoverTarget(prev, nextTarget);
 
       if (targetChanged) {
-        // New candidate target — reset the dwell timer
-        clearDwellTimer();
-        dwellTargetRef.current = nextTarget;
+        // New candidate target: resolve once from canonical working layout.
+        hoverTargetRef.current = nextTarget;
 
-        // Leaving a dwell-confirmed preview branch should immediately revert
-        // the rendered board back to the canonical working layout.
         if (previewDescriptorRef.current?.kind === "drag") {
           setPreviewWidgets(null);
           previewDescriptorRef.current = null;
         }
 
-        // Start dwell timer — reflow will fire after DWELL_MS of stability
-        dwellTimerRef.current = setTimeout(() => {
-          const source = workingWidgetsRef.current;
-          const current = dwellTargetRef.current;
-          if (
-            modeRef.current !== "customize" ||
-            !source ||
-            !isSameDragHoverTarget(current, nextTarget)
-          ) {
-            return;
-          }
-          const result = resolveConflicts(
-            source,
-            instanceId,
-            clampedX,
-            clampedY,
-            nextTarget.collisionHint,
-          );
-          if (result) {
-            previewDescriptorRef.current = {
-              kind: "drag",
-              target: nextTarget,
-            };
-            setPreviewWidgets(result);
-          }
-        }, DWELL_MS);
+        const result = resolveConflicts(
+          sourceWidgets,
+          instanceId,
+          clampedX,
+          clampedY,
+          nextTarget.collisionHint,
+        );
+        if (result) {
+          previewDescriptorRef.current = {
+            kind: "drag",
+            target: nextTarget,
+          };
+          setPreviewWidgets(result);
+        } else {
+          previewDescriptorRef.current = null;
+          setPreviewWidgets(null);
+        }
       }
-      // If target hasn't changed, do nothing — wait for the existing timer
+      // If target hasn't changed, do nothing; preview already reflects it.
     },
-    [clearDwellTimer],
+    [],
   );
 
   const updateResizePreview = useCallback(
@@ -405,8 +374,7 @@ export function useBoardState(
 
       setDragActiveId(instanceId);
       latestHoverRef.current = null;
-      clearDwellTimer();
-      dwellTargetRef.current = null;
+      hoverTargetRef.current = null;
       const result = resolveResize(sourceWidgets, instanceId, newSize);
       if (result) {
         previewDescriptorRef.current = {
@@ -417,16 +385,15 @@ export function useBoardState(
         setPreviewWidgets(result);
       }
     },
-    [clearDwellTimer],
+    [],
   );
 
   const commitPreview = useCallback(() => {
-    clearDwellTimer();
-    dwellTargetRef.current = null;
+    hoverTargetRef.current = null;
 
     // Drag preview is always committed from the canonical working layout plus
-    // the latest hover target. This prevents an older dwell-confirmed preview
-    // branch from being saved after the user moves elsewhere before dropping.
+    // the latest hover target. This prevents stale preview state from being
+    // saved after the user moves elsewhere before dropping.
     const committed = resolveCommittedPreviewLayout(
       workingWidgetsRef.current,
       previewDescriptorRef.current,
@@ -435,10 +402,8 @@ export function useBoardState(
     );
 
     if (committed) {
-      // Respect user placement: the dropped/resized widget stays at its
-      // target position. stableRepack already resolved conflicts and
-      // reflowed neighbors. No global compaction — widgets don't
-      // teleport upward to fill remote gaps.
+      // Commit the normalized packed result. The hover target influences
+      // ordering and preferred column, but final rows obey reversed gravity.
       setWorkingWidgets(committed);
     }
 
@@ -446,7 +411,7 @@ export function useBoardState(
     previewDescriptorRef.current = null;
     setPreviewWidgets(null);
     setDragActiveId(null);
-  }, [clearDwellTimer]);
+  }, []);
 
   const clearPreview = useCallback(() => {
     clearTransientPreviewState();

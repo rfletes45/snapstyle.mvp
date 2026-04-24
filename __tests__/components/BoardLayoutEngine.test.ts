@@ -556,7 +556,7 @@ describe("Stable Reflow Engine", () => {
   // ── stableRepack — Drag Reflow Preserves Order ──────────────────────
 
   describe("stableRepack — drag reflow", () => {
-    it("preserves order of affected widgets when dragging downward", () => {
+    it("packs upward when a lower drag would leave a fillable top slot", () => {
       // Layout:
       //   A(0,0) medium   B(2,0) medium
       //   C(0,2) wide
@@ -594,16 +594,17 @@ describe("Stable Reflow Engine", () => {
       const before = getOrderedIds(widgets);
       const affected = ["B", "C", "D"]; // A is being dragged
 
-      // Drag A from (0,0) to (0,2) — pushes onto C's position
+      // Drag A from (0,0) to (0,2). Because B blocks the wide widget from
+      // filling A's old half-width slot, reversed gravity pulls A back up.
       const result = stableRepack(widgets, "A", 0, 2);
       expect(result).not.toBeNull();
       assertNoOverlaps(result!);
       assertBoundsLegal(result!);
 
-      // A must be at the target position
+      // A settles into the highest valid packed position, not the low target.
       const movedA = result!.find((w) => w.instanceId === "A")!;
       expect(movedA.x).toBe(0);
-      expect(movedA.y).toBe(2);
+      expect(movedA.y).toBe(0);
 
       // Affected widgets must preserve relative order
       const after = getOrderedIds(result!);
@@ -720,6 +721,80 @@ describe("Stable Reflow Engine", () => {
       expect(b.y).toBe(0);
     });
 
+    it("swaps same-size neighboring widgets sideways", () => {
+      const widgets = [
+        makeWidget({
+          instanceId: "A",
+          widgetType: "friends",
+          size: "medium",
+          x: 0,
+          y: 0,
+        }),
+        makeWidget({
+          instanceId: "B",
+          widgetType: "badges",
+          size: "medium",
+          x: 2,
+          y: 0,
+        }),
+        makeWidget({
+          instanceId: "C",
+          widgetType: "social-proof",
+          size: "wide",
+          x: 0,
+          y: 2,
+        }),
+      ];
+
+      const result = stableRepack(widgets, "A", 2, 0);
+      expect(result).not.toBeNull();
+      assertNoOverlaps(result!);
+      assertBoundsLegal(result!);
+
+      const a = result!.find((w) => w.instanceId === "A")!;
+      const b = result!.find((w) => w.instanceId === "B")!;
+      const c = result!.find((w) => w.instanceId === "C")!;
+      expect(a.x).toBe(2);
+      expect(a.y).toBe(0);
+      expect(b.x).toBe(0);
+      expect(b.y).toBe(0);
+      expect(c.y).toBe(2);
+    });
+
+    it("compacts unrelated lower widgets during lateral reflow", () => {
+      const widgets = [
+        makeWidget({
+          instanceId: "A",
+          widgetType: "friends",
+          size: "medium",
+          x: 0,
+          y: 0,
+        }),
+        makeWidget({
+          instanceId: "B",
+          widgetType: "badges",
+          size: "medium",
+          x: 2,
+          y: 0,
+        }),
+        makeWidget({
+          instanceId: "C",
+          widgetType: "social-proof",
+          size: "wide",
+          x: 0,
+          y: 8,
+        }),
+      ];
+
+      const result = stableRepack(widgets, "A", 2, 0);
+      expect(result).not.toBeNull();
+      assertNoOverlaps(result!);
+      assertBoundsLegal(result!);
+
+      const c = result!.find((w) => w.instanceId === "C")!;
+      expect(c.y).toBe(2);
+    });
+
     it("clamps target to grid bounds", () => {
       const widgets = [
         makeWidget({
@@ -750,7 +825,7 @@ describe("Stable Reflow Engine", () => {
       expect(stableRepack(widgets, "UNKNOWN", 0, 0)).toBeNull();
     });
 
-    it("moves the primary obstructed widget upward when bottom-half hover requests it and supported space exists above", () => {
+    it("moves the primary obstructed widget sideways into the vacated lane when possible", () => {
       const widgets = [
         makeWidget({
           instanceId: "A",
@@ -790,13 +865,13 @@ describe("Stable Reflow Engine", () => {
       const movedB = result!.find((widget) => widget.instanceId === "B")!;
       const unaffectedC = result!.find((widget) => widget.instanceId === "C")!;
 
-      expect(movedB.x).toBe(0);
+      expect(movedB.x).toBe(2);
       expect(movedB.y).toBe(0);
       expect(unaffectedC.x).toBe(0);
-      expect(unaffectedC.y).toBe(4);
+      expect(unaffectedC.y).toBe(2);
     });
 
-    it("keeps downward displacement when hovering the top half of the obstructed widget", () => {
+    it("uses lateral reflow before downward displacement on top-half hover", () => {
       const widgets = [
         makeWidget({
           instanceId: "A",
@@ -827,11 +902,11 @@ describe("Stable Reflow Engine", () => {
       assertBoundsLegal(result!);
 
       const movedB = result!.find((widget) => widget.instanceId === "B")!;
-      expect(movedB.x).toBe(0);
-      expect(movedB.y).toBe(4);
+      expect(movedB.x).toBe(2);
+      expect(movedB.y).toBe(0);
     });
 
-    it("falls back to downward displacement when upward intent has no valid room above", () => {
+    it("compacts a displaced widget upward instead of leaving it stranded lower", () => {
       const widgets = [
         makeWidget({
           instanceId: "D",
@@ -869,8 +944,8 @@ describe("Stable Reflow Engine", () => {
       assertBoundsLegal(result!);
 
       const movedB = result!.find((widget) => widget.instanceId === "B")!;
-      expect(movedB.x).toBe(0);
-      expect(movedB.y).toBe(4);
+      expect(movedB.x).toBe(2);
+      expect(movedB.y).toBe(0);
     });
 
     it("prefers the collided widget under the hover probe when multiple widgets overlap", () => {
@@ -1226,7 +1301,7 @@ describe("Stable Reflow Engine", () => {
       }
     });
 
-    it("preview layout is a valid non-overlapping layout (no save-time compact needed)", () => {
+    it("preview layout is already packed and non-overlapping", () => {
       const widgets = [
         makeWidget({
           instanceId: "A",
@@ -1260,10 +1335,10 @@ describe("Stable Reflow Engine", () => {
       assertNoOverlaps(preview!);
       assertBoundsLegal(preview!);
 
-      // Verify the pinned widget is at the target
+      // The target influences ordering, but reversed gravity still packs up.
       const a = preview!.find((w) => w.instanceId === "A")!;
       expect(a.x).toBe(0);
-      expect(a.y).toBe(2);
+      expect(a.y).toBe(0);
     });
   });
 
@@ -1433,16 +1508,17 @@ describe("Stable Reflow Engine", () => {
           y: 6,
         }),
       ];
-      // Drag hero to row 3 — pushes everything
+      // Drag hero to row 3; reversed gravity keeps it at the top because it
+      // is still the first full-width item in packed order.
       const result = stableRepack(widgets, "H", 0, 3);
       expect(result).not.toBeNull();
       assertNoOverlaps(result!);
       assertBoundsLegal(result!);
 
       const h = result!.find((w) => w.instanceId === "H")!;
-      expect(h.y).toBe(3);
+      expect(h.y).toBe(0);
 
-      // A, B, C must be below hero and in order
+      // A, B, C must remain below hero and in order.
       assertOrderPreserved(getOrderedIds(widgets), getOrderedIds(result!), [
         "A",
         "B",
@@ -1494,7 +1570,7 @@ describe("Stable Reflow Engine", () => {
       const result = stableRepack(widgets, "A", 2, 3);
       expect(result).not.toBeNull();
       expect(result![0].x).toBe(2);
-      expect(result![0].y).toBe(3);
+      expect(result![0].y).toBe(0);
     });
 
     it("hidden widgets pass through unchanged", () => {
@@ -1747,7 +1823,7 @@ describe("Stable Reflow Engine", () => {
   // ── Coupled Post-Drop Settlement (settleBoardAfterDrop) ─────────────
 
   describe("settleBoardAfterDrop — coupled settlement", () => {
-    it("keeps the active widget at the final drop target", () => {
+    it("settles the active widget upward after a low drop", () => {
       // A at row 0, B at row 0 — drop C at row 6
       const widgets = [
         makeWidget({
@@ -1779,11 +1855,11 @@ describe("Stable Reflow Engine", () => {
       assertBoundsLegal(result!);
 
       const c = result!.find((w) => w.instanceId === "C")!;
-      // C should stay exactly where the user dropped it.
-      expect(c.y).toBe(6);
+      // C should settle into the highest valid row after A/B.
+      expect(c.y).toBe(2);
     });
 
-    it("keeps a low drop stable without moving unrelated widgets", () => {
+    it("prevents low drops from expanding the board indefinitely", () => {
       // Simulate: A(0,0 medium), B(2,0 medium), then C dropped at row 5
       // with D already below C at row 7 after stableRepack
       const widgets = [
@@ -1822,9 +1898,9 @@ describe("Stable Reflow Engine", () => {
       expect(result).not.toBeNull();
       assertNoOverlaps(result!);
 
-      // D should remain at the final user-selected slot.
+      // D should settle directly after the existing packed content.
       const d = result!.find((w) => w.instanceId === "D")!;
-      expect(d.y).toBe(8);
+      expect(d.y).toBe(3);
 
       // The earlier widgets remain untouched.
       const a = result!.find((w) => w.instanceId === "A")!;
@@ -1835,7 +1911,7 @@ describe("Stable Reflow Engine", () => {
       expect(c.y).toBe(2);
     });
 
-    it("hero dragged from top: vacancy heals while hero stays at drop target", () => {
+    it("hero dragged from top: all widgets repack without preserving empty air", () => {
       const widgets = [
         makeWidget({
           instanceId: "H",
@@ -1877,9 +1953,9 @@ describe("Stable Reflow Engine", () => {
       const w = result!.find((w) => w.instanceId === "W")!;
       expect(w.y).toBe(0); // healed to top
 
-      // H should stay exactly where it was dropped.
+      // H should settle to the highest valid position after W/F/B.
       const h = result!.find((w) => w.instanceId === "H")!;
-      expect(h.y).toBe(10);
+      expect(h.y).toBe(3);
     });
 
     it("preserves stable visual order through settlement", () => {
@@ -2057,7 +2133,7 @@ describe("Stable Reflow Engine", () => {
       expect(r1).toEqual(r2);
     });
 
-    it("save path must not compact the exact settled result", () => {
+    it("save path receives an already compact settled result", () => {
       const widgets = [
         makeWidget({
           instanceId: "A",
@@ -2085,14 +2161,12 @@ describe("Stable Reflow Engine", () => {
       const settled = settleBoardAfterDrop(widgets, "C", 0, 6);
       expect(settled).not.toBeNull();
 
-      // stableCompact would rewrite the intentional low drop, which is why
-      // the save path must persist the settled layout as-is.
       const recompacted = stableCompact(settled!);
-      expect(recompacted).not.toEqual(settled);
+      expect(recompacted).toEqual(settled);
 
       const settledC = settled!.find((w) => w.instanceId === "C")!;
       const compactedC = recompacted.find((w) => w.instanceId === "C")!;
-      expect(settledC.y).toBe(6);
+      expect(settledC.y).toBe(2);
       expect(compactedC.y).toBe(2);
     });
 
