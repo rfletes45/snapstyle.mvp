@@ -133,17 +133,37 @@ export const PROFILE_TABS: {
   { id: "theme", label: "Themes", icon: "palette" },
 ];
 
-/** Chat-section tabs (visible when section === "chat"). */
+/**
+ * Chat-section tabs (visible when section === "chat").
+ *
+ * Note: Fonts and Font Colors were intentionally removed from the
+ * Customization UI. The underlying catalogs and equip/unequip functions are
+ * retained for backward compatibility with existing user data and chat
+ * rendering, but they are not surfaced as customization tabs.
+ */
 export const CHAT_TABS: {
   id: CustomizationTab;
   label: string;
   icon: string;
 }[] = [
   { id: "chat_bubble_color", label: "Bubble Colors", icon: "chat" },
-  { id: "chat_font", label: "Fonts", icon: "format-font" },
-  { id: "chat_font_color", label: "Font Colors", icon: "format-color-text" },
   { id: "chat_animal_theme", label: "Animals", icon: "paw" },
 ];
+
+/**
+ * Rarity rank used for descending-rarity sort within a category.
+ * Higher number = rarer.
+ */
+const RARITY_RANK: Record<string, number> = {
+  common: 1,
+  uncommon: 2,
+  rare: 3,
+  epic: 4,
+  legendary: 5,
+  mythic: 6,
+};
+const getRarityRank = (r: string | undefined): number =>
+  RARITY_RANK[r ?? "common"] ?? 0;
 
 // =============================================================================
 // Hook
@@ -231,6 +251,41 @@ export function useCustomizationHub(
     [ownedSet],
   );
 
+  // ── Equipped id for the active tab (used by sort) ─────────────────────────
+  const equippedIdForActiveTab = useMemo<string | null>(() => {
+    switch (activeTab) {
+      case "decoration":
+        return currentDecorationId;
+      case "background":
+        return currentBackgroundId;
+      case "theme":
+        return currentThemeId ?? null;
+      case "badge":
+        // Multiple featured badges; sort all of them to the top.
+        return currentBadgeIds[0] ?? null;
+      case "chat_bubble_color":
+        return currentBubbleColorId;
+      case "chat_font":
+        return currentFontId;
+      case "chat_font_color":
+        return currentFontColorId;
+      case "chat_animal_theme":
+        return currentAnimalThemeId;
+      default:
+        return null;
+    }
+  }, [
+    activeTab,
+    currentDecorationId,
+    currentBackgroundId,
+    currentThemeId,
+    currentBadgeIds,
+    currentBubbleColorId,
+    currentFontId,
+    currentFontColorId,
+    currentAnimalThemeId,
+  ]);
+
   // ── Filtered items (owned-only) ───────────────────────────────────────────
   const filteredItems = useMemo(() => {
     let items = getOwnedCosmeticsByType(activeTab, ownedSet, {
@@ -247,10 +302,31 @@ export function useCustomizationHub(
       );
     }
 
-    return [...items].sort(
-      (a, b) => (a.sortOrder ?? 999) - (b.sortOrder ?? 999),
-    );
-  }, [activeTab, searchQuery, ownedSet]);
+    // Sort: equipped first → rarity descending → name ascending.
+    // For badges, all currently-featured badges sort above the rest.
+    const featuredBadgeSet =
+      activeTab === "badge" ? new Set(currentBadgeIds) : null;
+
+    return [...items].sort((a, b) => {
+      const aEquipped =
+        featuredBadgeSet?.has(a.id) ?? a.id === equippedIdForActiveTab;
+      const bEquipped =
+        featuredBadgeSet?.has(b.id) ?? b.id === equippedIdForActiveTab;
+      if (aEquipped && !bEquipped) return -1;
+      if (!aEquipped && bEquipped) return 1;
+
+      const rarityDiff = getRarityRank(b.rarity) - getRarityRank(a.rarity);
+      if (rarityDiff !== 0) return rarityDiff;
+
+      return a.name.localeCompare(b.name);
+    });
+  }, [
+    activeTab,
+    searchQuery,
+    ownedSet,
+    equippedIdForActiveTab,
+    currentBadgeIds,
+  ]);
 
   // ── Preview ───────────────────────────────────────────────────────────────
   const previewItem = useCallback((item: CosmeticDefinition) => {

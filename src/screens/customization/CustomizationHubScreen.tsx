@@ -1,21 +1,26 @@
 /**
  * CustomizationHubScreen
  *
- * Equip-only customization screen where users can browse owned cosmetics,
- * preview, and equip them (Decorations, Backgrounds, Badges, Themes).
- * All purchasing happens in the Shop tab.
+ * Equip-only customization screen where users can browse owned cosmetics
+ * and equip them (Decorations, Backgrounds, Badges, Themes, plus chat
+ * Bubble Colors and Animal Themes). All purchasing happens in the Shop tab.
  *
  * Layout (top → bottom):
- *   1. Live-preview (ProfileHeaderVisual or ChatPreview — fixed 220px)
- *   2. Profile / Chat section toggle
- *   3. Category tab bar (section-aware)
- *   4. Search input
- *   5. Scrollable item grid (owned items only)
+ *   1. Section filter bar (Profile / Chat) — Games-screen styling
+ *   2. Category filter bar (section-aware) — Games-screen styling
+ *   3. Search input — Games-screen styling
+ *   4. Scrollable item grid (owned items only, equipped-first / rarity-desc)
+ *
+ * Note: Profile previews were intentionally removed from the top of this
+ * screen so the customization browse experience stays focused. Fonts and
+ * Font Colors were also removed from the customization UI; their underlying
+ * catalogs and equip pipelines are retained for backward compatibility.
  *
  * @module screens/customization/CustomizationHubScreen
  */
 
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Alert,
@@ -28,28 +33,18 @@ import {
   View,
 } from "react-native";
 import { Searchbar, Text } from "react-native-paper";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ScreenHeader } from "@/components/shared/ScreenHeader";
 
-import { AnimalIcon } from "@/components/chat/AnimalIcon";
 import { CosmeticImage } from "@/components/CosmeticImage";
-import { ProfileHeaderVisual } from "@/components/profile/ProfileHeaderVisual";
 import { BorderRadius, Spacing, THEME_METADATA } from "@/constants/theme";
 import {
   DEFAULT_ANIMAL_THEME_ID,
   getAnimalImage,
 } from "@/cosmetics/animalAssets";
 import { getCosmeticAsset, hasCosmeticAsset } from "@/cosmetics/assetRegistry";
-import {
-  relativeLuminance,
-  resolveOutgoingChatStyle,
-} from "@/cosmetics/chatAppearanceResolver";
-import {
-  CHAT_BUBBLE_COLORS,
-  CHAT_FONT_COLORS,
-  CHAT_FONT_FAMILIES,
-} from "@/cosmetics/chatDefaults";
+import { relativeLuminance } from "@/cosmetics/chatAppearanceResolver";
+import { CHAT_BUBBLE_COLORS } from "@/cosmetics/chatDefaults";
 import type { ChatAppearance, CosmeticDefinition } from "@/cosmetics/types";
 import {
   CHAT_TABS,
@@ -97,6 +92,39 @@ type CustomizationSection = "profile" | "chat";
 // =============================================================================
 // Rarity Colors
 // =============================================================================
+
+/**
+ * Convert a color (hex like #RRGGBB / #RGB or rgb()/rgba()) to its
+ * fully-transparent rgba() equivalent. Used so the LinearGradient edge
+ * fade ends in the same hue as the background instead of fading toward
+ * gray (which `'transparent'` causes on iOS).
+ */
+function hexToTransparent(color: string): string {
+  if (!color) return "rgba(0,0,0,0)";
+  if (color.startsWith("rgba")) {
+    return color.replace(/rgba\(([^)]+)\)/, (_m, inner) => {
+      const parts = inner.split(",").map((p: string) => p.trim());
+      return `rgba(${parts[0]},${parts[1]},${parts[2]},0)`;
+    });
+  }
+  if (color.startsWith("rgb(")) {
+    return color.replace("rgb(", "rgba(").replace(")", ",0)");
+  }
+  if (color.startsWith("#")) {
+    const full =
+      color.length === 4
+        ? `#${color[1]}${color[1]}${color[2]}${color[2]}${color[3]}${color[3]}`
+        : color;
+    const r = parseInt(full.slice(1, 3), 16);
+    const g = parseInt(full.slice(3, 5), 16);
+    const b = parseInt(full.slice(5, 7), 16);
+    if (Number.isNaN(r) || Number.isNaN(g) || Number.isNaN(b)) {
+      return "rgba(0,0,0,0)";
+    }
+    return `rgba(${r},${g},${b},0)`;
+  }
+  return "rgba(0,0,0,0)";
+}
 
 const RARITY_COLORS: Record<string, string> = {
   common: "#9E9E9E",
@@ -414,163 +442,6 @@ const BubbleColorCard = React.memo(function BubbleColorCard({
 });
 
 // =============================================================================
-// Font Card (font preview)
-// =============================================================================
-
-interface FontCardProps {
-  item: CosmeticDefinition;
-  isEquipped: boolean;
-  onPress: (item: CosmeticDefinition) => void;
-}
-
-const FontCard = React.memo(function FontCard({
-  item,
-  isEquipped,
-  onPress,
-}: FontCardProps) {
-  const colors = useColors();
-  const fontFamily =
-    (item.metadata?.fontFamily as string) ??
-    CHAT_FONT_FAMILIES[item.id] ??
-    undefined;
-
-  return (
-    <Pressable
-      onPress={() => onPress(item)}
-      accessibilityRole="button"
-      accessibilityLabel={`${item.name} font${isEquipped ? ", currently equipped" : ""}`}
-      accessibilityState={{ selected: isEquipped }}
-      style={({ pressed }) => [
-        styles.fontCard,
-        {
-          borderColor: isEquipped ? colors.primary : colors.border,
-          borderWidth: isEquipped ? 2 : 1,
-          backgroundColor: colors.surface,
-          opacity: pressed ? 0.8 : 1,
-        },
-      ]}
-    >
-      {/* Font sample */}
-      <View style={styles.fontSample}>
-        <Text
-          style={[styles.fontSampleTitle, { color: colors.text, fontFamily }]}
-          numberOfLines={1}
-        >
-          {item.name}
-        </Text>
-        <Text
-          style={[
-            styles.fontSampleBody,
-            { color: colors.textSecondary, fontFamily },
-          ]}
-          numberOfLines={2}
-        >
-          The quick brown fox jumps over the lazy dog
-        </Text>
-      </View>
-      {/* Equipped indicator */}
-      {isEquipped && (
-        <View
-          style={[styles.fontCheckmark, { backgroundColor: colors.primary }]}
-        >
-          <Ionicons name="checkmark" size={10} color="#fff" />
-        </View>
-      )}
-    </Pressable>
-  );
-});
-
-// =============================================================================
-// Font Color Card (color swatch preview)
-// =============================================================================
-
-interface FontColorCardProps {
-  item: CosmeticDefinition;
-  isEquipped: boolean;
-  isDefault: boolean;
-  onPress: (item: CosmeticDefinition) => void;
-}
-
-const FontColorCard = React.memo(function FontColorCard({
-  item,
-  isEquipped,
-  isDefault,
-  onPress,
-}: FontColorCardProps) {
-  const colors = useColors();
-  const fontColorHex =
-    (item.metadata?.fontColorValue as string) ??
-    CHAT_FONT_COLORS[item.id] ??
-    colors.text;
-
-  return (
-    <Pressable
-      onPress={() => onPress(item)}
-      accessibilityRole="button"
-      accessibilityLabel={`${item.name} font color${isEquipped ? ", currently equipped" : ""}`}
-      accessibilityState={{ selected: isEquipped }}
-      style={({ pressed }) => [
-        styles.bubbleCard,
-        {
-          borderColor: isEquipped ? colors.primary : colors.border,
-          borderWidth: isEquipped ? 2 : 1,
-          backgroundColor: colors.surface,
-          opacity: pressed ? 0.8 : 1,
-        },
-      ]}
-    >
-      {/* Color swatch preview */}
-      <View
-        style={[
-          styles.fontColorSwatch,
-          {
-            backgroundColor: isDefault
-              ? colors.surfaceVariant
-              : colors.background,
-          },
-        ]}
-      >
-        <Text
-          style={[
-            styles.fontColorPreviewText,
-            { color: isDefault ? colors.text : fontColorHex },
-          ]}
-        >
-          Aa
-        </Text>
-      </View>
-      {/* Label */}
-      <View style={styles.bubbleCardInfo}>
-        <Text
-          style={[styles.bubbleCardName, { color: colors.text }]}
-          numberOfLines={1}
-        >
-          {item.name}
-        </Text>
-        {isDefault && (
-          <Text
-            style={[styles.fontColorHint, { color: colors.textSecondary }]}
-            numberOfLines={1}
-          >
-            Adapts to theme
-          </Text>
-        )}
-        {isEquipped && (
-          <View
-            style={[
-              styles.bubbleCheckmark,
-              { backgroundColor: colors.primary },
-            ]}
-          >
-            <Ionicons name="checkmark" size={10} color="#fff" />
-          </View>
-        )}
-      </View>
-    </Pressable>
-  );
-});
-
-// =============================================================================
 // Animal Theme Card (animal image preview)
 // =============================================================================
 
@@ -644,118 +515,6 @@ const AnimalThemeCard = React.memo(function AnimalThemeCard({
 });
 
 // =============================================================================
-// Chat Preview (mini conversation showing current chat style)
-// =============================================================================
-
-interface ChatPreviewProps {
-  chatAppearance: ChatAppearance | null;
-  isDark: boolean;
-}
-
-function ChatPreview({ chatAppearance, isDark }: ChatPreviewProps) {
-  const colors = useColors();
-  const style = resolveOutgoingChatStyle({
-    chatAppearance,
-    appearanceMode: isDark ? "dark" : "light",
-  });
-
-  const composerInputBg = isDark ? colors.surface : "#f0f0f0";
-  const composerBorderColor = isDark ? colors.border : "#e0e0e0";
-  const composerPlaceholderColor = isDark ? colors.textMuted : "#999";
-
-  return (
-    <View
-      style={[styles.chatPreviewWrap, { backgroundColor: colors.background }]}
-      accessibilityLabel="Chat style preview"
-      accessibilityRole="summary"
-    >
-      {/* ── Chat bubbles area ── */}
-      <View style={styles.chatPreviewBubblesArea}>
-        {/* Received bubble */}
-        <View style={styles.chatPreviewReceived}>
-          <View
-            style={[
-              styles.chatPreviewBubble,
-              styles.chatPreviewReceivedBubble,
-              { backgroundColor: colors.surfaceVariant },
-            ]}
-          >
-            <Text style={[styles.chatPreviewText, { color: colors.text }]}>
-              Hey, love the new style! 🎨
-            </Text>
-          </View>
-        </View>
-        {/* Sent bubble — uses chatAppearance */}
-        <View style={styles.chatPreviewSent}>
-          <View
-            style={[
-              styles.chatPreviewBubble,
-              styles.chatPreviewSentBubble,
-              { backgroundColor: style.bubbleBgColor },
-            ]}
-          >
-            <Text
-              style={[
-                styles.chatPreviewText,
-                {
-                  color: style.fontColorHex ?? style.bubbleTextColor,
-                  ...(style.fontFamily ? { fontFamily: style.fontFamily } : {}),
-                },
-              ]}
-            >
-              Thanks! Just customized it ✨
-            </Text>
-          </View>
-        </View>
-      </View>
-
-      {/* ── Static composer bar ── */}
-      <View
-        style={[
-          styles.chatPreviewComposer,
-          { borderTopColor: composerBorderColor },
-        ]}
-      >
-        {/* Attachment icon */}
-        <Ionicons
-          name="image-outline"
-          size={20}
-          color={composerPlaceholderColor}
-          style={styles.chatPreviewComposerIcon}
-        />
-        {/* Input pill placeholder */}
-        <View
-          style={[
-            styles.chatPreviewComposerInput,
-            { backgroundColor: composerInputBg },
-          ]}
-        >
-          <Text
-            style={[
-              styles.chatPreviewComposerPlaceholder,
-              { color: composerPlaceholderColor },
-            ]}
-          >
-            Message…
-          </Text>
-        </View>
-        {/* Send icon */}
-        <MaterialCommunityIcons
-          name="send-circle"
-          size={28}
-          color={colors.primary}
-          style={styles.chatPreviewComposerSend}
-        />
-        {/* Animal icon — matches real composer's animal button */}
-        <View style={styles.chatPreviewAnimalBtn}>
-          <AnimalIcon animalId={chatAppearance?.animalThemeId} size={22} wide />
-        </View>
-      </View>
-    </View>
-  );
-}
-
-// =============================================================================
 // Screen
 // =============================================================================
 
@@ -764,17 +523,12 @@ export default function CustomizationHubScreen({
   route,
 }: CustomizationHubScreenProps) {
   const colors = useColors();
-  const { setTheme: setAppTheme, isDark } = useAppTheme();
-  const insets = useSafeAreaInsets();
+  const { setTheme: setAppTheme } = useAppTheme();
   const { currentFirebaseUser } = useAuth();
   const uid = currentFirebaseUser?.uid ?? "";
   const { profile: baseProfile, refreshProfile } = useUser();
   const { profile } = useProfileData(uid);
-  const {
-    picture,
-    decoration,
-    refresh: refreshPicture,
-  } = useProfilePicture({
+  const { decoration, refresh: refreshPicture } = useProfilePicture({
     userId: uid,
     seed: {
       picture: baseProfile?.profilePicture,
@@ -841,15 +595,11 @@ export default function CustomizationHubScreen({
   useEffect(() => {
     if (initialSection === "chat") {
       setSection("chat");
-      // If an initialTab matches a chat tab, set it
+      // If an initialTab matches a chat tab, set it. Fonts/Font Colors are
+      // intentionally no longer surfaced — fall through to default.
       if (
         initialTab &&
-        [
-          "chat_bubble_color",
-          "chat_font",
-          "chat_font_color",
-          "chat_animal_theme",
-        ].includes(initialTab)
+        ["chat_bubble_color", "chat_animal_theme"].includes(initialTab)
       ) {
         hub.setActiveTab(initialTab as any);
       } else {
@@ -1030,6 +780,7 @@ export default function CustomizationHubScreen({
       {/* App bar */}
       <ScreenHeader
         title="Customize"
+        style={styles.headerNoBorder}
         onBack={() => navigation.goBack()}
         renderRight={() => (
           <View style={styles.headerActions}>
@@ -1046,171 +797,141 @@ export default function CustomizationHubScreen({
                 color={colors.text}
               />
             </Pressable>
-            {hub.hasPreview && (
-              <Pressable
-                onPress={async () => {
-                  try {
-                    await hub.applyPreview();
-                  } catch (error: any) {
-                    Alert.alert("Error", error?.message || "Failed to apply");
-                  }
-                }}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                accessibilityLabel="Apply preview"
-                accessibilityRole="button"
-                style={styles.headerActionButton}
-              >
-                <MaterialCommunityIcons
-                  name="check"
-                  size={22}
-                  color={colors.text}
-                />
-              </Pressable>
-            )}
-            {hub.hasPreview && (
-              <Pressable
-                onPress={hub.clearPreview}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                accessibilityLabel="Clear preview"
-                accessibilityRole="button"
-                style={styles.headerActionButton}
-              >
-                <MaterialCommunityIcons
-                  name="close"
-                  size={22}
-                  color={colors.text}
-                />
-              </Pressable>
-            )}
           </View>
         )}
       />
 
-      {/* ── Live Preview (fixed height — same for Profile & Chat) ── */}
-      <View style={styles.previewContainer}>
-        {section === "profile" ? (
-          <ProfileHeaderVisual
-            displayName={baseProfile.displayName}
-            username={baseProfile.username}
-            pictureUrl={picture?.url ?? null}
-            decorationId={currentDecorationId}
-            backgroundId={currentBackgroundId}
-            level={
-              profile?.level ?? {
-                current: 1,
-                xp: 0,
-                xpToNextLevel: 100,
-                totalXp: 0,
-              }
-            }
-            previewOverrides={hub.previewOverrides}
+      {/* ── Filters + Search (Games-screen styling) ── */}
+      <View
+        style={[
+          styles.stickyFilterContainer,
+          { backgroundColor: colors.background },
+        ]}
+      >
+        {/* Section filter (Profile / Chat) */}
+        <View
+          style={[styles.filterTabBar, { borderBottomColor: colors.border }]}
+        >
+          {(["profile", "chat"] as const).map((s) => {
+            const isActive = section === s;
+            return (
+              <Pressable
+                key={s}
+                onPress={() => {
+                  setSection(s);
+                  // Switch to first tab of the new section
+                  if (s === "chat") {
+                    hub.setActiveTab("chat_bubble_color");
+                  } else {
+                    hub.setActiveTab("decoration");
+                  }
+                  hub.setSearchQuery("");
+                }}
+                accessibilityRole="tab"
+                accessibilityLabel={`${s === "profile" ? "Profile" : "Chat"} section`}
+                accessibilityState={{ selected: isActive }}
+                style={[
+                  styles.filterTab,
+                  isActive && {
+                    borderBottomColor: colors.primary,
+                    borderBottomWidth: 2,
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.filterTabLabel,
+                    {
+                      color: isActive ? colors.primary : colors.textSecondary,
+                      fontWeight: isActive ? "600" : "400",
+                    },
+                  ]}
+                >
+                  {s === "profile" ? "Profile" : "Chat"}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
+        {/* Search */}
+        <View style={styles.searchContainer}>
+          <Searchbar
+            placeholder={`Search ${sectionTabs.find((t) => t.id === hub.activeTab)?.label ?? "items"}…`}
+            value={hub.searchQuery}
+            onChangeText={hub.setSearchQuery}
+            style={[
+              styles.searchBar,
+              { backgroundColor: colors.surfaceVariant ?? colors.surface },
+            ]}
+            inputStyle={[styles.searchInput, { color: colors.text }]}
+            iconColor={colors.textSecondary}
+            placeholderTextColor={colors.textSecondary}
+            elevation={0}
           />
-        ) : (
-          <ChatPreview chatAppearance={currentChatAppearance} isDark={isDark} />
-        )}
-      </View>
+        </View>
 
-      {/* ── Section Toggle: Profile / Chat (below preview) ── */}
-      <View style={styles.sectionToggleContainer}>
-        {(["profile", "chat"] as const).map((s) => {
-          const isActive = section === s;
-          return (
-            <Pressable
-              key={s}
-              onPress={() => {
-                setSection(s);
-                // Switch to first tab of the new section
-                if (s === "chat") {
-                  hub.setActiveTab("chat_bubble_color");
-                } else {
-                  hub.setActiveTab("decoration");
-                }
-                hub.setSearchQuery("");
-              }}
-              accessibilityRole="tab"
-              accessibilityLabel={`${s === "profile" ? "Profile" : "Chat"} section`}
-              accessibilityState={{ selected: isActive }}
-              style={[
-                styles.sectionToggle,
-                {
-                  backgroundColor: isActive
-                    ? colors.primary
-                    : colors.surfaceVariant,
-                },
-              ]}
-            >
-              <MaterialCommunityIcons
-                name={s === "profile" ? "account" : "chat"}
-                size={16}
-                color={isActive ? "#fff" : colors.textSecondary}
-              />
-              <Text
-                style={[
-                  styles.sectionToggleText,
-                  {
-                    color: isActive ? "#fff" : colors.textSecondary,
-                    fontWeight: isActive ? "600" : "400",
-                  },
-                ]}
-              >
-                {s === "profile" ? "Profile" : "Chat"}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
+        {/* Category pill filter (section-aware, horizontally scrollable with edge fades) */}
+        <View style={styles.pillRowWrapper}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.pillRowContent}
+          >
+            {sectionTabs.map((tab) => {
+              const isActive = hub.activeTab === tab.id;
+              return (
+                <Pressable
+                  key={tab.id}
+                  onPress={() => hub.setActiveTab(tab.id)}
+                  accessibilityRole="tab"
+                  accessibilityLabel={`${tab.label} filter`}
+                  accessibilityState={{ selected: isActive }}
+                  style={[
+                    styles.pill,
+                    {
+                      backgroundColor: isActive
+                        ? colors.primary
+                        : (colors.surfaceVariant ?? colors.surface),
+                      borderColor: isActive ? colors.primary : colors.border,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.pillLabel,
+                      {
+                        color: isActive
+                          ? (colors.onPrimary ?? "#FFFFFF")
+                          : colors.textSecondary,
+                        fontWeight: isActive ? "600" : "500",
+                      },
+                    ]}
+                  >
+                    {tab.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+          <LinearGradient
+            pointerEvents="none"
+            colors={[colors.background, hexToTransparent(colors.background)]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.pillFadeLeft}
+          />
+          <LinearGradient
+            pointerEvents="none"
+            colors={[hexToTransparent(colors.background), colors.background]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.pillFadeRight}
+          />
+        </View>
 
-      {/* Category Tabs (section-aware) */}
-      <View style={styles.tabsContainer}>
-        {sectionTabs.map((tab) => {
-          const isActive = hub.activeTab === tab.id;
-          return (
-            <Pressable
-              key={tab.id}
-              onPress={() => hub.setActiveTab(tab.id)}
-              accessibilityRole="tab"
-              accessibilityLabel={`${tab.label} tab`}
-              accessibilityState={{ selected: isActive }}
-              style={[
-                styles.tabItem,
-                {
-                  backgroundColor: isActive
-                    ? colors.primary + "18"
-                    : "transparent",
-                  borderColor: isActive ? colors.primary : "transparent",
-                },
-              ]}
-            >
-              <MaterialCommunityIcons
-                name={tab.icon as any}
-                size={18}
-                color={isActive ? colors.primary : colors.textSecondary}
-              />
-              <Text
-                style={[
-                  styles.tabLabel,
-                  {
-                    color: isActive ? colors.primary : colors.textSecondary,
-                    fontWeight: isActive ? "600" : "400",
-                  },
-                ]}
-              >
-                {tab.label}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
-
-      {/* Search */}
-      <View style={styles.searchRow}>
-        <Searchbar
-          placeholder={`Search ${sectionTabs.find((t) => t.id === hub.activeTab)?.label ?? "items"}...`}
-          value={hub.searchQuery}
-          onChangeText={hub.setSearchQuery}
-          style={[styles.searchbar, { backgroundColor: colors.surfaceVariant }]}
-          inputStyle={styles.searchInput}
-          elevation={0}
+        <View
+          style={[styles.searchDivider, { backgroundColor: colors.border }]}
         />
       </View>
 
@@ -1318,243 +1039,10 @@ export default function CustomizationHubScreen({
             />
           </Pressable>
         </ScrollView>
-      ) : hub.activeTab === "chat_font" ? (
-        /* ── Font cards (single-column, font sample, tap to equip) ── */
-        <ScrollView
-          contentContainerStyle={styles.themeGridContent}
-          showsVerticalScrollIndicator={false}
-        >
-          {hub.filteredItems.length > 0 ? (
-            <View style={styles.fontGrid}>
-              {hub.filteredItems.map((item) => (
-                <FontCard
-                  key={item.id}
-                  item={item}
-                  isEquipped={currentFontId === item.id}
-                  onPress={handleChatDirectEquip}
-                />
-              ))}
-            </View>
-          ) : (
-            <View style={styles.emptyContainer}>
-              <MaterialCommunityIcons
-                name="format-font"
-                size={48}
-                color={colors.textSecondary}
-              />
-              <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-                No fonts owned yet.
-              </Text>
-              <Pressable
-                onPress={() => navigation.navigate("Shop" as any)}
-                style={[
-                  styles.goToShopButton,
-                  { backgroundColor: colors.primary },
-                ]}
-              >
-                <MaterialCommunityIcons name="store" size={16} color="#fff" />
-                <Text style={styles.goToShopText}>Browse Shop</Text>
-              </Pressable>
-            </View>
-          )}
-          {/* Unequip / reset font */}
-          {currentFontId && (
-            <Pressable
-              onPress={async () => {
-                try {
-                  await hub.unequipSlot("chat_font");
-                  await refreshProfile();
-                } catch (error: any) {
-                  Alert.alert("Error", error?.message || "Failed to reset");
-                }
-              }}
-              style={[
-                styles.themeShopHint,
-                { backgroundColor: colors.surfaceVariant },
-              ]}
-            >
-              <MaterialCommunityIcons
-                name="restore"
-                size={18}
-                color={colors.primary}
-              />
-              <Text style={[styles.themeShopHintText, { color: colors.text }]}>
-                Reset to default font
-              </Text>
-            </Pressable>
-          )}
-          {/* Shop upsell */}
-          <Pressable
-            onPress={() => navigation.navigate("Shop" as any)}
-            style={[
-              styles.themeShopHint,
-              { backgroundColor: colors.surfaceVariant },
-            ]}
-          >
-            <MaterialCommunityIcons
-              name="store"
-              size={18}
-              color={colors.primary}
-            />
-            <Text style={[styles.themeShopHintText, { color: colors.text }]}>
-              Want more fonts? Visit the Shop
-            </Text>
-            <MaterialCommunityIcons
-              name="chevron-right"
-              size={18}
-              color={colors.textSecondary}
-            />
-          </Pressable>
-        </ScrollView>
-      ) : hub.activeTab === "chat_font_color" ? (
-        /* ── Font Color cards (2-column, swatch preview, tap to equip) ── */
-        <ScrollView
-          contentContainerStyle={styles.themeGridContent}
-          showsVerticalScrollIndicator={false}
-        >
-          {/* Default (theme-adaptive) option */}
-          <View style={styles.fontColorDefaultSection}>
-            <Pressable
-              onPress={async () => {
-                try {
-                  await hub.unequipSlot("chat_font_color");
-                  await refreshProfile();
-                } catch (error: any) {
-                  Alert.alert("Error", error?.message || "Failed to reset");
-                }
-              }}
-              style={({ pressed }) => [
-                styles.fontColorDefaultCard,
-                {
-                  borderColor: !currentFontColorId
-                    ? colors.primary
-                    : colors.border,
-                  borderWidth: !currentFontColorId ? 2 : 1,
-                  backgroundColor: colors.surface,
-                  opacity: pressed ? 0.8 : 1,
-                },
-              ]}
-            >
-              <View
-                style={[
-                  styles.fontColorDefaultSwatch,
-                  { backgroundColor: colors.surfaceVariant },
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.fontColorDefaultLetter,
-                    { color: colors.text },
-                  ]}
-                >
-                  Aa
-                </Text>
-                <MaterialCommunityIcons
-                  name="theme-light-dark"
-                  size={14}
-                  color={colors.textSecondary}
-                  style={styles.fontColorAdaptiveIcon}
-                />
-              </View>
-              <View style={styles.fontColorDefaultInfo}>
-                <Text
-                  style={[styles.fontColorDefaultTitle, { color: colors.text }]}
-                >
-                  Default
-                </Text>
-                <Text
-                  style={[
-                    styles.fontColorDefaultDesc,
-                    { color: colors.textSecondary },
-                  ]}
-                >
-                  Adapts automatically to your theme
-                </Text>
-              </View>
-              {!currentFontColorId && (
-                <View
-                  style={[
-                    styles.bubbleCheckmark,
-                    { backgroundColor: colors.primary },
-                  ]}
-                >
-                  <Ionicons name="checkmark" size={10} color="#fff" />
-                </View>
-              )}
-            </Pressable>
-          </View>
-
-          {/* Custom colors */}
-          {hub.filteredItems.length > 0 ? (
-            <>
-              <Text
-                style={[
-                  styles.fontColorSectionLabel,
-                  { color: colors.textSecondary },
-                ]}
-              >
-                Custom Colors — Stay the same across themes
-              </Text>
-              <View style={styles.themeGrid}>
-                {hub.filteredItems.map((item) => (
-                  <FontColorCard
-                    key={item.id}
-                    item={item}
-                    isEquipped={currentFontColorId === item.id}
-                    isDefault={false}
-                    onPress={handleChatDirectEquip}
-                  />
-                ))}
-              </View>
-            </>
-          ) : (
-            <View style={styles.emptyContainer}>
-              <MaterialCommunityIcons
-                name="format-color-text"
-                size={48}
-                color={colors.textSecondary}
-              />
-              <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-                No custom font colors owned yet.
-              </Text>
-              <Pressable
-                onPress={() => navigation.navigate("Shop" as any)}
-                style={[
-                  styles.goToShopButton,
-                  { backgroundColor: colors.primary },
-                ]}
-              >
-                <MaterialCommunityIcons name="store" size={16} color="#fff" />
-                <Text style={styles.goToShopText}>Browse Shop</Text>
-              </Pressable>
-            </View>
-          )}
-          {/* Shop upsell */}
-          <Pressable
-            onPress={() => navigation.navigate("Shop" as any)}
-            style={[
-              styles.themeShopHint,
-              { backgroundColor: colors.surfaceVariant },
-            ]}
-          >
-            <MaterialCommunityIcons
-              name="store"
-              size={18}
-              color={colors.primary}
-            />
-            <Text style={[styles.themeShopHintText, { color: colors.text }]}>
-              Want more font colors? Visit the Shop
-            </Text>
-            <MaterialCommunityIcons
-              name="chevron-right"
-              size={18}
-              color={colors.textSecondary}
-            />
-          </Pressable>
-        </ScrollView>
       ) : hub.activeTab === "chat_animal_theme" ? (
         /* ── Animal theme cards (2-column, image preview, tap to equip) ── */
         <FlatList
+          key="grid-2col"
           data={hub.filteredItems}
           renderItem={renderAnimalThemeItem}
           keyExtractor={keyExtractor}
@@ -1700,6 +1188,7 @@ export default function CustomizationHubScreen({
       ) : (
         /* ── Standard grid (3-column for decorations, backgrounds, badges) ── */
         <FlatList
+          key="grid-3col"
           data={hub.filteredItems}
           renderItem={renderGridItem}
           keyExtractor={keyExtractor}
@@ -1794,38 +1283,87 @@ const styles = StyleSheet.create({
   headerActionButton: {
     padding: 4,
   },
-  tabsContainer: {
-    flexDirection: "row",
-    paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.md,
-    paddingBottom: Spacing.sm,
-    gap: Spacing.xs,
+  // Suppress ScreenHeader's hairline so the title and the sticky filter bar
+  // read as one continuous sheet (matches GamesHub).
+  headerNoBorder: {
+    borderBottomWidth: 0,
   },
-  tabItem: {
-    flex: 1,
+
+  // ── Sticky filter + search container (GamesHub-style) ─────────────────
+  stickyFilterContainer: {
+    paddingTop: 0,
+    paddingBottom: 0,
+    zIndex: 3,
+  },
+  filterTabBar: {
     flexDirection: "row",
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  filterTab: {
+    flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    gap: 4,
-    paddingVertical: 10,
-    borderRadius: BorderRadius.sm,
-    borderWidth: 1,
+    paddingVertical: 12,
+    borderBottomWidth: 2,
+    borderBottomColor: "transparent",
   },
-  tabLabel: {
-    fontSize: 11,
-    includeFontPadding: false,
+  filterTabLabel: {
+    fontSize: 13,
   },
-  searchRow: {
-    paddingHorizontal: Spacing.lg,
-    paddingBottom: Spacing.sm,
+  searchContainer: {
+    paddingHorizontal: 12,
+    paddingTop: 8,
+    paddingBottom: 6,
   },
-  searchbar: {
-    height: 40,
-    borderRadius: BorderRadius.sm,
+  searchBar: {
+    borderRadius: 12,
+    height: 36,
   },
   searchInput: {
-    fontSize: 14,
-    minHeight: 40,
+    fontSize: 13,
+    minHeight: 0,
+  },
+  searchDivider: {
+    height: StyleSheet.hairlineWidth,
+  },
+  // ── Category pill row (below search bar) ─────────────────────────────
+  pillRowWrapper: {
+    position: "relative",
+    paddingTop: 6,
+    paddingBottom: 10,
+  },
+  pillRowContent: {
+    paddingHorizontal: 12,
+    gap: 8,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  pill: {
+    paddingHorizontal: 14,
+    height: 30,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  pillLabel: {
+    fontSize: 12.5,
+    lineHeight: 16,
+    includeFontPadding: false,
+  },
+  pillFadeLeft: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 16,
+  },
+  pillFadeRight: {
+    position: "absolute",
+    right: 0,
+    top: 0,
+    bottom: 0,
+    width: 16,
   },
   itemCountRow: {
     flexDirection: "row",
@@ -2030,99 +1568,6 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
 
-  // ── Section Toggle ─────────────────────────────────────────────────────
-  sectionToggleContainer: {
-    flexDirection: "row",
-    paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.sm,
-    paddingBottom: Spacing.xs,
-    gap: Spacing.sm,
-  },
-  sectionToggle: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    paddingVertical: 10,
-    borderRadius: BorderRadius.md,
-  },
-  sectionToggleText: {
-    fontSize: 14,
-  },
-
-  // ── Chat Preview ───────────────────────────────────────────────────────
-  previewContainer: {
-    height: 220,
-    overflow: "hidden",
-  },
-  chatPreviewWrap: {
-    flex: 1,
-    justifyContent: "space-between",
-    paddingHorizontal: 0,
-    gap: 0,
-  },
-  chatPreviewBubblesArea: {
-    flex: 1,
-    justifyContent: "center",
-    paddingHorizontal: Spacing.lg,
-    gap: Spacing.sm,
-  },
-  chatPreviewReceived: {
-    alignItems: "flex-start",
-  },
-  chatPreviewSent: {
-    alignItems: "flex-end",
-  },
-  chatPreviewBubble: {
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 16,
-    maxWidth: "75%",
-  },
-  chatPreviewReceivedBubble: {
-    borderBottomLeftRadius: 4,
-  },
-  chatPreviewSentBubble: {
-    borderBottomRightRadius: 4,
-  },
-  chatPreviewText: {
-    fontSize: 15,
-    lineHeight: 20,
-  },
-  // Composer bar (static placeholder)
-  chatPreviewComposer: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 6,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    gap: 6,
-  },
-  chatPreviewComposerIcon: {
-    paddingHorizontal: 2,
-  },
-  chatPreviewComposerInput: {
-    flex: 1,
-    borderRadius: 18,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    justifyContent: "center",
-  },
-  chatPreviewComposerPlaceholder: {
-    fontSize: 14,
-  },
-  chatPreviewComposerSend: {
-    paddingHorizontal: 2,
-  },
-  chatPreviewAnimalBtn: {
-    width: 32,
-    height: 24,
-    justifyContent: "center",
-    alignItems: "center",
-    marginLeft: 2,
-  },
-
   // ── Bubble Color Card ──────────────────────────────────────────────────
   bubbleCard: {
     width: THEME_CARD_WIDTH,
@@ -2168,100 +1613,6 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     justifyContent: "center",
     alignItems: "center",
-  },
-
-  // ── Font Card ──────────────────────────────────────────────────────────
-  fontGrid: {
-    gap: Spacing.sm,
-  },
-  fontCard: {
-    borderRadius: BorderRadius.lg,
-    overflow: "hidden",
-    padding: Spacing.md,
-  },
-  fontSample: {
-    gap: 4,
-  },
-  fontSampleTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  fontSampleBody: {
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  fontCheckmark: {
-    position: "absolute",
-    top: Spacing.sm,
-    right: Spacing.sm,
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-
-  // ── Font Color Card ──────────────────────────────────────────────────
-  fontColorSwatch: {
-    height: 60,
-    justifyContent: "center",
-    alignItems: "center",
-    borderRadius: BorderRadius.md,
-    marginHorizontal: Spacing.sm,
-    marginTop: Spacing.sm,
-  },
-  fontColorPreviewText: {
-    fontSize: 28,
-    fontWeight: "700",
-  },
-  fontColorHint: {
-    fontSize: 10,
-    marginTop: 2,
-  },
-  fontColorDefaultSection: {
-    marginBottom: Spacing.md,
-  },
-  fontColorDefaultCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.md,
-    gap: Spacing.md,
-  },
-  fontColorDefaultSwatch: {
-    width: 52,
-    height: 52,
-    borderRadius: BorderRadius.md,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  fontColorDefaultLetter: {
-    fontSize: 24,
-    fontWeight: "700",
-  },
-  fontColorAdaptiveIcon: {
-    position: "absolute",
-    bottom: 2,
-    right: 2,
-  },
-  fontColorDefaultInfo: {
-    flex: 1,
-    gap: 2,
-  },
-  fontColorDefaultTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  fontColorDefaultDesc: {
-    fontSize: 12,
-  },
-  fontColorSectionLabel: {
-    fontSize: 12,
-    fontWeight: "600",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-    marginBottom: Spacing.sm,
-    paddingHorizontal: 2,
   },
 
   // ── Animal Theme Card ──────────────────────────────────────────────────
