@@ -17,6 +17,7 @@
 
 import * as admin from "firebase-admin";
 import * as functions from "firebase-functions";
+import { secureCallableRuntime } from "./callableSecurity";
 import {
   SCORECARD_VISIBLE_TEXT,
   sanitizeMessagePreviewText,
@@ -47,9 +48,6 @@ function buildPreview(kind: string, text?: string): string {
   }
   if (kind === "system") {
     return sanitizedText || "System message";
-  }
-  if (kind === "text" && sanitizedText) {
-    return text.length > 80 ? text.substring(0, 80) + "…" : text;
   }
   if (kind === "media") return "📷 Photo";
   if (kind === "gif") return "GIF";
@@ -294,7 +292,7 @@ export const onGroupMessageInbox = functions.firestore
  * Callable to reset a user's unread count for a conversation.
  * Called when the user opens / views a chat.
  */
-export const markInboxRead = functions.https.onCall(
+export const markInboxRead = secureCallableRuntime().https.onCall(
   async (
     data: { threadId: string },
     context,

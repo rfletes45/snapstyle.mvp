@@ -58,6 +58,7 @@ exports.declineMessageRequest = exports.acceptMessageRequest = void 0;
 exports.checkDmAcceptance = checkDmAcceptance;
 const admin = __importStar(require("firebase-admin"));
 const functions = __importStar(require("firebase-functions"));
+const callableSecurity_1 = require("./callableSecurity");
 function getDb() {
     return admin.firestore();
 }
@@ -205,7 +206,7 @@ async function checkDmAcceptance(senderId, recipientUid, chatId, messagePreview,
  * Sets the request status to "accepted" so future messages
  * from the requester bypass the gating check.
  */
-exports.acceptMessageRequest = functions.https.onCall(async (data, context) => {
+exports.acceptMessageRequest = (0, callableSecurity_1.secureCallableRuntime)().https.onCall(async (data, context) => {
     if (!context.auth) {
         throw new functions.https.HttpsError("unauthenticated", "Must be logged in");
     }
@@ -243,7 +244,7 @@ exports.acceptMessageRequest = functions.https.onCall(async (data, context) => {
  *
  * Optionally blocks the requester.
  */
-exports.declineMessageRequest = functions.https.onCall(async (data, context) => {
+exports.declineMessageRequest = (0, callableSecurity_1.secureCallableRuntime)().https.onCall(async (data, context) => {
     if (!context.auth) {
         throw new functions.https.HttpsError("unauthenticated", "Must be logged in");
     }

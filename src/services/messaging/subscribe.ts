@@ -34,6 +34,7 @@
  */
 
 import { MessageV2 } from "@/types/messaging";
+import type { ServerReceivedMessageCursor } from "@/services/chat/messagePagination";
 
 // Import existing messageList functions and types
 import {
@@ -167,7 +168,7 @@ export function subscribeToGroupMessagesUnified(
 export async function loadOlderMessages(
   scope: ConversationScope,
   conversationId: string,
-  beforeServerReceivedAt: number,
+  beforeServerReceivedAt: number | ServerReceivedMessageCursor,
   messageLimit: number = 25,
 ): Promise<PaginationLoadResult> {
   return loadOlderMessagesV2(

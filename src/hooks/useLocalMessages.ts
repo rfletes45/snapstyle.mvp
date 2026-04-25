@@ -18,6 +18,7 @@ import {
   getMessageWindowAroundMessage,
   MessageWithAttachments,
 } from "@/services/database/messageRepository";
+import { createdAtCursorFromRow } from "@/services/chat/messagePagination";
 import {
   fullSyncConversation,
   subscribeToConversation,
@@ -598,16 +599,18 @@ export function useLocalMessages(
           currentWindow.messages.length > 0
             ? currentWindow.messages[currentWindow.messages.length - 1]
             : null;
-        const oldestTimestamp =
-          oldest?.created_at || oldest?.server_received_at || Date.now();
+        const oldestCursor = oldest
+          ? createdAtCursorFromRow(oldest)
+          : { createdAt: Date.now(), messageId: "" };
 
         logger.info("[useLocalMessages] loadMore(anchor): syncing older", {
-          oldestTimestamp,
+          oldestTimestamp: oldestCursor.createdAt,
+          oldestMessageId: oldestCursor.messageId,
           currentOlderCount: currentWindow.olderCount,
           nextOlderLimit,
         });
 
-        syncOlderMessages(scope, conversationId, oldestTimestamp, PAGE_SIZE)
+        syncOlderMessages(scope, conversationId, oldestCursor, PAGE_SIZE)
           .then((count) => {
             logger.info("[useLocalMessages] loadMore(anchor): sync returned", {
               count,
@@ -693,18 +696,19 @@ export function useLocalMessages(
         currentMessages.length > 0
           ? currentMessages[currentMessages.length - 1]
           : null;
-      const oldestTimestamp =
-        oldest?.created_at || oldest?.server_received_at || Date.now();
+      const oldestCursor = oldest
+        ? createdAtCursorFromRow(oldest)
+        : { createdAt: Date.now(), messageId: "" };
 
       logger.info("[useLocalMessages] loadMore: syncing older from Firestore", {
         currentLimit,
         nextLimit,
         sqliteCount: currentMessages.length,
-        oldestTimestamp,
-        oldestMessageId: oldest?.id,
+        oldestTimestamp: oldestCursor.createdAt,
+        oldestMessageId: oldestCursor.messageId,
       });
 
-      syncOlderMessages(scope, conversationId, oldestTimestamp, PAGE_SIZE)
+      syncOlderMessages(scope, conversationId, oldestCursor, PAGE_SIZE)
         .then((count) => {
           logger.info("[useLocalMessages] loadMore: sync returned", {
             count,

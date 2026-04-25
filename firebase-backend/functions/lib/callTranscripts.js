@@ -142,7 +142,9 @@ async function fetchCallFromStream(callCid) {
     if (!parsed)
         return null;
     try {
-        const res = await (0, streamToken_1.getStreamClient)().video.call(parsed.type, parsed.id).get();
+        const res = await (0, streamToken_1.getStreamClient)()
+            .video.call(parsed.type, parsed.id)
+            .get();
         return {
             ...res.call,
             id: parsed.id,
@@ -232,7 +234,9 @@ function buildTranscriptDoc(params) {
 }
 async function persistTranscriptDoc(doc) {
     const batch = db.batch();
-    const docRef = db.collection(COLLECTION).doc(transcriptDocId(doc.callId, doc.sessionId));
+    const docRef = db
+        .collection(COLLECTION)
+        .doc(transcriptDocId(doc.callId, doc.sessionId));
     batch.set(docRef, doc, { merge: true });
     writeParticipantIndex(doc, batch);
     await batch.commit();
@@ -496,7 +500,9 @@ async function startTranscriptionForCallSession(call) {
     if (participants.length !== 2) {
         return { ok: false, reason: "missing_participants" };
     }
-    const docRef = db.collection(COLLECTION).doc(transcriptDocId(call.id, sessionId));
+    const docRef = db
+        .collection(COLLECTION)
+        .doc(transcriptDocId(call.id, sessionId));
     const existingSnap = await docRef.get();
     const existing = existingSnap.exists
         ? existingSnap.data()

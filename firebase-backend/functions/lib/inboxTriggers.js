@@ -52,6 +52,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.onGroupMemberStateChanged = exports.onDMMemberStateChanged = exports.markInboxRead = exports.onGroupMessageInbox = exports.onDMMessageInbox = void 0;
 const admin = __importStar(require("firebase-admin"));
 const functions = __importStar(require("firebase-functions"));
+const callableSecurity_1 = require("./callableSecurity");
 const messagePreview_1 = require("./messagePreview");
 function getDb() {
     return admin.firestore();
@@ -76,9 +77,6 @@ function buildPreview(kind, text) {
     }
     if (kind === "system") {
         return sanitizedText || "System message";
-    }
-    if (kind === "text" && sanitizedText) {
-        return text.length > 80 ? text.substring(0, 80) + "…" : text;
     }
     if (kind === "media")
         return "📷 Photo";
@@ -300,7 +298,7 @@ exports.onGroupMessageInbox = functions.firestore
  * Callable to reset a user's unread count for a conversation.
  * Called when the user opens / views a chat.
  */
-exports.markInboxRead = functions.https.onCall(async (data, context) => {
+exports.markInboxRead = (0, callableSecurity_1.secureCallableRuntime)().https.onCall(async (data, context) => {
     if (!context.auth) {
         throw new functions.https.HttpsError("unauthenticated", "Must be logged in");
     }

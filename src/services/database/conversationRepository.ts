@@ -7,7 +7,7 @@
  */
 
 import { ConversationRow } from "@/types/database";
-import { getDatabase } from "./index";
+import { getDatabase, getDatabaseOwnerUid } from "./index";
 
 // =============================================================================
 // Query Operations
@@ -23,13 +23,14 @@ export function getConversations(
   } = {},
 ): ConversationRow[] {
   const db = getDatabase();
+  const ownerUid = getDatabaseOwnerUid();
   const { includeArchived = false, limit = 100 } = options;
 
-  let query = "SELECT * FROM conversations";
-  const params: (number | string)[] = [];
+  let query = "SELECT * FROM conversations WHERE owner_uid = ?";
+  const params: (number | string)[] = [ownerUid];
 
   if (!includeArchived) {
-    query += " WHERE is_archived = 0";
+    query += " AND is_archived = 0";
   }
 
   query += " ORDER BY COALESCE(last_message_at, updated_at) DESC LIMIT ?";
@@ -43,9 +44,10 @@ export function getConversations(
  */
 export function getConversationById(id: string): ConversationRow | null {
   const db = getDatabase();
+  const ownerUid = getDatabaseOwnerUid();
   return db.getFirstSync<ConversationRow>(
-    "SELECT * FROM conversations WHERE id = ?",
-    [id],
+    "SELECT * FROM conversations WHERE id = ? AND owner_uid = ?",
+    [id, ownerUid],
   );
 }
 
@@ -65,9 +67,9 @@ export function getOrCreateDMConversation(
 
   const now = Date.now();
   db.runSync(
-    `INSERT INTO conversations (id, scope, name, created_at, updated_at)
-     VALUES (?, 'dm', NULL, ?, ?)`,
-    [chatId, now, now],
+    `INSERT OR REPLACE INTO conversations (id, owner_uid, scope, name, created_at, updated_at)
+     VALUES (?, ?, 'dm', NULL, ?, ?)`,
+    [chatId, getDatabaseOwnerUid(), now, now],
   );
 
   return getConversationById(chatId)!;
@@ -89,9 +91,9 @@ export function getOrCreateGroupConversation(
 
   const now = Date.now();
   db.runSync(
-    `INSERT INTO conversations (id, scope, name, created_at, updated_at)
-     VALUES (?, 'group', ?, ?, ?)`,
-    [groupId, groupName, now, now],
+    `INSERT OR REPLACE INTO conversations (id, owner_uid, scope, name, created_at, updated_at)
+     VALUES (?, ?, 'group', ?, ?, ?)`,
+    [groupId, getDatabaseOwnerUid(), groupName, now, now],
   );
 
   return getConversationById(groupId)!;
@@ -102,9 +104,10 @@ export function getOrCreateGroupConversation(
  */
 export function conversationExists(id: string): boolean {
   const db = getDatabase();
+  const ownerUid = getDatabaseOwnerUid();
   const result = db.getFirstSync<{ count: number }>(
-    "SELECT COUNT(*) as count FROM conversations WHERE id = ?",
-    [id],
+    "SELECT COUNT(*) as count FROM conversations WHERE id = ? AND owner_uid = ?",
+    [id, ownerUid],
   );
   return (result?.count ?? 0) > 0;
 }
@@ -120,10 +123,11 @@ export function getConversationsByScope(
   } = {},
 ): ConversationRow[] {
   const db = getDatabase();
+  const ownerUid = getDatabaseOwnerUid();
   const { includeArchived = false, limit = 100 } = options;
 
-  let whereClause = "scope = ?";
-  const params: (string | number)[] = [scope];
+  let whereClause = "owner_uid = ? AND scope = ?";
+  const params: (string | number)[] = [ownerUid, scope];
 
   if (!includeArchived) {
     whereClause += " AND is_archived = 0";
@@ -148,12 +152,13 @@ export function searchConversations(
   limit: number = 20,
 ): ConversationRow[] {
   const db = getDatabase();
+  const ownerUid = getDatabaseOwnerUid();
   return db.getAllSync<ConversationRow>(
     `SELECT * FROM conversations 
-     WHERE name LIKE ? AND is_archived = 0
+     WHERE owner_uid = ? AND name LIKE ? AND is_archived = 0
      ORDER BY COALESCE(last_message_at, updated_at) DESC 
      LIMIT ?`,
-    [`%${searchTerm}%`, limit],
+    [ownerUid, `%${searchTerm}%`, limit],
   );
 }
 
@@ -175,6 +180,7 @@ export function updateConversationFromServer(
   }>,
 ): void {
   const db = getDatabase();
+  const ownerUid = getDatabaseOwnerUid();
   const updates: string[] = ["updated_at = ?"];
   const params: (string | number | null)[] = [Date.now()];
 
@@ -199,10 +205,10 @@ export function updateConversationFromServer(
     params.push(data.unread_count);
   }
 
-  params.push(id);
+  params.push(id, ownerUid);
 
   db.runSync(
-    `UPDATE conversations SET ${updates.join(", ")} WHERE id = ?`,
+    `UPDATE conversations SET ${updates.join(", ")} WHERE id = ? AND owner_uid = ?`,
     params,
   );
 }
@@ -212,11 +218,11 @@ export function updateConversationFromServer(
  */
 export function updateConversationName(id: string, name: string): void {
   const db = getDatabase();
-  db.runSync("UPDATE conversations SET name = ?, updated_at = ? WHERE id = ?", [
-    name,
-    Date.now(),
-    id,
-  ]);
+  const ownerUid = getDatabaseOwnerUid();
+  db.runSync(
+    "UPDATE conversations SET name = ?, updated_at = ? WHERE id = ? AND owner_uid = ?",
+    [name, Date.now(), id, ownerUid],
+  );
 }
 
 /**
@@ -224,9 +230,10 @@ export function updateConversationName(id: string, name: string): void {
  */
 export function setConversationArchived(id: string, archived: boolean): void {
   const db = getDatabase();
+  const ownerUid = getDatabaseOwnerUid();
   db.runSync(
-    "UPDATE conversations SET is_archived = ?, updated_at = ? WHERE id = ?",
-    [archived ? 1 : 0, Date.now(), id],
+    "UPDATE conversations SET is_archived = ?, updated_at = ? WHERE id = ? AND owner_uid = ?",
+    [archived ? 1 : 0, Date.now(), id, ownerUid],
   );
 }
 
@@ -239,9 +246,10 @@ export function setConversationMuted(
   mutedUntil?: number | null,
 ): void {
   const db = getDatabase();
+  const ownerUid = getDatabaseOwnerUid();
   db.runSync(
-    "UPDATE conversations SET is_muted = ?, muted_until = ?, updated_at = ? WHERE id = ?",
-    [muted ? 1 : 0, mutedUntil ?? null, Date.now(), id],
+    "UPDATE conversations SET is_muted = ?, muted_until = ?, updated_at = ? WHERE id = ? AND owner_uid = ?",
+    [muted ? 1 : 0, mutedUntil ?? null, Date.now(), id, ownerUid],
   );
 }
 
@@ -250,10 +258,11 @@ export function setConversationMuted(
  */
 export function updateUnreadCount(id: string, count: number): void {
   const db = getDatabase();
-  db.runSync("UPDATE conversations SET unread_count = ? WHERE id = ?", [
-    count,
-    id,
-  ]);
+  const ownerUid = getDatabaseOwnerUid();
+  db.runSync(
+    "UPDATE conversations SET unread_count = ? WHERE id = ? AND owner_uid = ?",
+    [count, id, ownerUid],
+  );
 }
 
 /**
@@ -268,9 +277,10 @@ export function markConversationRead(id: string): void {
  */
 export function incrementUnreadCount(id: string): void {
   const db = getDatabase();
+  const ownerUid = getDatabaseOwnerUid();
   db.runSync(
-    "UPDATE conversations SET unread_count = unread_count + 1 WHERE id = ?",
-    [id],
+    "UPDATE conversations SET unread_count = unread_count + 1 WHERE id = ? AND owner_uid = ?",
+    [id, ownerUid],
   );
 }
 
@@ -284,14 +294,15 @@ export function updateLastMessage(
   timestamp: number,
 ): void {
   const db = getDatabase();
+  const ownerUid = getDatabaseOwnerUid();
   db.runSync(
     `UPDATE conversations SET 
       last_message_id = ?,
       last_message_text = ?,
       last_message_at = ?,
       updated_at = ?
-    WHERE id = ?`,
-    [messageId, text, timestamp, timestamp, id],
+    WHERE id = ? AND owner_uid = ?`,
+    [messageId, text, timestamp, timestamp, id, ownerUid],
   );
 }
 
@@ -300,10 +311,11 @@ export function updateLastMessage(
  */
 export function updateSyncVersion(id: string, version: number): void {
   const db = getDatabase();
-  db.runSync("UPDATE conversations SET sync_version = ? WHERE id = ?", [
-    version,
-    id,
-  ]);
+  const ownerUid = getDatabaseOwnerUid();
+  db.runSync(
+    "UPDATE conversations SET sync_version = ? WHERE id = ? AND owner_uid = ?",
+    [version, id, ownerUid],
+  );
 }
 
 // =============================================================================
@@ -315,8 +327,12 @@ export function updateSyncVersion(id: string, version: number): void {
  */
 export function deleteConversation(id: string): void {
   const db = getDatabase();
+  const ownerUid = getDatabaseOwnerUid();
   // CASCADE will delete messages and attachments
-  db.runSync("DELETE FROM conversations WHERE id = ?", [id]);
+  db.runSync("DELETE FROM conversations WHERE id = ? AND owner_uid = ?", [
+    id,
+    ownerUid,
+  ]);
 }
 
 /**
@@ -324,15 +340,19 @@ export function deleteConversation(id: string): void {
  */
 export function clearConversationMessages(id: string): void {
   const db = getDatabase();
-  db.runSync("DELETE FROM messages WHERE conversation_id = ?", [id]);
+  const ownerUid = getDatabaseOwnerUid();
+  db.runSync("DELETE FROM messages WHERE conversation_id = ? AND owner_uid = ?", [
+    id,
+    ownerUid,
+  ]);
   db.runSync(
     `UPDATE conversations SET 
       last_message_id = NULL,
       last_message_text = NULL,
       last_message_at = NULL,
       unread_count = 0
-    WHERE id = ?`,
-    [id],
+    WHERE id = ? AND owner_uid = ?`,
+    [id, ownerUid],
   );
 }
 
@@ -341,7 +361,11 @@ export function clearConversationMessages(id: string): void {
  */
 export function deleteArchivedConversations(): number {
   const db = getDatabase();
-  const result = db.runSync("DELETE FROM conversations WHERE is_archived = 1");
+  const ownerUid = getDatabaseOwnerUid();
+  const result = db.runSync(
+    "DELETE FROM conversations WHERE owner_uid = ? AND is_archived = 1",
+    [ownerUid],
+  );
   return result.changes;
 }
 
@@ -356,10 +380,11 @@ export function getConversationCount(
   options: { scope?: "dm" | "group"; includeArchived?: boolean } = {},
 ): number {
   const db = getDatabase();
+  const ownerUid = getDatabaseOwnerUid();
   const { scope, includeArchived = false } = options;
 
-  let whereClause = "1=1";
-  const params: (string | number)[] = [];
+  let whereClause = "owner_uid = ?";
+  const params: (string | number)[] = [ownerUid];
 
   if (scope) {
     whereClause += " AND scope = ?";
@@ -382,8 +407,10 @@ export function getConversationCount(
  */
 export function getTotalUnreadCount(): number {
   const db = getDatabase();
+  const ownerUid = getDatabaseOwnerUid();
   const result = db.getFirstSync<{ total: number }>(
-    "SELECT SUM(unread_count) as total FROM conversations WHERE is_archived = 0",
+    "SELECT SUM(unread_count) as total FROM conversations WHERE owner_uid = ? AND is_archived = 0",
+    [ownerUid],
   );
   return result?.total ?? 0;
 }
@@ -393,9 +420,11 @@ export function getTotalUnreadCount(): number {
  */
 export function getConversationsWithUnread(): ConversationRow[] {
   const db = getDatabase();
+  const ownerUid = getDatabaseOwnerUid();
   return db.getAllSync<ConversationRow>(
     `SELECT * FROM conversations 
-     WHERE unread_count > 0 AND is_archived = 0
+     WHERE owner_uid = ? AND unread_count > 0 AND is_archived = 0
      ORDER BY COALESCE(last_message_at, updated_at) DESC`,
+    [ownerUid],
   );
 }

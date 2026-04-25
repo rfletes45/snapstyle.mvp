@@ -49,6 +49,7 @@ exports.normalizeSenderStyleSnapshot = normalizeSenderStyleSnapshot;
 exports.buildSenderStyleFromChatAppearance = buildSenderStyleFromChatAppearance;
 const admin = __importStar(require("firebase-admin"));
 const functions = __importStar(require("firebase-functions"));
+const callableSecurity_1 = require("./callableSecurity");
 const chatMedia_1 = require("./chatMedia");
 const messagePreview_1 = require("./messagePreview");
 const messageRequests_1 = require("./messageRequests");
@@ -481,7 +482,7 @@ async function checkRateLimit(uid) {
  * 4. Checks block status for DMs
  * 5. Enforces rate limits
  */
-exports.sendMessageV2 = functions.https.onCall(async (data, context) => {
+exports.sendMessageV2 = (0, callableSecurity_1.secureCallableRuntime)().https.onCall(async (data, context) => {
     const db = getDb();
     // 1. Auth check
     if (!context.auth) {
@@ -983,7 +984,7 @@ const EDIT_WINDOW_MS = 15 * 60 * 1000;
  * - Only text field can change
  * - Cannot edit deleted messages
  */
-exports.editMessageV2 = functions.https.onCall(async (data, context) => {
+exports.editMessageV2 = (0, callableSecurity_1.secureCallableRuntime)().https.onCall(async (data, context) => {
     const db = getDb();
     if (!context.auth) {
         throw new functions.https.HttpsError("unauthenticated", "Must be logged in to edit messages");
@@ -1077,7 +1078,7 @@ async function getGroupRole(groupId, uid) {
  * - Sets deletedForAll marker
  * - Clears text and attachments
  */
-exports.deleteMessageForAllV2 = functions.https.onCall(async (data, context) => {
+exports.deleteMessageForAllV2 = (0, callableSecurity_1.secureCallableRuntime)().https.onCall(async (data, context) => {
     const db = getDb();
     if (!context.auth) {
         throw new functions.https.HttpsError("unauthenticated", "Must be logged in to delete messages");
@@ -1216,7 +1217,7 @@ async function checkReactionRateLimit(uid) {
  * - Rate limited (10/minute)
  * - Max 12 unique emojis per message
  */
-exports.toggleReactionV2 = functions.https.onCall(async (data, context) => {
+exports.toggleReactionV2 = (0, callableSecurity_1.secureCallableRuntime)().https.onCall(async (data, context) => {
     const db = getDb();
     if (!context.auth) {
         throw new functions.https.HttpsError("unauthenticated", "Must be logged in to react to messages");

@@ -51,6 +51,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.grantItem = exports.purchaseWithTokens = void 0;
 const admin = __importStar(require("firebase-admin"));
 const functions = __importStar(require("firebase-functions"));
+const callableSecurity_1 = require("./callableSecurity");
 /** Read canonical token balance with legacy fallback */
 function getTokenBalance(wallet) {
     return wallet.tokensBalance ?? wallet.tokens ?? 0;
@@ -115,7 +116,7 @@ function generateTransactionId() {
  * 4. Records the transaction
  * 5. Updates stock if applicable
  */
-exports.purchaseWithTokens = functions.https.onCall(async (data, context) => {
+exports.purchaseWithTokens = (0, callableSecurity_1.secureCallableRuntime)().https.onCall(async (data, context) => {
     const db = admin.firestore();
     // -------------------------------------------------------------------------
     // Authentication Check

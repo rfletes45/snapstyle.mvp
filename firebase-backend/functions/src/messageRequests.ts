@@ -22,6 +22,7 @@
 
 import * as admin from "firebase-admin";
 import * as functions from "firebase-functions";
+import { secureCallableRuntime } from "./callableSecurity";
 
 function getDb() {
   return admin.firestore();
@@ -211,7 +212,7 @@ export async function checkDmAcceptance(
  * Sets the request status to "accepted" so future messages
  * from the requester bypass the gating check.
  */
-export const acceptMessageRequest = functions.https.onCall(
+export const acceptMessageRequest = secureCallableRuntime().https.onCall(
   async (data: { chatId: string }, context): Promise<{ success: boolean }> => {
     if (!context.auth) {
       throw new functions.https.HttpsError(
@@ -272,7 +273,7 @@ export const acceptMessageRequest = functions.https.onCall(
  *
  * Optionally blocks the requester.
  */
-export const declineMessageRequest = functions.https.onCall(
+export const declineMessageRequest = secureCallableRuntime().https.onCall(
   async (
     data: { chatId: string; blockRequester?: boolean },
     context,

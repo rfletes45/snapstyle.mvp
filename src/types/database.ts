@@ -12,6 +12,7 @@
 
 export interface ConversationRow {
   id: string;
+  owner_uid: string | null;
   scope: "dm" | "group";
   name: string | null;
   created_at: number;
@@ -34,6 +35,7 @@ export type MessageSyncStatus = "pending" | "synced" | "failed" | "conflict";
 
 export interface MessageRow {
   id: string;
+  owner_uid: string | null;
   conversation_id: string;
   scope: "dm" | "group";
   sender_id: string;
@@ -85,6 +87,7 @@ export type AttachmentUploadStatus =
 
 export interface AttachmentRow {
   id: string;
+  owner_uid: string | null;
   message_id: string;
   kind: "image" | "video" | "audio" | "file";
   mime: string;
@@ -110,6 +113,7 @@ export interface AttachmentRow {
 
 export interface ReactionRow {
   id: string;
+  owner_uid: string | null;
   message_id: string;
   user_id: string;
   emoji: string;
@@ -123,8 +127,10 @@ export interface ReactionRow {
 
 export interface SyncCursorRow {
   conversation_id: string;
+  owner_uid: string | null;
   last_synced_at: number | null;
   last_sync_attempt: number | null;
+  last_doc_id: string | null;
   sync_token: string | null;
 }
 

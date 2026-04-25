@@ -51,13 +51,13 @@
 import { USE_LOCAL_STORAGE } from "@/constants/featureFlags";
 import type { SenderStyle } from "@/cosmetics/types";
 import {
-  dedupeAndSortMessages,
-  getMessageStatusFromSync,
-} from "@/services/chat/normalizeMessage";
-import {
   buildOptimisticPreviewText,
   emitOptimisticInboxUpdate,
 } from "@/services/chat/inboxOptimisticUpdates";
+import {
+  dedupeAndSortMessages,
+  getMessageStatusFromSync,
+} from "@/services/chat/normalizeMessage";
 import { updateReadWatermark as updateDMReadWatermark } from "@/services/chatMembers";
 import {
   getOrCreateDMConversation,
@@ -587,6 +587,7 @@ export function useChat(config: UseChatConfig): UseChatReturn {
           const localAttachmentRows: AttachmentRow[] = (attachments ?? []).map(
             (att) => ({
               id: att.id,
+              owner_uid: messageRow.owner_uid,
               message_id: messageRow.id,
               kind: att.kind as AttachmentRow["kind"],
               mime: att.mime,
@@ -610,6 +611,7 @@ export function useChat(config: UseChatConfig): UseChatReturn {
             remoteAttachments ?? []
           ).map((att) => ({
             id: att.id,
+            owner_uid: messageRow.owner_uid,
             message_id: messageRow.id,
             kind: att.kind as AttachmentRow["kind"],
             mime: att.mime,

@@ -16,6 +16,7 @@
 
 import * as admin from "firebase-admin";
 import * as functions from "firebase-functions";
+import { secureCallableRuntime } from "./callableSecurity";
 
 // =============================================================================
 // Types
@@ -141,7 +142,7 @@ function generateTransactionId(): string {
  * 4. Records the transaction
  * 5. Updates stock if applicable
  */
-export const purchaseWithTokens = functions.https.onCall(
+export const purchaseWithTokens = secureCallableRuntime().https.onCall(
   async (
     data: PurchaseWithTokensRequest,
     context,

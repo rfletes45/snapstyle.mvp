@@ -11,6 +11,7 @@
 
 import * as admin from "firebase-admin";
 import * as functions from "firebase-functions";
+import { secureCallableRuntime } from "../callableSecurity";
 import {
   assertAuth,
   assertConversationMember,
@@ -286,7 +287,7 @@ function validateInput(data: unknown): CreateInviteInput {
 // Callable: createGameInviteV4
 // =============================================================================
 
-export const createGameInviteV4 = functions.https.onCall(
+export const createGameInviteV4 = secureCallableRuntime().https.onCall(
   async (data, context) => {
     const uid = assertAuth(context);
     const trace = startServerTrace("createInviteV4", uid);

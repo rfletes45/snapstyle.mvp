@@ -1,5 +1,9 @@
-import { getAuthInstance } from "@/services/firebase";
 import { consumeExplicitLogoutIntent } from "@/services/auth";
+import {
+  clearDatabaseOwnerUid,
+  setDatabaseOwnerUid,
+} from "@/services/database";
+import { getAuthInstance } from "@/services/firebase";
 import { navigate as globalNavigate } from "@/services/navigationRef";
 import {
   addNotificationReceivedListener,
@@ -15,6 +19,8 @@ import {
   shouldHandleNotificationByDedupeKey,
   type CanonicalNotification,
 } from "@/services/notifications/normalizeNotification";
+import { clearOutboxOwnerUid, setOutboxOwnerUid } from "@/services/outbox";
+import { setChatPreloadOwnerUid } from "@/services/preload/chatPreloadQueue";
 import {
   cleanupPresence,
   initializePresence,
@@ -71,6 +77,19 @@ async function cleanupChatRuntimeForAuthTransition(
   } catch (error) {
     logger.warn("[AuthContext] Failed to clean chat runtime state:", error);
   }
+}
+
+async function setChatRuntimeOwner(uid: string | null): Promise<void> {
+  if (uid) {
+    setDatabaseOwnerUid(uid);
+    await setOutboxOwnerUid(uid);
+    setChatPreloadOwnerUid(uid);
+    return;
+  }
+
+  clearDatabaseOwnerUid();
+  clearOutboxOwnerUid();
+  setChatPreloadOwnerUid(null);
 }
 
 const HANDLED_NOTIFICATION_RESPONSES_KEY =
@@ -137,9 +156,7 @@ async function readHandledNotificationResponses(
   return entries;
 }
 
-async function hasHandledNotificationResponse(
-  key: string,
-): Promise<boolean> {
+async function hasHandledNotificationResponse(key: string): Promise<boolean> {
   try {
     const entries = await readHandledNotificationResponses();
     return entries.has(key);
@@ -152,9 +169,7 @@ async function hasHandledNotificationResponse(
   }
 }
 
-async function rememberHandledNotificationResponse(
-  key: string,
-): Promise<void> {
+async function rememberHandledNotificationResponse(key: string): Promise<void> {
   try {
     const entries = await readHandledNotificationResponses();
     entries.set(key, Date.now());
@@ -627,6 +642,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               pendingAuthNullTimerRef.current = null;
               currentUserIdRef.current = null;
               void cleanupChatRuntimeForAuthTransition("auth_null_committed");
+              void setChatRuntimeOwner(null);
               logStartupEvent("Auth null transition committed", {
                 previousUid,
                 graceMs: TRANSIENT_AUTH_NULL_GRACE_MS,
@@ -648,6 +664,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               nextUid ? "account_switch" : "logout",
             );
           }
+
+          void setChatRuntimeOwner(nextUid);
 
           currentUserIdRef.current = nextUid;
           setCurrentFirebaseUser(user);

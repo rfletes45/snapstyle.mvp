@@ -56,6 +56,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.onInboxSettingsChanged = exports.onChatSettingsChanged = exports.publishReadReceipt = exports.publishDeliveryReceipt = exports.publishTypingIndicator = void 0;
 const admin = __importStar(require("firebase-admin"));
 const functions = __importStar(require("firebase-functions"));
+const callableSecurity_1 = require("./callableSecurity");
 // ---------------------------------------------------------------------------
 // Lazy Firestore / RTDB accessors
 // ---------------------------------------------------------------------------
@@ -230,7 +231,7 @@ function validateTimestamp(ts) {
  *   - If privacy settings disable typing → no-op success
  *   - If feature not enabled → no-op success
  */
-exports.publishTypingIndicator = functions.https.onCall(async (data, context) => {
+exports.publishTypingIndicator = (0, callableSecurity_1.secureCallableRuntime)().https.onCall(async (data, context) => {
     // 1. Auth
     if (!context.auth) {
         throw new functions.https.HttpsError("unauthenticated", "Must be authenticated");
@@ -299,7 +300,7 @@ exports.publishTypingIndicator = functions.https.onCall(async (data, context) =>
  *   - Validates monotonic increase (new timestamp >= existing)
  *   - If privacy settings disable delivery receipts → no-op success
  */
-exports.publishDeliveryReceipt = functions.https.onCall(async (data, context) => {
+exports.publishDeliveryReceipt = (0, callableSecurity_1.secureCallableRuntime)().https.onCall(async (data, context) => {
     // 1. Auth
     if (!context.auth) {
         throw new functions.https.HttpsError("unauthenticated", "Must be authenticated");
@@ -365,7 +366,7 @@ exports.publishDeliveryReceipt = functions.https.onCall(async (data, context) =>
  *   - Always updates private lastSeenAtPrivate (for unread badge)
  *     regardless of public receipt setting
  */
-exports.publishReadReceipt = functions.https.onCall(async (data, context) => {
+exports.publishReadReceipt = (0, callableSecurity_1.secureCallableRuntime)().https.onCall(async (data, context) => {
     // 1. Auth
     if (!context.auth) {
         throw new functions.https.HttpsError("unauthenticated", "Must be authenticated");

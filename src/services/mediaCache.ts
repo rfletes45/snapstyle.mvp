@@ -22,7 +22,7 @@ import {
   writeAsStringAsync,
 } from "@/utils/fileSystem";
 import { Platform } from "react-native";
-import { getDatabase } from "./database";
+import { getDatabase, getDatabaseOwnerUid } from "./database";
 import { updateAttachmentLocalUri } from "./database/messageRepository";
 
 
@@ -135,10 +135,11 @@ async function downloadAttachment(
 
   // Update status to downloading
   const db = getDatabase();
-  db.runSync("UPDATE attachments SET download_status = ? WHERE id = ?", [
-    "downloading",
-    attachmentId,
-  ]);
+  const ownerUid = getDatabaseOwnerUid();
+  db.runSync(
+    "UPDATE attachments SET download_status = ? WHERE id = ? AND owner_uid = ?",
+    ["downloading", attachmentId, ownerUid],
+  );
 
   try {
     // Download with progress
@@ -171,10 +172,10 @@ async function downloadAttachment(
     return result.uri;
   } catch (error) {
     // Mark as failed
-    db.runSync("UPDATE attachments SET download_status = ? WHERE id = ?", [
-      "failed",
-      attachmentId,
-    ]);
+    db.runSync(
+      "UPDATE attachments SET download_status = ? WHERE id = ? AND owner_uid = ?",
+      ["failed", attachmentId, ownerUid],
+    );
     logger.error(`[MediaCache] Download failed for ${attachmentId}:`, error);
     throw error;
   }
@@ -206,10 +207,10 @@ async function downloadThumbnail(
 
     // Update thumb URI in database
     const db = getDatabase();
-    db.runSync("UPDATE attachments SET thumb_local_uri = ? WHERE id = ?", [
-      result.uri,
-      attachmentId,
-    ]);
+    db.runSync(
+      "UPDATE attachments SET thumb_local_uri = ? WHERE id = ? AND owner_uid = ?",
+      [result.uri, attachmentId, getDatabaseOwnerUid()],
+    );
 
     logger.info(`[MediaCache] Downloaded thumbnail for ${attachmentId}`);
     return result.uri;
@@ -232,9 +233,10 @@ async function getOrDownloadAttachment(
   onProgress?: (progress: DownloadProgress) => void,
 ): Promise<string> {
   const db = getDatabase();
+  const ownerUid = getDatabaseOwnerUid();
   const attachment = db.getFirstSync<{ local_uri: string | null }>(
-    "SELECT local_uri FROM attachments WHERE id = ?",
-    [attachmentId],
+    "SELECT local_uri FROM attachments WHERE id = ? AND owner_uid = ?",
+    [attachmentId, ownerUid],
   );
 
   if (attachment?.local_uri) {
@@ -245,8 +247,8 @@ async function getOrDownloadAttachment(
     }
     // File was deleted, clear the cached path
     db.runSync(
-      "UPDATE attachments SET local_uri = NULL, download_status = 'none' WHERE id = ?",
-      [attachmentId],
+      "UPDATE attachments SET local_uri = NULL, download_status = 'none' WHERE id = ? AND owner_uid = ?",
+      [attachmentId, ownerUid],
     );
   }
 
@@ -262,9 +264,10 @@ async function getOrDownloadThumbnail(
   thumbUrl: string,
 ): Promise<string> {
   const db = getDatabase();
+  const ownerUid = getDatabaseOwnerUid();
   const attachment = db.getFirstSync<{ thumb_local_uri: string | null }>(
-    "SELECT thumb_local_uri FROM attachments WHERE id = ?",
-    [attachmentId],
+    "SELECT thumb_local_uri FROM attachments WHERE id = ? AND owner_uid = ?",
+    [attachmentId, ownerUid],
   );
 
   if (attachment?.thumb_local_uri) {
@@ -274,9 +277,10 @@ async function getOrDownloadThumbnail(
       return attachment.thumb_local_uri;
     }
     // File was deleted, clear the cached path
-    db.runSync("UPDATE attachments SET thumb_local_uri = NULL WHERE id = ?", [
-      attachmentId,
-    ]);
+    db.runSync(
+      "UPDATE attachments SET thumb_local_uri = NULL WHERE id = ? AND owner_uid = ?",
+      [attachmentId, ownerUid],
+    );
   }
 
   // Download if not cached
@@ -288,9 +292,10 @@ async function getOrDownloadThumbnail(
  */
 async function isAttachmentCached(attachmentId: string): Promise<boolean> {
   const db = getDatabase();
+  const ownerUid = getDatabaseOwnerUid();
   const attachment = db.getFirstSync<{ local_uri: string | null }>(
-    "SELECT local_uri FROM attachments WHERE id = ?",
-    [attachmentId],
+    "SELECT local_uri FROM attachments WHERE id = ? AND owner_uid = ?",
+    [attachmentId, ownerUid],
   );
 
   if (!attachment?.local_uri) {
@@ -498,12 +503,14 @@ export async function clearMediaCache(): Promise<void> {
 
   // Reset download status in database
   const db = getDatabase();
+  const ownerUid = getDatabaseOwnerUid();
   db.runSync(
     `UPDATE attachments SET 
       local_uri = NULL, 
       thumb_local_uri = NULL, 
       download_status = 'none' 
-    WHERE download_status = 'downloaded'`,
+    WHERE owner_uid = ? AND download_status = 'downloaded'`,
+    [ownerUid],
   );
 
   initialized = false;
@@ -517,12 +524,14 @@ export async function clearMediaCache(): Promise<void> {
  */
 async function deleteAttachmentCache(attachmentId: string): Promise<void> {
   const db = getDatabase();
+  const ownerUid = getDatabaseOwnerUid();
   const attachment = db.getFirstSync<{
     local_uri: string | null;
     thumb_local_uri: string | null;
-  }>("SELECT local_uri, thumb_local_uri FROM attachments WHERE id = ?", [
-    attachmentId,
-  ]);
+  }>(
+    "SELECT local_uri, thumb_local_uri FROM attachments WHERE id = ? AND owner_uid = ?",
+    [attachmentId, ownerUid],
+  );
 
   if (attachment?.local_uri) {
     await deleteAsync(attachment.local_uri, { idempotent: true });
@@ -538,8 +547,8 @@ async function deleteAttachmentCache(attachmentId: string): Promise<void> {
       local_uri = NULL, 
       thumb_local_uri = NULL, 
       download_status = 'none' 
-    WHERE id = ?`,
-    [attachmentId],
+    WHERE id = ? AND owner_uid = ?`,
+    [attachmentId, ownerUid],
   );
 
   logger.info(`[MediaCache] Deleted cache for attachment ${attachmentId}`);
@@ -552,6 +561,7 @@ async function deleteConversationCache(
   conversationId: string,
 ): Promise<number> {
   const db = getDatabase();
+  const ownerUid = getDatabaseOwnerUid();
   const attachments = db.getAllSync<{
     id: string;
     local_uri: string | null;
@@ -560,8 +570,8 @@ async function deleteConversationCache(
     `SELECT a.id, a.local_uri, a.thumb_local_uri 
      FROM attachments a 
      JOIN messages m ON a.message_id = m.id 
-     WHERE m.conversation_id = ?`,
-    [conversationId],
+     WHERE m.owner_uid = ? AND a.owner_uid = ? AND m.conversation_id = ?`,
+    [ownerUid, ownerUid, conversationId],
   );
 
   let deletedCount = 0;
@@ -583,9 +593,9 @@ async function deleteConversationCache(
       thumb_local_uri = NULL, 
       download_status = 'none' 
     WHERE message_id IN (
-      SELECT id FROM messages WHERE conversation_id = ?
+      SELECT id FROM messages WHERE owner_uid = ? AND conversation_id = ?
     )`,
-    [conversationId],
+    [ownerUid, conversationId],
   );
 
   logger.info(
@@ -607,6 +617,7 @@ async function pruneCache(maxSizeBytes: number): Promise<number> {
   }
 
   const db = getDatabase();
+  const ownerUid = getDatabaseOwnerUid();
   let freedBytes = 0;
   let targetFreed = stats.totalSize - maxSizeBytes;
 
@@ -619,8 +630,9 @@ async function pruneCache(maxSizeBytes: number): Promise<number> {
     `SELECT a.id, a.local_uri, a.thumb_local_uri 
      FROM attachments a 
      JOIN messages m ON a.message_id = m.id 
-     WHERE a.download_status = 'downloaded'
+     WHERE a.owner_uid = ? AND m.owner_uid = ? AND a.download_status = 'downloaded'
      ORDER BY m.created_at ASC`,
+    [ownerUid, ownerUid],
   );
 
   for (const att of attachments) {
@@ -648,12 +660,12 @@ async function pruneCache(maxSizeBytes: number): Promise<number> {
 
     // Update database
     db.runSync(
-      `UPDATE attachments SET 
+    `UPDATE attachments SET 
         local_uri = NULL, 
         thumb_local_uri = NULL, 
         download_status = 'none' 
-      WHERE id = ?`,
-      [att.id],
+      WHERE id = ? AND owner_uid = ?`,
+      [att.id, ownerUid],
     );
   }
 

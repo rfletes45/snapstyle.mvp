@@ -54,6 +54,7 @@ exports.cleanupStagingOrphans = exports.mintChatMediaUrl = void 0;
 exports.commitStagedAttachments = commitStagedAttachments;
 const admin = __importStar(require("firebase-admin"));
 const functions = __importStar(require("firebase-functions"));
+const callableSecurity_1 = require("./callableSecurity");
 function getDb() {
     return admin.firestore();
 }
@@ -189,7 +190,7 @@ async function commitStagedAttachments(scope, conversationId, messageId, staged)
  * Membership is verified before signing. The signed URL has a
  * configurable TTL (default 5 minutes).
  */
-exports.mintChatMediaUrl = functions.https.onCall(async (data, context) => {
+exports.mintChatMediaUrl = (0, callableSecurity_1.secureCallableRuntime)().https.onCall(async (data, context) => {
     // Auth check
     if (!context.auth) {
         throw new functions.https.HttpsError("unauthenticated", "Must be logged in");

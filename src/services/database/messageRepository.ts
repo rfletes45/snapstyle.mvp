@@ -8,6 +8,10 @@
  */
 
 import { normalizeMessageFromLocalRow } from "@/services/chat/normalizeMessage";
+import {
+  CreatedAtMessageCursor,
+  createdAtCursorFromRow,
+} from "@/services/chat/messagePagination";
 import { AttachmentRow, MessageRow, parseJsonColumn } from "@/types/database";
 import {
   AttachmentV2,
@@ -16,7 +20,7 @@ import {
   ReplyToMetadata,
 } from "@/types/messaging";
 import * as Crypto from "expo-crypto";
-import { getDatabase } from "./index";
+import { getDatabase, getDatabaseOwnerUid } from "./index";
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("services/database/messageRepository");
@@ -35,6 +39,7 @@ export const MAX_MESSAGE_RETRIES = 10;
  */
 function syncFtsIndex(
   db: ReturnType<typeof getDatabase>,
+  ownerUid: string,
   messageId: string,
   text: string | null,
   senderName: string | null,
@@ -43,8 +48,8 @@ function syncFtsIndex(
   try {
     // Get the rowid of the message (FTS5 content sync uses rowid)
     const row = db.getFirstSync<{ rowid: number }>(
-      "SELECT rowid FROM messages WHERE id = ?",
-      [messageId],
+      "SELECT rowid FROM messages WHERE id = ? AND owner_uid = ?",
+      [messageId, ownerUid],
     );
     if (!row) return;
 
@@ -112,11 +117,13 @@ export interface MessageWindowResult {
  */
 export function insertMessage(params: InsertMessageParams): MessageRow {
   const db = getDatabase();
+  const ownerUid = getDatabaseOwnerUid();
   const now = Date.now();
   const messageId = Crypto.randomUUID();
 
   const row: MessageRow = {
     id: messageId,
+    owner_uid: ownerUid,
     conversation_id: params.conversationId,
     scope: params.scope,
     sender_id: params.senderId,
@@ -150,15 +157,16 @@ export function insertMessage(params: InsertMessageParams): MessageRow {
   db.withTransactionSync(() => {
     db.runSync(
       `INSERT INTO messages (
-        id, conversation_id, scope, sender_id, sender_name, kind, text,
+        id, owner_uid, conversation_id, scope, sender_id, sender_name, kind, text,
         created_at, server_received_at, edited_at, reply_to_id, reply_to_preview,
         thread_root_id, reply_count, last_reply_at,
         mentions_json, reactions_json, deleted_for_all, deleted_by, deleted_at,
         hidden_for_json, link_preview_json, sender_style_json,
         sync_status, sync_error, retry_count, client_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         row.id,
+        row.owner_uid,
         row.conversation_id,
         row.scope,
         row.sender_id,
@@ -189,7 +197,7 @@ export function insertMessage(params: InsertMessageParams): MessageRow {
     );
 
     // Sync to FTS5 index for full-text search
-    syncFtsIndex(db, row.id, row.text, row.sender_name);
+    syncFtsIndex(db, ownerUid, row.id, row.text, row.sender_name);
 
     // Insert attachments if present (already uploaded)
     if (params.attachments && params.attachments.length > 0) {
@@ -217,8 +225,10 @@ export function insertMessage(params: InsertMessageParams): MessageRow {
     // Optimistically increment reply_count on the thread root message
     if (params.threadRootId) {
       db.runSync(
-        `UPDATE messages SET reply_count = reply_count + 1, last_reply_at = ? WHERE id = ?`,
-        [now, params.threadRootId],
+        `UPDATE messages
+         SET reply_count = reply_count + 1, last_reply_at = ?
+         WHERE id = ? AND owner_uid = ?`,
+        [now, params.threadRootId, ownerUid],
       );
     }
   });
@@ -232,10 +242,11 @@ export function insertMessage(params: InsertMessageParams): MessageRow {
 export function upsertMessageFromServer(message: MessageV2): void {
   try {
     const db = getDatabase();
+    const ownerUid = getDatabaseOwnerUid();
 
     const existing = db.getFirstSync<{ id: string; sync_status: string }>(
-      "SELECT id, sync_status FROM messages WHERE id = ?",
-      [message.id],
+      "SELECT id, sync_status FROM messages WHERE id = ? AND owner_uid = ?",
+      [message.id, ownerUid],
     );
 
     // Normalize deletedForAll: accept both boolean and object shapes
@@ -266,9 +277,10 @@ export function upsertMessageFromServer(message: MessageV2): void {
         const localRow = db.getFirstSync<{
           reply_to_id: string | null;
           reply_to_preview: string | null;
-        }>("SELECT reply_to_id, reply_to_preview FROM messages WHERE id = ?", [
-          message.id,
-        ]);
+        }>(
+          "SELECT reply_to_id, reply_to_preview FROM messages WHERE id = ? AND owner_uid = ?",
+          [message.id, ownerUid],
+        );
         if (localRow?.reply_to_id) {
           replyToId = localRow.reply_to_id;
           replyToPreview = localRow.reply_to_preview;
@@ -298,7 +310,7 @@ export function upsertMessageFromServer(message: MessageV2): void {
           client_id = COALESCE(?, client_id),
           sync_status = 'synced',
           sync_error = NULL
-        WHERE id = ?`,
+        WHERE id = ? AND owner_uid = ?`,
         [
           message.serverReceivedAt,
           // For animal messages, store animalId in text column
@@ -325,6 +337,7 @@ export function upsertMessageFromServer(message: MessageV2): void {
           deletedForAll?.at || null,
           message.clientId || null,
           message.id,
+          ownerUid,
         ],
       );
 
@@ -334,7 +347,13 @@ export function upsertMessageFromServer(message: MessageV2): void {
           ? message.animalId || message.text || null
           : (message.text ?? null);
       if (!deletedForAll) {
-        syncFtsIndex(db, message.id, updatedText, message.senderName || null);
+        syncFtsIndex(
+          db,
+          ownerUid,
+          message.id,
+          updatedText,
+          message.senderName || null,
+        );
       }
     } else {
       // Insert new from server
@@ -353,16 +372,17 @@ export function upsertMessageFromServer(message: MessageV2): void {
       }
 
       db.runSync(
-        `INSERT INTO messages (
-          id, conversation_id, scope, sender_id, sender_name, kind, text,
+        `INSERT OR REPLACE INTO messages (
+          id, owner_uid, conversation_id, scope, sender_id, sender_name, kind, text,
           created_at, server_received_at, edited_at, reply_to_id, reply_to_preview,
           thread_root_id, reply_count, last_reply_at,
           mentions_json, reactions_json, deleted_for_all, deleted_by, deleted_at,
           hidden_for_json, link_preview_json, sender_style_json,
           sync_status, sync_error, retry_count, client_id
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'synced', NULL, 0, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'synced', NULL, 0, ?)`,
         [
           id,
+          ownerUid,
           conversationId,
           scope,
           senderId,
@@ -400,7 +420,7 @@ export function upsertMessageFromServer(message: MessageV2): void {
           ? message.animalId || message.text || null
           : message.text || null;
       if (!deletedForAll) {
-        syncFtsIndex(db, id, insertedText, message.senderName || null);
+        syncFtsIndex(db, ownerUid, id, insertedText, message.senderName || null);
       }
 
       // Insert attachments
@@ -445,12 +465,13 @@ export function getThreadMessages(
   limit: number = 200,
 ): MessageWithAttachments[] {
   const db = getDatabase();
+  const ownerUid = getDatabaseOwnerUid();
   const messages = db.getAllSync<MessageRow>(
     `SELECT * FROM messages
-     WHERE thread_root_id = ? AND deleted_for_all = 0
-     ORDER BY created_at ASC
+     WHERE owner_uid = ? AND thread_root_id = ? AND deleted_for_all = 0
+     ORDER BY created_at ASC, id ASC
      LIMIT ?`,
-    [rootMessageId, limit],
+    [ownerUid, rootMessageId, limit],
   );
   return attachBatchAttachments(messages);
 }
@@ -486,12 +507,13 @@ export function getMessagesByStatus(
   limit: number = 100,
 ): MessageWithAttachments[] {
   const db = getDatabase();
+  const ownerUid = getDatabaseOwnerUid();
   const messages = db.getAllSync<MessageRow>(
     `SELECT * FROM messages 
-     WHERE sync_status = ?
-     ORDER BY created_at DESC
+     WHERE owner_uid = ? AND sync_status = ?
+     ORDER BY created_at DESC, id DESC
      LIMIT ?`,
-    [status, limit],
+    [ownerUid, status, limit],
   );
 
   return messages.map((msg) => ({
@@ -508,7 +530,9 @@ export function getMessages(
   options: {
     limit?: number;
     beforeTimestamp?: number;
+    beforeCursor?: CreatedAtMessageCursor;
     afterTimestamp?: number;
+    afterCursor?: CreatedAtMessageCursor;
     includeDeleted?: boolean;
     scope?: "dm" | "group";
     /**
@@ -526,14 +550,17 @@ export function getMessages(
   const {
     limit = 50,
     beforeTimestamp,
+    beforeCursor,
     afterTimestamp,
+    afterCursor,
     includeDeleted = false,
     scope,
     excludeThreadReplies = false,
   } = options;
 
-  let whereClause = "conversation_id = ?";
-  const params: (string | number)[] = [conversationId];
+  const ownerUid = getDatabaseOwnerUid();
+  let whereClause = "owner_uid = ? AND conversation_id = ?";
+  const params: (string | number)[] = [ownerUid, conversationId];
 
   if (scope) {
     whereClause += " AND scope = ?";
@@ -550,12 +577,26 @@ export function getMessages(
     whereClause += " AND (thread_root_id IS NULL OR thread_root_id = '')";
   }
 
-  if (beforeTimestamp) {
+  if (beforeCursor) {
+    whereClause += " AND (created_at < ? OR (created_at = ? AND id < ?))";
+    params.push(
+      beforeCursor.createdAt,
+      beforeCursor.createdAt,
+      beforeCursor.messageId,
+    );
+  } else if (beforeTimestamp) {
     whereClause += " AND created_at < ?";
     params.push(beforeTimestamp);
   }
 
-  if (afterTimestamp) {
+  if (afterCursor) {
+    whereClause += " AND (created_at > ? OR (created_at = ? AND id > ?))";
+    params.push(
+      afterCursor.createdAt,
+      afterCursor.createdAt,
+      afterCursor.messageId,
+    );
+  } else if (afterTimestamp) {
     whereClause += " AND created_at > ?";
     params.push(afterTimestamp);
   }
@@ -565,7 +606,7 @@ export function getMessages(
   const messages = db.getAllSync<MessageRow>(
     `SELECT * FROM messages 
      WHERE ${whereClause}
-     ORDER BY created_at DESC
+     ORDER BY created_at DESC, id DESC
      LIMIT ?`,
     params,
   );
@@ -586,34 +627,52 @@ export function getMessageWindowAroundMessage(
   newerLimit: number = 50,
 ): MessageWindowResult | null {
   const db = getDatabase();
+  const ownerUid = getDatabaseOwnerUid();
   const target = db.getFirstSync<MessageRow>(
     `SELECT * FROM messages
-     WHERE id = ? AND conversation_id = ? AND scope = ?
+     WHERE owner_uid = ? AND id = ? AND conversation_id = ? AND scope = ?
      LIMIT 1`,
-    [messageId, conversationId, scope],
+    [ownerUid, messageId, conversationId, scope],
   );
 
   if (!target) {
     return null;
   }
 
+  const targetCursor = createdAtCursorFromRow(target);
   const newerRowsRaw = db.getAllSync<MessageRow>(
     `SELECT * FROM messages
-     WHERE conversation_id = ? AND scope = ? AND deleted_for_all = 0
+     WHERE owner_uid = ? AND conversation_id = ? AND scope = ? AND deleted_for_all = 0
      AND (thread_root_id IS NULL OR thread_root_id = '')
-     AND created_at > ?
-     ORDER BY created_at DESC
+     AND (created_at > ? OR (created_at = ? AND id > ?))
+     ORDER BY created_at DESC, id DESC
      LIMIT ?`,
-    [conversationId, scope, target.created_at, newerLimit + 1],
+    [
+      ownerUid,
+      conversationId,
+      scope,
+      targetCursor.createdAt,
+      targetCursor.createdAt,
+      targetCursor.messageId,
+      newerLimit + 1,
+    ],
   );
   const olderRowsRaw = db.getAllSync<MessageRow>(
     `SELECT * FROM messages
-     WHERE conversation_id = ? AND scope = ? AND deleted_for_all = 0
+     WHERE owner_uid = ? AND conversation_id = ? AND scope = ? AND deleted_for_all = 0
      AND (thread_root_id IS NULL OR thread_root_id = '')
-     AND created_at < ?
-     ORDER BY created_at DESC
+     AND (created_at < ? OR (created_at = ? AND id < ?))
+     ORDER BY created_at DESC, id DESC
      LIMIT ?`,
-    [conversationId, scope, target.created_at, olderLimit + 1],
+    [
+      ownerUid,
+      conversationId,
+      scope,
+      targetCursor.createdAt,
+      targetCursor.createdAt,
+      targetCursor.messageId,
+      olderLimit + 1,
+    ],
   );
 
   const hasNewer = newerRowsRaw.length > newerLimit;
@@ -637,9 +696,10 @@ export function getMessageById(
   messageId: string,
 ): MessageWithAttachments | null {
   const db = getDatabase();
+  const ownerUid = getDatabaseOwnerUid();
   const message = db.getFirstSync<MessageRow>(
-    "SELECT * FROM messages WHERE id = ?",
-    [messageId],
+    "SELECT * FROM messages WHERE id = ? AND owner_uid = ?",
+    [messageId, ownerUid],
   );
 
   if (!message) return null;
@@ -657,13 +717,15 @@ export function getPendingMessages(
   limit: number = 50,
 ): MessageWithAttachments[] {
   const db = getDatabase();
+  const ownerUid = getDatabaseOwnerUid();
   const messages = db.getAllSync<MessageRow>(
     `SELECT * FROM messages 
-     WHERE sync_status IN ('pending', 'failed')
+     WHERE owner_uid = ?
+     AND sync_status IN ('pending', 'failed')
      AND retry_count < ${MAX_MESSAGE_RETRIES}
-     ORDER BY created_at ASC
+     ORDER BY created_at ASC, id ASC
      LIMIT ?`,
-    [limit],
+    [ownerUid, limit],
   );
 
   return attachBatchAttachments(messages);
@@ -674,9 +736,10 @@ export function getPendingMessages(
  */
 export function getMessageCount(conversationId: string): number {
   const db = getDatabase();
+  const ownerUid = getDatabaseOwnerUid();
   const result = db.getFirstSync<{ count: number }>(
-    "SELECT COUNT(*) as count FROM messages WHERE conversation_id = ? AND deleted_for_all = 0",
-    [conversationId],
+    "SELECT COUNT(*) as count FROM messages WHERE owner_uid = ? AND conversation_id = ? AND deleted_for_all = 0",
+    [ownerUid, conversationId],
   );
   return result?.count ?? 0;
 }
@@ -693,14 +756,15 @@ export function markMessageSynced(
   serverReceivedAt: number,
 ): void {
   const db = getDatabase();
+  const ownerUid = getDatabaseOwnerUid();
   db.runSync(
     `UPDATE messages SET 
       sync_status = 'synced', 
       server_received_at = ?,
       sync_error = NULL,
       retry_count = 0
-    WHERE id = ?`,
-    [serverReceivedAt, messageId],
+    WHERE id = ? AND owner_uid = ?`,
+    [serverReceivedAt, messageId, ownerUid],
   );
 }
 
@@ -709,13 +773,14 @@ export function markMessageSynced(
  */
 export function markMessageSyncFailed(messageId: string, error: string): void {
   const db = getDatabase();
+  const ownerUid = getDatabaseOwnerUid();
   db.runSync(
     `UPDATE messages SET 
       sync_status = 'failed', 
       sync_error = ?,
       retry_count = retry_count + 1
-    WHERE id = ?`,
-    [error, messageId],
+    WHERE id = ? AND owner_uid = ?`,
+    [error, messageId, ownerUid],
   );
 }
 
@@ -728,13 +793,14 @@ export function markMessagePermanentlyFailed(
   error: string,
 ): void {
   const db = getDatabase();
+  const ownerUid = getDatabaseOwnerUid();
   db.runSync(
     `UPDATE messages SET 
       sync_status = 'failed', 
       sync_error = ?,
       retry_count = 999
-    WHERE id = ?`,
-    [error, messageId],
+    WHERE id = ? AND owner_uid = ?`,
+    [error, messageId, ownerUid],
   );
 }
 
@@ -743,13 +809,14 @@ export function markMessagePermanentlyFailed(
  */
 export function updateMessageText(messageId: string, text: string): void {
   const db = getDatabase();
+  const ownerUid = getDatabaseOwnerUid();
   db.runSync(
     `UPDATE messages SET 
       text = ?, 
       edited_at = ?,
       sync_status = CASE WHEN sync_status = 'synced' THEN 'pending' ELSE sync_status END
-    WHERE id = ?`,
-    [text, Date.now(), messageId],
+    WHERE id = ? AND owner_uid = ?`,
+    [text, Date.now(), messageId, ownerUid],
   );
 }
 
@@ -761,14 +828,15 @@ export function deleteMessageForAll(
   deletedBy: string,
 ): void {
   const db = getDatabase();
+  const ownerUid = getDatabaseOwnerUid();
   db.runSync(
     `UPDATE messages SET 
       deleted_for_all = 1, 
       deleted_by = ?,
       deleted_at = ?,
       sync_status = CASE WHEN sync_status = 'synced' THEN 'pending' ELSE sync_status END
-    WHERE id = ?`,
-    [deletedBy, Date.now(), messageId],
+    WHERE id = ? AND owner_uid = ?`,
+    [deletedBy, Date.now(), messageId, ownerUid],
   );
 }
 
@@ -777,9 +845,10 @@ export function deleteMessageForAll(
  */
 export function hideMessageForUser(messageId: string, userId: string): void {
   const db = getDatabase();
+  const ownerUid = getDatabaseOwnerUid();
   const message = db.getFirstSync<{ hidden_for_json: string | null }>(
-    "SELECT hidden_for_json FROM messages WHERE id = ?",
-    [messageId],
+    "SELECT hidden_for_json FROM messages WHERE id = ? AND owner_uid = ?",
+    [messageId, ownerUid],
   );
 
   const hiddenFor = parseJsonColumn<string[]>(
@@ -790,9 +859,10 @@ export function hideMessageForUser(messageId: string, userId: string): void {
     hiddenFor.push(userId);
   }
 
-  db.runSync("UPDATE messages SET hidden_for_json = ? WHERE id = ?", [
+  db.runSync("UPDATE messages SET hidden_for_json = ? WHERE id = ? AND owner_uid = ?", [
     JSON.stringify(hiddenFor),
     messageId,
+    ownerUid,
   ]);
 }
 
@@ -804,9 +874,11 @@ export function updateMessageReactions(
   reactions: Record<string, number>,
 ): void {
   const db = getDatabase();
-  db.runSync("UPDATE messages SET reactions_json = ? WHERE id = ?", [
+  const ownerUid = getDatabaseOwnerUid();
+  db.runSync("UPDATE messages SET reactions_json = ? WHERE id = ? AND owner_uid = ?", [
     JSON.stringify(reactions),
     messageId,
+    ownerUid,
   ]);
 }
 
@@ -818,9 +890,11 @@ export function updateMessageLinkPreview(
   linkPreview: object,
 ): void {
   const db = getDatabase();
-  db.runSync("UPDATE messages SET link_preview_json = ? WHERE id = ?", [
+  const ownerUid = getDatabaseOwnerUid();
+  db.runSync("UPDATE messages SET link_preview_json = ? WHERE id = ? AND owner_uid = ?", [
     JSON.stringify(linkPreview),
     messageId,
+    ownerUid,
   ]);
 }
 
@@ -833,14 +907,16 @@ export function updateMessageLinkPreview(
  */
 function insertAttachment(messageId: string, att: AttachmentV2): void {
   const db = getDatabase();
+  const ownerUid = getDatabaseOwnerUid();
   db.runSync(
-    `INSERT INTO attachments (
-      id, message_id, kind, mime, local_uri, remote_url, remote_path,
+    `INSERT OR REPLACE INTO attachments (
+      id, owner_uid, message_id, kind, mime, local_uri, remote_url, remote_path,
       thumb_local_uri, thumb_remote_url, size_bytes, width, height,
       duration_ms, caption, view_once, expires_at, download_status, upload_status
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       att.id,
+      ownerUid,
       messageId,
       att.kind,
       att.mime,
@@ -867,14 +943,16 @@ function insertAttachment(messageId: string, att: AttachmentV2): void {
  */
 function insertLocalAttachment(messageId: string, att: LocalAttachment): void {
   const db = getDatabase();
+  const ownerUid = getDatabaseOwnerUid();
   db.runSync(
-    `INSERT INTO attachments (
-      id, message_id, kind, mime, local_uri, remote_url, remote_path,
+    `INSERT OR REPLACE INTO attachments (
+      id, owner_uid, message_id, kind, mime, local_uri, remote_url, remote_path,
       thumb_local_uri, thumb_remote_url, size_bytes, width, height,
       duration_ms, caption, view_once, expires_at, download_status, upload_status
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       att.id,
+      ownerUid,
       messageId,
       att.kind,
       att.mime,
@@ -901,9 +979,10 @@ function upsertAttachmentFromServer(
   att: AttachmentV2,
 ): void {
   const db = getDatabase();
+  const ownerUid = getDatabaseOwnerUid();
   const existing = db.getFirstSync<{ id: string }>(
-    "SELECT id FROM attachments WHERE id = ?",
-    [att.id],
+    "SELECT id FROM attachments WHERE id = ? AND owner_uid = ?",
+    [att.id, ownerUid],
   );
 
   if (existing) {
@@ -913,8 +992,8 @@ function upsertAttachmentFromServer(
         remote_path = ?,
         thumb_remote_url = ?,
         upload_status = 'uploaded'
-      WHERE id = ?`,
-      [att.url, att.path, att.thumbUrl || null, att.id],
+      WHERE id = ? AND owner_uid = ?`,
+      [att.url, att.path, att.thumbUrl || null, att.id, ownerUid],
     );
   } else {
     insertAttachment(messageId, att);
@@ -923,9 +1002,10 @@ function upsertAttachmentFromServer(
 
 function getAttachmentsForMessage(messageId: string): AttachmentRow[] {
   const db = getDatabase();
+  const ownerUid = getDatabaseOwnerUid();
   return db.getAllSync<AttachmentRow>(
-    "SELECT * FROM attachments WHERE message_id = ?",
-    [messageId],
+    "SELECT * FROM attachments WHERE message_id = ? AND owner_uid = ?",
+    [messageId, ownerUid],
   );
 }
 
@@ -946,14 +1026,15 @@ function getAttachmentsForMessages(
   }
 
   const db = getDatabase();
+  const ownerUid = getDatabaseOwnerUid();
   // SQLite placeholder limit is ~999; chunk if needed
   const CHUNK_SIZE = 500;
   for (let i = 0; i < messageIds.length; i += CHUNK_SIZE) {
     const chunk = messageIds.slice(i, i + CHUNK_SIZE);
     const placeholders = chunk.map(() => "?").join(",");
     const rows = db.getAllSync<AttachmentRow>(
-      `SELECT * FROM attachments WHERE message_id IN (${placeholders})`,
-      chunk,
+      `SELECT * FROM attachments WHERE owner_uid = ? AND message_id IN (${placeholders})`,
+      [ownerUid, ...chunk],
     );
     for (const row of rows) {
       const arr = result.get(row.message_id);
@@ -990,13 +1071,14 @@ export function updateAttachmentLocalUri(
   thumbLocalUri?: string,
 ): void {
   const db = getDatabase();
+  const ownerUid = getDatabaseOwnerUid();
   db.runSync(
     `UPDATE attachments SET 
       local_uri = ?,
       thumb_local_uri = ?,
       download_status = 'downloaded'
-    WHERE id = ?`,
-    [localUri, thumbLocalUri || null, attachmentId],
+    WHERE id = ? AND owner_uid = ?`,
+    [localUri, thumbLocalUri || null, attachmentId, ownerUid],
   );
 }
 
@@ -1010,13 +1092,14 @@ export function updateAttachmentUploadStatus(
   remotePath?: string,
 ): void {
   const db = getDatabase();
+  const ownerUid = getDatabaseOwnerUid();
   db.runSync(
     `UPDATE attachments SET 
       upload_status = ?,
       remote_url = COALESCE(?, remote_url),
       remote_path = COALESCE(?, remote_path)
-    WHERE id = ?`,
-    [status, remoteUrl || null, remotePath || null, attachmentId],
+    WHERE id = ? AND owner_uid = ?`,
+    [status, remoteUrl || null, remotePath || null, attachmentId, ownerUid],
   );
 }
 
@@ -1028,9 +1111,11 @@ export function updateAttachmentDownloadStatus(
   status: AttachmentRow["download_status"],
 ): void {
   const db = getDatabase();
-  db.runSync("UPDATE attachments SET download_status = ? WHERE id = ?", [
+  const ownerUid = getDatabaseOwnerUid();
+  db.runSync("UPDATE attachments SET download_status = ? WHERE id = ? AND owner_uid = ?", [
     status,
     attachmentId,
+    ownerUid,
   ]);
 }
 
@@ -1039,9 +1124,10 @@ export function updateAttachmentDownloadStatus(
  */
 export function getAttachmentById(attachmentId: string): AttachmentRow | null {
   const db = getDatabase();
+  const ownerUid = getDatabaseOwnerUid();
   return db.getFirstSync<AttachmentRow>(
-    "SELECT * FROM attachments WHERE id = ?",
-    [attachmentId],
+    "SELECT * FROM attachments WHERE id = ? AND owner_uid = ?",
+    [attachmentId, ownerUid],
   );
 }
 
@@ -1050,8 +1136,10 @@ export function getAttachmentById(attachmentId: string): AttachmentRow | null {
  */
 export function getPendingUploads(): AttachmentRow[] {
   const db = getDatabase();
+  const ownerUid = getDatabaseOwnerUid();
   return db.getAllSync<AttachmentRow>(
-    "SELECT * FROM attachments WHERE upload_status IN ('pending', 'failed') ORDER BY message_id",
+    "SELECT * FROM attachments WHERE owner_uid = ? AND upload_status IN ('pending', 'failed') ORDER BY message_id",
+    [ownerUid],
   );
 }
 
@@ -1060,8 +1148,10 @@ export function getPendingUploads(): AttachmentRow[] {
  */
 export function getPendingDownloads(): AttachmentRow[] {
   const db = getDatabase();
+  const ownerUid = getDatabaseOwnerUid();
   return db.getAllSync<AttachmentRow>(
-    "SELECT * FROM attachments WHERE download_status = 'none' AND remote_url IS NOT NULL ORDER BY message_id",
+    "SELECT * FROM attachments WHERE owner_uid = ? AND download_status = 'none' AND remote_url IS NOT NULL ORDER BY message_id",
+    [ownerUid],
   );
 }
 
@@ -1077,12 +1167,13 @@ function updateConversationLastMessage(
   timestamp: number,
 ): void {
   const db = getDatabase();
+  const ownerUid = getDatabaseOwnerUid();
 
   // Ensure conversation exists
   db.runSync(
-    `INSERT OR IGNORE INTO conversations (id, scope, created_at, updated_at)
-     VALUES (?, ?, ?, ?)`,
-    [conversationId, scope, timestamp, timestamp],
+    `INSERT OR IGNORE INTO conversations (id, owner_uid, scope, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?)`,
+    [conversationId, ownerUid, scope, timestamp, timestamp],
   );
 
   db.runSync(
@@ -1091,8 +1182,8 @@ function updateConversationLastMessage(
       last_message_text = ?,
       last_message_at = ?,
       updated_at = ?
-    WHERE id = ?`,
-    [messageId, text, timestamp, timestamp, conversationId],
+    WHERE id = ? AND owner_uid = ?`,
+    [messageId, text, timestamp, timestamp, conversationId, ownerUid],
   );
 }
 
@@ -1118,6 +1209,7 @@ export function messageV2ToRow(
 ): Omit<MessageRow, "attachments"> {
   return {
     id: message.id,
+    owner_uid: getDatabaseOwnerUid(),
     conversation_id: message.conversationId,
     scope: message.scope,
     sender_id: message.senderId,

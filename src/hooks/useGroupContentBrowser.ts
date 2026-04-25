@@ -10,7 +10,7 @@
  * @module hooks/useGroupContentBrowser
  */
 
-import { getDatabase } from "@/services/database";
+import { getDatabase, getDatabaseOwnerUid } from "@/services/database";
 import { parseDateQuery, type DateRange } from "@/utils/dateSearchParser";
 import { createLogger } from "@/utils/log";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -306,7 +306,8 @@ function queryMedia(
   offset: number,
   limit: number,
 ): RawMediaRow[] {
-  const params: (string | number)[] = [groupId];
+  const ownerUid = getDatabaseOwnerUid();
+  const params: (string | number)[] = [ownerUid, ownerUid, groupId];
   let searchClause = "";
   let dateClause = "";
 
@@ -328,7 +329,8 @@ function queryMedia(
             COALESCE(m.server_received_at, m.created_at) AS timestamp
      FROM attachments a
      JOIN messages m ON m.id = a.message_id
-     WHERE m.conversation_id = ? AND m.scope = 'group' AND m.deleted_for_all = 0
+     WHERE a.owner_uid = ? AND m.owner_uid = ?
+     AND m.conversation_id = ? AND m.scope = 'group' AND m.deleted_for_all = 0
      AND a.kind IN ('image', 'video')
      ${dateClause}
      ${searchClause}
@@ -346,7 +348,9 @@ function queryMessages(
   offset: number,
   limit: number,
 ): RawMessageRow[] {
-  const params: (string | number)[] = [];
+  const ownerUid = getDatabaseOwnerUid();
+  const ftsParams: (string | number)[] = [];
+  const whereParams: (string | number)[] = [ownerUid, groupId];
   let ftsJoin = "";
   let orderBy = "ORDER BY timestamp DESC";
   let whereExtra = "";
@@ -362,30 +366,32 @@ function queryMessages(
       const ftsQuery = sanitizeFtsQuery(search);
       ftsJoin =
         "JOIN messages_fts fts ON fts.rowid = m.rowid AND fts.messages_fts MATCH ?";
-      params.push(ftsQuery);
+      ftsParams.push(ftsQuery);
       orderBy = "ORDER BY fts.rank, timestamp DESC";
     } catch {
       // Fallback to LIKE
       whereExtra = "AND m.text LIKE ?";
-      params.push(`%${search}%`);
+      whereParams.push(`%${search}%`);
     }
   }
 
-  params.push(groupId);
-
   if (dateRange) {
-    params.push(dateRange.startMs, dateRange.endMs);
+    whereParams.push(dateRange.startMs, dateRange.endMs);
   }
 
-  params.push(limit, offset);
+  const params = [...ftsParams, ...whereParams, limit, offset];
 
   return db.getAllSync<RawMessageRow>(
     `SELECT m.id, m.sender_id, m.sender_name, m.text, m.kind,
             COALESCE(m.server_received_at, m.created_at) AS timestamp,
-            (SELECT a.thumb_remote_url FROM attachments a WHERE a.message_id = m.id AND a.kind = 'image' LIMIT 1) AS thumb_url
+            (SELECT a.thumb_remote_url FROM attachments a
+              WHERE a.owner_uid = m.owner_uid
+              AND a.message_id = m.id
+              AND a.kind = 'image'
+              LIMIT 1) AS thumb_url
      FROM messages m
      ${ftsJoin}
-     WHERE m.conversation_id = ? AND m.scope = 'group' AND m.deleted_for_all = 0
+     WHERE m.owner_uid = ? AND m.conversation_id = ? AND m.scope = 'group' AND m.deleted_for_all = 0
      AND m.text IS NOT NULL AND m.text != ''
      ${dateClause}
      ${whereExtra}
@@ -403,7 +409,8 @@ function queryLinks(
   offset: number,
   limit: number,
 ): RawLinkRow[] {
-  const params: (string | number)[] = [groupId];
+  const ownerUid = getDatabaseOwnerUid();
+  const params: (string | number)[] = [ownerUid, groupId];
   let searchClause = "";
   let dateClause = "";
 
@@ -422,7 +429,7 @@ function queryLinks(
     `SELECT m.id, m.sender_id, m.sender_name, m.text,
             COALESCE(m.server_received_at, m.created_at) AS timestamp
      FROM messages m
-     WHERE m.conversation_id = ? AND m.scope = 'group' AND m.deleted_for_all = 0
+     WHERE m.owner_uid = ? AND m.conversation_id = ? AND m.scope = 'group' AND m.deleted_for_all = 0
      AND (m.text LIKE '%http://%' OR m.text LIKE '%https://%')
      ${dateClause}
      ${searchClause}

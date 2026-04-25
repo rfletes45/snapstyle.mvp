@@ -12,6 +12,7 @@
 
 import * as admin from "firebase-admin";
 import * as functions from "firebase-functions";
+import { secureCallableRuntime } from "./callableSecurity";
 import { commitStagedAttachments } from "./chatMedia";
 import {
   SCORECARD_VISIBLE_TEXT,
@@ -709,7 +710,7 @@ interface SendMessageV2Response {
  * 4. Checks block status for DMs
  * 5. Enforces rate limits
  */
-export const sendMessageV2 = functions.https.onCall(
+export const sendMessageV2 = secureCallableRuntime().https.onCall(
   async (data: SendMessageV2Input, context): Promise<SendMessageV2Response> => {
     const db = getDb();
     // 1. Auth check
@@ -1433,7 +1434,7 @@ interface EditMessageResponse {
  * - Only text field can change
  * - Cannot edit deleted messages
  */
-export const editMessageV2 = functions.https.onCall(
+export const editMessageV2 = secureCallableRuntime().https.onCall(
   async (data: EditMessageInput, context): Promise<EditMessageResponse> => {
     const db = getDb();
     if (!context.auth) {
@@ -1600,7 +1601,7 @@ async function getGroupRole(
  * - Sets deletedForAll marker
  * - Clears text and attachments
  */
-export const deleteMessageForAllV2 = functions.https.onCall(
+export const deleteMessageForAllV2 = secureCallableRuntime().https.onCall(
   async (data: DeleteMessageInput, context): Promise<DeleteMessageResponse> => {
     const db = getDb();
     if (!context.auth) {
@@ -1806,7 +1807,7 @@ async function checkReactionRateLimit(uid: string): Promise<boolean> {
  * - Rate limited (10/minute)
  * - Max 12 unique emojis per message
  */
-export const toggleReactionV2 = functions.https.onCall(
+export const toggleReactionV2 = secureCallableRuntime().https.onCall(
   async (
     data: ToggleReactionInput,
     context,

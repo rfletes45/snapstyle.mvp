@@ -16,7 +16,11 @@ import {
   writeAsStringAsync,
 } from "@/utils/fileSystem";
 import { MEDIA_PATHS } from "@/services/mediaCache";
-import { getDatabase } from "./index";
+import {
+  getDatabase,
+  getDatabaseOwnerUid,
+  wipeAllLocalChatCache,
+} from "./index";
 
 
 import { createLogger } from "@/utils/log";
@@ -65,6 +69,7 @@ export interface MaintenanceStats {
  */
 export async function exportDatabaseForDebug(): Promise<string> {
   const db = getDatabase();
+  const ownerUid = getDatabaseOwnerUid();
 
   // Ensure export directory exists
   const dirInfo = await getInfoAsync(EXPORT_DIRECTORY);
@@ -74,23 +79,28 @@ export async function exportDatabaseForDebug(): Promise<string> {
 
   // Query all tables
   const conversations = db.getAllSync<Record<string, unknown>>(
-    "SELECT * FROM conversations ORDER BY last_message_at DESC",
+    "SELECT * FROM conversations WHERE owner_uid = ? ORDER BY last_message_at DESC",
+    [ownerUid],
   );
 
   const messages = db.getAllSync<Record<string, unknown>>(
-    "SELECT * FROM messages ORDER BY created_at DESC LIMIT 1000",
+    "SELECT * FROM messages WHERE owner_uid = ? ORDER BY created_at DESC LIMIT 1000",
+    [ownerUid],
   );
 
   const attachments = db.getAllSync<Record<string, unknown>>(
-    "SELECT * FROM attachments ORDER BY id",
+    "SELECT * FROM attachments WHERE owner_uid = ? ORDER BY id",
+    [ownerUid],
   );
 
   const reactions = db.getAllSync<Record<string, unknown>>(
-    "SELECT * FROM reactions ORDER BY created_at DESC",
+    "SELECT * FROM reactions WHERE owner_uid = ? ORDER BY created_at DESC",
+    [ownerUid],
   );
 
   const syncCursors = db.getAllSync<Record<string, unknown>>(
-    "SELECT * FROM sync_cursors",
+    "SELECT * FROM sync_cursors WHERE owner_uid = ?",
+    [ownerUid],
   );
 
   const exportData: DatabaseExport = {
@@ -134,34 +144,43 @@ export async function exportDatabaseForDebug(): Promise<string> {
  */
 export function getDatabaseStats(): Record<string, number> {
   const db = getDatabase();
+  const ownerUid = getDatabaseOwnerUid();
 
   const conversationCount =
     db.getFirstSync<{ count: number }>(
-      "SELECT COUNT(*) as count FROM conversations",
+      "SELECT COUNT(*) as count FROM conversations WHERE owner_uid = ?",
+      [ownerUid],
     )?.count ?? 0;
 
   const messageCount =
-    db.getFirstSync<{ count: number }>("SELECT COUNT(*) as count FROM messages")
+    db.getFirstSync<{ count: number }>(
+      "SELECT COUNT(*) as count FROM messages WHERE owner_uid = ?",
+      [ownerUid],
+    )
       ?.count ?? 0;
 
   const pendingCount =
     db.getFirstSync<{ count: number }>(
-      "SELECT COUNT(*) as count FROM messages WHERE sync_status = 'pending'",
+      "SELECT COUNT(*) as count FROM messages WHERE owner_uid = ? AND sync_status = 'pending'",
+      [ownerUid],
     )?.count ?? 0;
 
   const failedCount =
     db.getFirstSync<{ count: number }>(
-      "SELECT COUNT(*) as count FROM messages WHERE sync_status = 'failed'",
+      "SELECT COUNT(*) as count FROM messages WHERE owner_uid = ? AND sync_status = 'failed'",
+      [ownerUid],
     )?.count ?? 0;
 
   const attachmentCount =
     db.getFirstSync<{ count: number }>(
-      "SELECT COUNT(*) as count FROM attachments",
+      "SELECT COUNT(*) as count FROM attachments WHERE owner_uid = ?",
+      [ownerUid],
     )?.count ?? 0;
 
   const reactionCount =
     db.getFirstSync<{ count: number }>(
-      "SELECT COUNT(*) as count FROM reactions",
+      "SELECT COUNT(*) as count FROM reactions WHERE owner_uid = ?",
+      [ownerUid],
     )?.count ?? 0;
 
   return {
@@ -208,19 +227,10 @@ export async function resetLocalData(
       );
     }
 
-    // Clear database tables
-    const db = getDatabase();
-
-    db.runSync("DELETE FROM reactions");
-    db.runSync("DELETE FROM attachments");
-    db.runSync("DELETE FROM messages");
-    db.runSync("DELETE FROM conversations");
-    db.runSync("DELETE FROM sync_cursors");
-
-    // Reset auto-increment counters
-    db.runSync(
-      "DELETE FROM sqlite_sequence WHERE name IN ('conversations', 'messages', 'attachments', 'reactions', 'sync_cursors')",
-    );
+    // Clear database tables. This helper is intentionally all-user destructive:
+    // resetLocalData is a troubleshooting nuke, while auth transitions use the
+    // owner-specific clear helper from database/index.ts.
+    wipeAllLocalChatCache();
 
     stats.databaseCleared = true;
     logger.info("[Maintenance] Database tables cleared");
@@ -268,9 +278,11 @@ export async function clearMediaCacheDirectory(): Promise<void> {
  */
 export function clearPendingMessages(): number {
   const db = getDatabase();
+  const ownerUid = getDatabaseOwnerUid();
 
   const result = db.runSync(
-    "DELETE FROM messages WHERE sync_status IN ('pending', 'failed')",
+    "DELETE FROM messages WHERE owner_uid = ? AND sync_status IN ('pending', 'failed')",
+    [ownerUid],
   );
 
   logger.info(
@@ -285,9 +297,11 @@ export function clearPendingMessages(): number {
  */
 export function resetStuckSyncingMessages(): number {
   const db = getDatabase();
+  const ownerUid = getDatabaseOwnerUid();
 
   const result = db.runSync(
-    "UPDATE messages SET sync_status = 'pending' WHERE sync_status = 'syncing'",
+    "UPDATE messages SET sync_status = 'pending' WHERE owner_uid = ? AND sync_status = 'syncing'",
+    [ownerUid],
   );
 
   logger.info(`[Maintenance] Reset ${result.changes} stuck syncing messages`);
@@ -307,6 +321,7 @@ export function resetStuckSyncingMessages(): number {
  */
 export function pruneOldMessages(daysOld: number = 90): number {
   const db = getDatabase();
+  const ownerUid = getDatabaseOwnerUid();
 
   const cutoffDate = new Date();
   cutoffDate.setDate(cutoffDate.getDate() - daysOld);
@@ -315,23 +330,23 @@ export function pruneOldMessages(daysOld: number = 90): number {
   // Delete attachments for old messages first (foreign key constraint)
   db.runSync(
     `DELETE FROM attachments WHERE message_id IN (
-      SELECT id FROM messages WHERE created_at < ? AND sync_status = 'synced'
+      SELECT id FROM messages WHERE owner_uid = ? AND created_at < ? AND sync_status = 'synced'
     )`,
-    [cutoffTimestamp],
+    [ownerUid, cutoffTimestamp],
   );
 
   // Delete reactions for old messages
   db.runSync(
     `DELETE FROM reactions WHERE message_id IN (
-      SELECT id FROM messages WHERE created_at < ? AND sync_status = 'synced'
+      SELECT id FROM messages WHERE owner_uid = ? AND created_at < ? AND sync_status = 'synced'
     )`,
-    [cutoffTimestamp],
+    [ownerUid, cutoffTimestamp],
   );
 
   // Delete old synced messages (never delete unsynced messages)
   const result = db.runSync(
-    "DELETE FROM messages WHERE created_at < ? AND sync_status = 'synced'",
-    [cutoffTimestamp],
+    "DELETE FROM messages WHERE owner_uid = ? AND created_at < ? AND sync_status = 'synced'",
+    [ownerUid, cutoffTimestamp],
   );
 
   logger.info(
@@ -389,8 +404,10 @@ export async function runFullMaintenance(
 export async function clearOrphanedMediaFiles(): Promise<number> {
   // Get all local_uri values from attachments
   const db = getDatabase();
+  const ownerUid = getDatabaseOwnerUid();
   const attachments = db.getAllSync<{ local_uri: string | null }>(
-    "SELECT local_uri FROM attachments WHERE local_uri IS NOT NULL",
+    "SELECT local_uri FROM attachments WHERE owner_uid = ? AND local_uri IS NOT NULL",
+    [ownerUid],
   );
 
   const validPaths = new Set(

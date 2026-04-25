@@ -20,6 +20,7 @@ import { MessageV2 } from "@/types/messaging";
 import { createLogger } from "@/utils/log";
 import {
   collection,
+  documentId,
   DocumentData,
   DocumentSnapshot,
   getCountFromServer,
@@ -35,6 +36,10 @@ import {
 } from "firebase/firestore";
 import { getFirestoreInstance } from "./firebase";
 import { normalizeMessageFromFirestoreDoc } from "@/services/chat/normalizeMessage";
+import {
+  ServerReceivedMessageCursor,
+  normalizeServerReceivedCursor,
+} from "@/services/chat/messagePagination";
 
 // Lazy initialization - don't call at module load time
 const getDb = () => getFirestoreInstance();
@@ -211,6 +216,7 @@ function subscribeToMessages(
   const q = query(
     messagesRef,
     orderBy("serverReceivedAt", "desc"),
+    orderBy(documentId(), "desc"),
     limit(initialLimit),
   );
 
@@ -276,18 +282,20 @@ function subscribeToMessages(
 export async function loadOlderMessages(
   scope: "dm" | "group",
   conversationId: string,
-  beforeServerReceivedAt: number,
+  before: number | ServerReceivedMessageCursor,
   messageLimit: number = 25,
 ): Promise<PaginationLoadResult> {
   const cursorKey = `${scope}:${conversationId}`;
   const cursors = paginationCursors.get(cursorKey);
+  const beforeCursor = normalizeServerReceivedCursor(before);
 
   log.debug("Loading older messages", {
     operation: "loadOlder",
     data: {
       scope,
       conversationId,
-      beforeTimestamp: beforeServerReceivedAt,
+      beforeTimestamp: beforeCursor.serverReceivedAt,
+      beforeMessageId: beforeCursor.messageId,
       limit: messageLimit,
     },
   });
@@ -302,7 +310,16 @@ export async function loadOlderMessages(
     q = query(
       messagesRef,
       orderBy("serverReceivedAt", "desc"),
+      orderBy(documentId(), "desc"),
       startAfter(cursors.firstDoc),
+      limit(messageLimit),
+    );
+  } else if (beforeCursor.messageId) {
+    q = query(
+      messagesRef,
+      orderBy("serverReceivedAt", "desc"),
+      orderBy(documentId(), "desc"),
+      startAfter(beforeCursor.serverReceivedAt, beforeCursor.messageId),
       limit(messageLimit),
     );
   } else {
@@ -310,7 +327,7 @@ export async function loadOlderMessages(
     q = query(
       messagesRef,
       orderBy("serverReceivedAt", "desc"),
-      where("serverReceivedAt", "<", beforeServerReceivedAt),
+      where("serverReceivedAt", "<", beforeCursor.serverReceivedAt),
       limit(messageLimit),
     );
   }
@@ -385,6 +402,7 @@ export async function loadNewerMessages(
   const q = query(
     messagesRef,
     orderBy("serverReceivedAt", "asc"), // ASC to get oldest first after timestamp
+    orderBy(documentId(), "asc"),
     where("serverReceivedAt", ">", afterServerReceivedAt),
     limit(messageLimit),
   );

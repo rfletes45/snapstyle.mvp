@@ -7,23 +7,31 @@
  * @file src/services/sync/syncEngine.ts
  */
 
+import type { QueryConstraint, Unsubscribe } from "firebase/firestore";
 import {
   collection,
   doc,
+  documentId,
   getDoc,
   getDocs,
   limit,
   onSnapshot,
   orderBy,
   query,
+  startAfter,
   Timestamp,
   where,
 } from "firebase/firestore";
-import type { QueryConstraint, Unsubscribe } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 
 import {
+  CreatedAtMessageCursor,
+  isCreatedAtAfterCursor,
+  normalizeCreatedAtCursor,
+} from "@/services/chat/messagePagination";
+import {
   getDatabase,
+  getDatabaseOwnerUid,
   getDatabaseUnavailableReason,
   isDatabaseRuntimeAvailable,
 } from "@/services/database";
@@ -148,6 +156,45 @@ export function getConversationSubscriptionQueryPlan(
   };
 }
 
+interface StoredSyncCursor {
+  last_synced_at: number | null;
+  last_doc_id: string | null;
+}
+
+function getStoredSyncCursor(conversationId: string): StoredSyncCursor {
+  const db = getDatabase();
+  const ownerUid = getDatabaseOwnerUid();
+  return (
+    db.getFirstSync<StoredSyncCursor>(
+      `SELECT last_synced_at, last_doc_id
+       FROM sync_cursors
+       WHERE owner_uid = ? AND conversation_id = ?`,
+      [ownerUid, conversationId],
+    ) ?? { last_synced_at: null, last_doc_id: null }
+  );
+}
+
+function writeStoredSyncCursor(
+  conversationId: string,
+  cursor: CreatedAtMessageCursor,
+): void {
+  const db = getDatabase();
+  const ownerUid = getDatabaseOwnerUid();
+  db.runSync(
+    `INSERT OR REPLACE INTO sync_cursors (
+       conversation_id, owner_uid, last_synced_at, last_doc_id, last_sync_attempt
+     ) VALUES (?, ?, ?, ?, ?)`,
+    [conversationId, ownerUid, cursor.createdAt, cursor.messageId, Date.now()],
+  );
+}
+
+function maxCreatedAtCursor(
+  current: CreatedAtMessageCursor | null,
+  candidate: CreatedAtMessageCursor,
+): CreatedAtMessageCursor {
+  return isCreatedAtAfterCursor(candidate, current) ? candidate : current!;
+}
+
 function getSubscriptionKey(
   scope: "dm" | "group",
   conversationId: string,
@@ -221,8 +268,10 @@ export function setOnlineStatus(online: boolean): void {
 export function refreshPendingCount(): void {
   // Single COUNT query — avoids the redundant getPendingMessages(1) call
   const db = getDatabase();
+  const ownerUid = getDatabaseOwnerUid();
   const result = db.getFirstSync<{ count: number }>(
-    `SELECT COUNT(*) as count FROM messages WHERE sync_status IN ('pending', 'failed') AND retry_count < ${MAX_MESSAGE_RETRIES}`,
+    `SELECT COUNT(*) as count FROM messages WHERE owner_uid = ? AND sync_status IN ('pending', 'failed') AND retry_count < ${MAX_MESSAGE_RETRIES}`,
+    [ownerUid],
   );
   updateSyncState({ pendingCount: result?.count || 0 });
 }
@@ -237,11 +286,14 @@ export function refreshPendingCount(): void {
  */
 function cleanupOrphanedMessages(): void {
   const db = getDatabase();
+  const ownerUid = getDatabaseOwnerUid();
   const orphaned = db.getAllSync<{ id: string }>(
     `SELECT id FROM messages
-     WHERE sync_status IN ('pending', 'failed')
+     WHERE owner_uid = ?
+     AND sync_status IN ('pending', 'failed')
      AND (conversation_id IS NULL OR conversation_id = '')
      AND retry_count < 999`,
+    [ownerUid],
   );
 
   if (orphaned.length > 0) {
@@ -615,16 +667,12 @@ export async function pullMessages(
   scope: "dm" | "group",
   conversationId: string,
 ): Promise<number> {
-  const db = getDatabase();
   const firestore = getFirestoreInstance();
 
   // Get last sync cursor
-  const cursor = db.getFirstSync<{ last_synced_at: number | null }>(
-    "SELECT last_synced_at FROM sync_cursors WHERE conversation_id = ?",
-    [conversationId],
-  );
-
+  const cursor = getStoredSyncCursor(conversationId);
   const lastSyncedAt = cursor?.last_synced_at || 0;
+  const lastDocId = cursor?.last_doc_id || "";
 
   // Build collection reference
   // Both DM and Group messages use uppercase 'Messages'
@@ -638,17 +686,30 @@ export async function pullMessages(
   // serverReceivedAt uses FieldValue.serverTimestamp() which can be null
   // on initial local snapshots.
   const orderField = "createdAt";
-  const q = query(
-    collection(firestore, collectionPath),
-    where(orderField, ">", lastSyncedAt),
+  const constraints: QueryConstraint[] = [
     orderBy(orderField, "asc"),
-    limit(100),
-  );
+    orderBy(documentId(), "asc"),
+  ];
+  if (lastSyncedAt > 0 && lastDocId) {
+    constraints.push(
+      // startAfter includes the document ID tie-breaker, avoiding skipped
+      // messages when several docs share the same createdAt millisecond.
+      startAfter(lastSyncedAt, lastDocId),
+    );
+  } else if (lastSyncedAt > 0) {
+    constraints.push(where(orderField, ">", lastSyncedAt));
+  }
+  constraints.push(limit(100));
+
+  const q = query(collection(firestore, collectionPath), ...constraints);
 
   try {
     const snapshot = await getDocs(q);
     let newCount = 0;
-    let maxCursorTimestamp = lastSyncedAt;
+    let maxCursor: CreatedAtMessageCursor | null =
+      lastSyncedAt > 0
+        ? { createdAt: lastSyncedAt, messageId: lastDocId }
+        : null;
 
     snapshot.forEach((docSnap) => {
       const data = docSnap.data();
@@ -688,18 +749,21 @@ export async function pullMessages(
       upsertMessageFromServer(message);
       newCount++;
 
-      if (createdAtNum > maxCursorTimestamp) {
-        maxCursorTimestamp = createdAtNum;
-      }
+      maxCursor = maxCreatedAtCursor(maxCursor, {
+        createdAt: createdAtNum,
+        messageId: docSnap.id,
+      });
     });
 
     // Update sync cursor
-    if (maxCursorTimestamp > lastSyncedAt) {
-      db.runSync(
-        `INSERT OR REPLACE INTO sync_cursors (conversation_id, last_synced_at, last_sync_attempt)
-         VALUES (?, ?, ?)`,
-        [conversationId, maxCursorTimestamp, Date.now()],
-      );
+    if (
+      maxCursor &&
+      isCreatedAtAfterCursor(maxCursor, {
+        createdAt: lastSyncedAt,
+        messageId: lastDocId,
+      })
+    ) {
+      writeStoredSyncCursor(conversationId, maxCursor);
     }
 
     logger.info(
@@ -729,7 +793,6 @@ export async function fullSyncConversation(
     return 0;
   }
 
-  const db = getDatabase();
   const firestore = getFirestoreInstance();
 
   // Both DM and Group messages use uppercase 'Messages'
@@ -744,13 +807,14 @@ export async function fullSyncConversation(
   const q = query(
     collection(firestore, collectionPath),
     orderBy(orderField, "desc"),
+    orderBy(documentId(), "desc"),
     limit(messageLimit),
   );
 
   try {
     const snapshot = await getDocs(q);
     let count = 0;
-    let maxTimestamp = 0;
+    let maxCursor: CreatedAtMessageCursor | null = null;
 
     logger.debug(
       "[SyncEngine] fullSyncConversation v2 running for:",
@@ -827,19 +891,15 @@ export async function fullSyncConversation(
       count++;
 
       // Keep the sync cursor aligned with the field used for sync queries.
-      const timestamp = createdAtNum;
-      if (timestamp > maxTimestamp) {
-        maxTimestamp = timestamp;
-      }
+      maxCursor = maxCreatedAtCursor(maxCursor, {
+        createdAt: createdAtNum,
+        messageId: docSnap.id,
+      });
     });
 
     // Update sync cursor
-    if (maxTimestamp > 0) {
-      db.runSync(
-        `INSERT OR REPLACE INTO sync_cursors (conversation_id, last_synced_at, last_sync_attempt)
-         VALUES (?, ?, ?)`,
-        [conversationId, maxTimestamp, Date.now()],
-      );
+    if (maxCursor) {
+      writeStoredSyncCursor(conversationId, maxCursor);
     }
 
     logger.debug(
@@ -863,7 +923,7 @@ export async function fullSyncConversation(
 export async function syncOlderMessages(
   scope: "dm" | "group",
   conversationId: string,
-  beforeTimestamp: number,
+  before: number | CreatedAtMessageCursor,
   messageLimit: number = 50,
 ): Promise<number> {
   if (!isDatabaseRuntimeAvailable()) {
@@ -876,25 +936,35 @@ export async function syncOlderMessages(
       ? `Chats/${conversationId}/Messages`
       : `Groups/${conversationId}/Messages`;
 
+  const beforeCursor = normalizeCreatedAtCursor(before);
+
   // Use createdAt for pagination (consistent with SQLite timeline ordering).
   // Keep a Timestamp fallback for legacy docs stored with Timestamp values.
   // Firestore treats numbers and Timestamps as distinct types — using
   // a separate Timestamp fallback.
-  const beforeTs = Timestamp.fromMillis(beforeTimestamp);
+  const beforeTs = Timestamp.fromMillis(beforeCursor.createdAt);
 
   // Try createdAt first (primary local pagination field, consistent with
   // message repository ordering). Fall back to legacy timestamp/server fields
   // if no results are found.
-  let q = query(
-    collection(firestore, collectionPath),
+  const primaryConstraints: QueryConstraint[] = [
     orderBy("createdAt", "desc"),
-    where("createdAt", "<", beforeTimestamp),
-    limit(messageLimit),
-  );
+    orderBy(documentId(), "desc"),
+  ];
+  if (beforeCursor.messageId) {
+    primaryConstraints.push(
+      startAfter(beforeCursor.createdAt, beforeCursor.messageId),
+    );
+  } else {
+    primaryConstraints.push(where("createdAt", "<", beforeCursor.createdAt));
+  }
+  primaryConstraints.push(limit(messageLimit));
+
+  let q = query(collection(firestore, collectionPath), ...primaryConstraints);
 
   logger.info(
     `[SyncEngine] syncOlderMessages: querying ${collectionPath}, ` +
-      `beforeTimestamp=${beforeTimestamp}, limit=${messageLimit}`,
+      `beforeTimestamp=${beforeCursor.createdAt}, beforeMessageId=${beforeCursor.messageId}, limit=${messageLimit}`,
   );
 
   try {
@@ -908,7 +978,10 @@ export async function syncOlderMessages(
       q = query(
         collection(firestore, collectionPath),
         orderBy("createdAt", "desc"),
-        where("createdAt", "<", beforeTs),
+        orderBy(documentId(), "desc"),
+        beforeCursor.messageId
+          ? startAfter(beforeTs, beforeCursor.messageId)
+          : where("createdAt", "<", beforeTs),
         limit(messageLimit),
       );
       snapshot = await getDocs(q);
@@ -918,7 +991,10 @@ export async function syncOlderMessages(
         q = query(
           collection(firestore, collectionPath),
           orderBy("serverReceivedAt", "desc"),
-          where("serverReceivedAt", "<", beforeTs),
+          orderBy(documentId(), "desc"),
+          beforeCursor.messageId
+            ? startAfter(beforeTs, beforeCursor.messageId)
+            : where("serverReceivedAt", "<", beforeTs),
           limit(messageLimit),
         );
         snapshot = await getDocs(q);
@@ -927,7 +1003,10 @@ export async function syncOlderMessages(
           q = query(
             collection(firestore, collectionPath),
             orderBy("serverReceivedAt", "desc"),
-            where("serverReceivedAt", "<", beforeTimestamp),
+            orderBy(documentId(), "desc"),
+            beforeCursor.messageId
+              ? startAfter(beforeCursor.createdAt, beforeCursor.messageId)
+              : where("serverReceivedAt", "<", beforeCursor.createdAt),
             limit(messageLimit),
           );
           snapshot = await getDocs(q);
@@ -1094,7 +1173,8 @@ export async function syncMessagesAroundTarget(
   const olderQuery = query(
     collection(firestore, collectionPath),
     orderBy("createdAt", "desc"),
-    where("createdAt", "<", targetCreatedAt),
+    orderBy(documentId(), "desc"),
+    startAfter(targetCreatedAt, targetSnap.id),
     limit(windowSize),
   );
 
@@ -1102,7 +1182,8 @@ export async function syncMessagesAroundTarget(
   const newerQuery = query(
     collection(firestore, collectionPath),
     orderBy("createdAt", "asc"),
-    where("createdAt", ">", targetCreatedAt),
+    orderBy(documentId(), "asc"),
+    startAfter(targetCreatedAt, targetSnap.id),
     limit(windowSize),
   );
 
@@ -1197,7 +1278,6 @@ export function subscribeToConversation(
     return () => {};
   }
 
-  const db = getDatabase();
   const subscriptionKey = getSubscriptionKey(scope, conversationId);
   const listener = onNewMessage || (() => {});
 
@@ -1220,12 +1300,9 @@ export function subscribeToConversation(
   const firestore = getFirestoreInstance();
 
   // Get last synced timestamp
-  const cursor = db.getFirstSync<{ last_synced_at: number | null }>(
-    "SELECT last_synced_at FROM sync_cursors WHERE conversation_id = ?",
-    [conversationId],
-  );
-
+  const cursor = getStoredSyncCursor(conversationId);
   const lastSyncedAt = cursor?.last_synced_at || 0;
+  const lastDocId = cursor?.last_doc_id || "";
 
   // Both DM and Group messages use uppercase 'Messages'
   const collectionPath =
@@ -1246,17 +1323,19 @@ export function subscribeToConversation(
   }
   constraints.push(
     orderBy(subscriptionPlan.orderField, "desc"),
+    orderBy(documentId(), "desc"),
     limit(subscriptionPlan.limit),
   );
 
   const q = query(collection(firestore, collectionPath), ...constraints);
 
-  let liveCursor = lastSyncedAt;
+  let liveCursor: CreatedAtMessageCursor | null =
+    lastSyncedAt > 0 ? { createdAt: lastSyncedAt, messageId: lastDocId } : null;
 
   const unsubscribe = onSnapshot(
     q,
     (snapshot) => {
-      let maxTimestampInSnapshot = liveCursor;
+      let maxCursorInSnapshot = liveCursor;
 
       snapshot.docChanges().forEach((change) => {
         if (change.type === "added" || change.type === "modified") {
@@ -1329,23 +1408,22 @@ export function subscribeToConversation(
           }
 
           // Update sync cursor using the same field this subscription orders by.
-          const timestamp = createdAtNum;
-          if (timestamp && timestamp > maxTimestampInSnapshot) {
-            maxTimestampInSnapshot = timestamp;
-          }
+          maxCursorInSnapshot = maxCreatedAtCursor(maxCursorInSnapshot, {
+            createdAt: createdAtNum,
+            messageId: change.doc.id,
+          });
         }
       });
 
       // The live listener is ordered descending, so the last processed change
       // is not necessarily the newest. Commit the max timestamp once per
       // snapshot to keep the cursor moving forward only.
-      if (maxTimestampInSnapshot > liveCursor) {
-        db.runSync(
-          `INSERT OR REPLACE INTO sync_cursors (conversation_id, last_synced_at, last_sync_attempt)
-           VALUES (?, ?, ?)`,
-          [conversationId, maxTimestampInSnapshot, Date.now()],
-        );
-        liveCursor = maxTimestampInSnapshot;
+      if (
+        maxCursorInSnapshot &&
+        isCreatedAtAfterCursor(maxCursorInSnapshot, liveCursor)
+      ) {
+        writeStoredSyncCursor(conversationId, maxCursorInSnapshot);
+        liveCursor = maxCursorInSnapshot;
       }
     },
     (error) => {
@@ -1468,6 +1546,7 @@ export function isBackgroundSyncRunning(): boolean {
  */
 export async function retryMessage(messageId: string): Promise<void> {
   const db = getDatabase();
+  const ownerUid = getDatabaseOwnerUid();
 
   // Reset retry count and status
   db.runSync(
@@ -1475,8 +1554,8 @@ export async function retryMessage(messageId: string): Promise<void> {
       sync_status = 'pending',
       sync_error = NULL,
       retry_count = 0
-    WHERE id = ?`,
-    [messageId],
+    WHERE id = ? AND owner_uid = ?`,
+    [messageId, ownerUid],
   );
 
   // Trigger sync
@@ -1488,14 +1567,15 @@ export async function retryMessage(messageId: string): Promise<void> {
  */
 export function cancelMessage(messageId: string): void {
   const db = getDatabase();
+  const ownerUid = getDatabaseOwnerUid();
 
   db.runSync(
     `UPDATE messages SET 
       sync_status = 'failed',
       sync_error = 'Cancelled by user',
       retry_count = 999
-    WHERE id = ? AND sync_status = 'pending'`,
-    [messageId],
+    WHERE id = ? AND owner_uid = ? AND sync_status = 'pending'`,
+    [messageId, ownerUid],
   );
 
   refreshPendingCount();
@@ -1505,11 +1585,7 @@ export function cancelMessage(messageId: string): void {
  * Get sync cursor for a conversation
  */
 export function getSyncCursor(conversationId: string): number | null {
-  const db = getDatabase();
-  const cursor = db.getFirstSync<{ last_synced_at: number | null }>(
-    "SELECT last_synced_at FROM sync_cursors WHERE conversation_id = ?",
-    [conversationId],
-  );
+  const cursor = getStoredSyncCursor(conversationId);
   return cursor?.last_synced_at || null;
 }
 
@@ -1518,9 +1594,11 @@ export function getSyncCursor(conversationId: string): number | null {
  */
 export function resetSyncCursor(conversationId: string): void {
   const db = getDatabase();
-  db.runSync("DELETE FROM sync_cursors WHERE conversation_id = ?", [
-    conversationId,
-  ]);
+  const ownerUid = getDatabaseOwnerUid();
+  db.runSync(
+    "DELETE FROM sync_cursors WHERE owner_uid = ? AND conversation_id = ?",
+    [ownerUid, conversationId],
+  );
 }
 
 /**
@@ -1528,9 +1606,11 @@ export function resetSyncCursor(conversationId: string): void {
  */
 export function getConversationsWithPending(): string[] {
   const db = getDatabase();
+  const ownerUid = getDatabaseOwnerUid();
   const results = db.getAllSync<{ conversation_id: string }>(
     `SELECT DISTINCT conversation_id FROM messages 
-     WHERE sync_status IN ('pending', 'failed') AND retry_count < ${MAX_MESSAGE_RETRIES}`,
+     WHERE owner_uid = ? AND sync_status IN ('pending', 'failed') AND retry_count < ${MAX_MESSAGE_RETRIES}`,
+    [ownerUid],
   );
   return results.map((r: { conversation_id: string }) => r.conversation_id);
 }

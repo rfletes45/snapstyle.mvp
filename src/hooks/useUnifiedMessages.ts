@@ -62,6 +62,7 @@ import {
   mergeRealtimeSnapshotMessages,
   runIfMounted,
 } from "@/services/chat/unifiedMessagesLifecycle";
+import { serverReceivedCursorFromMessage } from "@/services/chat/messagePagination";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 const log = createLogger("useUnifiedMessages");
@@ -437,7 +438,7 @@ export function useUnifiedMessages(
       const result = await loadOlderMessages(
         scope,
         conversationId,
-        oldestMessage.serverReceivedAt,
+        serverReceivedCursorFromMessage(oldestMessage),
         25,
       );
 

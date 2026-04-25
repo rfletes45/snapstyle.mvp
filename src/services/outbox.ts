@@ -60,6 +60,49 @@ const NON_RETRYABLE_ERRORS = [
 // =============================================================================
 
 let cachedClientId: string | null = null;
+let activeOutboxOwnerUid: string | null = null;
+
+function getOutboxStorageKey(ownerUid: string): string {
+  return `${OUTBOX_KEY}:${ownerUid}`;
+}
+
+function getActiveOutboxStorageKey(): string | null {
+  return activeOutboxOwnerUid
+    ? getOutboxStorageKey(activeOutboxOwnerUid)
+    : null;
+}
+
+export async function setOutboxOwnerUid(uid: string): Promise<void> {
+  const normalized = uid.trim();
+  if (!normalized) {
+    clearOutboxOwnerUid();
+    return;
+  }
+
+  activeOutboxOwnerUid = normalized;
+
+  // Backward-compatible migration: move the legacy shared queue into the
+  // first authenticated user's scoped queue if that scoped queue is empty.
+  const legacy = await AsyncStorage.getItem(OUTBOX_KEY);
+  if (!legacy) return;
+
+  const scopedKey = getOutboxStorageKey(normalized);
+  const scoped = await AsyncStorage.getItem(scopedKey);
+  if (!scoped) {
+    await AsyncStorage.setItem(scopedKey, legacy);
+  }
+  await AsyncStorage.removeItem(OUTBOX_KEY);
+}
+
+export function clearOutboxOwnerUid(): void {
+  activeOutboxOwnerUid = null;
+}
+
+export async function clearOutboxForOwner(uid: string): Promise<void> {
+  const normalized = uid.trim();
+  if (!normalized) return;
+  await AsyncStorage.removeItem(getOutboxStorageKey(normalized));
+}
 
 /**
  * Generate a UUID v4
@@ -117,7 +160,13 @@ export function generateMessageId(): string {
  */
 export async function getOutbox(): Promise<OutboxItem[]> {
   try {
-    const data = await AsyncStorage.getItem(OUTBOX_KEY);
+    // Authenticated queues are scoped per user. When no owner is active,
+    // return an empty queue instead of falling back to the legacy shared key;
+    // that prevents pending sends from leaking across account switches.
+    const storageKey = getActiveOutboxStorageKey();
+    if (!storageKey) return [];
+
+    const data = await AsyncStorage.getItem(storageKey);
     if (!data) return [];
     return JSON.parse(data) as OutboxItem[];
   } catch (error) {
@@ -131,7 +180,11 @@ export async function getOutbox(): Promise<OutboxItem[]> {
  */
 async function saveOutbox(outbox: OutboxItem[]): Promise<void> {
   try {
-    await AsyncStorage.setItem(OUTBOX_KEY, JSON.stringify(outbox));
+    const storageKey = getActiveOutboxStorageKey();
+    if (!storageKey) {
+      throw new Error("Cannot save outbox without an active owner");
+    }
+    await AsyncStorage.setItem(storageKey, JSON.stringify(outbox));
   } catch (error) {
     log.error("Failed to save outbox", error);
     throw error;
@@ -259,8 +312,7 @@ export async function getOutboxForConversation(
   const outbox = await getOutbox();
   return outbox.filter(
     (i) =>
-      i.conversationId === conversationId &&
-      (scope ? i.scope === scope : true),
+      i.conversationId === conversationId && (scope ? i.scope === scope : true),
   );
 }
 
@@ -504,7 +556,10 @@ export async function retryItem(
  * Clear the entire outbox (for debugging/testing)
  */
 export async function clearOutbox(): Promise<void> {
-  await AsyncStorage.removeItem(OUTBOX_KEY);
+  const storageKey = getActiveOutboxStorageKey();
+  if (storageKey) {
+    await AsyncStorage.removeItem(storageKey);
+  }
   log.info("Outbox cleared");
 }
 

@@ -29,7 +29,11 @@
  * @module hooks/useMessageSearch
  */
 
-import { getDatabase, isDatabaseRuntimeAvailable } from "@/services/database";
+import {
+  getDatabase,
+  getDatabaseOwnerUid,
+  isDatabaseRuntimeAvailable,
+} from "@/services/database";
 import { normalizeMessageFromFirestoreDoc } from "@/services/chat/normalizeMessage";
 import { getFirestoreInstance } from "@/services/firebase";
 import { fullSyncConversation } from "@/services/sync/syncEngine";
@@ -301,8 +305,11 @@ function buildCommonWhere(
   criteria: SearchCriteria,
   conversations: InboxConversation[],
 ): { whereClauses: string[]; params: (string | number)[] } {
-  const whereClauses: string[] = ["m.deleted_for_all = 0"];
-  const params: (string | number)[] = [];
+  const whereClauses: string[] = [
+    "m.owner_uid = ?",
+    "m.deleted_for_all = 0",
+  ];
+  const params: (string | number)[] = [getDatabaseOwnerUid()];
   appendVisibleConversationFilter(whereClauses, params, conversations);
 
   switch (criteria.scope) {
@@ -319,7 +326,9 @@ function buildCommonWhere(
       whereClauses.push(
         `(m.kind = 'media' OR EXISTS (
           SELECT 1 FROM attachments a
-          WHERE a.message_id = m.id AND a.kind IN ('image', 'video')
+          WHERE a.owner_uid = m.owner_uid
+            AND a.message_id = m.id
+            AND a.kind IN ('image', 'video')
         ))`,
       );
       break;
@@ -332,7 +341,9 @@ function buildCommonWhere(
       whereClauses.push(
         `(m.kind = 'file' OR EXISTS (
           SELECT 1 FROM attachments a
-          WHERE a.message_id = m.id AND a.kind = 'file'
+          WHERE a.owner_uid = m.owner_uid
+            AND a.message_id = m.id
+            AND a.kind = 'file'
         ))`,
       );
       break;
@@ -2033,14 +2044,16 @@ const SELECT_BODY = `
          COALESCE(
            m.text,
            (SELECT a.caption FROM attachments a
-              WHERE a.message_id = m.id AND a.caption IS NOT NULL AND a.caption != ''
+              WHERE a.owner_uid = m.owner_uid
+                AND a.message_id = m.id
+                AND a.caption IS NOT NULL AND a.caption != ''
               LIMIT 1)
          ) AS text,
          m.kind, m.created_at, m.server_received_at,
          (SELECT a.thumb_remote_url FROM attachments a
-            WHERE a.message_id = m.id AND a.kind IN ('image', 'video') LIMIT 1) AS thumb_url,
+            WHERE a.owner_uid = m.owner_uid AND a.message_id = m.id AND a.kind IN ('image', 'video') LIMIT 1) AS thumb_url,
          (SELECT a.remote_url       FROM attachments a
-            WHERE a.message_id = m.id AND a.kind IN ('image', 'video') LIMIT 1) AS image_url
+            WHERE a.owner_uid = m.owner_uid AND a.message_id = m.id AND a.kind IN ('image', 'video') LIMIT 1) AS image_url
 `;
 
 async function runFtsQuery(
@@ -2076,7 +2089,7 @@ async function runLikeQuery(
     whereClauses.push(
       `(m.text LIKE ? OR EXISTS (
         SELECT 1 FROM attachments a
-        WHERE a.message_id = m.id AND a.caption LIKE ?
+        WHERE a.owner_uid = m.owner_uid AND a.message_id = m.id AND a.caption LIKE ?
       ))`,
     );
     const likeQuery = `%${criteria.trimmedQuery}%`;

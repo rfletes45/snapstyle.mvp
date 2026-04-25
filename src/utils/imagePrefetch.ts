@@ -8,7 +8,11 @@
  */
 
 import { warmIdentityImageUrls } from "@/services/chat/threadIdentityWarmup";
-import { Image } from "expo-image";
+import {
+  cancelChatPreloadsForScope,
+  chatPreloadQueue,
+  type PreloadPriority,
+} from "@/services/preload/chatPreloadQueue";
 import { useEffect, useRef } from "react";
 
 // ---------------------------------------------------------------------------
@@ -24,12 +28,21 @@ import { useEffect, useRef } from "react";
  * @param urls  Array of remote image URLs to preload.
  * @returns     Promise resolving to `true` if *all* succeeded.
  */
-export async function prefetchImages(urls: string[]): Promise<boolean> {
+export async function prefetchImages(
+  urls: string[],
+  options: { priority?: PreloadPriority; scopeToken?: string } = {},
+): Promise<boolean> {
   const valid = urls.filter(Boolean);
   if (valid.length === 0) return true;
 
   try {
-    return await Image.prefetch(valid, "memory-disk");
+    return await chatPreloadQueue.enqueueMany(
+      valid.map((url) => ({
+        url,
+        priority: options.priority,
+        scopeToken: options.scopeToken,
+      })),
+    );
   } catch (err) {
     if (__DEV__) {
       console.warn("[imagePrefetch] batch failed:", err);
@@ -41,9 +54,12 @@ export async function prefetchImages(urls: string[]): Promise<boolean> {
 /**
  * Prefetch a single image URL.
  */
-export async function prefetchImage(url: string): Promise<boolean> {
+export async function prefetchImage(
+  url: string,
+  options: { priority?: PreloadPriority; scopeToken?: string } = {},
+): Promise<boolean> {
   if (!url) return true;
-  return prefetchImages([url]);
+  return prefetchImages([url], options);
 }
 
 // ---------------------------------------------------------------------------
@@ -59,7 +75,10 @@ export async function prefetchImage(url: string): Promise<boolean> {
  * usePrefetch(friends.map(f => f.avatarUrl));
  * ```
  */
-export function usePrefetch(urls: (string | null | undefined)[] | undefined) {
+export function usePrefetch(
+  urls: (string | null | undefined)[] | undefined,
+  options: { priority?: PreloadPriority; scopeToken?: string } = {},
+) {
   // Serialize to a stable string so we only re-run when URLs actually change.
   const key = urls?.filter(Boolean).join("|") ?? "";
   const prevKey = useRef("");
@@ -68,8 +87,13 @@ export function usePrefetch(urls: (string | null | undefined)[] | undefined) {
     if (!key || key === prevKey.current) return;
     prevKey.current = key;
     const list = key.split("|");
-    prefetchImages(list);
-  }, [key]);
+    prefetchImages(list, options);
+    return () => {
+      if (options.scopeToken) {
+        cancelChatPreloadsForScope(options.scopeToken);
+      }
+    };
+  }, [key, options.priority, options.scopeToken]);
 }
 
 /**

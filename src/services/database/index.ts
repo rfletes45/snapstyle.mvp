@@ -21,7 +21,10 @@ const logger = createLogger("services/database/index");
 // =============================================================================
 
 const DATABASE_NAME = "snapstyle.db";
-const DATABASE_VERSION = 5;
+const DATABASE_VERSION = 6;
+const ANONYMOUS_OWNER_UID = "__anonymous__";
+
+let activeOwnerUid: string | null = null;
 
 function hasSharedArrayBufferSupport(): boolean {
   return typeof SharedArrayBuffer !== "undefined";
@@ -87,6 +90,31 @@ function getSQLiteModule(): typeof import("expo-sqlite") {
 // Singleton database instance
 let db: SQLiteDatabase | null = null;
 
+export function getDatabaseOwnerUid(): string {
+  return activeOwnerUid ?? ANONYMOUS_OWNER_UID;
+}
+
+export function getActiveDatabaseOwnerUid(): string | null {
+  return activeOwnerUid;
+}
+
+export function setDatabaseOwnerUid(uid: string): void {
+  const normalized = uid.trim();
+  if (!normalized) {
+    clearDatabaseOwnerUid();
+    return;
+  }
+
+  activeOwnerUid = normalized;
+  if (db) {
+    claimLegacyCacheForOwner(db, normalized);
+  }
+}
+
+export function clearDatabaseOwnerUid(): void {
+  activeOwnerUid = null;
+}
+
 /**
  * Get or create the database instance.
  * Throws when the current runtime cannot support synchronous SQLite.
@@ -124,6 +152,160 @@ function tableExists(database: SQLiteDatabase, name: string): boolean {
     [name],
   );
   return !!row;
+}
+
+function columnExists(
+  database: SQLiteDatabase,
+  tableName: string,
+  columnName: string,
+): boolean {
+  if (!tableExists(database, tableName)) return false;
+  const rows = database.getAllSync<{ name: string }>(
+    `PRAGMA table_info(${tableName})`,
+  );
+  return rows.some((row) => row.name === columnName);
+}
+
+function ensureColumn(
+  database: SQLiteDatabase,
+  tableName: string,
+  columnSql: string,
+): void {
+  const columnName = columnSql.trim().split(/\s+/)[0];
+  if (!tableExists(database, tableName)) return;
+  if (columnExists(database, tableName, columnName)) return;
+  database.execSync(`ALTER TABLE ${tableName} ADD COLUMN ${columnSql};`);
+}
+
+function ensureOwnerScopedSchema(database: SQLiteDatabase): void {
+  ensureColumn(database, "conversations", "owner_uid TEXT");
+  ensureColumn(database, "messages", "owner_uid TEXT");
+  ensureColumn(database, "attachments", "owner_uid TEXT");
+  ensureColumn(database, "reactions", "owner_uid TEXT");
+  ensureColumn(database, "sync_cursors", "owner_uid TEXT");
+  ensureColumn(database, "sync_cursors", "last_doc_id TEXT");
+  ensureOwnerScopedSyncCursors(database);
+
+  database.execSync(`
+    CREATE INDEX IF NOT EXISTS idx_conversations_owner_updated
+      ON conversations(owner_uid, COALESCE(last_message_at, updated_at) DESC);
+    CREATE INDEX IF NOT EXISTS idx_conversations_owner_scope_updated
+      ON conversations(owner_uid, scope, COALESCE(last_message_at, updated_at) DESC);
+    CREATE INDEX IF NOT EXISTS idx_messages_owner_conversation_created_id
+      ON messages(owner_uid, conversation_id, scope, created_at DESC, id DESC);
+    CREATE INDEX IF NOT EXISTS idx_messages_owner_status
+      ON messages(owner_uid, sync_status, retry_count);
+    CREATE INDEX IF NOT EXISTS idx_messages_owner_thread
+      ON messages(owner_uid, thread_root_id, created_at DESC, id DESC);
+    CREATE INDEX IF NOT EXISTS idx_attachments_owner_message
+      ON attachments(owner_uid, message_id);
+    CREATE INDEX IF NOT EXISTS idx_attachments_owner_download
+      ON attachments(owner_uid, download_status);
+    CREATE INDEX IF NOT EXISTS idx_attachments_owner_upload
+      ON attachments(owner_uid, upload_status);
+    CREATE INDEX IF NOT EXISTS idx_reactions_owner_message
+      ON reactions(owner_uid, message_id);
+    CREATE INDEX IF NOT EXISTS idx_sync_cursors_owner_conversation
+      ON sync_cursors(owner_uid, conversation_id);
+  `);
+}
+
+function ensureOwnerScopedSyncCursors(database: SQLiteDatabase): void {
+  if (!tableExists(database, "sync_cursors")) return;
+
+  const tableInfo = database.getAllSync<{
+    name: string;
+    pk: number;
+  }>("PRAGMA table_info(sync_cursors)");
+  const conversationIdPk = tableInfo.some(
+    (column) => column.name === "conversation_id" && column.pk > 0,
+  );
+
+  if (!conversationIdPk) return;
+
+  database.withTransactionSync(() => {
+    database.execSync(`
+      CREATE TABLE IF NOT EXISTS sync_cursors_owner_scoped (
+        conversation_id TEXT NOT NULL,
+        owner_uid TEXT NOT NULL,
+        last_synced_at INTEGER,
+        last_sync_attempt INTEGER,
+        last_doc_id TEXT,
+        sync_token TEXT,
+        PRIMARY KEY (owner_uid, conversation_id)
+      );
+    `);
+    database.execSync(`
+      INSERT OR REPLACE INTO sync_cursors_owner_scoped (
+        conversation_id, owner_uid, last_synced_at, last_sync_attempt, last_doc_id, sync_token
+      )
+      SELECT
+        conversation_id,
+        COALESCE(NULLIF(owner_uid, ''), '${ANONYMOUS_OWNER_UID}'),
+        last_synced_at,
+        last_sync_attempt,
+        last_doc_id,
+        sync_token
+      FROM sync_cursors;
+    `);
+    database.execSync("DROP TABLE sync_cursors;");
+    database.execSync(
+      "ALTER TABLE sync_cursors_owner_scoped RENAME TO sync_cursors;",
+    );
+  });
+}
+
+function claimLegacyCacheForOwner(
+  database: SQLiteDatabase,
+  ownerUid: string,
+): void {
+  ensureOwnerScopedSchema(database);
+  database.withTransactionSync(() => {
+    for (const tableName of [
+      "conversations",
+      "messages",
+      "attachments",
+      "reactions",
+      "sync_cursors",
+    ]) {
+      database.runSync(
+        `UPDATE ${tableName}
+         SET owner_uid = ?
+         WHERE owner_uid IS NULL OR owner_uid = ''`,
+        [ownerUid],
+      );
+    }
+  });
+}
+
+export function clearLocalChatCacheForOwner(ownerUid: string): void {
+  const database = getDatabase();
+  ensureOwnerScopedSchema(database);
+  database.withTransactionSync(() => {
+    database.runSync("DELETE FROM reactions WHERE owner_uid = ?", [ownerUid]);
+    database.runSync("DELETE FROM attachments WHERE owner_uid = ?", [ownerUid]);
+    database.runSync("DELETE FROM messages WHERE owner_uid = ?", [ownerUid]);
+    database.runSync("DELETE FROM conversations WHERE owner_uid = ?", [
+      ownerUid,
+    ]);
+    database.runSync("DELETE FROM sync_cursors WHERE owner_uid = ?", [
+      ownerUid,
+    ]);
+  });
+}
+
+export function wipeAllLocalChatCache(): void {
+  const database = getDatabase();
+  database.withTransactionSync(() => {
+    database.runSync("DELETE FROM reactions");
+    database.runSync("DELETE FROM attachments");
+    database.runSync("DELETE FROM messages");
+    database.runSync("DELETE FROM conversations");
+    database.runSync("DELETE FROM sync_cursors");
+    if (tableExists(database, "messages_fts")) {
+      database.runSync("DELETE FROM messages_fts");
+    }
+  });
 }
 
 function initializeSchema(database: SQLiteDatabase): void {
@@ -232,6 +414,7 @@ function initializeSchema(database: SQLiteDatabase): void {
       -- Conversations table
       CREATE TABLE IF NOT EXISTS conversations (
         id TEXT PRIMARY KEY,
+        owner_uid TEXT,
         scope TEXT NOT NULL CHECK(scope IN ('dm', 'group')),
         name TEXT,
         created_at INTEGER NOT NULL,
@@ -249,6 +432,7 @@ function initializeSchema(database: SQLiteDatabase): void {
       -- Messages table
       CREATE TABLE IF NOT EXISTS messages (
         id TEXT PRIMARY KEY,
+        owner_uid TEXT,
         conversation_id TEXT NOT NULL,
         scope TEXT NOT NULL CHECK(scope IN ('dm', 'group')),
         sender_id TEXT NOT NULL,
@@ -281,6 +465,7 @@ function initializeSchema(database: SQLiteDatabase): void {
       -- Attachments table
       CREATE TABLE IF NOT EXISTS attachments (
         id TEXT PRIMARY KEY,
+        owner_uid TEXT,
         message_id TEXT NOT NULL,
         kind TEXT NOT NULL CHECK(kind IN ('image', 'video', 'audio', 'file')),
         mime TEXT NOT NULL,
@@ -304,6 +489,7 @@ function initializeSchema(database: SQLiteDatabase): void {
       -- Reactions table
       CREATE TABLE IF NOT EXISTS reactions (
         id TEXT PRIMARY KEY,
+        owner_uid TEXT,
         message_id TEXT NOT NULL,
         user_id TEXT NOT NULL,
         emoji TEXT NOT NULL,
@@ -315,10 +501,13 @@ function initializeSchema(database: SQLiteDatabase): void {
 
       -- Sync cursors table
       CREATE TABLE IF NOT EXISTS sync_cursors (
-        conversation_id TEXT PRIMARY KEY,
+        conversation_id TEXT NOT NULL,
+        owner_uid TEXT NOT NULL,
         last_synced_at INTEGER,
         last_sync_attempt INTEGER,
-        sync_token TEXT
+        last_doc_id TEXT,
+        sync_token TEXT,
+        PRIMARY KEY (owner_uid, conversation_id)
       );
 
       -- Indexes
@@ -338,6 +527,11 @@ function initializeSchema(database: SQLiteDatabase): void {
         ON conversations(updated_at DESC);
     `);
 
+    ensureOwnerScopedSchema(database);
+    if (activeOwnerUid) {
+      claimLegacyCacheForOwner(database, activeOwnerUid);
+    }
+
     // FTS5 virtual table (CREATE VIRTUAL TABLE cannot run inside execSync batch)
     database.execSync(`
       CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
@@ -352,6 +546,11 @@ function initializeSchema(database: SQLiteDatabase): void {
     database.execSync(`PRAGMA user_version = ${DATABASE_VERSION}`);
 
     logger.info(`[Database] Schema initialized to version ${DATABASE_VERSION}`);
+  }
+
+  ensureOwnerScopedSchema(database);
+  if (activeOwnerUid) {
+    claimLegacyCacheForOwner(database, activeOwnerUid);
   }
 
   ensureSearchIndexes(database);

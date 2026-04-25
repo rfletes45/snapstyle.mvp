@@ -18,6 +18,7 @@
 
 import * as admin from "firebase-admin";
 import * as functions from "firebase-functions";
+import { secureCallableRuntime } from "./callableSecurity";
 
 function getDb() {
   return admin.firestore();
@@ -250,7 +251,7 @@ interface MintChatMediaUrlResponse {
  * Membership is verified before signing. The signed URL has a
  * configurable TTL (default 5 minutes).
  */
-export const mintChatMediaUrl = functions.https.onCall(
+export const mintChatMediaUrl = secureCallableRuntime().https.onCall(
   async (
     data: MintChatMediaUrlInput,
     context,

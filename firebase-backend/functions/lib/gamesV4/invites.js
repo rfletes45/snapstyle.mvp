@@ -46,6 +46,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.createGameInviteV4 = void 0;
 const admin = __importStar(require("firebase-admin"));
 const functions = __importStar(require("firebase-functions"));
+const callableSecurity_1 = require("../callableSecurity");
 const helpers_1 = require("./helpers");
 const notifications_1 = require("./notifications");
 const perfTrace_1 = require("./perfTrace");
@@ -248,7 +249,7 @@ function validateInput(data) {
 // =============================================================================
 // Callable: createGameInviteV4
 // =============================================================================
-exports.createGameInviteV4 = functions.https.onCall(async (data, context) => {
+exports.createGameInviteV4 = (0, callableSecurity_1.secureCallableRuntime)().https.onCall(async (data, context) => {
     const uid = (0, helpers_1.assertAuth)(context);
     const trace = (0, perfTrace_1.startServerTrace)("createInviteV4", uid);
     const db = (0, helpers_1.getDb)();

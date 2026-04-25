@@ -10,6 +10,7 @@
     "lint": "expo lint",
     "type-check": "tsc --noEmit",
     "test": "jest",
+    "test:rules": "npx firebase-tools emulators:exec --only firestore,storage \"jest --config jest.rules.config.js --runInBand\"",
     "test:coverage": "jest --coverage",
     "test:watch": "jest --watch",
     "postinstall": "node scripts/patch-expo-cli-cache.js"
@@ -80,6 +81,7 @@
   },
   "devDependencies": {
     "@types/jest": "^29.5.14",
+    "@firebase/rules-unit-testing": "^5.0.0",
     "@types/react": "~19.1.0",
     "eslint": "^9.25.0",
     "eslint-config-expo": "~10.0.0",

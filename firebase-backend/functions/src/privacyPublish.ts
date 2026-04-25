@@ -21,6 +21,7 @@
 
 import * as admin from "firebase-admin";
 import * as functions from "firebase-functions";
+import { secureCallableRuntime } from "./callableSecurity";
 
 // ---------------------------------------------------------------------------
 // Lazy Firestore / RTDB accessors
@@ -291,7 +292,7 @@ function validateTimestamp(ts: unknown): ts is number {
  *   - If privacy settings disable typing → no-op success
  *   - If feature not enabled → no-op success
  */
-export const publishTypingIndicator = functions.https.onCall(
+export const publishTypingIndicator = secureCallableRuntime().https.onCall(
   async (data, context) => {
     // 1. Auth
     if (!context.auth) {
@@ -399,7 +400,7 @@ export const publishTypingIndicator = functions.https.onCall(
  *   - Validates monotonic increase (new timestamp >= existing)
  *   - If privacy settings disable delivery receipts → no-op success
  */
-export const publishDeliveryReceipt = functions.https.onCall(
+export const publishDeliveryReceipt = secureCallableRuntime().https.onCall(
   async (data, context) => {
     // 1. Auth
     if (!context.auth) {
@@ -505,7 +506,7 @@ export const publishDeliveryReceipt = functions.https.onCall(
  *   - Always updates private lastSeenAtPrivate (for unread badge)
  *     regardless of public receipt setting
  */
-export const publishReadReceipt = functions.https.onCall(
+export const publishReadReceipt = secureCallableRuntime().https.onCall(
   async (data, context) => {
     // 1. Auth
     if (!context.auth) {
