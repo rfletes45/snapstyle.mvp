@@ -17,9 +17,9 @@ import {
   orderBy,
   query,
   Timestamp,
-  Unsubscribe,
   where,
 } from "firebase/firestore";
+import type { QueryConstraint, Unsubscribe } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 
 import {
@@ -114,6 +114,39 @@ interface ConversationSubscription {
 }
 
 const activeSubscriptions = new Map<string, ConversationSubscription>();
+
+/**
+ * Hard cap for live chat listeners.
+ *
+ * The chat screen gets history through SQLite + explicit pagination; the
+ * realtime listener only needs to keep the newest window warm. This cap is a
+ * safety net for first-open and stale-cursor cases where a broad
+ * `createdAt > cursor` listener would otherwise read a large message history.
+ */
+const LIVE_SUBSCRIPTION_LIMIT = 100;
+
+export interface ConversationSubscriptionQueryPlan {
+  orderField: "createdAt";
+  lowerBound: number | null;
+  limit: number;
+}
+
+export function getConversationSubscriptionQueryPlan(
+  lastSyncedAt: number | null | undefined,
+): ConversationSubscriptionQueryPlan {
+  const lowerBound =
+    typeof lastSyncedAt === "number" &&
+    Number.isFinite(lastSyncedAt) &&
+    lastSyncedAt > 0
+      ? lastSyncedAt
+      : null;
+
+  return {
+    orderField: "createdAt",
+    lowerBound,
+    limit: LIVE_SUBSCRIPTION_LIMIT,
+  };
+}
 
 function getSubscriptionKey(
   scope: "dm" | "group",
@@ -843,19 +876,19 @@ export async function syncOlderMessages(
       ? `Chats/${conversationId}/Messages`
       : `Groups/${conversationId}/Messages`;
 
-  // Use serverReceivedAt for pagination (consistent with subscriptions).
-  // Convert to Firestore Timestamp to handle docs stored with Timestamp type.
+  // Use createdAt for pagination (consistent with SQLite timeline ordering).
+  // Keep a Timestamp fallback for legacy docs stored with Timestamp values.
   // Firestore treats numbers and Timestamps as distinct types — using
-  // Timestamp.fromMillis ensures we match both representations.
+  // a separate Timestamp fallback.
   const beforeTs = Timestamp.fromMillis(beforeTimestamp);
 
-  // Try serverReceivedAt first (primary pagination field, consistent with
-  // messageList.ts subscriptions). Fall back to createdAt if no results
-  // (handles edge case of very old docs without serverReceivedAt).
+  // Try createdAt first (primary local pagination field, consistent with
+  // message repository ordering). Fall back to legacy timestamp/server fields
+  // if no results are found.
   let q = query(
     collection(firestore, collectionPath),
-    orderBy("serverReceivedAt", "desc"),
-    where("serverReceivedAt", "<", beforeTs),
+    orderBy("createdAt", "desc"),
+    where("createdAt", "<", beforeTimestamp),
     limit(messageLimit),
   );
 
@@ -867,30 +900,38 @@ export async function syncOlderMessages(
   try {
     let snapshot = await getDocs(q);
 
-    // Fallback: if serverReceivedAt returns nothing, try createdAt
-    // (covers legacy documents that may only have createdAt)
+    // Fallback: Timestamp-created legacy docs.
     if (snapshot.empty) {
       logger.info(
-        `[SyncEngine] syncOlderMessages: serverReceivedAt returned 0, trying createdAt fallback`,
+        `[SyncEngine] syncOlderMessages: createdAt number returned 0, trying Timestamp fallback`,
       );
-      const beforeCreatedTs = Timestamp.fromMillis(beforeTimestamp);
       q = query(
         collection(firestore, collectionPath),
         orderBy("createdAt", "desc"),
-        where("createdAt", "<", beforeCreatedTs),
+        where("createdAt", "<", beforeTs),
         limit(messageLimit),
       );
       snapshot = await getDocs(q);
 
-      // If still empty, also try with a raw number (in case docs store createdAt as a number)
+      // Final fallback: very old docs that only have serverReceivedAt.
       if (snapshot.empty) {
         q = query(
           collection(firestore, collectionPath),
-          orderBy("createdAt", "desc"),
-          where("createdAt", "<", beforeTimestamp),
+          orderBy("serverReceivedAt", "desc"),
+          where("serverReceivedAt", "<", beforeTs),
           limit(messageLimit),
         );
         snapshot = await getDocs(q);
+
+        if (snapshot.empty) {
+          q = query(
+            collection(firestore, collectionPath),
+            orderBy("serverReceivedAt", "desc"),
+            where("serverReceivedAt", "<", beforeTimestamp),
+            limit(messageLimit),
+          );
+          snapshot = await getDocs(q);
+        }
       }
     }
     let count = 0;
@@ -1192,18 +1233,31 @@ export function subscribeToConversation(
       ? `Chats/${conversationId}/Messages`
       : `Groups/${conversationId}/Messages`;
 
-  // Keep real-time cursoring on the same field used by full sync / pagination.
-  const orderField = "createdAt";
-
-  const q = query(
-    collection(firestore, collectionPath),
-    where(orderField, ">", lastSyncedAt),
-    orderBy(orderField, "asc"),
+  // Keep realtime bounded to the newest window. History is loaded by
+  // fullSyncConversation/syncOlderMessages, not by an unbounded listener.
+  const subscriptionPlan = getConversationSubscriptionQueryPlan(lastSyncedAt);
+  const constraints: QueryConstraint[] = [];
+  if (subscriptionPlan.lowerBound !== null) {
+    // Include the cursor timestamp itself so messages that share the same
+    // millisecond are not skipped; SQLite upserts make the duplicate harmless.
+    constraints.push(
+      where(subscriptionPlan.orderField, ">=", subscriptionPlan.lowerBound),
+    );
+  }
+  constraints.push(
+    orderBy(subscriptionPlan.orderField, "desc"),
+    limit(subscriptionPlan.limit),
   );
+
+  const q = query(collection(firestore, collectionPath), ...constraints);
+
+  let liveCursor = lastSyncedAt;
 
   const unsubscribe = onSnapshot(
     q,
     (snapshot) => {
+      let maxTimestampInSnapshot = liveCursor;
+
       snapshot.docChanges().forEach((change) => {
         if (change.type === "added" || change.type === "modified") {
           const data = change.doc.data();
@@ -1276,15 +1330,23 @@ export function subscribeToConversation(
 
           // Update sync cursor using the same field this subscription orders by.
           const timestamp = createdAtNum;
-          if (timestamp) {
-            db.runSync(
-              `INSERT OR REPLACE INTO sync_cursors (conversation_id, last_synced_at, last_sync_attempt)
-               VALUES (?, ?, ?)`,
-              [conversationId, timestamp, Date.now()],
-            );
+          if (timestamp && timestamp > maxTimestampInSnapshot) {
+            maxTimestampInSnapshot = timestamp;
           }
         }
       });
+
+      // The live listener is ordered descending, so the last processed change
+      // is not necessarily the newest. Commit the max timestamp once per
+      // snapshot to keep the cursor moving forward only.
+      if (maxTimestampInSnapshot > liveCursor) {
+        db.runSync(
+          `INSERT OR REPLACE INTO sync_cursors (conversation_id, last_synced_at, last_sync_attempt)
+           VALUES (?, ?, ?)`,
+          [conversationId, maxTimestampInSnapshot, Date.now()],
+        );
+        liveCursor = maxTimestampInSnapshot;
+      }
     },
     (error) => {
       logger.error("[SyncEngine] Subscription error:", error);

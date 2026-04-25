@@ -339,7 +339,20 @@ export function useLocalMessages(
     } finally {
       setIsLoading(false);
     }
-  }, [conversationId, scope, currentLimit, messageAnchor, updateStatusCounts]);
+  }, [
+    conversationId,
+    scope,
+    currentLimit,
+    initialLimit,
+    messageAnchor,
+    updateStatusCounts,
+  ]);
+
+  const loadMessagesRef = useRef(loadMessages);
+
+  useEffect(() => {
+    loadMessagesRef.current = loadMessages;
+  }, [loadMessages]);
 
   // Initial load + sync from Firestore
   useEffect(() => {
@@ -354,28 +367,15 @@ export function useLocalMessages(
     // (initialState already loaded synchronously)
     if (shouldShowLoadingOnBootstrap) {
       setIsLoading(true);
-      loadMessages();
+      loadMessagesRef.current();
     }
 
-    // Then sync from Firestore in background
-    if (!hasSyncedRef.current) {
-      hasSyncedRef.current = true;
-      fullSyncConversation(scope, conversationId, initialLimit)
-        .then((count) => {
-          logger.info(
-            `[useLocalMessages] Synced ${count} messages from server`,
-          );
-          // Reload after sync completes
-          loadMessages();
-        })
-        .catch((err) => {
-          logger.error("[useLocalMessages] Initial sync failed:", err);
-        });
-    }
+    let isCancelled = false;
+    let localUnsubscribe: (() => void) | null = null;
 
-    // Subscribe to real-time updates from Firestore
-    if (autoRefresh) {
-      unsubscribeRef.current = subscribeToConversation(
+    const attachRealtime = () => {
+      if (isCancelled || !autoRefresh || localUnsubscribe) return;
+      localUnsubscribe = subscribeToConversation(
         scope,
         conversationId,
         () => {
@@ -392,17 +392,47 @@ export function useLocalMessages(
           // window.
           if (isAnchoringRef.current) return;
           // Reload messages when new ones arrive from server
-          loadMessages();
+          loadMessagesRef.current();
         },
       );
-    } else {
-      unsubscribeRef.current = null;
-    }
+      unsubscribeRef.current = localUnsubscribe;
+    };
+
+    const bootstrap = async () => {
+      if (!hasSyncedRef.current) {
+        hasSyncedRef.current = true;
+        try {
+          const count = await fullSyncConversation(
+            scope,
+            conversationId,
+            initialLimit,
+          );
+          if (!isCancelled) {
+            logger.info(
+              `[useLocalMessages] Synced ${count} messages from server`,
+            );
+            // Reload after sync completes
+            loadMessagesRef.current();
+          }
+        } catch (err) {
+          logger.error("[useLocalMessages] Initial sync failed:", err);
+        }
+      }
+
+      attachRealtime();
+    };
+
+    void bootstrap();
 
     return () => {
-      if (unsubscribeRef.current) {
-        unsubscribeRef.current();
-        unsubscribeRef.current = null;
+      isCancelled = true;
+      const toCleanup = localUnsubscribe;
+      if (toCleanup) {
+        toCleanup();
+        if (unsubscribeRef.current === toCleanup) {
+          unsubscribeRef.current = null;
+        }
+        localUnsubscribe = null;
       }
     };
   }, [
@@ -410,7 +440,6 @@ export function useLocalMessages(
     scope,
     initialLimit,
     autoRefresh,
-    loadMessages,
     shouldShowLoadingOnBootstrap,
   ]);
 
@@ -564,13 +593,13 @@ export function useLocalMessages(
       ) {
         isSyncingOlderRef.current = true;
         isPaginatingRef.current = true;
-        // Use server_received_at for pagination cursor (consistent with Firestore ordering)
+        // Use created_at for pagination cursor (consistent with SQLite order).
         const oldest =
           currentWindow.messages.length > 0
             ? currentWindow.messages[currentWindow.messages.length - 1]
             : null;
         const oldestTimestamp =
-          oldest?.server_received_at || oldest?.created_at || Date.now();
+          oldest?.created_at || oldest?.server_received_at || Date.now();
 
         logger.info("[useLocalMessages] loadMore(anchor): syncing older", {
           oldestTimestamp,
@@ -659,13 +688,13 @@ export function useLocalMessages(
       // intermediate re-reads while the batch is being synced.
       isSyncingOlderRef.current = true;
       isPaginatingRef.current = true;
-      // Use server_received_at for pagination cursor (matches Firestore index)
+      // Use created_at for pagination cursor (matches local timeline order).
       const oldest =
         currentMessages.length > 0
           ? currentMessages[currentMessages.length - 1]
           : null;
       const oldestTimestamp =
-        oldest?.server_received_at || oldest?.created_at || Date.now();
+        oldest?.created_at || oldest?.server_received_at || Date.now();
 
       logger.info("[useLocalMessages] loadMore: syncing older from Firestore", {
         currentLimit,

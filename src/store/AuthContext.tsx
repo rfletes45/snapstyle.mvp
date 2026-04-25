@@ -44,6 +44,35 @@ import {
 } from "@/utils/startupTrace";
 const logger = createLogger("store/AuthContext");
 
+async function cleanupChatRuntimeForAuthTransition(
+  reason: string,
+): Promise<void> {
+  try {
+    const [
+      { clearProfileCache },
+      { clearAllPaginationCursors },
+      { clearSignedMediaCache },
+      { stopBackgroundSync, unsubscribeAll },
+    ] = await Promise.all([
+      import("@/services/cache/profileCache"),
+      import("@/services/messageList"),
+      import("@/services/messaging/signedMediaCache"),
+      import("@/services/sync/syncEngine"),
+    ]);
+
+    unsubscribeAll();
+    stopBackgroundSync();
+    clearAllPaginationCursors();
+    clearSignedMediaCache();
+    clearProfileCache();
+    logger.info("[AuthContext] Cleaned chat runtime state", {
+      data: { reason },
+    });
+  } catch (error) {
+    logger.warn("[AuthContext] Failed to clean chat runtime state:", error);
+  }
+}
+
 const HANDLED_NOTIFICATION_RESPONSES_KEY =
   "@vibe/handled_notification_responses_v1";
 const HANDLED_NOTIFICATION_RESPONSE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -597,6 +626,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             pendingAuthNullTimerRef.current = setTimeout(() => {
               pendingAuthNullTimerRef.current = null;
               currentUserIdRef.current = null;
+              void cleanupChatRuntimeForAuthTransition("auth_null_committed");
               logStartupEvent("Auth null transition committed", {
                 previousUid,
                 graceMs: TRANSIENT_AUTH_NULL_GRACE_MS,
@@ -611,6 +641,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setLoading(false);
             setIsHydrated(true);
             return;
+          }
+
+          if (previousUid && previousUid !== nextUid) {
+            void cleanupChatRuntimeForAuthTransition(
+              nextUid ? "account_switch" : "logout",
+            );
           }
 
           currentUserIdRef.current = nextUid;
