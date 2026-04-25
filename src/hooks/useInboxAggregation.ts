@@ -36,11 +36,13 @@ import {
 } from "@/services/chat/groupWallpaperDebug";
 import {
   applyOptimisticInboxUpdate,
+  getPersistedLocalInboxUpdates,
   subscribeToOptimisticInboxUpdates,
   type OptimisticInboxUpdate,
 } from "@/services/chat/inboxOptimisticUpdates";
 import {
   getDefaultMemberState,
+  normalizeInboxTimestamp,
   normalizeConversationFromInboxEntry,
   RECENTLY_READ_TTL_MS,
   sortInboxConversations,
@@ -48,6 +50,7 @@ import {
 import { isDMVisible } from "@/services/chatMembers";
 import { getFirestoreInstance } from "@/services/firebase";
 import { isGroupVisible } from "@/services/groupMembers";
+import { subscribeSyncState } from "@/services/sync/syncEngine";
 import {
   InboxConversation,
   InboxEntry,
@@ -163,16 +166,9 @@ export interface UseInboxAggregationResult {
 
 function toMillisLike(value: unknown): number | null {
   if (value === null || value === undefined) return null;
-  if (typeof value === "number") return value;
-  if (
-    typeof value === "object" &&
-    value &&
-    "toMillis" in value &&
-    typeof (value as { toMillis?: unknown }).toMillis === "function"
-  ) {
-    return (value as { toMillis: () => number }).toMillis();
-  }
-  return null;
+  return normalizeInboxTimestamp(
+    value as Parameters<typeof normalizeInboxTimestamp>[0],
+  );
 }
 
 /**
@@ -285,6 +281,7 @@ export function useInboxAggregation(uid: string): UseInboxAggregationResult {
   const optimisticActivityRef = useRef<Map<string, OptimisticInboxUpdate>>(
     new Map(),
   );
+  const persistedActivityKeysRef = useRef<Set<string>>(new Set());
   // Keep the expensive shadow aggregation path opt-in. The active production
   // path is controlled by CHAT_INBOX_AGGREGATION; PERF can temporarily enable
   // it for diagnostics when fan-out is active.
@@ -315,6 +312,7 @@ export function useInboxAggregation(uid: string): UseInboxAggregationResult {
   const pruneOptimisticActivity = useCallback(() => {
     const now = Date.now();
     for (const [key, update] of optimisticActivityRef.current) {
+      if (update.persisted) continue;
       if (now - update.timestamp > OPTIMISTIC_ACTIVITY_TTL_MS) {
         optimisticActivityRef.current.delete(key);
       }
@@ -337,6 +335,33 @@ export function useInboxAggregation(uid: string): UseInboxAggregationResult {
     },
     [pruneOptimisticActivity, uid],
   );
+
+  const refreshPersistedLocalActivity = useCallback(() => {
+    if (!uid || !enabled) return;
+
+    for (const key of persistedActivityKeysRef.current) {
+      optimisticActivityRef.current.delete(key);
+    }
+
+    const nextKeys = new Set<string>();
+    for (const update of getPersistedLocalInboxUpdates()) {
+      const key = `${update.scope}:${update.conversationId}`;
+      nextKeys.add(key);
+      optimisticActivityRef.current.set(key, update);
+    }
+    persistedActivityKeysRef.current = nextKeys;
+    pruneOptimisticActivity();
+
+    setEntries((prev) => sortInboxConversations(applyOptimisticActivity(prev)));
+  }, [applyOptimisticActivity, enabled, pruneOptimisticActivity, uid]);
+
+  useEffect(() => {
+    if (!uid || !enabled) return;
+    refreshPersistedLocalActivity();
+    return subscribeSyncState(() => {
+      refreshPersistedLocalActivity();
+    });
+  }, [enabled, refreshPersistedLocalActivity, uid]);
 
   useEffect(() => {
     if (!uid || !enabled) return;

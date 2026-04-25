@@ -12,6 +12,7 @@
  */
 
 import { ProfilePictureWithDecoration } from "@/components/profile/ProfilePicture";
+import { ButtonCornerBadge } from "@/components/ui/ButtonCornerBadge";
 import { Spacing } from "@/constants/theme";
 import { useAppTheme } from "@/store/ThemeContext";
 import { useUser } from "@/store/UserContext";
@@ -163,16 +164,19 @@ export const InboxHeader = React.memo(function InboxHeader({
             containerColor={iconBtnBg}
             size={24}
             onPress={handleFriendsPress}
-            accessibilityLabel="Friends"
+            accessibilityLabel={
+              pendingFriendRequestCount > 0
+                ? "Friends, pending friend requests"
+                : "Friends"
+            }
             style={styles.headerBtn}
           />
-          {pendingFriendRequestCount > 0 && (
-            <View
-              style={[styles.friendsBadge, { backgroundColor: colors.error }]}
-            >
-              <Text style={styles.friendsBadgeText}>!</Text>
-            </View>
-          )}
+          <ButtonCornerBadge
+            visible={pendingFriendRequestCount > 0}
+            badgeColor={colors.error}
+            borderColor={colors.background}
+            accessibilityLabel="Pending friend requests"
+          />
         </View>
       </View>
     </View>
@@ -218,23 +222,7 @@ const styles = StyleSheet.create({
   },
   friendsBtnWrapper: {
     position: "relative",
-  },
-  friendsBadge: {
-    position: "absolute",
-    top: 2,
-    right: 2,
-    minWidth: 16,
-    height: 16,
-    borderRadius: 8,
-    justifyContent: "center",
-    alignItems: "center",
-    paddingHorizontal: 2,
-  },
-  friendsBadgeText: {
-    color: "#fff",
-    fontSize: 9,
-    fontWeight: "800",
-    lineHeight: 14,
+    overflow: "visible",
   },
   titleOverlay: {
     position: "absolute",

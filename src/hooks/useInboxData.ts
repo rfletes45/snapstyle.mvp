@@ -26,18 +26,21 @@ import {
 } from "@/services/chat/groupBackgroundState";
 import {
   applyOptimisticInboxUpdate,
+  getPersistedLocalInboxUpdates,
   subscribeToOptimisticInboxUpdates,
   type OptimisticInboxUpdate,
 } from "@/services/chat/inboxOptimisticUpdates";
 import { compareInboxParity } from "@/services/chat/inboxParityTelemetry";
 import {
   getDefaultMemberState,
+  normalizeInboxTimestamp,
   RECENTLY_READ_TTL_MS,
   sortInboxConversations,
 } from "@/services/chat/normalizeInboxRow";
 import { isDMVisible } from "@/services/chatMembers";
 import { getFirestoreInstance } from "@/services/firebase";
 import { isGroupVisible } from "@/services/groupMembers";
+import { subscribeSyncState } from "@/services/sync/syncEngine";
 import { InboxConversation, MemberStatePrivate } from "@/types/messaging";
 import { createLogger, isDebugEnabled } from "@/utils/log";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -47,7 +50,6 @@ import {
   getDoc,
   onSnapshot,
   query,
-  Timestamp,
   where,
 } from "firebase/firestore";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -255,15 +257,7 @@ async function batchFetchUserProfiles(
 // Helpers
 // =============================================================================
 
-/**
- * Convert Firestore timestamp to milliseconds
- */
-function toMillis(value: unknown): number {
-  if (!value) return 0;
-  if (value instanceof Timestamp) return value.toMillis();
-  if (typeof value === "number") return value;
-  return 0;
-}
+const toMillis = normalizeInboxTimestamp;
 
 // =============================================================================
 // Hook Implementation
@@ -358,12 +352,14 @@ export function useInboxData(uid: string): UseInboxDataResult {
   const optimisticActivityRef = useRef<Map<string, OptimisticInboxUpdate>>(
     new Map(),
   );
+  const persistedActivityKeysRef = useRef<Set<string>>(new Set());
 
   // ── Commit functions ──────────────────────────────────────────────────
 
   const pruneOptimisticActivity = useCallback(() => {
     const now = Date.now();
     for (const [key, update] of optimisticActivityRef.current) {
+      if (update.persisted) continue;
       if (now - update.timestamp > OPTIMISTIC_ACTIVITY_TTL_MS) {
         optimisticActivityRef.current.delete(key);
       }
@@ -386,6 +382,41 @@ export function useInboxData(uid: string): UseInboxDataResult {
     },
     [pruneOptimisticActivity, uid],
   );
+
+  const refreshPersistedLocalActivity = useCallback(() => {
+    if (useAggregatedInbox || !uid) return;
+
+    for (const key of persistedActivityKeysRef.current) {
+      optimisticActivityRef.current.delete(key);
+    }
+
+    const nextKeys = new Set<string>();
+    for (const update of getPersistedLocalInboxUpdates()) {
+      const key = `${update.scope}:${update.conversationId}`;
+      nextKeys.add(key);
+      optimisticActivityRef.current.set(key, update);
+    }
+    persistedActivityKeysRef.current = nextKeys;
+    pruneOptimisticActivity();
+
+    dmStagedRef.current = applyOptimisticActivity(dmStagedRef.current);
+    groupStagedRef.current = applyOptimisticActivity(groupStagedRef.current);
+    setDmConversations((prev) => applyOptimisticActivity(prev));
+    setGroupConversations((prev) => applyOptimisticActivity(prev));
+  }, [
+    applyOptimisticActivity,
+    pruneOptimisticActivity,
+    uid,
+    useAggregatedInbox,
+  ]);
+
+  useEffect(() => {
+    if (useAggregatedInbox || !uid) return;
+    refreshPersistedLocalActivity();
+    return subscribeSyncState(() => {
+      refreshPersistedLocalActivity();
+    });
+  }, [refreshPersistedLocalActivity, uid, useAggregatedInbox]);
 
   /**
    * Push staged DM + Group data to state in a single synchronous call.

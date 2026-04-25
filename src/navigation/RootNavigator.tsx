@@ -7,13 +7,15 @@ import {
 } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import React, { useCallback, useEffect, useMemo, useRef } from "react";
-import { Linking, StyleSheet } from "react-native";
+import { Linking, StyleSheet, View } from "react-native";
 
 import type { HydrationState } from "@/components/AppGate";
 import AppGate from "@/components/AppGate";
 import ErrorBoundary from "@/components/ErrorBoundary";
+import { ButtonCornerBadge } from "@/components/ui/ButtonCornerBadge";
 import WarningModal from "@/components/WarningModal";
 import { ComposerSheetProvider } from "@/contexts/ComposerSheetContext";
+import { useUnreadMessagesBadgeCount } from "@/hooks/useUnreadMessagesBadgeCount";
 import { parseInviteUrl } from "@/services/invites";
 import { clearLastOpenChat, getLastOpenChat } from "@/services/lastOpenChat";
 import {
@@ -21,6 +23,7 @@ import {
   navigate as navigateExternal,
   navigationRef,
 } from "@/services/navigationRef";
+import { useAuth } from "@/store/AuthContext";
 import { useInAppNotifications } from "@/store/InAppNotificationsContext";
 import { useAppTheme } from "@/store/ThemeContext";
 import { useUser } from "@/store/UserContext";
@@ -78,10 +81,6 @@ import ShopHubScreen from "@/screens/shop/ShopHubScreen";
 import TasksScreen from "@/screens/tasks/TasksScreen";
 import WalletScreen from "@/screens/wallet/WalletScreen";
 
-import CosmeticsShopScreen from "@/screens/shop/CosmeticsShopScreen";
-import PremiumShopScreen from "@/screens/shop/PremiumShopScreen";
-import PurchaseHistoryScreen from "@/screens/shop/PurchaseHistoryScreen";
-
 import GroupChatCreateScreen from "@/screens/groups/GroupChatCreateScreen";
 import GroupChatInfoScreen from "@/screens/groups/GroupChatInfoScreen";
 import GroupChatScreen from "@/screens/groups/GroupChatScreen";
@@ -137,6 +136,13 @@ const MainStack_Nav = createNativeStackNavigator<MainStackParamList>();
 const ProfileSetupStack_Nav =
   createNativeStackNavigator<ProfileSetupStackParamList>();
 const Tab = createBottomTabNavigator<AppTabsParamList>();
+
+const styles = StyleSheet.create({
+  tabIconWrapper: {
+    position: "relative",
+    overflow: "visible",
+  },
+});
 
 function AuthStack() {
   const { colors } = useAppTheme();
@@ -307,6 +313,11 @@ function ProfileStack() {
  */
 function AppTabs() {
   const { colors } = useAppTheme();
+  const { currentFirebaseUser } = useAuth();
+  const unreadMessagesCount = useUnreadMessagesBadgeCount(
+    currentFirebaseUser?.uid,
+  );
+  const hasUnreadMessages = unreadMessagesCount > 0;
   type MaterialCommunityIconName = React.ComponentProps<
     typeof MaterialCommunityIcons
   >["name"];
@@ -319,11 +330,13 @@ function AppTabs() {
     height: 110,
     paddingTop: 10,
     paddingBottom: 28,
+    overflow: "visible" as const,
   };
 
   const tabBarItemStyle = {
     paddingTop: 8,
     paddingBottom: 4,
+    overflow: "visible" as const,
   };
 
   return (
@@ -363,7 +376,21 @@ function AppTabs() {
           }
 
           return (
-            <MaterialCommunityIcons name={iconName} size={size} color={color} />
+            <View style={styles.tabIconWrapper}>
+              <MaterialCommunityIcons
+                name={iconName}
+                size={size}
+                color={color}
+              />
+              {route.name === "Messages" && (
+                <ButtonCornerBadge
+                  visible={hasUnreadMessages}
+                  badgeColor={colors.error}
+                  borderColor={colors.background}
+                  accessibilityLabel="Unread messages"
+                />
+              )}
+            </View>
           );
         },
       })}
@@ -628,19 +655,12 @@ function MainStack() {
         options={{ headerShown: false }}
       />
 
+      {/* Unified Shop — also reachable from MainStack so cross-stack
+          navigation (e.g. from Customization) works without going through
+          the Profile tab. The canonical location is ProfileStack > Shop. */}
       <MainStack_Nav.Screen
-        name="CosmeticsShop"
-        component={CosmeticsShopScreen}
-        options={{ headerShown: false }}
-      />
-      <MainStack_Nav.Screen
-        name="PremiumShop"
-        component={PremiumShopScreen}
-        options={{ headerShown: false }}
-      />
-      <MainStack_Nav.Screen
-        name="PurchaseHistory"
-        component={PurchaseHistoryScreen}
+        name="Shop"
+        component={ShopHubScreen}
         options={{ headerShown: false }}
       />
 

@@ -10,6 +10,59 @@ const log = createLogger("normalizeInboxRow");
 export const UNREAD_TOLERANCE_MS = 5000;
 export const RECENTLY_READ_TTL_MS = 30000;
 
+export type InboxSortTimestampInput =
+  | number
+  | string
+  | Date
+  | {
+      toMillis?: () => number;
+      seconds?: number;
+      nanoseconds?: number;
+    }
+  | null
+  | undefined;
+
+export function normalizeInboxTimestamp(
+  value: InboxSortTimestampInput,
+): number {
+  if (value === null || value === undefined) return 0;
+
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : 0;
+  }
+
+  if (value instanceof Date) {
+    const millis = value.getTime();
+    return Number.isFinite(millis) ? millis : 0;
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return 0;
+
+    const numeric = Number(trimmed);
+    if (Number.isFinite(numeric)) return numeric;
+
+    const parsed = Date.parse(trimmed);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  if (typeof value.toMillis === "function") {
+    const millis = value.toMillis();
+    return Number.isFinite(millis) ? millis : 0;
+  }
+
+  if (typeof value.seconds === "number") {
+    const seconds = value.seconds;
+    const nanos =
+      typeof value.nanoseconds === "number" ? value.nanoseconds : 0;
+    const millis = seconds * 1000 + Math.floor(nanos / 1_000_000);
+    return Number.isFinite(millis) ? millis : 0;
+  }
+
+  return 0;
+}
+
 export function getDefaultMemberState(uid: string): MemberStatePrivate {
   return {
     uid,
@@ -120,8 +173,8 @@ export interface NormalizeConversationInput {
   lastMessageText?: string | null;
   lastMessageSenderName?: string;
   lastMessageKind?: string;
-  lastActivityAt?: number;
-  createdAt?: number;
+  lastActivityAt?: InboxSortTimestampInput;
+  createdAt?: InboxSortTimestampInput;
   memberState: MemberStatePrivate;
   recentlyReadAt?: number;
   unreadHintCount?: number;
@@ -148,8 +201,8 @@ export function normalizeConversationRow(
     lastMessageText,
     lastMessageSenderName,
     lastMessageKind,
-    lastActivityAt = 0,
-    createdAt = lastActivityAt || 0,
+    lastActivityAt,
+    createdAt,
     memberState,
     recentlyReadAt,
     unreadHintCount,
@@ -157,8 +210,12 @@ export function normalizeConversationRow(
     currentUserId,
   } = input;
 
+  const normalizedLastActivityAt = normalizeInboxTimestamp(lastActivityAt);
+  const normalizedCreatedAt =
+    normalizeInboxTimestamp(createdAt) || normalizedLastActivityAt;
+
   const unreadCount = computeUnreadCount({
-    lastActivityAt,
+    lastActivityAt: normalizedLastActivityAt,
     memberState,
     recentlyReadAt,
     unreadHintCount,
@@ -187,14 +244,15 @@ export function normalizeConversationRow(
       ? {
           text: lastMessageText,
           senderName: lastMessageSenderName || "",
-          timestamp: lastActivityAt,
+          timestamp: normalizedLastActivityAt,
           type: mapMessageKindToPreviewType(lastMessageKind),
         }
       : null,
     memberState,
     unreadCount,
     hasMentions: false,
-    createdAt,
+    createdAt: normalizedCreatedAt,
+    lastActivityAt: normalizedLastActivityAt,
     participantCount,
   };
 }
@@ -206,8 +264,9 @@ export function normalizeConversationFromInboxEntry(
   currentUserId?: string,
 ): InboxConversation {
   const isDm = entry.scope === "dm";
-  const lastActivityAt =
-    typeof entry.lastActivityAt === "number" ? entry.lastActivityAt : 0;
+  const lastActivityAt = normalizeInboxTimestamp(
+    entry.lastActivityAt as InboxSortTimestampInput,
+  );
 
   return normalizeConversationRow({
     id: entry.conversationId,
@@ -233,33 +292,98 @@ export function normalizeConversationFromInboxEntry(
 }
 
 /**
+ * Normalized sort fields for the inbox comparator.
+ */
+export interface ConversationSortFields {
+  archived: boolean;
+  hidden: boolean;
+  pinnedAt: number;
+  lastActivityAt: number;
+  createdAt: number;
+  tieBreaker: string;
+}
+
+export function normalizeConversationSortFields(
+  conversation: InboxConversation,
+): ConversationSortFields {
+  const memberState = conversation.memberState ?? getDefaultMemberState("");
+  const explicitActivityAt = normalizeInboxTimestamp(
+    (conversation as InboxConversation & { lastActivityAt?: unknown })
+      .lastActivityAt as InboxSortTimestampInput,
+  );
+  const lastMessageAt = normalizeInboxTimestamp(
+    conversation.lastMessage?.timestamp,
+  );
+  const createdAt = normalizeInboxTimestamp(conversation.createdAt);
+  const lastActivityAt = explicitActivityAt || lastMessageAt || createdAt;
+
+  return {
+    archived: !!memberState.archived,
+    hidden: !!(memberState.deletedAt && memberState.hiddenUntilNewMessage),
+    pinnedAt: normalizeInboxTimestamp(memberState.pinnedAt),
+    lastActivityAt,
+    createdAt,
+    tieBreaker: `${conversation.type}:${conversation.id}`,
+  };
+}
+
+export interface ConversationSortRank extends ConversationSortFields {
+  visibilityRank: number;
+  pinnedRank: number;
+}
+
+export function getConversationSortRank(
+  conversation: InboxConversation,
+): ConversationSortRank {
+  const fields = normalizeConversationSortFields(conversation);
+  return {
+    ...fields,
+    visibilityRank: fields.archived || fields.hidden ? 1 : 0,
+    pinnedRank: fields.pinnedAt > 0 ? 0 : 1,
+  };
+}
+
+export function compareConversationsForInbox(
+  a: InboxConversation,
+  b: InboxConversation,
+): number {
+  const aRank = getConversationSortRank(a);
+  const bRank = getConversationSortRank(b);
+
+  if (aRank.visibilityRank !== bRank.visibilityRank) {
+    return aRank.visibilityRank - bRank.visibilityRank;
+  }
+
+  if (aRank.pinnedRank !== bRank.pinnedRank) {
+    return aRank.pinnedRank - bRank.pinnedRank;
+  }
+
+  if (aRank.pinnedRank === 0 && aRank.pinnedAt !== bRank.pinnedAt) {
+    return bRank.pinnedAt - aRank.pinnedAt;
+  }
+
+  if (aRank.lastActivityAt !== bRank.lastActivityAt) {
+    return bRank.lastActivityAt - aRank.lastActivityAt;
+  }
+
+  if (aRank.createdAt !== bRank.createdAt) {
+    return bRank.createdAt - aRank.createdAt;
+  }
+
+  return aRank.tieBreaker.localeCompare(bRank.tieBreaker);
+}
+
+/**
  * Sort conversations with deterministic, stable ordering.
  *
  * Order:
- *  1. Pinned conversations first (most-recently-pinned on top).
- *  2. Non-pinned sorted by most-recent activity (lastMessage or createdAt).
- *  3. Tie-break by conversation ID for full determinism.
- *
- * The sort key for each conversation is computed from fields that are set
- * once during normalization and never change until the next snapshot, so
- * the order is stable across re-renders as long as the underlying data
- * has not changed.
+ *  1. Visible conversations before archived/hidden rows when mixed.
+ *  2. Pinned conversations first (most-recently-pinned on top).
+ *  3. Non-pinned sorted by canonical last activity.
+ *  4. Tie-break by type + conversation ID for full determinism.
  */
 export function sortInboxConversations(
   conversations: InboxConversation[],
 ): InboxConversation[] {
-  return [...conversations].sort((a, b) => {
-    const aPinned = a.memberState.pinnedAt ?? 0;
-    const bPinned = b.memberState.pinnedAt ?? 0;
-
-    if (aPinned && bPinned) return bPinned - aPinned;
-    if (aPinned && !bPinned) return -1;
-    if (!aPinned && bPinned) return 1;
-
-    const aTime = a.lastMessage?.timestamp ?? a.createdAt ?? 0;
-    const bTime = b.lastMessage?.timestamp ?? b.createdAt ?? 0;
-    if (aTime !== bTime) return bTime - aTime;
-
-    return a.id.localeCompare(b.id);
-  });
+  return [...conversations].sort(compareConversationsForInbox);
 }

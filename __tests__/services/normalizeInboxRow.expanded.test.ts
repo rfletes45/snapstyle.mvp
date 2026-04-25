@@ -16,11 +16,15 @@
  */
 
 import {
+  compareConversationsForInbox,
   computeUnreadCount,
+  getConversationSortRank,
   getDefaultMemberState,
   mapMessageKindToPreviewType,
+  normalizeConversationSortFields,
   normalizeConversationFromInboxEntry,
   normalizeConversationRow,
+  normalizeInboxTimestamp,
   RECENTLY_READ_TTL_MS,
   sortInboxConversations,
   UNREAD_TOLERANCE_MS,
@@ -485,6 +489,26 @@ describe("normalizeConversationFromInboxEntry", () => {
 // sortInboxConversations — expanded
 // =============================================================================
 
+describe("normalizeInboxTimestamp", () => {
+  it("normalizes supported timestamp shapes", () => {
+    expect(normalizeInboxTimestamp(1234)).toBe(1234);
+    expect(normalizeInboxTimestamp("1234")).toBe(1234);
+    expect(normalizeInboxTimestamp(new Date(2000))).toBe(2000);
+    expect(normalizeInboxTimestamp({ toMillis: () => 4567 })).toBe(4567);
+    expect(
+      normalizeInboxTimestamp({ seconds: 2, nanoseconds: 500_000_000 }),
+    ).toBe(2500);
+  });
+
+  it("returns zero for invalid or missing timestamps", () => {
+    expect(normalizeInboxTimestamp(null)).toBe(0);
+    expect(normalizeInboxTimestamp(undefined)).toBe(0);
+    expect(normalizeInboxTimestamp(Number.NaN)).toBe(0);
+    expect(normalizeInboxTimestamp("not-a-date")).toBe(0);
+    expect(normalizeInboxTimestamp(new Date("bad"))).toBe(0);
+  });
+});
+
 describe("sortInboxConversations", () => {
   const mkConvo = (overrides: Partial<InboxConversation>): InboxConversation =>
     ({
@@ -535,6 +559,35 @@ describe("sortInboxConversations", () => {
     expect(list.map((c) => c.id)).toEqual(["pinned", "unpinned"]);
   });
 
+  it("keeps visible conversations ahead of archived or hidden rows when mixed", () => {
+    const list = sortInboxConversations([
+      mkConvo({
+        id: "archived-newer",
+        lastActivityAt: 9_000,
+        memberState: {
+          ...getDefaultMemberState("u"),
+          archived: true,
+        },
+      }),
+      mkConvo({
+        id: "hidden-newer",
+        lastActivityAt: 8_000,
+        memberState: {
+          ...getDefaultMemberState("u"),
+          deletedAt: 7_000,
+          hiddenUntilNewMessage: true,
+        },
+      }),
+      mkConvo({ id: "visible-older", lastActivityAt: 1_000 }),
+    ]);
+
+    expect(list.map((c) => c.id)).toEqual([
+      "visible-older",
+      "archived-newer",
+      "hidden-newer",
+    ]);
+  });
+
   it("tie-breaks equal timestamps by localeCompare on id", () => {
     const list = sortInboxConversations([
       mkConvo({ id: "zebra", createdAt: 1_000 }),
@@ -569,6 +622,90 @@ describe("sortInboxConversations", () => {
       "old-created-but-recent-msg",
       "new-created-no-msg",
     ]);
+  });
+
+  it("uses explicit lastActivityAt as the canonical activity timestamp", () => {
+    const list = sortInboxConversations([
+      mkConvo({
+        id: "server-preview",
+        createdAt: 100,
+        lastMessage: {
+          text: "older display timestamp",
+          senderName: "",
+          timestamp: 200,
+          type: "text",
+        },
+        lastActivityAt: 9_000,
+      }),
+      mkConvo({ id: "created-only", createdAt: 5_000 }),
+    ]);
+    expect(list.map((c) => c.id)).toEqual([
+      "server-preview",
+      "created-only",
+    ]);
+  });
+
+  it("does not let unread count override recency", () => {
+    const list = sortInboxConversations([
+      mkConvo({ id: "old-unread", createdAt: 100, unreadCount: 99 }),
+      mkConvo({ id: "new-read", createdAt: 500, unreadCount: 0 }),
+    ]);
+    expect(list.map((c) => c.id)).toEqual(["new-read", "old-unread"]);
+  });
+
+  it("sorts pending local activity by attempted send time", () => {
+    const list = sortInboxConversations([
+      mkConvo({ id: "older", lastActivityAt: 1_000 }),
+      mkConvo({ id: "pending-send", lastActivityAt: 3_000 }),
+    ]);
+    expect(list.map((c) => c.id)).toEqual(["pending-send", "older"]);
+  });
+
+  it("ignores retry/update timestamps that are not canonical activity", () => {
+    const retried = mkConvo({
+      id: "retried",
+      lastActivityAt: 1_000,
+    }) as InboxConversation & { updatedAt: number };
+    retried.updatedAt = 9_000;
+
+    const list = sortInboxConversations([
+      retried,
+      mkConvo({ id: "newer-attempt", lastActivityAt: 2_000 }),
+    ]);
+    expect(list.map((c) => c.id)).toEqual(["newer-attempt", "retried"]);
+  });
+
+  it("keeps failed local messages ordered by original attempted time", () => {
+    const list = sortInboxConversations([
+      mkConvo({ id: "failed-old", lastActivityAt: 1_000 }),
+      mkConvo({ id: "normal-new", lastActivityAt: 2_000 }),
+    ]);
+    expect(list.map((c) => c.id)).toEqual(["normal-new", "failed-old"]);
+  });
+
+  it("exposes normalized sort fields and ranks", () => {
+    const conversation = mkConvo({
+      id: "ranked",
+      createdAt: "2026-04-24T00:00:00.000Z" as any,
+      memberState: {
+        ...getDefaultMemberState("u"),
+        pinnedAt: { toMillis: () => 5_000 } as any,
+      },
+    });
+
+    const fields = normalizeConversationSortFields(conversation);
+    const rank = getConversationSortRank(conversation);
+
+    expect(fields.createdAt).toBe(Date.parse("2026-04-24T00:00:00.000Z"));
+    expect(rank.pinnedRank).toBe(0);
+    expect(rank.pinnedAt).toBe(5_000);
+  });
+
+  it("compareConversationsForInbox is stable for tied timestamps", () => {
+    const a = mkConvo({ id: "a", type: "dm", lastActivityAt: 1_000 });
+    const b = mkConvo({ id: "b", type: "dm", lastActivityAt: 1_000 });
+    expect(compareConversationsForInbox(a, b)).toBeLessThan(0);
+    expect(compareConversationsForInbox(b, a)).toBeGreaterThan(0);
   });
 
   it("does not mutate the original array", () => {

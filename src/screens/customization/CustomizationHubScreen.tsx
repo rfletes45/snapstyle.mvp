@@ -1034,7 +1034,7 @@ export default function CustomizationHubScreen({
         renderRight={() => (
           <View style={styles.headerActions}>
             <Pressable
-              onPress={() => navigation.navigate("CosmeticsShop" as any)}
+              onPress={() => navigation.navigate("Shop" as any)}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               accessibilityLabel="Open shop"
               accessibilityRole="button"
@@ -1258,7 +1258,7 @@ export default function CustomizationHubScreen({
                 No bubble colors owned yet.
               </Text>
               <Pressable
-                onPress={() => navigation.navigate("CosmeticsShop" as any)}
+                onPress={() => navigation.navigate("Shop" as any)}
                 style={[
                   styles.goToShopButton,
                   { backgroundColor: colors.primary },
@@ -1297,7 +1297,7 @@ export default function CustomizationHubScreen({
           )}
           {/* Shop upsell */}
           <Pressable
-            onPress={() => navigation.navigate("CosmeticsShop" as any)}
+            onPress={() => navigation.navigate("Shop" as any)}
             style={[
               styles.themeShopHint,
               { backgroundColor: colors.surfaceVariant },
@@ -1346,7 +1346,7 @@ export default function CustomizationHubScreen({
                 No fonts owned yet.
               </Text>
               <Pressable
-                onPress={() => navigation.navigate("CosmeticsShop" as any)}
+                onPress={() => navigation.navigate("Shop" as any)}
                 style={[
                   styles.goToShopButton,
                   { backgroundColor: colors.primary },
@@ -1385,7 +1385,7 @@ export default function CustomizationHubScreen({
           )}
           {/* Shop upsell */}
           <Pressable
-            onPress={() => navigation.navigate("CosmeticsShop" as any)}
+            onPress={() => navigation.navigate("Shop" as any)}
             style={[
               styles.themeShopHint,
               { backgroundColor: colors.surfaceVariant },
@@ -1518,7 +1518,7 @@ export default function CustomizationHubScreen({
                 No custom font colors owned yet.
               </Text>
               <Pressable
-                onPress={() => navigation.navigate("CosmeticsShop" as any)}
+                onPress={() => navigation.navigate("Shop" as any)}
                 style={[
                   styles.goToShopButton,
                   { backgroundColor: colors.primary },
@@ -1531,7 +1531,7 @@ export default function CustomizationHubScreen({
           )}
           {/* Shop upsell */}
           <Pressable
-            onPress={() => navigation.navigate("CosmeticsShop" as any)}
+            onPress={() => navigation.navigate("Shop" as any)}
             style={[
               styles.themeShopHint,
               { backgroundColor: colors.surfaceVariant },
@@ -1577,7 +1577,7 @@ export default function CustomizationHubScreen({
                 No animal themes owned yet.
               </Text>
               <Pressable
-                onPress={() => navigation.navigate("CosmeticsShop" as any)}
+                onPress={() => navigation.navigate("Shop" as any)}
                 style={[
                   styles.goToShopButton,
                   { backgroundColor: colors.primary },
@@ -1620,7 +1620,7 @@ export default function CustomizationHubScreen({
               )}
               {/* Shop upsell */}
               <Pressable
-                onPress={() => navigation.navigate("CosmeticsShop" as any)}
+                onPress={() => navigation.navigate("Shop" as any)}
                 style={[
                   styles.themeShopHint,
                   { backgroundColor: colors.surfaceVariant },
@@ -1676,7 +1676,7 @@ export default function CustomizationHubScreen({
           )}
           {/* Shop upsell for premium themes */}
           <Pressable
-            onPress={() => navigation.navigate("CosmeticsShop" as any)}
+            onPress={() => navigation.navigate("Shop" as any)}
             style={[
               styles.themeShopHint,
               { backgroundColor: colors.surfaceVariant },
@@ -1738,7 +1738,7 @@ export default function CustomizationHubScreen({
                 </Text>
               ) : (
                 <Pressable
-                  onPress={() => navigation.navigate("CosmeticsShop" as any)}
+                  onPress={() => navigation.navigate("Shop" as any)}
                   style={[
                     styles.goToShopButton,
                     { backgroundColor: colors.primary },

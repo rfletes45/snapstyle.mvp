@@ -119,9 +119,8 @@ export type MainStackParamList = {
     | { userId: string; targetUserId: string }
     | { userId: string }
     | undefined;
-  PremiumShop: { initialTab?: string } | undefined;
-  PurchaseHistory: undefined;
-  CosmeticsShop: undefined;
+  /** Unified Shop (also registered in ProfileTabStack as canonical location). */
+  Shop: undefined;
   Customization:
     | { initialTab?: string; initialSection?: "profile" | "chat" }
     | undefined;

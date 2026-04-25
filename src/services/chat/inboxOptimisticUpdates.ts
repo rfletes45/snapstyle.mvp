@@ -1,6 +1,18 @@
+import { USE_LOCAL_STORAGE } from "@/constants/featureFlags";
+import {
+  getDatabaseUnavailableReason,
+  isDatabaseRuntimeAvailable,
+} from "@/services/database";
+import {
+  getMessagesByStatus,
+  type MessageWithAttachments,
+} from "@/services/database/messageRepository";
 import type { InboxConversation, MessageKind } from "@/types/messaging";
 import { createLogger } from "@/utils/log";
-import { mapMessageKindToPreviewType } from "./normalizeInboxRow";
+import {
+  mapMessageKindToPreviewType,
+  normalizeInboxTimestamp,
+} from "./normalizeInboxRow";
 
 const log = createLogger("inboxOptimisticUpdates");
 const RECENT_UPDATE_TTL_MS = 60_000;
@@ -14,6 +26,7 @@ export interface OptimisticInboxUpdate {
   senderId: string;
   senderName?: string | null;
   timestamp: number;
+  persisted?: boolean;
 }
 
 type Listener = (update: OptimisticInboxUpdate) => void;
@@ -27,9 +40,62 @@ function getUpdateKey(update: OptimisticInboxUpdate): string {
 
 function pruneRecentUpdates(now = Date.now()): void {
   for (const [key, update] of recentUpdates) {
+    if (update.persisted) continue;
     if (now - update.timestamp > RECENT_UPDATE_TTL_MS) {
       recentUpdates.delete(key);
     }
+  }
+}
+
+function messageRowToOptimisticInboxUpdate(
+  message: MessageWithAttachments,
+): OptimisticInboxUpdate | null {
+  if (!message.conversation_id || !message.scope) return null;
+
+  return {
+    scope: message.scope,
+    conversationId: message.conversation_id,
+    messageId: message.id,
+    messageKind: message.kind,
+    previewText: buildOptimisticPreviewText(message.kind, message.text),
+    senderId: message.sender_id,
+    senderName: message.sender_name,
+    timestamp: message.created_at,
+    persisted: true,
+  };
+}
+
+export function getPersistedLocalInboxUpdates(): OptimisticInboxUpdate[] {
+  if (!USE_LOCAL_STORAGE) return [];
+  if (!isDatabaseRuntimeAvailable()) {
+    log.debug("local inbox activity skipped", {
+      data: { reason: getDatabaseUnavailableReason() },
+    });
+    return [];
+  }
+
+  try {
+    const messages = [
+      ...getMessagesByStatus("pending", 200),
+      ...getMessagesByStatus("failed", 200),
+    ];
+    const byConversation = new Map<string, OptimisticInboxUpdate>();
+
+    for (const message of messages) {
+      const update = messageRowToOptimisticInboxUpdate(message);
+      if (!update) continue;
+
+      const key = getUpdateKey(update);
+      const existing = byConversation.get(key);
+      if (!existing || existing.timestamp < update.timestamp) {
+        byConversation.set(key, update);
+      }
+    }
+
+    return Array.from(byConversation.values());
+  } catch (error) {
+    log.warn("failed to load local inbox activity", { data: { error } });
+    return [];
   }
 }
 
@@ -98,7 +164,9 @@ export function applyOptimisticInboxUpdate(
   if (conversation.type !== update.scope) return conversation;
 
   const currentTimestamp =
-    conversation.lastMessage?.timestamp ?? conversation.createdAt ?? 0;
+    normalizeInboxTimestamp(conversation.lastActivityAt) ||
+    normalizeInboxTimestamp(conversation.lastMessage?.timestamp) ||
+    normalizeInboxTimestamp(conversation.createdAt);
   if (currentTimestamp >= update.timestamp) return conversation;
 
   const isSender = currentUserId && update.senderId === currentUserId;
@@ -111,6 +179,7 @@ export function applyOptimisticInboxUpdate(
       timestamp: update.timestamp,
       type: mapMessageKindToPreviewType(update.messageKind),
     },
+    lastActivityAt: update.timestamp,
     unreadCount: isSender ? 0 : conversation.unreadCount,
     memberState: isSender
       ? {

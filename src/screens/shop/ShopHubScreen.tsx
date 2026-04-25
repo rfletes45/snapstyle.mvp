@@ -1,185 +1,328 @@
 /**
- * Shop Hub Screen
+ * ShopHubScreen — Unified Daily Shop
  *
- * Entry point to the shop system with clear navigation to:
- * - Cosmetics Shop: Purchase cosmetics with tokens
- * - Premium Shop: Purchase items with real money (IAP)
+ * Single token-only Shop screen, restructured as a "Daily Shop":
+ *   - Existing app-level Shop header is preserved (title + wallet pill).
+ *   - Below the header, a "Daily Shop" section header with a live
+ *     reset-countdown timer on the far side.
+ *   - Beneath that, one subheader per decoration category, each showing
+ *     exactly two deterministically-selected items for the current day.
+ *   - "View Purchase History" button opens the existing modal.
  *
- * @see docs/SHOP_OVERHAUL_PLAN.md
+ * Inventory and equip behavior are unchanged: owned items deep-link to
+ * the existing Customization screen, purchases call the atomic Cloud
+ * Function `purchaseCosmeticWithTokens` via the unified shop service.
+ *
+ * @module screens/shop/ShopHubScreen
  */
 
-import { ScreenHeader } from "@/components/shared/ScreenHeader";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
-import { LinearGradient } from "expo-linear-gradient";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import Animated, {
-  FadeInUp,
-  useAnimatedStyle,
-  useSharedValue,
-  withSpring,
-} from "react-native-reanimated";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import {
+  Alert,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { ScreenHeader } from "@/components/shared/ScreenHeader";
+import { PurchaseConfirmSheet } from "@/components/shop/PurchaseConfirmSheet";
+import { PurchaseHistoryModal } from "@/components/shop/PurchaseHistoryModal";
+import {
+  ItemActionState,
+  UnifiedShopItemCard,
+} from "@/components/shop/UnifiedShopItemCard";
 import { getShopCosmetics } from "@/cosmetics/catalog";
+import type { CosmeticDefinition, Entitlement } from "@/cosmetics/types";
 import { subscribeToWallet } from "@/services/economy";
+import { subscribeEntitlements } from "@/services/entitlements";
+import {
+  DAILY_SHOP_CATEGORIES,
+  DAILY_SHOP_ITEMS_PER_CATEGORY,
+  DailyShopCategoryId,
+  formatDailyShopCountdown,
+  getDailyShopResetTime,
+  getDailyShopSeed,
+  groupShopItemsByDecorationCategory,
+  selectDailyItemsForCategory,
+} from "@/services/shop/dailyShop";
+import {
+  purchaseShopItem,
+  UnifiedPurchaseResult,
+} from "@/services/shop/unifiedShop";
 import { useAuth } from "@/store/AuthContext";
 import { useAppTheme } from "@/store/ThemeContext";
 import type { Wallet } from "@/types/models";
-
 import { createLogger } from "@/utils/log";
+
 const logger = createLogger("screens/shop/ShopHubScreen");
+
+const NUM_COLUMNS = DAILY_SHOP_ITEMS_PER_CATEGORY;
+
 // =============================================================================
-// Types
+// Countdown hook — isolated so item selection doesn't recompute every tick.
 // =============================================================================
 
-// Use any for navigation since ShopHubScreen is a tab screen that needs
-// to navigate to screens in the root stack (PointsShop, PremiumShop, etc.)
-type NavigationProp = any;
+function useDailyShopCountdown(): {
+  remainingMs: number;
+  seed: string;
+  resetAt: number;
+} {
+  // Snapshot once per "day". When the timer crosses the reset boundary we bump
+  // the seed which causes downstream selection to recompute. The label itself
+  // updates via remainingMs.
+  const [resetAt, setResetAt] = useState<number>(() =>
+    getDailyShopResetTime(new Date()),
+  );
+  const [seed, setSeed] = useState<string>(() => getDailyShopSeed(new Date()));
+  const [remainingMs, setRemainingMs] = useState<number>(() =>
+    Math.max(0, resetAt - Date.now()),
+  );
 
-interface ShopOption {
-  id: "cosmetics" | "premium";
-  title: string;
-  subtitle: string;
-  icon: keyof typeof MaterialCommunityIcons.glyphMap;
-  features: string[];
-  itemCount?: number;
-  gradient: readonly [string, string];
-  onPress: () => void;
+  const tick = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    function update() {
+      const now = Date.now();
+      const ms = resetAt - now;
+      if (ms <= 0) {
+        // Crossed boundary — recompute reset + seed and refresh remaining.
+        const nextReset = getDailyShopResetTime(new Date());
+        const nextSeed = getDailyShopSeed(new Date());
+        setResetAt(nextReset);
+        setSeed(nextSeed);
+        setRemainingMs(Math.max(0, nextReset - Date.now()));
+      } else {
+        setRemainingMs(ms);
+      }
+    }
+    update();
+    tick.current = setInterval(update, 1000);
+    return () => {
+      if (tick.current) clearInterval(tick.current);
+      tick.current = null;
+    };
+  }, [resetAt]);
+
+  return { remainingMs, seed, resetAt };
 }
-
-// =============================================================================
-// Constants
-// =============================================================================
-
-const SHOP_GRADIENTS = {
-  cosmetics: ["#00BCD4", "#2196F3"] as const, // Teal to Blue
-  premium: ["#9C27B0", "#E91E63"] as const, // Purple to Pink
-} as const;
 
 // =============================================================================
 // Component
 // =============================================================================
 
 export default function ShopHubScreen() {
-  const navigation = useNavigation<NavigationProp>();
-  const { colors, isDark } = useAppTheme();
+  const navigation = useNavigation<any>();
+  const { colors } = useAppTheme();
   const insets = useSafeAreaInsets();
   const { currentFirebaseUser } = useAuth();
-  const user = currentFirebaseUser;
+  const uid = currentFirebaseUser?.uid ?? null;
 
-  // Wallet state
+  // Wallet
   const [wallet, setWallet] = useState<Wallet | null>(null);
   const [walletLoading, setWalletLoading] = useState(true);
   const [walletError, setWalletError] = useState(false);
 
-  // Subscribe to wallet updates
-  useEffect(() => {
-    if (!user?.uid) return;
+  // Entitlements (ownership)
+  const [ownedIds, setOwnedIds] = useState<Set<string>>(new Set());
 
+  // UI state
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [pendingItem, setPendingItem] =
+    useState<CosmeticDefinition | null>(null);
+  const [purchasing, setPurchasing] = useState(false);
+  const [purchaseError, setPurchaseError] = useState<string | null>(null);
+
+  // Daily reset / countdown
+  const { remainingMs, seed } = useDailyShopCountdown();
+  const countdownLabel = useMemo(
+    () => formatDailyShopCountdown(remainingMs),
+    [remainingMs],
+  );
+
+  // Wallet subscription
+  useEffect(() => {
+    if (!uid) return;
     setWalletLoading(true);
     setWalletError(false);
-    const unsubscribe = subscribeToWallet(
-      user.uid,
-      (newWallet) => {
-        setWallet(newWallet);
+    const unsub = subscribeToWallet(
+      uid,
+      (w) => {
+        setWallet(w);
         setWalletLoading(false);
         setWalletError(false);
       },
-      (error) => {
-        logger.error("[ShopHubScreen] Wallet subscription error:", error);
+      (err) => {
+        logger.error("Wallet error:", err);
         setWalletLoading(false);
         setWalletError(true);
       },
     );
+    return unsub;
+  }, [uid]);
 
-    return unsubscribe;
-  }, [user?.uid]);
+  // Entitlements subscription
+  useEffect(() => {
+    if (!uid) return;
+    const unsub = subscribeEntitlements(
+      uid,
+      (ents: Entitlement[]) => {
+        setOwnedIds(new Set(ents.map((e) => e.cosmeticId)));
+      },
+      (err) => logger.error("Entitlements error:", err),
+    );
+    return unsub;
+  }, [uid]);
 
-  // Navigation handlers
-  const handlePremiumShop = useCallback(() => {
-    navigation.navigate("PremiumShop");
-  }, [navigation]);
-
-  const handleCosmeticsShop = useCallback(() => {
-    navigation.navigate("CosmeticsShop");
-  }, [navigation]);
-
-  const handlePurchaseHistory = useCallback(() => {
-    navigation.navigate("PurchaseHistory");
-  }, [navigation]);
-
-  // Compute cosmetics item count from the static catalog
-  const cosmeticsItemCount = useMemo(() => {
+  // Catalog (token-priced shop items only).
+  const catalog = useMemo<CosmeticDefinition[]>(() => {
     try {
-      return getShopCosmetics().length;
-    } catch {
-      return 0;
+      return getShopCosmetics().filter(
+        (i) => typeof i.priceTokens === "number" && (i.priceTokens ?? 0) > 0,
+      );
+    } catch (err) {
+      logger.error("Failed to load catalog:", err);
+      return [];
     }
   }, []);
 
-  // Shop options configuration (memoized to avoid recreating on every render)
-  const shopOptions = useMemo<ShopOption[]>(
-    () => [
-      {
-        id: "cosmetics",
-        title: "Cosmetics",
-        subtitle: "Decorations, backgrounds & themes",
-        icon: "palette",
-        features: [
-          "Profile decorations",
-          "Backgrounds & themes",
-          "Featured items",
-          "Bundle deals",
-        ],
-        itemCount: cosmeticsItemCount,
-        gradient: SHOP_GRADIENTS.cosmetics,
-        onPress: handleCosmeticsShop,
-      },
-      {
-        id: "premium",
-        title: "Premium Shop",
-        subtitle: "Exclusive items & bundles",
-        icon: "diamond-stone",
-        features: [
-          "Token packs",
-          "Premium bundles",
-          "Limited exclusives",
-          "Gift items",
-        ],
-        itemCount: 15,
-        gradient: SHOP_GRADIENTS.premium,
-        onPress: handlePremiumShop,
-      },
-    ],
-    [handleCosmeticsShop, handlePremiumShop, cosmeticsItemCount],
+  // Group catalog into Daily Shop categories. Re-runs only when catalog changes.
+  const grouped = useMemo(
+    () => groupShopItemsByDecorationCategory(catalog),
+    [catalog],
   );
+
+  // Per-category daily selection. Recomputes only when the daily seed
+  // (or the catalog) changes — NOT on every countdown tick.
+  const dailySections = useMemo(() => {
+    return DAILY_SHOP_CATEGORIES.map((cat) => {
+      const pool = grouped[cat.id] ?? [];
+      const picks = selectDailyItemsForCategory(
+        pool,
+        cat.id,
+        seed,
+        DAILY_SHOP_ITEMS_PER_CATEGORY,
+      );
+      return { category: cat, items: picks };
+    }).filter((s) => s.items.length === DAILY_SHOP_ITEMS_PER_CATEGORY);
+    // Categories that cannot supply exactly two items are hidden.
+  }, [grouped, seed]);
+
+  const balance = wallet?.tokensBalance ?? 0;
+
+  const itemState = useCallback(
+    (item: CosmeticDefinition): ItemActionState => {
+      if (ownedIds.has(item.id)) return "owned";
+      const price = item.priceTokens ?? 0;
+      if (balance < price) return "insufficient";
+      return "buy";
+    },
+    [ownedIds, balance],
+  );
+
+  const handleItemPress = useCallback(
+    (item: CosmeticDefinition) => {
+      if (ownedIds.has(item.id)) {
+        Alert.alert(
+          "Owned",
+          "You already own this item. Equip it from the Customization screen.",
+          [
+            { text: "Close", style: "cancel" },
+            {
+              text: "Open Customization",
+              onPress: () => {
+                try {
+                  navigation.navigate("Customization");
+                } catch (err) {
+                  logger.error("Nav to Customization failed:", err);
+                }
+              },
+            },
+          ],
+        );
+        return;
+      }
+      setPurchaseError(null);
+      setPendingItem(item);
+    },
+    [navigation, ownedIds],
+  );
+
+  const handleConfirmPurchase = useCallback(async () => {
+    if (!pendingItem || !uid) return;
+    setPurchasing(true);
+    setPurchaseError(null);
+    try {
+      const result: UnifiedPurchaseResult = await purchaseShopItem(
+        pendingItem.id,
+      );
+      if (!result.success) {
+        setPurchaseError(result.error || "Purchase failed.");
+        setPurchasing(false);
+        return;
+      }
+      setPurchasing(false);
+      setPendingItem(null);
+    } catch (err: any) {
+      logger.error("Purchase exception:", err);
+      setPurchaseError(err?.message || "Purchase failed.");
+      setPurchasing(false);
+    }
+  }, [pendingItem, uid]);
+
+  const handleCancelPurchase = useCallback(() => {
+    if (purchasing) return;
+    setPendingItem(null);
+    setPurchaseError(null);
+  }, [purchasing]);
+
+  // ---------------------------------------------------------------------------
+  // Render
+  // ---------------------------------------------------------------------------
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Header */}
+      {/* App-level Shop header (preserved) */}
       <ScreenHeader
         title="Shop"
         renderRight={() => (
           <Pressable
-            style={styles.walletContainer}
-            onPress={() => navigation.navigate("Wallet")}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            style={[
+              styles.walletPill,
+              { backgroundColor: "rgba(255, 215, 0, 0.15)" },
+            ]}
+            onPress={() => {
+              try {
+                navigation.navigate("Wallet");
+              } catch {
+                /* not in stack */
+              }
+            }}
+            hitSlop={10}
             accessibilityRole="button"
-            accessibilityLabel={`Token balance: ${walletLoading ? "loading" : walletError ? "error" : (wallet?.tokensBalance?.toLocaleString() ?? "0")}. Tap to open wallet`}
+            accessibilityLabel={`Token balance: ${balance.toLocaleString()}`}
           >
             <MaterialCommunityIcons
               name="star-circle"
-              size={20}
+              size={18}
               color="#FFD700"
             />
             <Text
               style={[
-                styles.walletBalance,
+                styles.walletText,
                 {
                   color: walletError
-                    ? (colors.error ?? "#ff4444")
+                    ? colors.error ?? "#ff4444"
                     : colors.text,
                 },
               ]}
@@ -188,181 +331,215 @@ export default function ShopHubScreen() {
                 ? "..."
                 : walletError
                   ? "Error"
-                  : (wallet?.tokensBalance?.toLocaleString() ?? "0")}
+                  : balance.toLocaleString()}
             </Text>
           </Pressable>
         )}
       />
 
-      {/* Content */}
       <ScrollView
-        style={styles.scrollView}
+        style={styles.scroll}
         contentContainerStyle={[
           styles.scrollContent,
           { paddingBottom: insets.bottom + 24 },
         ]}
         showsVerticalScrollIndicator={false}
       >
-        {/* Shop Options */}
-        {shopOptions.map((option, index) => (
-          <ShopOptionCard
-            key={option.id}
-            option={option}
-            index={index}
-            colors={colors}
-            isDark={isDark}
-          />
-        ))}
-
-        {/* Purchase History Button */}
-        <Animated.View entering={FadeInUp.delay(400).duration(300)}>
+        {/* Wallet summary card */}
+        <View
+          style={[
+            styles.walletCard,
+            {
+              backgroundColor: colors.surface,
+              borderColor: colors.border,
+            },
+          ]}
+        >
+          <View style={styles.walletCardLeft}>
+            <Text
+              style={[styles.walletCardLabel, { color: colors.textSecondary }]}
+            >
+              Your Tokens
+            </Text>
+            <View style={styles.walletCardBalance}>
+              <MaterialCommunityIcons
+                name="star-circle"
+                size={22}
+                color="#FFD700"
+              />
+              <Text style={[styles.walletCardValue, { color: colors.text }]}>
+                {walletLoading ? "..." : balance.toLocaleString()}
+              </Text>
+            </View>
+          </View>
           <Pressable
-            onPress={handlePurchaseHistory}
-            accessibilityLabel="View purchase history"
+            onPress={() => {
+              try {
+                navigation.navigate("Wallet");
+              } catch {
+                /* not in stack */
+              }
+            }}
+            style={[styles.walletCardCta, { borderColor: colors.border }]}
             accessibilityRole="button"
-            style={({ pressed }) => [
-              styles.historyButton,
-              {
-                backgroundColor: pressed
-                  ? colors.surfaceVariant
-                  : colors.surface,
-                borderColor: colors.border,
-              },
-            ]}
+            accessibilityLabel="Open wallet"
           >
-            <MaterialCommunityIcons
-              name="history"
-              size={24}
-              color={colors.textSecondary}
-            />
             <Text
               style={[
-                styles.historyButtonText,
+                styles.walletCardCtaText,
                 { color: colors.textSecondary },
               ]}
             >
-              View Purchase History
+              Wallet
             </Text>
             <MaterialCommunityIcons
               name="chevron-right"
-              size={24}
+              size={18}
               color={colors.textSecondary}
             />
           </Pressable>
-        </Animated.View>
+        </View>
 
-        {/* Info Text */}
-        <Animated.View entering={FadeInUp.delay(500).duration(300)}>
-          <Text style={[styles.infoText, { color: colors.textMuted }]}>
-            Shop items are exclusive and cannot be obtained through achievements
-            or milestones.
+        {/* Daily Shop header */}
+        <View style={styles.dailyHeader}>
+          <Text
+            style={[styles.dailyTitle, { color: colors.text }]}
+            numberOfLines={1}
+          >
+            Daily Shop
           </Text>
-        </Animated.View>
-      </ScrollView>
-    </View>
-  );
-}
-
-// =============================================================================
-// Shop Option Card Component
-// =============================================================================
-
-interface ShopOptionCardProps {
-  option: ShopOption;
-  index: number;
-  colors: ReturnType<typeof useAppTheme>["colors"];
-  isDark: boolean;
-}
-
-function ShopOptionCard({
-  option,
-  index,
-  colors,
-  isDark,
-}: ShopOptionCardProps) {
-  const scale = useSharedValue(1);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-
-  const handlePressIn = useCallback(() => {
-    scale.value = withSpring(0.98, { damping: 15 });
-  }, [scale]);
-
-  const handlePressOut = useCallback(() => {
-    scale.value = withSpring(1, { damping: 15 });
-  }, [scale]);
-
-  return (
-    <Animated.View
-      entering={FadeInUp.delay(index * 150).duration(400)}
-      style={animatedStyle}
-    >
-      <Pressable
-        onPress={option.onPress}
-        onPressIn={handlePressIn}
-        onPressOut={handlePressOut}
-        style={styles.cardPressable}
-        accessibilityLabel={`${option.title}: ${option.subtitle}`}
-        accessibilityRole="button"
-      >
-        <LinearGradient
-          colors={[option.gradient[0], option.gradient[1]]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.cardGradient}
-        >
-          {/* Icon */}
-          <View style={styles.cardIconContainer}>
+          <View
+            style={[
+              styles.dailyTimerPill,
+              {
+                backgroundColor: colors.surface,
+                borderColor: colors.border,
+              },
+            ]}
+            accessibilityLabel={`Daily Shop resets in ${countdownLabel}`}
+          >
             <MaterialCommunityIcons
-              name={option.icon}
-              size={48}
-              color="rgba(255, 255, 255, 0.95)"
+              name="timer-sand"
+              size={14}
+              color={colors.textSecondary}
             />
+            <Text
+              style={[styles.dailyTimerText, { color: colors.textSecondary }]}
+              numberOfLines={1}
+            >
+              Resets in {countdownLabel}
+            </Text>
           </View>
+        </View>
 
-          {/* Content */}
-          <View style={styles.cardContent}>
-            <Text style={styles.cardTitle}>{option.title}</Text>
-            <Text style={styles.cardSubtitle}>{option.subtitle}</Text>
+        {/* Empty state */}
+        {dailySections.length === 0 ? (
+          <View
+            style={[
+              styles.empty,
+              { backgroundColor: colors.surface, borderColor: colors.border },
+            ]}
+          >
+            <MaterialCommunityIcons
+              name="package-variant"
+              size={36}
+              color={colors.textMuted}
+            />
+            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+              No items available right now. Check back after the next reset.
+            </Text>
+          </View>
+        ) : null}
 
-            {/* Features List */}
-            <View style={styles.featuresList}>
-              {option.features.map((feature) => (
-                <View key={feature} style={styles.featureItem}>
-                  <MaterialCommunityIcons
-                    name="check-circle"
-                    size={16}
-                    color="rgba(255, 255, 255, 0.8)"
+        {/* Daily Shop category sections */}
+        {dailySections.map(({ category, items }) => (
+          <View key={category.id} style={styles.categorySection}>
+            <Text
+              style={[styles.categoryTitle, { color: colors.text }]}
+              numberOfLines={1}
+            >
+              {category.label}
+            </Text>
+            <View style={styles.gridRow}>
+              {items.map((item) => (
+                <View key={item.id} style={styles.gridCell}>
+                  <UnifiedShopItemCard
+                    item={item}
+                    state={itemState(item)}
+                    colors={colors}
+                    onPress={handleItemPress}
                   />
-                  <Text style={styles.featureText}>{feature}</Text>
                 </View>
               ))}
-            </View>
-
-            {/* Enter Button with item count */}
-            <View style={styles.enterRow}>
-              {option.itemCount != null && option.itemCount > 0 && (
-                <View style={styles.itemCountBadge}>
-                  <Text style={styles.itemCountText}>
-                    {option.itemCount} items
-                  </Text>
-                </View>
-              )}
-              <View style={styles.enterButton}>
-                <Text style={styles.enterButtonText}>Enter Shop</Text>
-                <MaterialCommunityIcons
-                  name="arrow-right"
-                  size={20}
-                  color="rgba(255, 255, 255, 0.95)"
-                />
-              </View>
+              {/* Pad if fewer than NUM_COLUMNS (defensive — selection guarantees 2). */}
+              {items.length < NUM_COLUMNS
+                ? Array.from({ length: NUM_COLUMNS - items.length }).map(
+                    (_, i) => (
+                      <View
+                        key={`pad-${category.id}-${i}`}
+                        style={styles.gridCell}
+                      />
+                    ),
+                  )
+                : null}
             </View>
           </View>
-        </LinearGradient>
-      </Pressable>
-    </Animated.View>
+        ))}
+
+        {/* Purchase history button (preserved) */}
+        <Pressable
+          onPress={() => setHistoryOpen(true)}
+          style={({ pressed }) => [
+            styles.historyBtn,
+            {
+              backgroundColor: pressed
+                ? colors.surfaceVariant
+                : colors.surface,
+              borderColor: colors.border,
+            },
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel="View purchase history"
+        >
+          <MaterialCommunityIcons
+            name="history"
+            size={20}
+            color={colors.textSecondary}
+          />
+          <Text
+            style={[styles.historyBtnText, { color: colors.textSecondary }]}
+          >
+            View Purchase History
+          </Text>
+          <MaterialCommunityIcons
+            name="chevron-right"
+            size={20}
+            color={colors.textSecondary}
+          />
+        </Pressable>
+
+        <Text style={[styles.footer, { color: colors.textMuted }]}>
+          Daily Shop selections refresh every day at midnight (local time).
+          Earn tokens through achievements and tasks.
+        </Text>
+      </ScrollView>
+
+      <PurchaseConfirmSheet
+        visible={!!pendingItem}
+        item={pendingItem}
+        balance={balance}
+        loading={purchasing}
+        errorMessage={purchaseError}
+        onConfirm={handleConfirmPurchase}
+        onCancel={handleCancelPurchase}
+      />
+
+      <PurchaseHistoryModal
+        visible={historyOpen}
+        uid={uid}
+        onClose={() => setHistoryOpen(false)}
+      />
+    </View>
   );
 }
 
@@ -371,124 +548,111 @@ function ShopOptionCard({
 // =============================================================================
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  walletContainer: {
+  container: { flex: 1 },
+
+  walletPill: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(255, 215, 0, 0.15)",
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 20,
     gap: 6,
   },
-  walletBalance: {
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
+  walletText: { fontSize: 15, fontWeight: "700" },
+
+  scroll: { flex: 1 },
+  scrollContent: { padding: 16, gap: 18 },
+
+  walletCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
     padding: 16,
-    gap: 16,
   },
-  cardPressable: {
-    borderRadius: 20,
-    overflow: "hidden",
-    elevation: 4,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-  },
-  cardGradient: {
-    flexDirection: "row",
-    padding: 20,
-    minHeight: 180,
-  },
-  cardIconContainer: {
-    width: 80,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  cardContent: {
-    flex: 1,
-    marginLeft: 16,
-  },
-  cardTitle: {
-    fontSize: 24,
-    fontWeight: "700",
-    color: "#FFFFFF",
-    marginBottom: 4,
-  },
-  cardSubtitle: {
-    fontSize: 14,
-    color: "rgba(255, 255, 255, 0.8)",
-    marginBottom: 12,
-  },
-  featuresList: {
-    gap: 6,
-    marginBottom: 16,
-  },
-  featureItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  featureText: {
-    fontSize: 13,
-    color: "rgba(255, 255, 255, 0.9)",
-  },
-  enterButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    alignSelf: "flex-start",
-    backgroundColor: "rgba(255, 255, 255, 0.2)",
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    gap: 8,
-  },
-  enterButtonText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#FFFFFF",
-  },
-  enterRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
-  itemCountBadge: {
-    backgroundColor: "rgba(255, 255, 255, 0.25)",
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 12,
-  },
-  itemCountText: {
+  walletCardLeft: { gap: 4 },
+  walletCardLabel: {
     fontSize: 12,
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
     fontWeight: "600",
-    color: "rgba(255, 255, 255, 0.9)",
   },
-  historyButton: {
+  walletCardBalance: { flexDirection: "row", alignItems: "center", gap: 8 },
+  walletCardValue: { fontSize: 26, fontWeight: "800" },
+  walletCardCta: {
     flexDirection: "row",
     alignItems: "center",
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 1,
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  walletCardCtaText: { fontSize: 13, fontWeight: "600" },
+
+  // --- Daily Shop header ---
+  dailyHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     gap: 12,
+    marginTop: 4,
   },
-  historyButtonText: {
-    flex: 1,
-    fontSize: 16,
-    fontWeight: "500",
+  dailyTitle: {
+    fontSize: 22,
+    fontWeight: "800",
+    flexShrink: 1,
   },
-  infoText: {
-    fontSize: 13,
+  dailyTimerPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    flexShrink: 0,
+    maxWidth: "55%",
+  },
+  dailyTimerText: { fontSize: 12, fontWeight: "600" },
+
+  // --- Category sections ---
+  categorySection: { gap: 10 },
+  categoryTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+  },
+  gridRow: { flexDirection: "row", gap: 12 },
+  gridCell: { flex: 1 },
+
+  empty: {
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingVertical: 36,
+    paddingHorizontal: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+  emptyText: { fontSize: 13, textAlign: "center" },
+
+  historyBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    padding: 16,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  historyBtnText: { flex: 1, fontSize: 14, fontWeight: "600" },
+
+  footer: {
+    fontSize: 12,
     textAlign: "center",
-    paddingHorizontal: 24,
-    lineHeight: 18,
+    lineHeight: 17,
+    paddingHorizontal: 8,
   },
 });

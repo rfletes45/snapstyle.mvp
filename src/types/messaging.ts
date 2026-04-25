@@ -1350,6 +1350,9 @@ export interface InboxConversation {
   /** Conversation created timestamp */
   createdAt: number;
 
+  /** Canonical last meaningful activity timestamp for inbox sorting */
+  lastActivityAt?: number;
+
   /** Number of participants (groups only) */
   participantCount?: number;
 
