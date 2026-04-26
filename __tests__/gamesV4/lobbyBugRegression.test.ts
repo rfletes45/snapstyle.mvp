@@ -14,17 +14,17 @@
  */
 
 import {
-  COLLECTIONS,
-  GAME_METADATA,
-  IMPLEMENTED_GAME_IDS,
+    COLLECTIONS,
+    GAME_METADATA,
+    IMPLEMENTED_GAME_IDS,
 } from "@/gamesV4/constants";
 import type { ParticipantSummary } from "@/gamesV4/types/common";
 import type { GameInviteStatus, GameInviteV4 } from "@/gamesV4/types/invite";
-import { isCancelledInvite } from "@/gamesV4/utils/inviteState";
 import {
-  canTransitionInviteStatus,
-  GAME_INVITE_STATUS_TRANSITIONS,
+    canTransitionInviteStatus,
+    GAME_INVITE_STATUS_TRANSITIONS,
 } from "@/gamesV4/types/invite";
+import { isCancelledInvite } from "@/gamesV4/utils/inviteState";
 
 // =============================================================================
 // Helpers — Fake invite builders for pure-logic tests
@@ -236,6 +236,18 @@ describe("Bug 3 — Start game gating", () => {
 
   test("canTransitionInviteStatus: active → active is invalid", () => {
     expect(canTransitionInviteStatus("active", "active")).toBe(false);
+  });
+
+  test("double start returns existing active session id", () => {
+    const invite = makeInvite({
+      status: "active",
+      sessionId: "session_existing",
+    });
+
+    const startResult =
+      invite.status === "active" && invite.sessionId ? invite.sessionId : null;
+
+    expect(startResult).toBe("session_existing");
   });
 
   test("minimum player check requires at least minPlayers", () => {

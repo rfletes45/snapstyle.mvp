@@ -11,7 +11,10 @@
 import React from "react";
 import { StyleSheet, View } from "react-native";
 
-import { CosmeticImage } from "@/components/CosmeticImage";
+import {
+  CosmeticImage,
+  type CosmeticImageProps,
+} from "@/components/CosmeticImage";
 import { getAnimalImage } from "@/cosmetics/animalAssets";
 
 interface AnimalIconProps {
@@ -21,12 +24,15 @@ interface AnimalIconProps {
   size?: number;
   /** Whether to render slightly wider than tall (rectangular) — matches DuckIcon behavior */
   wide?: boolean;
+  /** How the animal art should fit within its stable button frame. */
+  contentFit?: CosmeticImageProps["contentFit"];
 }
 
 const AnimalIcon: React.FC<AnimalIconProps> = ({
   animalId,
   size = 40,
   wide = false,
+  contentFit = "contain",
 }) => {
   const w = wide ? Math.round(size * 1.3) : size;
   const h = size;
@@ -51,6 +57,7 @@ const AnimalIcon: React.FC<AnimalIconProps> = ({
           height: h,
           borderRadius: radius,
         }}
+        contentFit={contentFit}
         debugLabel={`animal-icon-${animalId}`}
       />
     </View>

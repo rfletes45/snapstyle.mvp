@@ -13,28 +13,29 @@
 
 import * as admin from "firebase-admin";
 import * as functions from "firebase-functions";
+import { secureCallableRuntime } from "../callableSecurity";
 import { createInitialState, getAdapter, hasAdapter } from "./adapters";
 import {
-  assertAuth,
-  assertConversationMember,
-  generateTraceId,
-  getDb,
-  getUserProfile,
-  unpinInviteFromConversation,
+    assertAuth,
+    assertConversationMember,
+    generateTraceId,
+    getDb,
+    getUserProfile,
+    unpinInviteFromConversation,
 } from "./helpers";
 import { notifyPlayerJoinedLobby } from "./notifications";
 import { startServerTrace } from "./perfTrace";
 import type {
-  GameInviteV4,
-  GameSessionV4,
-  PlayerSlot,
-  ScoreSummaryEntry,
+    GameInviteV4,
+    GameSessionV4,
+    PlayerSlot,
+    ScoreSummaryEntry,
 } from "./types";
 import {
-  COLLECTIONS,
-  MAX_PLAYERS,
-  RESOLVED_INVITE_TTL_MS,
-  canTransitionInviteStatus,
+    COLLECTIONS,
+    MAX_PLAYERS,
+    RESOLVED_INVITE_TTL_MS,
+    canTransitionInviteStatus,
 } from "./types";
 import { COOLDOWNS, enforceCooldown, sanitisePayload } from "./validation";
 
@@ -42,7 +43,7 @@ import { COOLDOWNS, enforceCooldown, sanitisePayload } from "./validation";
 // Callable: joinInviteLobbyV4
 // =============================================================================
 
-export const joinInviteLobbyV4 = functions.https.onCall(
+export const joinInviteLobbyV4 = secureCallableRuntime().https.onCall(
   async (data, context) => {
     const uid = assertAuth(context);
     const trace = startServerTrace("joinLobbyV4", uid);
@@ -202,7 +203,7 @@ export const joinInviteLobbyV4 = functions.https.onCall(
 // Callable: updateLobbySettingsV4
 // =============================================================================
 
-export const updateLobbySettingsV4 = functions.https.onCall(
+export const updateLobbySettingsV4 = secureCallableRuntime().https.onCall(
   async (data, context) => {
     const uid = assertAuth(context);
     const { inviteId, settingsPatch } = data as {
@@ -303,7 +304,7 @@ export const updateLobbySettingsV4 = functions.https.onCall(
 // Callable: startGameFromInviteV4
 // =============================================================================
 
-export const startGameFromInviteV4 = functions.https.onCall(
+export const startGameFromInviteV4 = secureCallableRuntime().https.onCall(
   async (data, context) => {
     const uid = assertAuth(context);
     const trace = startServerTrace("startGameV4", uid);
@@ -329,18 +330,28 @@ export const startGameFromInviteV4 = functions.https.onCall(
     const inviteRef = db.collection(COLLECTIONS.GAME_INVITES).doc(inviteId);
 
     // ─── Pre-read: fetch invite + profiles before transaction ──────
-    // PERF: Run cooldown + invite read in parallel
     trace.mark("pre_reads_start");
-    const [, invitePreSnap] = await Promise.all([
-      enforceCooldown(db, uid, "startGameV4", COOLDOWNS.START_GAME),
-      inviteRef.get(),
-    ]);
+    const invitePreSnap = await inviteRef.get();
     trace.mark("pre_reads_done");
 
     if (!invitePreSnap.exists) {
       throw new functions.https.HttpsError("not-found", "Invite not found.");
     }
     const invitePre = invitePreSnap.data() as GameInviteV4;
+
+    if (invitePre.hostId !== uid) {
+      throw new functions.https.HttpsError(
+        "permission-denied",
+        "Only the host can start the game.",
+      );
+    }
+
+    if (invitePre.status === "active" && invitePre.sessionId) {
+      trace.end();
+      return { sessionId: invitePre.sessionId };
+    }
+
+    await enforceCooldown(db, uid, "startGameV4", COOLDOWNS.START_GAME);
 
     // ─── Implemented-game gating ──────────────────────────────────
     // Reject start for games without a server-side adapter/implementation.
@@ -395,6 +406,10 @@ export const startGameFromInviteV4 = functions.https.onCall(
             "permission-denied",
             "Only the host can start the game.",
           );
+        }
+
+        if (invite.status === "active" && invite.sessionId) {
+          return invite.sessionId;
         }
 
         // Must be in sent or lobby status
@@ -590,7 +605,7 @@ export const startGameFromInviteV4 = functions.https.onCall(
 // Callable: leaveInviteLobbyV4
 // =============================================================================
 
-export const leaveInviteLobbyV4 = functions.https.onCall(
+export const leaveInviteLobbyV4 = secureCallableRuntime().https.onCall(
   async (data, context) => {
     const uid = assertAuth(context);
     const { inviteId } = data as { inviteId: string };
@@ -672,7 +687,7 @@ export const leaveInviteLobbyV4 = functions.https.onCall(
 // Callable: cancelGameInviteV4
 // =============================================================================
 
-export const cancelGameInviteV4 = functions.https.onCall(
+export const cancelGameInviteV4 = secureCallableRuntime().https.onCall(
   async (data, context) => {
     const uid = assertAuth(context);
     const { inviteId } = data as { inviteId: string };

@@ -7,6 +7,11 @@ $ErrorActionPreference = "Stop"
 
 $root = $PSScriptRoot
 
+$colyseusPort = 2567
+if ($env:COLYSEUS_PORT) {
+  $colyseusPort = [int]$env:COLYSEUS_PORT
+}
+
 function Get-PreferredPowerShellPath {
   $powershellCmd = Get-Command powershell -ErrorAction SilentlyContinue
   if ($powershellCmd) {
@@ -80,17 +85,18 @@ $colyseusDir = Join-Path $root "colyseus-server"
 if (Test-Path $colyseusDir) {
   Ensure-Dependencies -Directory $colyseusDir -Label "Colyseus server"
 
-  # Kill any stale process on port 2567 before starting
-  $staleConn = Get-NetTCPConnection -LocalPort 2567 -ErrorAction SilentlyContinue | Select-Object -First 1
+  # Kill any stale process on the dev Colyseus port before starting
+  $staleConn = Get-NetTCPConnection -LocalPort $colyseusPort -ErrorAction SilentlyContinue | Select-Object -First 1
   if ($staleConn) {
-    Write-Host "Killing stale process on port 2567 (PID $($staleConn.OwningProcess))..." -ForegroundColor DarkYellow
+    Write-Host "Killing stale process on port $colyseusPort (PID $($staleConn.OwningProcess))..." -ForegroundColor DarkYellow
     Stop-Process -Id $staleConn.OwningProcess -Force -ErrorAction SilentlyContinue
     Start-Sleep -Seconds 2
   }
 
   $colyseusScript = @"
 Set-Location '$colyseusDir'
-Write-Host '=== Starting Colyseus Server ===' -ForegroundColor Cyan
+`$env:PORT = '$colyseusPort'
+Write-Host '=== Starting Colyseus Server (port $colyseusPort) ===' -ForegroundColor Cyan
 npm run dev
 "@
 
@@ -109,7 +115,7 @@ Start-WorkerWindow -WorkingDirectory $root -ScriptBody $expoScript
 Write-Host ""
 Write-Host "Expo launched in a separate window." -ForegroundColor Yellow
 if (Test-Path $colyseusDir) {
-  Write-Host "  Colyseus : http://localhost:2567" -ForegroundColor Cyan
+  Write-Host "  Colyseus : http://localhost:$colyseusPort" -ForegroundColor Cyan
 }
 Write-Host "  Expo     : http://localhost:8081" -ForegroundColor Green
 Write-Host ""

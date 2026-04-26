@@ -417,8 +417,32 @@ export function ChatComposer({
 
   // ── Toolbar state ─────────────────────────────────────────────────────
   const [itemPickerVisible, setItemPickerVisible] = React.useState(false);
+  const [voiceInteractionActive, setVoiceInteractionActive] =
+    React.useState(false);
   const [warmMountedPickersEnabled, setWarmMountedPickersEnabled] =
     React.useState(false);
+
+  const toolbarCustomizationBlocked = voiceInteractionActive || isRecording;
+
+  const handleRecordingInteractionActiveChange = useCallback(
+    (active: boolean) => {
+      setVoiceInteractionActive(active);
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (!toolbarCustomizationBlocked) return;
+    setItemPickerVisible(false);
+    if (voiceInteractionActive && toolbarEditing) {
+      onToolbarCancelEdit?.();
+    }
+  }, [
+    onToolbarCancelEdit,
+    toolbarCustomizationBlocked,
+    toolbarEditing,
+    voiceInteractionActive,
+  ]);
 
   // Determine which toolbar items to render (use provided or defaults)
   const activeToolbarItems = toolbarItems ?? DEFAULT_TOOLBAR_ITEMS;
@@ -691,7 +715,10 @@ export function ChatComposer({
   return (
     <VoiceRecordingHostProvider
       hostRef={textInputContainerRef}
-      disabled={hasContent || isSending}
+      disabled={hasContent || isSending || toolbarEditing}
+      onRecordingInteractionActiveChange={
+        handleRecordingInteractionActiveChange
+      }
     >
       <View style={containerStyle}>
         {/* Customize mode toolbar (shown above composer when editing) */}
@@ -729,6 +756,7 @@ export function ChatComposer({
           <ComposerToolbarRow
             items={activeToolbarItems}
             isEditing={toolbarEditing}
+            editModeBlocked={toolbarCustomizationBlocked}
             onMoveItem={onToolbarMoveItem}
             onRemoveItem={onToolbarRemoveItem}
             onEnterEditMode={onToolbarEnterEdit}
@@ -760,6 +788,7 @@ export function ChatComposer({
       {onToolbarAddItem && onToolbarResetDefaults && (
         <ComposerItemPicker
           visible={itemPickerVisible}
+          surfaceColor={containerBg}
           currentItemIds={activeToolbarItems.map((i) => i.id)}
           onAddItem={(itemId) => {
             preloadPickerById(itemId);

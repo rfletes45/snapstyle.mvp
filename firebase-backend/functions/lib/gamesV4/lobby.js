@@ -48,6 +48,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.cancelGameInviteV4 = exports.leaveInviteLobbyV4 = exports.startGameFromInviteV4 = exports.updateLobbySettingsV4 = exports.joinInviteLobbyV4 = void 0;
 const admin = __importStar(require("firebase-admin"));
 const functions = __importStar(require("firebase-functions"));
+const callableSecurity_1 = require("../callableSecurity");
 const adapters_1 = require("./adapters");
 const helpers_1 = require("./helpers");
 const notifications_1 = require("./notifications");
@@ -57,7 +58,7 @@ const validation_1 = require("./validation");
 // =============================================================================
 // Callable: joinInviteLobbyV4
 // =============================================================================
-exports.joinInviteLobbyV4 = functions.https.onCall(async (data, context) => {
+exports.joinInviteLobbyV4 = (0, callableSecurity_1.secureCallableRuntime)().https.onCall(async (data, context) => {
     const uid = (0, helpers_1.assertAuth)(context);
     const trace = (0, perfTrace_1.startServerTrace)("joinLobbyV4", uid);
     const { inviteId, asSpectator } = data;
@@ -163,7 +164,7 @@ exports.joinInviteLobbyV4 = functions.https.onCall(async (data, context) => {
 // =============================================================================
 // Callable: updateLobbySettingsV4
 // =============================================================================
-exports.updateLobbySettingsV4 = functions.https.onCall(async (data, context) => {
+exports.updateLobbySettingsV4 = (0, callableSecurity_1.secureCallableRuntime)().https.onCall(async (data, context) => {
     const uid = (0, helpers_1.assertAuth)(context);
     const { inviteId, settingsPatch } = data;
     if (!inviteId || typeof inviteId !== "string") {
@@ -229,7 +230,7 @@ exports.updateLobbySettingsV4 = functions.https.onCall(async (data, context) => 
 // =============================================================================
 // Callable: startGameFromInviteV4
 // =============================================================================
-exports.startGameFromInviteV4 = functions.https.onCall(async (data, context) => {
+exports.startGameFromInviteV4 = (0, callableSecurity_1.secureCallableRuntime)().https.onCall(async (data, context) => {
     const uid = (0, helpers_1.assertAuth)(context);
     const trace = (0, perfTrace_1.startServerTrace)("startGameV4", uid);
     const raw = data;
@@ -244,17 +245,21 @@ exports.startGameFromInviteV4 = functions.https.onCall(async (data, context) => 
     const db = (0, helpers_1.getDb)();
     const inviteRef = db.collection(types_1.COLLECTIONS.GAME_INVITES).doc(inviteId);
     // ─── Pre-read: fetch invite + profiles before transaction ──────
-    // PERF: Run cooldown + invite read in parallel
     trace.mark("pre_reads_start");
-    const [, invitePreSnap] = await Promise.all([
-        (0, validation_1.enforceCooldown)(db, uid, "startGameV4", validation_1.COOLDOWNS.START_GAME),
-        inviteRef.get(),
-    ]);
+    const invitePreSnap = await inviteRef.get();
     trace.mark("pre_reads_done");
     if (!invitePreSnap.exists) {
         throw new functions.https.HttpsError("not-found", "Invite not found.");
     }
     const invitePre = invitePreSnap.data();
+    if (invitePre.hostId !== uid) {
+        throw new functions.https.HttpsError("permission-denied", "Only the host can start the game.");
+    }
+    if (invitePre.status === "active" && invitePre.sessionId) {
+        trace.end();
+        return { sessionId: invitePre.sessionId };
+    }
+    await (0, validation_1.enforceCooldown)(db, uid, "startGameV4", validation_1.COOLDOWNS.START_GAME);
     // ─── Implemented-game gating ──────────────────────────────────
     // Reject start for games without a server-side adapter/implementation.
     if (!(0, adapters_1.hasAdapter)(invitePre.gameId)) {
@@ -284,6 +289,9 @@ exports.startGameFromInviteV4 = functions.https.onCall(async (data, context) => 
             // Host-only
             if (invite.hostId !== uid) {
                 throw new functions.https.HttpsError("permission-denied", "Only the host can start the game.");
+            }
+            if (invite.status === "active" && invite.sessionId) {
+                return invite.sessionId;
             }
             // Must be in sent or lobby status
             if (invite.status !== "sent" && invite.status !== "lobby") {
@@ -431,7 +439,7 @@ exports.startGameFromInviteV4 = functions.https.onCall(async (data, context) => 
 // =============================================================================
 // Callable: leaveInviteLobbyV4
 // =============================================================================
-exports.leaveInviteLobbyV4 = functions.https.onCall(async (data, context) => {
+exports.leaveInviteLobbyV4 = (0, callableSecurity_1.secureCallableRuntime)().https.onCall(async (data, context) => {
     const uid = (0, helpers_1.assertAuth)(context);
     const { inviteId } = data;
     if (!inviteId || typeof inviteId !== "string") {
@@ -479,7 +487,7 @@ exports.leaveInviteLobbyV4 = functions.https.onCall(async (data, context) => {
 // =============================================================================
 // Callable: cancelGameInviteV4
 // =============================================================================
-exports.cancelGameInviteV4 = functions.https.onCall(async (data, context) => {
+exports.cancelGameInviteV4 = (0, callableSecurity_1.secureCallableRuntime)().https.onCall(async (data, context) => {
     const uid = (0, helpers_1.assertAuth)(context);
     const { inviteId } = data;
     if (!inviteId || typeof inviteId !== "string") {

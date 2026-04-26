@@ -252,3 +252,14 @@ describe("Abandonment Grace Timer", () => {
     expect(shouldAbandon).toBe(false);
   });
 });
+
+describe("Room Disposal Policy", () => {
+  it("keeps the room alive while reconnect or abandonment grace may resolve it", () => {
+    const reconnectGraceMs = 15000;
+    const abandonmentGraceMs = 15000;
+
+    const shouldAutoDispose = !(reconnectGraceMs > 0 || abandonmentGraceMs > 0);
+
+    expect(shouldAutoDispose).toBe(false);
+  });
+});

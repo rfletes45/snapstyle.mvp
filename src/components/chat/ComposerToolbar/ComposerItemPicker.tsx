@@ -45,6 +45,8 @@ import { MAX_TOOLBAR_ITEMS } from "./types";
 
 export interface ComposerItemPickerProps {
   visible: boolean;
+  /** Sheet surface color; should match the composer toolbar shell. */
+  surfaceColor?: string;
   /** IDs of items already in the toolbar. */
   currentItemIds: ComposerToolbarItemId[];
   onAddItem: (itemId: ComposerToolbarItemId) => void;
@@ -137,6 +139,7 @@ function ItemCard({
 
 function ComposerItemPickerBase({
   visible,
+  surfaceColor,
   currentItemIds,
   onAddItem,
   onRestoreDefaults,
@@ -200,6 +203,8 @@ function ComposerItemPickerBase({
       onClose={onClose}
       snapPoints={[0.5, 0.75]}
       initialSnapIndex={1}
+      surfaceColor={surfaceColor}
+      handleColor={colors.textMuted}
     >
       <View style={styles.header}>
         <Text style={[styles.title, { color: colors.text }]}>

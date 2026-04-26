@@ -19,13 +19,13 @@ import { Client, Room } from "colyseus.js";
 import Constants from "expo-constants";
 
 import type {
-  ConnectionStatus,
-  DisconnectReason,
-  JoinOptions,
-  MessageHandler,
-  RealtimeClientDefinition,
-  ReconnectConfig,
-  RoomEventCallback,
+    ConnectionStatus,
+    DisconnectReason,
+    JoinOptions,
+    MessageHandler,
+    RealtimeClientDefinition,
+    ReconnectConfig,
+    RoomEventCallback,
 } from "./types";
 import { DEFAULT_RECONNECT_CONFIG } from "./types";
 
@@ -34,6 +34,7 @@ import { DEFAULT_RECONNECT_CONFIG } from "./types";
 // =============================================================================
 
 const COLYSEUS_PORT = 2567;
+const JOIN_TIMEOUT_MS = 12_000;
 
 /**
  * True if this is a release / production build (TestFlight, App Store, etc.).
@@ -98,13 +99,14 @@ export function getColyseusUrl(): string {
 
   // 3. Release build without explicit URL — this is the TestFlight failure case
   if (isReleaseBuild()) {
+    const message =
+      "Realtime server is not configured for this build. Set COLYSEUS_URL " +
+      "in EAS/build env to a public wss:// Colyseus endpoint.";
     console.error(
       "[Colyseus:config] *** PRODUCTION BUILD HAS NO COLYSEUS_URL CONFIGURED ***\n" +
-        "Realtime games (Sketch Party, Pong, Knockout) will fail to connect.\n" +
-        "Set COLYSEUS_URL in your EAS build secrets or eas.json env block\n" +
-        'to point to your publicly-deployed Colyseus server (e.g. "wss://colyseus.yourdomain.com").\n' +
-        "Falling back to http://localhost:2567 which WILL NOT WORK on a real device.",
+        message,
     );
+    throw new Error(message);
   }
 
   const fallback = `http://localhost:${COLYSEUS_PORT}`;
@@ -158,6 +160,27 @@ function getClient(): Client {
     sharedClient = new Client(url);
   }
   return sharedClient;
+}
+
+async function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  message: string,
+  onTimeout?: () => void,
+): Promise<T> {
+  let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+  const timeoutPromise = new Promise<never>((_resolve, reject) => {
+    timeoutHandle = setTimeout(() => {
+      onTimeout?.();
+      reject(new Error(message));
+    }, timeoutMs);
+  });
+
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timeoutHandle) clearTimeout(timeoutHandle);
+  }
 }
 
 /**
@@ -233,33 +256,55 @@ export class RealtimeRoomClient<TState = Record<string, unknown>> {
     this.setStatus("connecting");
 
     const roomName = options.roomName ?? this.definition.roomName;
-    const client = getClient();
 
     const tag = `[RealtimeClient:${this.definition.displayName}]`;
-    if (__DEV__) {
-      const serverUrl = getColyseusUrl();
-      console.log(
-        `${tag} Join attempt:\n` +
-          `  server:    ${serverUrl}\n` +
-          `  room:      ${roomName}\n` +
-          `  sessionId: ${options.sessionId}\n` +
-          `  uid:       ${options.uid}\n` +
-          `  hasToken:  ${!!options.token}\n` +
-          `  release:   ${isReleaseBuild()}`,
-      );
-    }
 
     try {
-      const room = await client.joinOrCreate(roomName, {
+      if (!options.token?.trim()) {
+        throw new Error("Missing Firebase auth token for realtime join.");
+      }
+
+      const client = getClient();
+      if (__DEV__) {
+        const serverUrl = getColyseusUrl();
+        console.log(
+          `${tag} Join attempt:\n` +
+            `  server:    ${serverUrl}\n` +
+            `  room:      ${roomName}\n` +
+            `  sessionId: ${options.sessionId}\n` +
+            `  uid:       ${options.uid}\n` +
+            `  hasToken:  ${!!options.token}\n` +
+            `  release:   ${isReleaseBuild()}`,
+        );
+      }
+
+      let joinTimedOut = false;
+      const joinPromise = client.joinOrCreate(roomName, {
         sessionId: options.sessionId,
         uid: options.uid,
         displayName: options.displayName,
         token: options.token,
         spectator: options.spectator ?? false,
       });
+      joinPromise
+        .then((lateRoom) => {
+          if (joinTimedOut || this.destroyed) {
+            void lateRoom.leave().catch(() => {});
+          }
+        })
+        .catch(() => {});
+
+      const room = await withTimeout(
+        joinPromise,
+        JOIN_TIMEOUT_MS,
+        `${tag} Join timed out after ${JOIN_TIMEOUT_MS / 1000}s. Check that the Colyseus server is running and reachable.`,
+        () => {
+          joinTimedOut = true;
+        },
+      );
 
       if (this.destroyed) {
-        room.leave();
+        void room.leave().catch(() => {});
         throw new Error(`${tag} Client destroyed during join.`);
       }
 

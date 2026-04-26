@@ -14,9 +14,9 @@ import { withGameV4Shell } from "@/gamesV4/components/GameScreenShell";
 import type { PongRealtimeState } from "@/gamesV4/realtime/games/pongDef";
 import { PONG_CLIENT_DEF } from "@/gamesV4/realtime/games/pongDef";
 import {
-  createFrameLoop,
-  InterpolationBuffer,
-  ScalarInterpolator,
+    createFrameLoop,
+    InterpolationBuffer,
+    ScalarInterpolator,
 } from "@/gamesV4/realtime/interpolation";
 import { useRealtimeRoom } from "@/gamesV4/realtime/useRealtimeRoom";
 import { useAuth } from "@/store/AuthContext";
@@ -24,23 +24,23 @@ import { useAppTheme } from "@/store/ThemeContext";
 import * as haptics from "@/utils/haptics";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, {
-  memo,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
+    memo,
+    useCallback,
+    useEffect,
+    useMemo,
+    useRef,
+    useState,
 } from "react";
 import {
-  Animated,
-  Easing,
-  type GestureResponderEvent,
-  Platform,
-  Pressable,
-  StyleSheet,
-  Text,
-  useWindowDimensions,
-  View,
+    Animated,
+    Easing,
+    type GestureResponderEvent,
+    Platform,
+    Pressable,
+    StyleSheet,
+    Text,
+    useWindowDimensions,
+    View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -648,44 +648,59 @@ function PongUI({ myUid, sessionId, players: shellPlayers }: GameShellProps) {
   useEffect(() => {
     if (!room) return;
 
-    room.onMessage("point_scored", (data: Record<string, unknown>) => {
-      const sUid = data.scorerUid as string;
-      const name = sUid === leftUid ? leftName : rightName;
-      setLastScorerName(name);
-      setLastScorerIsMe(sUid === myUid);
+    const offPointScored = room.onMessage(
+      "point_scored",
+      (data: Record<string, unknown>) => {
+        const sUid = data.scorerUid as string;
+        const name = sUid === leftUid ? leftName : rightName;
+        setLastScorerName(name);
+        setLastScorerIsMe(sUid === myUid);
 
-      // Flash the goal the ball went through — opposite of scorer's side.
-      // For each viewer, "left goal" maps to bottom if they're left, top if right.
-      const scorerSide = (data.scorerSide as string) ?? "left";
-      // Ball went through the conceder's goal.
-      // Conceder side is opposite of scorer side.
-      const concederSide = scorerSide === "left" ? "right" : "left";
-      // Is the conceder's goal at the bottom of the screen for this viewer?
-      const isBottom = flipView
-        ? concederSide === "right"
-        : concederSide === "left";
-      const flash = isBottom ? goalFlashBottom : goalFlashTop;
-      flash.setValue(0.7);
-      Animated.timing(flash, {
-        toValue: 0,
-        duration: 600,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }).start();
+        // Flash the goal the ball went through — opposite of scorer's side.
+        // For each viewer, "left goal" maps to bottom if they're left, top if right.
+        const scorerSide = (data.scorerSide as string) ?? "left";
+        // Ball went through the conceder's goal.
+        // Conceder side is opposite of scorer side.
+        const concederSide = scorerSide === "left" ? "right" : "left";
+        // Is the conceder's goal at the bottom of the screen for this viewer?
+        const isBottom = flipView
+          ? concederSide === "right"
+          : concederSide === "left";
+        const flash = isBottom ? goalFlashBottom : goalFlashTop;
+        flash.setValue(0.7);
+        Animated.timing(flash, {
+          toValue: 0,
+          duration: 600,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }).start();
 
-      haptics.medium();
-    });
+        haptics.medium();
+      },
+    );
 
-    room.onMessage("paddle_hit", () => haptics.light());
-    room.onMessage("wall_hit", () => haptics.selection());
-    room.onMessage("serve_launch", () => haptics.selection());
-    room.onMessage("match_end", () => {
+    const offPaddleHit = room.onMessage("paddle_hit", () => haptics.light());
+    const offWallHit = room.onMessage("wall_hit", () => haptics.selection());
+    const offServeLaunch = room.onMessage("serve_launch", () =>
+      haptics.selection(),
+    );
+    const offMatchEnd = room.onMessage("match_end", () => {
       haptics.success();
       // Gracefully leave the room to prevent post-disposal reconnect loop
       leave();
     });
 
-    return () => {};
+    return () => {
+      for (const off of [
+        offPointScored,
+        offPaddleHit,
+        offWallHit,
+        offServeLaunch,
+        offMatchEnd,
+      ]) {
+        if (typeof off === "function") off();
+      }
+    };
   }, [
     room,
     leftUid,

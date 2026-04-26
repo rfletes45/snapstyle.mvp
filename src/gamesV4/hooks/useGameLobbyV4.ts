@@ -12,12 +12,12 @@
  */
 
 import {
-  cancelGameInvite,
-  joinInviteLobby,
-  leaveInviteLobby,
-  startGameFromInvite,
-  subscribeToInvite,
-  subscribeToSession,
+    cancelGameInvite,
+    joinInviteLobby,
+    leaveInviteLobby,
+    startGameFromInvite,
+    subscribeToInvite,
+    subscribeToSession,
 } from "@/gamesV4/services/gameServiceV4";
 import type { GameInviteV4, GameSessionV4 } from "@/gamesV4/types";
 import { mapCallableError } from "@/gamesV4/utils/mapCallableError";
@@ -80,11 +80,34 @@ export function useGameLobbyV4(inviteId: string): UseGameLobbyV4Result {
   // immediately instead of waiting for the invite listener to deliver it.
   const earlySessionIdRef = useRef<string | null>(null);
   const sessionUnsubRef = useRef<(() => void) | null>(null);
+  const subscribedSessionIdRef = useRef<string | null>(null);
+  const actionInFlightRef = useRef<string | null>(null);
+
+  const beginAction = useCallback((key: string): boolean => {
+    if (actionInFlightRef.current) return false;
+    actionInFlightRef.current = key;
+    setActionLoading(true);
+    setActionError(null);
+    return true;
+  }, []);
+
+  const endAction = useCallback((key: string): void => {
+    if (actionInFlightRef.current === key) {
+      actionInFlightRef.current = null;
+    }
+    setActionLoading(false);
+  }, []);
 
   // Helper: start session subscription for a known sessionId
   const startSessionSubscription = useCallback((sid: string) => {
-    // Avoid duplicate subscriptions for the same sessionId
-    if (sessionUnsubRef.current) return;
+    if (subscribedSessionIdRef.current === sid && sessionUnsubRef.current) {
+      return;
+    }
+    if (sessionUnsubRef.current) {
+      sessionUnsubRef.current();
+      sessionUnsubRef.current = null;
+    }
+    subscribedSessionIdRef.current = sid;
     sessionUnsubRef.current = subscribeToSession(sid, setSession, (err) =>
       setSubscriptionError(err.message),
     );
@@ -129,12 +152,6 @@ export function useGameLobbyV4(inviteId: string): UseGameLobbyV4Result {
     if (earlySessionIdRef.current === invite.sessionId) return;
 
     startSessionSubscription(invite.sessionId);
-    return () => {
-      if (sessionUnsubRef.current) {
-        sessionUnsubRef.current();
-        sessionUnsubRef.current = null;
-      }
-    };
   }, [invite?.sessionId, invite?.status, startSessionSubscription]);
 
   // Cleanup session subscription on unmount
@@ -143,6 +160,7 @@ export function useGameLobbyV4(inviteId: string): UseGameLobbyV4Result {
       if (sessionUnsubRef.current) {
         sessionUnsubRef.current();
         sessionUnsubRef.current = null;
+        subscribedSessionIdRef.current = null;
       }
     };
   }, []);
@@ -156,8 +174,8 @@ export function useGameLobbyV4(inviteId: string): UseGameLobbyV4Result {
   const isOptimisticallyJoined = optimisticRole !== null;
 
   const joinAsPlayer = useCallback(async () => {
-    setActionLoading(true);
-    setActionError(null);
+    const actionKey = "join-player";
+    if (!beginAction(actionKey)) return;
     // PERF: Optimistic join - show "joining" state immediately
     setOptimisticRole("player");
     const trace = startTrace("lobby_join");
@@ -172,13 +190,13 @@ export function useGameLobbyV4(inviteId: string): UseGameLobbyV4Result {
       trace.mark("error");
       trace.end();
     } finally {
-      setActionLoading(false);
+      endAction(actionKey);
     }
-  }, [inviteId]);
+  }, [beginAction, endAction, inviteId]);
 
   const joinAsSpectator = useCallback(async () => {
-    setActionLoading(true);
-    setActionError(null);
+    const actionKey = "join-spectator";
+    if (!beginAction(actionKey)) return;
     setOptimisticRole("spectator");
     try {
       await joinInviteLobby({ inviteId, asSpectator: true });
@@ -186,13 +204,13 @@ export function useGameLobbyV4(inviteId: string): UseGameLobbyV4Result {
       setOptimisticRole(null);
       setActionError(mapLobbyError(err, "Failed to join as spectator."));
     } finally {
-      setActionLoading(false);
+      endAction(actionKey);
     }
-  }, [inviteId]);
+  }, [beginAction, endAction, inviteId]);
 
   const leaveLobby = useCallback(async (): Promise<boolean> => {
-    setActionLoading(true);
-    setActionError(null);
+    const actionKey = "leave";
+    if (!beginAction(actionKey)) return false;
     try {
       await leaveInviteLobby({ inviteId });
       return true;
@@ -200,13 +218,13 @@ export function useGameLobbyV4(inviteId: string): UseGameLobbyV4Result {
       setActionError(mapLobbyError(err, "Failed to leave lobby."));
       return false;
     } finally {
-      setActionLoading(false);
+      endAction(actionKey);
     }
-  }, [inviteId]);
+  }, [beginAction, endAction, inviteId]);
 
   const cancelInvite = useCallback(async (): Promise<boolean> => {
-    setActionLoading(true);
-    setActionError(null);
+    const actionKey = "cancel";
+    if (!beginAction(actionKey)) return false;
     try {
       await cancelGameInvite({ inviteId });
       return true;
@@ -214,14 +232,14 @@ export function useGameLobbyV4(inviteId: string): UseGameLobbyV4Result {
       setActionError(mapLobbyError(err, "Failed to cancel invite."));
       return false;
     } finally {
-      setActionLoading(false);
+      endAction(actionKey);
     }
-  }, [inviteId]);
+  }, [beginAction, endAction, inviteId]);
 
   const startGame = useCallback(
     async (settings?: Record<string, unknown>) => {
-      setActionLoading(true);
-      setActionError(null);
+      const actionKey = "start";
+      if (!beginAction(actionKey)) return;
       const trace = startTrace("lobby_start");
       trace.mark("callable_sent");
       try {
@@ -240,10 +258,10 @@ export function useGameLobbyV4(inviteId: string): UseGameLobbyV4Result {
         trace.mark("error");
         trace.end();
       } finally {
-        setActionLoading(false);
+        endAction(actionKey);
       }
     },
-    [inviteId, startSessionSubscription],
+    [beginAction, endAction, inviteId, startSessionSubscription],
   );
 
   return {

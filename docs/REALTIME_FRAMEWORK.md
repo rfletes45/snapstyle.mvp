@@ -617,6 +617,10 @@ Contains:
 
 ### Health Check
 
+Local development uses port `2567` by default. Railway/production uses the
+platform `PORT` environment variable, currently `8080` internally, behind the
+public `wss://` endpoint configured by `COLYSEUS_URL`.
+
 ```
 GET http://<colyseus-host>:2567/health
 ```

@@ -88,7 +88,7 @@ export const VoiceRecordButton = memo(function VoiceRecordButton({
   // Host layout, captured at recording-start via measureInWindow.
   const hostLayoutRef = useRef<LayoutRectangle | null>(null);
 
-  // Disabled gate — snapshotted into a ref for synchronous PanResponder
+  // Disabled gate ï¿½ snapshotted into a ref for synchronous PanResponder
   // rejection.
   const effectiveDisabled = disabled || (host?.disabled ?? false);
   const disabledRef = useRef(effectiveDisabled);
@@ -111,7 +111,11 @@ export const VoiceRecordButton = memo(function VoiceRecordButton({
     if (!voiceRecorder.isRecording) {
       // Reset ancillary UI when recording stops (either by cancel, send,
       // or natural timeout).
-      host.setRecordingState({ hoverTarget: "none", isLocked: false });
+      host.setRecordingState({
+        hoverTarget: "none",
+        isGestureActive: false,
+        isLocked: false,
+      });
     }
   }, [voiceRecorder.isRecording, host]);
 
@@ -138,8 +142,7 @@ export const VoiceRecordButton = memo(function VoiceRecordButton({
       hostLayoutRef.current = null;
       return;
     }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (hostView as any).measureInWindow?.(
+    hostView.measureInWindow?.(
       (x: number, y: number, width: number, height: number) => {
         hostLayoutRef.current = { x, y, width, height };
       },
@@ -180,7 +183,11 @@ export const VoiceRecordButton = memo(function VoiceRecordButton({
     }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     measureHost();
-    host?.setRecordingState({ hoverTarget: "none", isLocked: false });
+    host?.setRecordingState({
+      hoverTarget: "none",
+      isGestureActive: true,
+      isLocked: false,
+    });
 
     Animated.spring(scaleAnim, {
       toValue: 1.15,
@@ -193,7 +200,14 @@ export const VoiceRecordButton = memo(function VoiceRecordButton({
 
   const handleRelease = useCallback(
     async (target: HoverTarget) => {
-      if (!voiceRecorder.isRecording) return;
+      if (!voiceRecorder.isRecording) {
+        host?.setRecordingState({
+          hoverTarget: "none",
+          isGestureActive: false,
+          isLocked: false,
+        });
+        return;
+      }
 
       if (target === "lock") {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -202,7 +216,11 @@ export const VoiceRecordButton = memo(function VoiceRecordButton({
           friction: 6,
           useNativeDriver: true,
         }).start();
-        host?.setRecordingState({ isLocked: true, hoverTarget: "none" });
+        host?.setRecordingState({
+          hoverTarget: "none",
+          isGestureActive: false,
+          isLocked: true,
+        });
         return;
       }
 
@@ -223,6 +241,7 @@ export const VoiceRecordButton = memo(function VoiceRecordButton({
       }
       host?.setRecordingState({
         hoverTarget: "none",
+        isGestureActive: false,
         isLocked: false,
       });
     },
@@ -236,19 +255,27 @@ export const VoiceRecordButton = memo(function VoiceRecordButton({
     if (recording && recording.durationMs > 500) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     }
-    host?.setRecordingState({ isLocked: false, hoverTarget: "none" });
+    host?.setRecordingState({
+      hoverTarget: "none",
+      isGestureActive: false,
+      isLocked: false,
+    });
   }, [voiceRecorder, host]);
 
   const handleLockedCancel = useCallback(async () => {
     if (!voiceRecorder.isRecording) return;
     await voiceRecorder.cancelRecording();
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-    host?.setRecordingState({ isLocked: false, hoverTarget: "none" });
+    host?.setRecordingState({
+      hoverTarget: "none",
+      isGestureActive: false,
+      isLocked: false,
+    });
   }, [voiceRecorder, host]);
 
   // Register actions on the host ref so the overlay's Pressables can
   // invoke them.  Refreshed whenever the handlers change (effectively
-  // never — they are stable per voiceRecorder/host identity).
+  // never ï¿½ they are stable per voiceRecorder/host identity).
   useEffect(() => {
     if (!host) return;
     host.lockedActionsRef.current = {
@@ -319,13 +346,22 @@ export const VoiceRecordButton = memo(function VoiceRecordButton({
         useNativeDriver: true,
       }).start();
       await voiceRecorder.stopRecording();
-      host?.setRecordingState({ isLocked: false, hoverTarget: "none" });
+      host?.setRecordingState({
+        hoverTarget: "none",
+        isGestureActive: false,
+        isLocked: false,
+      });
     } else {
       if (!voiceRecorder.isAvailable) {
         voiceRecorder.startRecording();
         return;
       }
       measureHost();
+      host?.setRecordingState({
+        hoverTarget: "none",
+        isGestureActive: true,
+        isLocked: false,
+      });
       Animated.spring(scaleAnim, {
         toValue: 1.15,
         friction: 6,

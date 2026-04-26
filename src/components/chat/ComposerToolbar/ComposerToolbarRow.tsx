@@ -41,7 +41,8 @@ import * as Haptics from "expo-haptics";
 import React, { memo, useCallback, useMemo, useRef, useState } from "react";
 import { LayoutChangeEvent, StyleSheet, View } from "react-native";
 
-import { Spacing } from "@/constants/theme";
+import { BorderRadius, Spacing } from "@/constants/theme";
+import { useColors } from "@/store/ThemeContext";
 
 import { ComposerToolbarItem } from "./ComposerToolbarItem";
 import {
@@ -156,6 +157,8 @@ export interface ComposerToolbarRowProps {
   items: { id: ComposerToolbarItemId; position: number; flexWeight?: number }[];
   /** Whether the toolbar is in edit mode. */
   isEditing: boolean;
+  /** Whether entering edit mode is blocked by another active composer state. */
+  editModeBlocked?: boolean;
   /** Called when an item is moved to a new position. */
   onMoveItem?: (itemId: ComposerToolbarItemId, toPosition: number) => void;
   /** Called when an item is removed. */
@@ -173,11 +176,13 @@ export interface ComposerToolbarRowProps {
 function ComposerToolbarRowBase({
   items,
   isEditing,
+  editModeBlocked = false,
   onMoveItem,
   onRemoveItem,
   onEnterEditMode,
   renderItem,
 }: ComposerToolbarRowProps) {
+  const colors = useColors();
   const [rowWidth, setRowWidth] = useState(0);
   const [draggingId, setDraggingId] = useState<ComposerToolbarItemId | null>(
     null,
@@ -425,20 +430,44 @@ function ComposerToolbarRowBase({
   );
 
   const handleLongPress = useCallback(() => {
+    if (editModeBlocked) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     onEnterEditMode?.();
-  }, [onEnterEditMode]);
+  }, [editModeBlocked, onEnterEditMode]);
 
   // ── Render ────────────────────────────────────────────────────────────
 
   return (
-    <View style={styles.row} onLayout={handleLayout}>
-      {items.map((item) => {
+    <View
+      accessibilityRole="toolbar"
+      style={styles.row}
+      onLayout={handleLayout}
+    >
+      {isEditing && (
+        <View
+          pointerEvents="none"
+          style={[
+            styles.rail,
+            {
+              backgroundColor: colors.surfaceVariant + "70",
+              borderColor: colors.primary + "30",
+            },
+          ]}
+        />
+      )}
+      {items.map((item, index) => {
         const definition = getToolbarItemDefinition(item.id);
         const canRemove = definition?.canRemove ?? true;
         const editModeLongPressDuration =
           getToolbarItemEditModeLongPressDuration(item.id);
         const isMessageBar = item.id === "message-bar";
+        const layout = slotLayouts[index];
+        const dragBounds = layout
+          ? {
+              minX: -layout.left,
+              maxX: Math.max(0, rowWidth - layout.left - layout.width),
+            }
+          : undefined;
 
         return (
           <ComposerToolbarItem
@@ -453,6 +482,8 @@ function ComposerToolbarRowBase({
             slotWidth={slotWidth}
             previewOffset={previewOffsets[item.id] ?? 0}
             settleOffset={settleOffsets[item.id]}
+            dragBounds={dragBounds}
+            editModeBlocked={editModeBlocked}
             onDragStart={handleDragStart}
             onDragUpdate={handleDragUpdate}
             onDragEnd={handleDragEnd}
@@ -479,5 +510,15 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "flex-end",
     gap: Spacing.sm,
+    position: "relative",
+  },
+  rail: {
+    position: "absolute",
+    left: -Spacing.xs,
+    right: -Spacing.xs,
+    bottom: -4,
+    height: TOOLBAR_BUTTON_SIZE + Spacing.sm,
+    borderRadius: BorderRadius.xl,
+    borderWidth: StyleSheet.hairlineWidth,
   },
 });

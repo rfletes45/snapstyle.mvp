@@ -56,7 +56,8 @@ gameServer.define("knockout_game", KnockoutRoom).filterBy(["sessionId"]);
 gameServer.define("sketch_party", SketchPartyRoomV2).filterBy(["sessionId"]);
 gameServer.define("pong_game", PongRoom).filterBy(["sessionId"]);
 
-const PORT = Number(process.env.PORT) || 8080;
+const DEFAULT_PORT = process.env.NODE_ENV === "production" ? 8080 : 2567;
+const PORT = Number(process.env.PORT) || DEFAULT_PORT;
 const HOST = process.env.HOST || "0.0.0.0";
 
 async function start() {

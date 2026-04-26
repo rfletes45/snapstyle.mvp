@@ -28,19 +28,19 @@ import type { SessionGuardResult } from "./FirebaseSessionGuard";
 import { verifyJoin } from "./FirebaseSessionGuard";
 import { createValidatedHandler, MessageRegistry } from "./InputValidation";
 import {
-  buildResolutionPayload,
-  writeResolutionRequest,
+    buildResolutionPayload,
+    writeResolutionRequest,
 } from "./ResolutionBridge";
 import { RuntimeMirror } from "./RuntimeMirror";
 import type {
-  DisconnectPolicy,
-  MatchStartPolicy,
-  RealtimeGameDefinition,
-  RealtimePlayerInfo,
-  RealtimeResolutionPayload,
-  RealtimeScoreboardEntry,
-  RoomPhase,
-  RuntimeSummary,
+    DisconnectPolicy,
+    MatchStartPolicy,
+    RealtimeGameDefinition,
+    RealtimePlayerInfo,
+    RealtimeResolutionPayload,
+    RealtimeScoreboardEntry,
+    RoomPhase,
+    RuntimeSummary,
 } from "./types";
 
 // =============================================================================
@@ -55,6 +55,7 @@ export interface BaseAuthData {
   players: Array<{ uid: string; displayName?: string }>;
   settings: Record<string, unknown>;
   isSpectator: boolean;
+  spectatorsAllowed: boolean;
 }
 
 // =============================================================================
@@ -86,6 +87,7 @@ export abstract class BaseRealtimeRoom extends Room {
   private matchDurationTimer: ReturnType<typeof setTimeout> | null = null;
   private joinGraceTimer: ReturnType<typeof setTimeout> | null = null;
   private tickInterval: ReturnType<typeof setInterval> | null = null;
+  private disposalTimer: ReturnType<typeof setTimeout> | null = null;
 
   // ── Template methods (subclass implements) ────────────────────────
 
@@ -168,6 +170,7 @@ export abstract class BaseRealtimeRoom extends Room {
     const def = this.getGameDefinition();
     this.sessionId = (options.sessionId as string) ?? "";
     this.maxClients = def.maxPlayers + (def.supportsSpectate ? 20 : 0);
+    this.autoDispose = false;
 
     // Apply provisional settings from room creation options
     if (options.settings && typeof options.settings === "object") {
@@ -276,6 +279,7 @@ export abstract class BaseRealtimeRoom extends Room {
       players: result.players,
       settings: result.settings,
       isSpectator,
+      spectatorsAllowed: result.spectatorsAllowed,
     };
   }
 
@@ -769,7 +773,8 @@ export abstract class BaseRealtimeRoom extends Room {
     });
 
     // Dispose room after delay
-    setTimeout(() => {
+    this.disposalTimer = setTimeout(() => {
+      this.disposalTimer = null;
       this.disconnect();
     }, def.postMatchDisposalDelayMs);
   }
@@ -1085,6 +1090,11 @@ export abstract class BaseRealtimeRoom extends Room {
     if (this.tickInterval) {
       clearInterval(this.tickInterval);
       this.tickInterval = null;
+    }
+
+    if (this.disposalTimer) {
+      clearTimeout(this.disposalTimer);
+      this.disposalTimer = null;
     }
 
     if (this.runtimeMirror) {

@@ -41,6 +41,7 @@ import { useTheme } from "react-native-paper";
 export type HoverTarget = "none" | "cancel" | "lock";
 
 export interface VoiceRecordingState {
+  isGestureActive: boolean;
   isRecording: boolean;
   isLocked: boolean;
   hoverTarget: HoverTarget;
@@ -66,12 +67,14 @@ export interface VoiceRecordingHostValue {
 }
 
 const DEFAULT_STATE: VoiceRecordingState = {
+  isGestureActive: false,
   isRecording: false,
   isLocked: false,
   hoverTarget: "none",
   durationFormatted: "0:00",
 };
-const RECORDING_GUIDE_DASHES = ["a", "b", "c", "d", "e", "f", "g", "h", "i"];
+const LEFT_RECORDING_GUIDE_DOTS = ["left-1", "left-2", "left-3", "left-4"];
+const RIGHT_RECORDING_GUIDE_DOTS = ["right-1", "right-2", "right-3", "right-4"];
 
 const VoiceRecordingHostContext = createContext<VoiceRecordingHostValue | null>(
   null,
@@ -81,10 +84,12 @@ const VoiceRecordingHostContext = createContext<VoiceRecordingHostValue | null>(
 export function VoiceRecordingHostProvider({
   hostRef,
   disabled,
+  onRecordingInteractionActiveChange,
   children,
 }: {
   hostRef: React.RefObject<View | null>;
   disabled: boolean;
+  onRecordingInteractionActiveChange?: (active: boolean) => void;
   children: React.ReactNode;
 }) {
   const [recordingState, setRecordingStateRaw] =
@@ -118,6 +123,15 @@ export function VoiceRecordingHostProvider({
     }),
     [hostRef, disabled, recordingState, setRecordingState],
   );
+
+  const recordingInteractionActive =
+    recordingState.isGestureActive ||
+    recordingState.isRecording ||
+    recordingState.isLocked;
+
+  useEffect(() => {
+    onRecordingInteractionActiveChange?.(recordingInteractionActive);
+  }, [onRecordingInteractionActiveChange, recordingInteractionActive]);
 
   return (
     <VoiceRecordingHostContext.Provider value={value}>
@@ -200,6 +214,21 @@ export function VoiceRecordingOverlay() {
     (appColors as any).divider ??
     (appColors as any).outline ??
     "rgba(0,0,0,0.08)";
+  const guideDotColor = theme.colors.onSurfaceVariant;
+
+  const renderGuideDots = (dotKeys: string[]) => (
+    <View style={styles.guideGroup} pointerEvents="none">
+      {dotKeys.map((dotKey) => (
+        <Animated.View
+          key={dotKey}
+          style={[
+            styles.guideDot,
+            { backgroundColor: guideDotColor, opacity: dotOpacity },
+          ]}
+        />
+      ))}
+    </View>
+  );
 
   return (
     <View
@@ -229,93 +258,96 @@ export function VoiceRecordingOverlay() {
         </View>
       </View>
 
-      {/* Far-left: cancel (X) target */}
-      <View style={styles.cancelSlot} pointerEvents="none">
-        <View
-          style={[
-            styles.targetCircle,
-            hoverTarget === "cancel" && {
-              backgroundColor: theme.colors.error,
-            },
-          ]}
-        >
-          <MaterialCommunityIcons
-            name="close"
-            size={18}
-            color={
-              hoverTarget === "cancel" ? "#FFF" : theme.colors.onSurfaceVariant
-            }
-          />
-        </View>
-      </View>
-
-      {/* Middle filler — keeps flex layout stable between cancel and
-          the (optional) right-side locked controls. */}
-      <View style={styles.middleSlot} pointerEvents="none">
-        {!isLocked && (
-          <View style={styles.recordingGuide} pointerEvents="none">
-            {RECORDING_GUIDE_DASHES.map((dashKey) => (
-              <View
-                key={dashKey}
-                style={[
-                  styles.guideDash,
-                  { backgroundColor: theme.colors.onSurfaceVariant },
-                ]}
+      <View
+        style={styles.recordingControlsRow}
+        pointerEvents={isLocked ? "auto" : "none"}
+      >
+        <View style={styles.sideControlSlot}>
+          {isLocked ? (
+            <Pressable
+              onPress={() => lockedActionsRef.current.cancel?.()}
+              style={styles.targetCircle}
+              accessibilityLabel="Discard voice message"
+              accessibilityRole="button"
+            >
+              <MaterialCommunityIcons
+                name="delete-outline"
+                size={21}
+                color={theme.colors.error}
               />
-            ))}
-          </View>
-        )}
-      </View>
-
-      {/* Absolute-centered lock target — horizontally centered in the
-          live overlay bounds (matches textInputContainer). */}
-      <View pointerEvents="none" style={styles.lockAbsolute}>
-        <View
-          style={[
-            styles.targetCircle,
-            (hoverTarget === "lock" || isLocked) && {
-              backgroundColor: theme.colors.primary,
-            },
-          ]}
-        >
-          <MaterialCommunityIcons
-            name={isLocked ? "lock" : "lock-outline"}
-            size={18}
-            color={
-              hoverTarget === "lock" || isLocked
-                ? "#FFF"
-                : theme.colors.onSurfaceVariant
-            }
-          />
+            </Pressable>
+          ) : (
+            <View
+              pointerEvents="none"
+              style={[
+                styles.targetCircle,
+                hoverTarget === "cancel" && {
+                  backgroundColor: theme.colors.error,
+                },
+              ]}
+            >
+              <MaterialCommunityIcons
+                name="close"
+                size={18}
+                color={
+                  hoverTarget === "cancel"
+                    ? "#FFF"
+                    : theme.colors.onSurfaceVariant
+                }
+              />
+            </View>
+          )}
         </View>
-      </View>
 
-      {/* Right side: locked-mode send / cancel controls. */}
-      {isLocked && (
-        <View style={styles.lockedControls}>
-          <Pressable
-            onPress={() => lockedActionsRef.current.cancel?.()}
-            style={styles.lockedCancelBtn}
-            accessibilityLabel="Discard voice message"
+        {renderGuideDots(LEFT_RECORDING_GUIDE_DOTS)}
+
+        <View style={styles.lockSlot} pointerEvents="none">
+          <View
+            style={[
+              styles.targetCircle,
+              (hoverTarget === "lock" || isLocked) && {
+                backgroundColor: theme.colors.primary,
+              },
+            ]}
           >
             <MaterialCommunityIcons
-              name="delete-outline"
-              size={22}
-              color={theme.colors.error}
+              name={isLocked ? "lock" : "lock-outline"}
+              size={18}
+              color={
+                hoverTarget === "lock" || isLocked
+                  ? "#FFF"
+                  : theme.colors.onSurfaceVariant
+              }
             />
-          </Pressable>
-          <Pressable
-            onPress={() => lockedActionsRef.current.send?.()}
-            style={[
-              styles.lockedSendBtn,
-              { backgroundColor: theme.colors.primary },
-            ]}
-            accessibilityLabel="Send voice message"
-          >
-            <MaterialCommunityIcons name="send" size={18} color="#FFF" />
-          </Pressable>
+          </View>
         </View>
-      )}
+
+        {renderGuideDots(RIGHT_RECORDING_GUIDE_DOTS)}
+
+        <View style={styles.sideControlSlot}>
+          {isLocked ? (
+            <Pressable
+              onPress={() => lockedActionsRef.current.send?.()}
+              style={[
+                styles.targetCircle,
+                { backgroundColor: theme.colors.primary },
+              ]}
+              accessibilityLabel="Send voice message"
+              accessibilityRole="button"
+            >
+              <MaterialCommunityIcons name="send" size={17} color="#FFF" />
+            </Pressable>
+          ) : (
+            <View style={styles.targetCircle} pointerEvents="none">
+              <MaterialCommunityIcons
+                name="send-outline"
+                size={18}
+                color={theme.colors.onSurfaceVariant}
+              />
+            </View>
+          )}
+        </View>
+      </View>
     </View>
   );
 }
@@ -323,17 +355,25 @@ export function VoiceRecordingOverlay() {
 const styles = StyleSheet.create({
   overlay: {
     ...StyleSheet.absoluteFillObject,
-    flexDirection: "row",
-    alignItems: "center",
     // NOTE: no overflow:"hidden".  The bg + borderRadius alone form the
     // rounded pill; the timer pill child (bottom:"100%") must be free
     // to paint outside the rounded shell without being clipped.
   },
-  cancelSlot: {
-    width: 44,
+  recordingControlsRow: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 6,
+  },
+  sideControlSlot: {
+    width: 40,
     alignItems: "center",
     justifyContent: "center",
-    marginLeft: 6,
+  },
+  lockSlot: {
+    width: 40,
+    alignItems: "center",
+    justifyContent: "center",
   },
   targetCircle: {
     width: 32,
@@ -343,26 +383,18 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     backgroundColor: "transparent",
   },
-  middleSlot: {
+  guideGroup: {
     flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingLeft: 8,
-    paddingRight: 44,
-  },
-  recordingGuide: {
-    width: "70%",
-    maxWidth: 180,
-    minWidth: 64,
+    minWidth: 0,
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
+    justifyContent: "center",
+    gap: 5,
   },
-  guideDash: {
+  guideDot: {
     width: 4,
     height: 4,
     borderRadius: 2,
-    opacity: 0.28,
   },
   // Timer pill floats above the composer's top edge, horizontally
   // centered over the lock icon.  Its wrapper uses bottom:"100%" to
@@ -394,37 +426,5 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "600",
     fontVariant: ["tabular-nums"],
-  },
-  lockAbsolute: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    top: 0,
-    bottom: 0,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  lockedControls: {
-    position: "absolute",
-    right: 0,
-    top: 0,
-    bottom: 0,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    paddingRight: 6,
-  },
-  lockedCancelBtn: {
-    width: 36,
-    height: 36,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  lockedSendBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: "center",
-    justifyContent: "center",
   },
 });

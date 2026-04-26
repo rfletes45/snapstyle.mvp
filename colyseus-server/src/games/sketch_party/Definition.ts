@@ -10,8 +10,8 @@
 
 import { createPayloadValidator } from "../../core/InputValidation";
 import type {
-  MessageDefinition,
-  RealtimeGameDefinition,
+    MessageDefinition,
+    RealtimeGameDefinition,
 } from "../../core/types";
 
 // =============================================================================
@@ -37,6 +37,17 @@ const sketchPartyMessages: MessageDefinition[] = [
       const p = payload as Record<string, unknown>;
       if (typeof p.strokeId !== "string") return "Missing strokeId.";
       if (!Array.isArray(p.points)) return "Missing points array.";
+      if (p.points.length > 64) return "Too many points in stroke batch.";
+      for (const point of p.points) {
+        if (!point || typeof point !== "object") return "Invalid point.";
+        const pt = point as Record<string, unknown>;
+        if (typeof pt.x !== "number" || typeof pt.y !== "number") {
+          return "Point coordinates must be numbers.";
+        }
+        if (!Number.isFinite(pt.x) || !Number.isFinite(pt.y)) {
+          return "Point coordinates must be finite.";
+        }
+      }
       return null;
     },
     senderEligibility: "player",

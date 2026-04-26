@@ -19,11 +19,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Room } from "colyseus.js";
 import { RealtimeRoomClient } from "./realtimeClient";
 import type {
-  ConnectionStatus,
-  JoinOptions,
-  RealtimeClientDefinition,
-  RealtimeRoomContext,
-  RoomEventCallback,
+    ConnectionStatus,
+    JoinOptions,
+    RealtimeClientDefinition,
+    RealtimeRoomContext,
+    RoomEventCallback,
 } from "./types";
 
 /**
@@ -75,6 +75,7 @@ export function useRealtimeRoom<TState = Record<string, unknown>>(
   // ── Stable reference to the client instance ──
   const clientRef = useRef<RealtimeRoomClient<TState> | null>(null);
   const mountedRef = useRef(true);
+  const connectSeqRef = useRef(0);
 
   // Memoize join options to avoid unnecessary reconnects
   const joinOptions = useMemo<JoinOptions>(
@@ -152,6 +153,8 @@ export function useRealtimeRoom<TState = Record<string, unknown>>(
     if (!autoConnect || !clientRef.current) return;
 
     const client = clientRef.current;
+    const seq = ++connectSeqRef.current;
+    let cancelled = false;
 
     // Don't re-join if already connected to the same session
     if (client.isConnected() && client.getRoom()?.sessionId === sessionId) {
@@ -164,9 +167,13 @@ export function useRealtimeRoom<TState = Record<string, unknown>>(
         if (client.getRoom()) {
           await client.leave();
         }
+        if (cancelled || seq !== connectSeqRef.current) return;
         await client.join(joinOptions);
+        if (cancelled || seq !== connectSeqRef.current) {
+          await client.leave();
+        }
       } catch (err) {
-        if (mountedRef.current) {
+        if (mountedRef.current && seq === connectSeqRef.current) {
           setError(err instanceof Error ? err.message : String(err));
           setConnectionStatus("error");
         }
@@ -174,6 +181,9 @@ export function useRealtimeRoom<TState = Record<string, unknown>>(
     };
 
     doConnect();
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoConnect, joinOptions]);
 
@@ -196,7 +206,6 @@ export function useRealtimeRoom<TState = Record<string, unknown>>(
 
   // Game-specific screens register room message handlers directly
   // from the `room` instance returned by this hook.
-
 
   return {
     room,

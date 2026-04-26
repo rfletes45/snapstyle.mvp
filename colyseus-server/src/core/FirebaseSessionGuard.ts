@@ -8,9 +8,9 @@
  */
 
 import {
-  getFirebaseDb,
-  isDevBypass,
-  verifyFirebaseToken,
+    getFirebaseDb,
+    isDevBypass,
+    verifyFirebaseToken,
 } from "../bridge/firebaseBridge";
 
 // =============================================================================
@@ -24,6 +24,7 @@ export interface SessionGuardResult {
   spectatorUids: string[];
   players: Array<{ uid: string; displayName?: string }>;
   settings: Record<string, unknown>;
+  spectatorsAllowed: boolean;
   sessionData: Record<string, unknown>;
 }
 
@@ -122,6 +123,7 @@ export async function verifyJoin(
       spectatorUids: [],
       players: [{ uid, displayName: displayName || "Player" }],
       settings: {},
+      spectatorsAllowed: false,
       sessionData: {
         gameId: expectedGameId,
         runtimeType: "realtime",
@@ -218,12 +220,19 @@ export async function verifyJoin(
 
   const isParticipant = participantUids.includes(uid);
   const isSpectator = spectatorUids.includes(uid);
+  const spectatorsAllowed = sessionData.spectatorsAllowed === true;
 
   if (!isParticipant && !(allowSpectators && isSpectator)) {
     console.error(
       `${tag} REJECTED — uid=${uid} not in participants=${JSON.stringify(participantUids)} or spectators=${JSON.stringify(spectatorUids)}`,
     );
     throw new Error("You are not a participant in this match.");
+  }
+  if (isSpectator && !spectatorsAllowed) {
+    console.error(
+      `${tag} REJECTED — spectator join requested but session spectatorsAllowed=false`,
+    );
+    throw new Error("Spectators are not allowed for this match.");
   }
   console.log(
     `${tag} ✓ Join verified: uid=${uid}, role=${isParticipant ? "participant" : "spectator"}`,
@@ -260,6 +269,7 @@ export async function verifyJoin(
       sessionData.settings && typeof sessionData.settings === "object"
         ? (sessionData.settings as Record<string, unknown>)
         : {},
+    spectatorsAllowed,
     sessionData,
   };
 }

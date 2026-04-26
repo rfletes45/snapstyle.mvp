@@ -22,18 +22,18 @@
 import type { Client } from "colyseus";
 import { BaseRealtimeRoom } from "../../core/BaseRealtimeRoom";
 import type {
-  RealtimeGameDefinition,
-  RealtimeScoreboardEntry,
+    RealtimeGameDefinition,
+    RealtimeScoreboardEntry,
 } from "../../core/types";
 import {
-  computeDrawerGainPerGuesser,
-  computeGuesserPoints,
-  computeTimeBonus,
+    computeDrawerGainPerGuesser,
+    computeGuesserPoints,
+    computeTimeBonus,
 } from "../../data/scoring";
 import {
-  computeMaskedWord,
-  isCorrectGuess,
-  pickRandomWords,
+    computeMaskedWord,
+    isCorrectGuess,
+    pickRandomWords,
 } from "../../data/wordBank";
 import { SKETCH_PARTY_DEFINITION } from "./Definition";
 
@@ -111,16 +111,32 @@ export class SketchPartyRoomV2 extends BaseRealtimeRoom {
       this.messageRegistry.register(def);
     }
 
-    // Register handlers (using raw onMessage since Sketch Party has
-    // custom eligibility checks like "only drawer can stroke")
-    this.onMessage("stroke_begin", this.handleStrokeBegin.bind(this));
-    this.onMessage("stroke_points", this.handleStrokePoints.bind(this));
-    this.onMessage("stroke_end", this.handleStrokeEnd.bind(this));
-    this.onMessage("guess", this.handleGuess.bind(this));
-    this.onMessage("word_choice", this.handleWordChoice.bind(this));
-    this.onMessage("undo", this.handleUndo.bind(this));
-    this.onMessage("clear", this.handleClear.bind(this));
-    this.onMessage("reaction", this.handleReaction.bind(this));
+    this.registerGameMessage<Record<string, unknown>>(
+      "stroke_begin",
+      (client, _uid, payload) => this.handleStrokeBegin(client, payload),
+    );
+    this.registerGameMessage<Record<string, unknown>>(
+      "stroke_points",
+      (client, _uid, payload) => this.handleStrokePoints(client, payload),
+    );
+    this.registerGameMessage<Record<string, unknown>>(
+      "stroke_end",
+      (client, _uid, payload) => this.handleStrokeEnd(client, payload),
+    );
+    this.registerGameMessage<Record<string, unknown>>(
+      "guess",
+      (client, _uid, payload) => this.handleGuess(client, payload),
+    );
+    this.registerGameMessage<Record<string, unknown>>(
+      "word_choice",
+      (client, _uid, payload) => this.handleWordChoice(client, payload),
+    );
+    this.registerGameMessage("undo", (client) => this.handleUndo(client));
+    this.registerGameMessage("clear", (client) => this.handleClear(client));
+    this.registerGameMessage<Record<string, unknown>>(
+      "reaction",
+      (client, _uid, payload) => this.handleReaction(client, payload),
+    );
   }
 
   protected onMatchStart(): void {

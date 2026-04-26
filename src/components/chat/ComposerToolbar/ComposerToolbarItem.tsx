@@ -65,6 +65,7 @@ import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withSpring,
+  withTiming,
   type WithSpringConfig,
 } from "react-native-reanimated";
 import { scheduleOnRN } from "react-native-worklets";
@@ -80,6 +81,9 @@ import { EDIT_MODE_LONG_PRESS_DURATION, TOOLBAR_BUTTON_SIZE } from "./types";
 // =============================================================================
 
 const DELETE_BADGE_SIZE = 20;
+const DRAG_SCALE = 1.08;
+const DRAG_SHADOW_OPACITY = 0.18;
+const RAIL_VERTICAL_FAIL_OFFSET = 14;
 
 /** General-purpose scale spring — soft return for scale animations. */
 const SPRING_CONFIG: WithSpringConfig = {
@@ -130,6 +134,10 @@ export interface ComposerToolbarItemProps {
   previewOffset?: number;
   /** Pixel offset for settle animation (smooth transition to new position). */
   settleOffset?: number;
+  /** Horizontal translation bounds while dragging, measured from the slot origin. */
+  dragBounds?: { minX: number; maxX: number };
+  /** Whether edit-mode entry is temporarily blocked by another composer state. */
+  editModeBlocked?: boolean;
   /** Called when drag starts. */
   onDragStart?: (itemId: ComposerToolbarItemId) => void;
   /** Called during drag with current translationX (for dwell detection). */
@@ -160,6 +168,8 @@ function ComposerToolbarItemBase({
   slotWidth,
   previewOffset = 0,
   settleOffset,
+  dragBounds,
+  editModeBlocked = false,
   onDragStart,
   onDragUpdate,
   onDragEnd,
@@ -175,12 +185,18 @@ function ComposerToolbarItemBase({
   const reflowOffset = useSharedValue(0);
   const scale = useSharedValue(1);
   const zIndex = useSharedValue(0);
+  const shadowOpacity = useSharedValue(0);
   const gestureEnded = useSharedValue(false);
   const editModeActivationSignal = useSharedValue(false);
 
   // Track isDragging transitions for settle animation
   const wasDraggingRef = useRef(false);
   const preEditModeCancelRef = useRef<(() => void) | null>(null);
+  const editModeBlockedRef = useRef(editModeBlocked);
+
+  useEffect(() => {
+    editModeBlockedRef.current = editModeBlocked;
+  }, [editModeBlocked]);
 
   // ── Preview offset animation (non-dragged items) ──────────────────────
   // When the dragged item hovers over a new slot, the Row computes pixel
@@ -245,34 +261,47 @@ function ComposerToolbarItemBase({
   );
 
   const triggerEditModeEntry = useCallback(() => {
+    if (editModeBlockedRef.current) {
+      editModeActivationSignal.value = false;
+      return;
+    }
     preEditModeCancelRef.current?.();
     onLongPress?.();
-  }, [onLongPress]);
+  }, [editModeActivationSignal, onLongPress]);
 
   // ── Pan gesture for dragging (edit mode only) ─────────────────────────
   const panGesture = Gesture.Pan()
     .enabled(isEditing)
-    .activeOffsetX([-10, 10])
+    .activeOffsetX([-6, 6])
+    .failOffsetY([-RAIL_VERTICAL_FAIL_OFFSET, RAIL_VERTICAL_FAIL_OFFSET])
     .onStart(() => {
       "worklet";
       gestureEnded.value = false;
-      scale.value = withSpring(1.08, SNAP_SPRING);
+      scale.value = withSpring(DRAG_SCALE, SNAP_SPRING);
+      shadowOpacity.value = withTiming(DRAG_SHADOW_OPACITY, { duration: 120 });
       zIndex.value = 100;
       scheduleOnRN(triggerDragStartHaptic);
     })
     .onUpdate((e) => {
       "worklet";
-      translateX.value = e.translationX;
-      scheduleOnRN(triggerDragUpdate, e.translationX);
+      const boundedX = dragBounds
+        ? Math.max(dragBounds.minX, Math.min(e.translationX, dragBounds.maxX))
+        : e.translationX;
+      translateX.value = boundedX;
+      scheduleOnRN(triggerDragUpdate, boundedX);
     })
     .onEnd((e) => {
       "worklet";
+      const boundedX = dragBounds
+        ? Math.max(dragBounds.minX, Math.min(e.translationX, dragBounds.maxX))
+        : e.translationX;
       gestureEnded.value = true;
       // Don't change translateX — the React settle effect handles
       // smooth animation from the visual drag position to the new slot.
       scale.value = withSpring(1, SPRING_CONFIG);
+      shadowOpacity.value = withTiming(0, { duration: 140 });
       zIndex.value = 0;
-      scheduleOnRN(triggerDragEnd, e.translationX);
+      scheduleOnRN(triggerDragEnd, boundedX);
     })
     .onFinalize(() => {
       "worklet";
@@ -281,12 +310,13 @@ function ComposerToolbarItemBase({
         translateX.value = withSpring(0, SNAP_SPRING);
       }
       scale.value = withSpring(1, SPRING_CONFIG);
+      shadowOpacity.value = withTiming(0, { duration: 140 });
       zIndex.value = 0;
     });
 
   // ── Long press gesture for entering edit mode ─────────────────────────
   const longPressGesture = Gesture.LongPress()
-    .enabled(!isEditing)
+    .enabled(!isEditing && !editModeBlocked)
     .minDuration(editModeLongPressDuration ?? EDIT_MODE_LONG_PRESS_DURATION)
     .onStart(() => {
       "worklet";
@@ -307,6 +337,8 @@ function ComposerToolbarItemBase({
     return {
       transform: [{ translateX: totalX }, { scale: scale.value }],
       zIndex: zIndex.value,
+      elevation: zIndex.value > 0 ? 8 : 0,
+      shadowOpacity: shadowOpacity.value,
     };
   });
 
@@ -393,6 +425,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     minHeight: TOOLBAR_BUTTON_SIZE,
     position: "relative",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 10,
   },
   childrenWrapper: {
     flex: 1,
