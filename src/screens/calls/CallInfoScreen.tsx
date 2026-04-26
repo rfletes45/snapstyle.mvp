@@ -241,13 +241,13 @@ export default function CallInfoScreen({ route, navigation }: Props) {
   const handleAudioCall = useCallback(async () => {
     if (!entry?.otherUserId || !CALL_FEATURES.CALLS_ENABLED) return;
     try {
-      await startCall(
+      const newCallId = await startCall(
         entry.otherUserId,
         "audio",
         entry.otherUserName ?? undefined,
       );
       navigation.navigate("DirectCall", {
-        callId: entry.callId,
+        callId: newCallId,
         recipientName: entry.otherUserName ?? "Unknown",
         mode: "audio",
         isOutgoing: true,
@@ -260,13 +260,13 @@ export default function CallInfoScreen({ route, navigation }: Props) {
   const handleVideoCall = useCallback(async () => {
     if (!entry?.otherUserId || !CALL_FEATURES.CALLS_ENABLED) return;
     try {
-      await startCall(
+      const newCallId = await startCall(
         entry.otherUserId,
         "video",
         entry.otherUserName ?? undefined,
       );
       navigation.navigate("DirectCall", {
-        callId: entry.callId,
+        callId: newCallId,
         recipientName: entry.otherUserName ?? "Unknown",
         mode: "video",
         isOutgoing: true,
@@ -555,7 +555,7 @@ export default function CallInfoScreen({ route, navigation }: Props) {
             color={colors.textSecondary}
           />
           <Text style={[styles.errorText, { color: colors.text }]}>
-            This call entry couldn't be loaded.
+            This call entry could not be loaded.
           </Text>
         </View>
       </View>

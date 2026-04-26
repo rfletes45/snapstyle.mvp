@@ -11,11 +11,49 @@
  */
 
 import {
-  normalizeConversationFromInboxEntry,
-  normalizeConversationRow,
-  sortInboxConversations,
+  applyPendingPinOverrides,
+  clearConfirmedPendingPinOverrides,
+  resolveGroupAvatarUrl,
+  type PendingPinOverride,
+} from "../../src/services/chat/inboxPinOverrides";
+import {
+  normalizeConversationFromInboxEntry as normalizeConversationFromInboxEntryBase,
+  normalizeConversationRow as normalizeConversationRowBase,
+  sortInboxConversations as sortInboxConversationsBase,
 } from "../../src/services/chat/normalizeInboxRow";
-import type { InboxEntry, MemberStatePrivate } from "../../src/types/messaging";
+import type {
+  InboxConversation,
+  InboxEntry,
+  MemberStatePrivate,
+} from "../../src/types/messaging";
+
+const normalizeConversationFromInboxEntry =
+  normalizeConversationFromInboxEntryBase;
+const normalizeConversationRow = normalizeConversationRowBase;
+const sortInboxConversations = sortInboxConversationsBase;
+
+function makeInboxConversation(
+  overrides: Partial<InboxConversation> = {},
+): InboxConversation {
+  return {
+    id: "chat-1",
+    type: "dm",
+    name: "Taylor",
+    avatarUrl: null,
+    lastMessage: null,
+    memberState: {
+      uid: "u-me",
+      archived: false,
+      lastSeenAtPrivate: 0,
+      notifyLevel: "all",
+    },
+    unreadCount: 0,
+    hasMentions: false,
+    createdAt: 1_000,
+    lastActivityAt: 1_000,
+    ...overrides,
+  };
+}
 
 // =============================================================================
 // 1. Firestore Timestamp → millis conversion
@@ -156,10 +194,113 @@ describe("Group avatar in normalized inbox rows", () => {
       "https://storage.example.com/group-avatar.jpg",
     );
   });
+
+  it("preserves the last known avatar when the latest hydration is empty", () => {
+    expect(
+      resolveGroupAvatarUrl(
+        null,
+        "https://storage.example.com/group-avatar.jpg",
+      ),
+    ).toBe("https://storage.example.com/group-avatar.jpg");
+  });
+
+  it("prefers the latest hydrated avatar when one is available", () => {
+    expect(
+      resolveGroupAvatarUrl(
+        "https://storage.example.com/group-avatar-new.jpg",
+        "https://storage.example.com/group-avatar-old.jpg",
+      ),
+    ).toBe("https://storage.example.com/group-avatar-new.jpg");
+  });
 });
 
 // =============================================================================
-// 3. DM profile field hydration parity
+// 3. Pending pin override reconciliation
+// =============================================================================
+
+describe("Pending pin overrides", () => {
+  function makePendingOverride(pinnedAt: number | null): PendingPinOverride {
+    return {
+      pinnedAt,
+      requestedAt: 9_000,
+    };
+  }
+
+  it("keeps a pending pin applied when the server snapshot is still stale", () => {
+    const overrides = new Map<string, PendingPinOverride>([
+      ["group:g-1", makePendingOverride(9_000)],
+    ]);
+
+    const updated = applyPendingPinOverrides(
+      [
+        makeInboxConversation({
+          id: "g-1",
+          type: "group",
+          name: "Study Group",
+        }),
+      ],
+      overrides,
+    );
+
+    expect(updated[0].memberState.pinnedAt).toBe(9_000);
+  });
+
+  it("keeps a pending unpin applied while a stale snapshot still says pinned", () => {
+    const overrides = new Map<string, PendingPinOverride>([
+      ["group:g-1", makePendingOverride(null)],
+    ]);
+
+    const updated = applyPendingPinOverrides(
+      [
+        makeInboxConversation({
+          id: "g-1",
+          type: "group",
+          name: "Study Group",
+          memberState: {
+            uid: "u-me",
+            archived: false,
+            lastSeenAtPrivate: 0,
+            notifyLevel: "all",
+            pinnedAt: 12_000,
+          },
+        }),
+      ],
+      overrides,
+    );
+
+    expect(updated[0].memberState.pinnedAt).toBeNull();
+  });
+
+  it("clears a pending override once the server matches the desired pin state", () => {
+    const overrides = new Map<string, PendingPinOverride>([
+      ["group:g-1", makePendingOverride(9_000)],
+    ]);
+
+    const cleared = clearConfirmedPendingPinOverrides(
+      [
+        makeInboxConversation({
+          id: "g-1",
+          type: "group",
+          name: "Study Group",
+          memberState: {
+            uid: "u-me",
+            archived: false,
+            lastSeenAtPrivate: 0,
+            notifyLevel: "all",
+            pinnedAt: 12_000,
+          },
+        }),
+      ],
+      overrides,
+    );
+
+    expect(cleared).toEqual(["group:g-1"]);
+    expect(overrides.size).toBe(0);
+  });
+});
+
+// =============================================================================
+// 4. DM profile field hydration parity
 // =============================================================================
 
 describe("DM profile field hydration", () => {
@@ -219,7 +360,7 @@ describe("DM profile field hydration", () => {
 });
 
 // =============================================================================
-// 4. Message preview edge cases
+// 5. Message preview edge cases
 // =============================================================================
 
 describe("Message preview for various message kinds", () => {

@@ -50,6 +50,16 @@ export interface CallControlBarProps {
   /** Disable mic control (e.g., before call is fully joined) */
   micDisabled?: boolean;
 
+  /** Stream/Krisp noise cancellation state */
+  noiseCancellation?: {
+    show?: boolean;
+    isEnabled: boolean;
+    isSupported: boolean;
+    isLoading: boolean;
+    error?: string | null;
+    onToggle: () => void;
+  };
+
   /** Leave / end call action */
   onLeave: () => void;
   /** Label for leave button (default: "Leave") */
@@ -72,11 +82,15 @@ export function CallControlBar({
   onFlipCamera,
   showFlipCamera = false,
   micDisabled = false,
+  noiseCancellation,
   onLeave,
   leaveLabel = "Leave",
 }: CallControlBarProps) {
   const { colors } = useAppTheme();
   const insets = useSafeAreaInsets();
+  const showNoiseCancellation = noiseCancellation?.show !== false;
+  const noiseCancellationLabel =
+    noiseCancellation && getNoiseCancellationLabel(noiseCancellation);
 
   return (
     <View
@@ -126,6 +140,23 @@ export function CallControlBar({
         )}
 
         {/* ── Camera Flip ────────────────────────────────── */}
+        {noiseCancellation && showNoiseCancellation && (
+          <ControlPill
+            icon={
+              noiseCancellation.isEnabled ? "ear-hearing" : "ear-hearing-off"
+            }
+            label={noiseCancellationLabel ?? "NC"}
+            isActive={noiseCancellation.isEnabled}
+            activeColor={colors.success}
+            onPress={noiseCancellation.onToggle}
+            disabled={
+              noiseCancellation.isLoading ||
+              (!noiseCancellation.isSupported && !noiseCancellation.isEnabled)
+            }
+            colors={colors}
+          />
+        )}
+
         {showFlipCamera && onFlipCamera && !isCameraOff && (
           <ControlPill
             icon="camera-flip"
@@ -156,6 +187,15 @@ export function CallControlBar({
 // ---------------------------------------------------------------------------
 // ControlPill — individual toggle button
 // ---------------------------------------------------------------------------
+
+function getNoiseCancellationLabel(
+  state: NonNullable<CallControlBarProps["noiseCancellation"]>,
+): string {
+  if (state.isLoading) return "NC...";
+  if (state.error) return "NC Error";
+  if (!state.isSupported) return "No NC";
+  return state.isEnabled ? "NC On" : "NC Off";
+}
 
 interface ControlPillProps {
   icon: keyof typeof MaterialCommunityIcons.glyphMap;

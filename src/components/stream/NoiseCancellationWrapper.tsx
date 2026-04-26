@@ -1,146 +1,481 @@
 /**
  * Noise Cancellation Wrapper
  *
- * Wraps children in Stream's NoiseCancellationProvider (must be inside <StreamCall>).
- * Provides runtime debug logging of noise cancellation state and a minimal
- * status indicator hook for call UIs.
- *
- * If the native module is unavailable (e.g. Expo Go), renders children without
- * the provider — call UI still works, just without Krisp noise cancellation.
+ * Stream's NoiseCancellationProvider must be rendered below StreamCall.
+ * This wrapper adds the app-level pieces around it:
+ * - safe native-module preflight so Expo Go / stale native builds do not crash
+ * - user preference enforcement
+ * - conservative auto-enable after the call is actually joined
+ * - context-based status for call controls
  */
 
 import { CALL_FEATURES } from "@/constants/featureFlags";
+import { callSettingsService } from "@/services/calls";
 import { createLogger, isDebugEnabled } from "@/utils/log";
-import React, { useEffect, useMemo } from "react";
+import {
+  CallingState,
+  NoiseCancellationProvider as StreamNoiseCancellationProvider,
+  useCall,
+  useCallStateHooks,
+  useNoiseCancellation,
+} from "@stream-io/video-react-native-sdk";
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
-// ---------------------------------------------------------------------------
-// Lazy load NoiseCancellationProvider + hook so the module doesn't crash in
-// environments where the native module isn't linked (Expo Go, web).
-// ---------------------------------------------------------------------------
-let NoiseCancellationProvider: React.ComponentType<{
-  noiseCancellation?: any;
-  children: React.ReactNode;
-}> | null = null;
-let useNoiseCancellation:
-  | (() => {
-      isSupported: boolean | undefined;
-      isEnabled: boolean;
-      setEnabled: (fn: boolean | ((prev: boolean) => boolean)) => void;
-      deviceSupportsAdvancedAudioProcessing: boolean | undefined;
-    })
-  | null = null;
-let useCallStateHooks:
-  | (() => {
-      useCallSettings: () => any;
-    })
-  | null = null;
-// Native noise-cancellation bridge instance (required as the
-// `noiseCancellation` prop on NoiseCancellationProvider — without it the
-// provider renders but performs NO audio processing, which is why the
-// Stream dashboard was reporting zero noise-cancellation minutes).
-let NoiseCancellationImpl: any = null;
+type NoiseCancellationMode = "available" | "disabled" | "auto-on" | string;
 
-if (CALL_FEATURES.CALLS_ENABLED) {
-  try {
-    const sdk = require("@stream-io/video-react-native-sdk");
-    NoiseCancellationProvider = sdk.NoiseCancellationProvider ?? null;
-    useNoiseCancellation = sdk.useNoiseCancellation ?? null;
-    useCallStateHooks = sdk.useCallStateHooks ?? null;
-  } catch {
-    // Native module unavailable
-  }
-  try {
-    const ncModule = require("@stream-io/noise-cancellation-react-native");
-    NoiseCancellationImpl =
-      ncModule.NoiseCancellation ?? ncModule.default ?? null;
-  } catch {
-    // Krisp native module not linked (Expo Go / older Android builds)
-  }
+interface NoiseCancellationHookValue {
+  isSupported: boolean | undefined;
+  isEnabled: boolean;
+  setEnabled: (value: boolean | ((prev: boolean) => boolean)) => void;
+  deviceSupportsAdvancedAudioProcessing: boolean | undefined;
+}
+
+interface StreamCallSettings {
+  audio?: {
+    noise_cancellation?: {
+      mode?: NoiseCancellationMode | null;
+    } | null;
+  } | null;
+}
+
+interface CallStateHooksValue {
+  useCallSettings: () => StreamCallSettings | undefined;
+  useCallCallingState: () => unknown;
+}
+
+interface NativeNoiseCancellationModule {
+  deviceSupportsAdvancedAudioProcessing?: () => boolean | Promise<boolean>;
+  isEnabled?: () => boolean | Promise<boolean>;
+}
+
+interface MinimalCall {
+  id?: string;
+  type?: string;
+}
+
+interface NativePreflightState {
+  phase: "checking" | "ready" | "unavailable";
+  packageInstalled: boolean;
+  nativeLinked: boolean;
+  deviceSupportsAdvanced: boolean | undefined;
+  error: string | null;
+}
+
+export interface NoiseCancellationStatus {
+  /** Dashboard mode: "available" | "disabled" | "auto-on" | null */
+  dashboardMode: NoiseCancellationMode | null;
+  /** true only when dashboard, native module, and device capability allow NC */
+  isSupported: boolean | undefined;
+  /** SDK/server support gate before app/device gating is applied */
+  sdkSupported: boolean | undefined;
+  /** true when NC is currently active on this call */
+  isEnabled: boolean;
+  /** true when the device reports advanced audio processing support */
+  deviceSupportsAdvanced: boolean | undefined;
+  /** Toggle NC on/off. Enabling is ignored when unsupported. */
+  setEnabled: (value: boolean | ((prev: boolean) => boolean)) => void;
+  /** Whether the SDK provider is mounted and usable */
+  isAvailable: boolean;
+  /** Whether package/native/device/dashboard checks are still loading */
+  isLoading: boolean;
+  /** Safe, non-private error/reason for disabled state */
+  error: string | null;
+  packageInstalled: boolean;
+  nativeLinked: boolean;
+  providerMounted: boolean;
+  userPreferenceEnabled: boolean;
+  callType: string | null;
 }
 
 const TAG = "[NoiseCancellation]";
 const log = createLogger("stream/noiseCancellation");
 
-// ---------------------------------------------------------------------------
-// Debug Logger (must be inside NoiseCancellationProvider + StreamCall)
-// ---------------------------------------------------------------------------
-function NoiseCancellationDebugLogger() {
-  if (!useNoiseCancellation || !useCallStateHooks) return null;
+let nativeNoiseCancellationModule: NativeNoiseCancellationModule | null = null;
 
-  // eslint-disable-next-line react-hooks/rules-of-hooks
-  const { isSupported, isEnabled, deviceSupportsAdvancedAudioProcessing } =
-    useNoiseCancellation();
+if (CALL_FEATURES.CALLS_ENABLED) {
+  try {
+    nativeNoiseCancellationModule = require(
+      "@stream-io/noise-cancellation-react-native",
+    ) as NativeNoiseCancellationModule;
+  } catch {
+    nativeNoiseCancellationModule = null;
+  }
+}
 
-  // eslint-disable-next-line react-hooks/rules-of-hooks
-  const { useCallSettings } = useCallStateHooks();
-  // eslint-disable-next-line react-hooks/rules-of-hooks
-  const settings = useCallSettings();
+const noopSetEnabled = (_value: boolean | ((prev: boolean) => boolean)) => {};
 
-  const dashboardMode = settings?.audio?.noise_cancellation?.mode ?? "unknown";
+const defaultNoiseCancellationStatus: NoiseCancellationStatus = {
+  dashboardMode: null,
+  isSupported: undefined,
+  sdkSupported: undefined,
+  isEnabled: false,
+  deviceSupportsAdvanced: undefined,
+  setEnabled: noopSetEnabled,
+  isAvailable: false,
+  isLoading: false,
+  error: null,
+  packageInstalled: false,
+  nativeLinked: false,
+  providerMounted: false,
+  userPreferenceEnabled: callSettingsService.getSettingsSync().noiseSuppression,
+  callType: null,
+};
 
-  // eslint-disable-next-line react-hooks/rules-of-hooks
+const NoiseCancellationStatusContext =
+  createContext<NoiseCancellationStatus>(defaultNoiseCancellationStatus);
+
+function safeErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+  if (typeof error === "string" && error.trim()) {
+    return error;
+  }
+  return "Noise cancellation is unavailable in this build.";
+}
+
+function useNativeNoiseCancellationPreflight(): NativePreflightState {
+  const [state, setState] = useState<NativePreflightState>(() => ({
+    phase: CALL_FEATURES.CALLS_ENABLED ? "checking" : "unavailable",
+    packageInstalled: !!nativeNoiseCancellationModule,
+    nativeLinked: false,
+    deviceSupportsAdvanced: undefined,
+    error: CALL_FEATURES.CALLS_ENABLED ? null : "Calls are disabled.",
+  }));
+
   useEffect(() => {
-    if (!isDebugEnabled("CALLS")) return;
-    log.debug(`${TAG} State`, {
-      dashboardMode,
-      isSupported,
-      isEnabled,
-      deviceSupportsAdvancedAudioProcessing,
+    let cancelled = false;
+
+    const unavailable = (
+      error: string,
+      packageInstalled = !!nativeNoiseCancellationModule,
+      nativeLinked = false,
+    ) => {
+      if (cancelled) return;
+      setState({
+        phase: "unavailable",
+        packageInstalled,
+        nativeLinked,
+        deviceSupportsAdvanced: undefined,
+        error,
+      });
+    };
+
+    if (!CALL_FEATURES.CALLS_ENABLED) {
+      unavailable("Calls are disabled.", false, false);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    const nativeModule = nativeNoiseCancellationModule;
+    if (
+      !nativeModule ||
+      typeof nativeModule.deviceSupportsAdvancedAudioProcessing !== "function"
+    ) {
+      unavailable(
+        "The Stream noise-cancellation package is not installed or not linked.",
+        !!nativeModule,
+        false,
+      );
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    (async () => {
+      try {
+        const deviceSupportsAdvanced = await Promise.resolve(
+          nativeModule.deviceSupportsAdvancedAudioProcessing?.(),
+        );
+
+        if (typeof nativeModule.isEnabled === "function") {
+          await Promise.resolve(nativeModule.isEnabled());
+        }
+
+        if (cancelled) return;
+        setState({
+          phase: "ready",
+          packageInstalled: true,
+          nativeLinked: true,
+          deviceSupportsAdvanced: !!deviceSupportsAdvanced,
+          error: null,
+        });
+      } catch (error) {
+        unavailable(safeErrorMessage(error), true, false);
+        if (isDebugEnabled("CALLS")) {
+          log.debug(`${TAG} Native preflight failed`, {
+            data: { error: safeErrorMessage(error) },
+          });
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return state;
+}
+
+function NoiseCancellationRuntimeBridge({
+  children,
+  nativeState,
+}: {
+  children: React.ReactNode;
+  nativeState: NativePreflightState;
+}) {
+  const nc = useNoiseCancellation() as NoiseCancellationHookValue;
+  const { useCallSettings, useCallCallingState } =
+    useCallStateHooks() as CallStateHooksValue;
+  const settings = useCallSettings();
+  const callingState = useCallCallingState();
+  const call = (useCall() as MinimalCall | undefined) ?? null;
+
+  const [userPreferenceEnabled, setUserPreferenceEnabled] = useState(
+    () => callSettingsService.getSettingsSync().noiseSuppression,
+  );
+  const [runtimeError, setRuntimeError] = useState<string | null>(null);
+  const manualOverrideRef = useRef(false);
+  const previousPreferenceRef = useRef(userPreferenceEnabled);
+  const previousCallKeyRef = useRef<string | null>(null);
+
+  const callType = typeof call?.type === "string" ? call.type : null;
+  const callKey = `${callType ?? "unknown"}:${call?.id ?? "unknown"}`;
+  const dashboardMode = settings?.audio?.noise_cancellation?.mode ?? null;
+  const deviceSupportsAdvanced =
+    nc.deviceSupportsAdvancedAudioProcessing ??
+    nativeState.deviceSupportsAdvanced;
+  const isSupported =
+    nativeState.phase === "ready" &&
+    nc.isSupported === true &&
+    deviceSupportsAdvanced === true;
+  const isLoading =
+    nativeState.phase === "checking" ||
+    nc.isSupported === undefined ||
+    deviceSupportsAdvanced === undefined;
+
+  useEffect(() => {
+    if (previousCallKeyRef.current === callKey) return;
+    previousCallKeyRef.current = callKey;
+    manualOverrideRef.current = false;
+    setRuntimeError(null);
+  }, [callKey]);
+
+  useEffect(() => {
+    const unsubscribe = callSettingsService.addListener((settingsSnapshot) => {
+      const nextPreference = settingsSnapshot.noiseSuppression;
+      if (previousPreferenceRef.current !== nextPreference) {
+        previousPreferenceRef.current = nextPreference;
+        manualOverrideRef.current = false;
+      }
+      setUserPreferenceEnabled(nextPreference);
     });
+    return unsubscribe;
+  }, []);
+
+  const setNoiseCancellationEnabled = useCallback(
+    (value: boolean | ((prev: boolean) => boolean)) => {
+      const nextEnabled =
+        typeof value === "function" ? value(nc.isEnabled) : value;
+      manualOverrideRef.current = true;
+
+      if (nextEnabled && !isSupported) {
+        const reason =
+          deviceSupportsAdvanced === false
+            ? "This device does not support advanced audio processing."
+            : dashboardMode === "disabled"
+              ? "Noise cancellation is disabled for this Stream call type."
+              : "Noise cancellation is not ready for this call.";
+        setRuntimeError(reason);
+        if (isDebugEnabled("CALLS")) {
+          log.debug(`${TAG} Enable ignored`, {
+            data: {
+              dashboardMode,
+              sdkSupported: nc.isSupported,
+              deviceSupportsAdvanced,
+              nativeLinked: nativeState.nativeLinked,
+              callType,
+            },
+          });
+        }
+        return;
+      }
+
+      try {
+        nc.setEnabled(nextEnabled);
+        setRuntimeError(null);
+      } catch (error) {
+        const message = safeErrorMessage(error);
+        setRuntimeError(message);
+        log.warn(`${TAG} Failed to toggle noise cancellation`, {
+          data: { error: message },
+        });
+      }
+    },
+    [
+      callType,
+      dashboardMode,
+      deviceSupportsAdvanced,
+      isSupported,
+      nativeState.nativeLinked,
+      nc,
+    ],
+  );
+
+  useEffect(() => {
+    if (!nc.isEnabled || userPreferenceEnabled) return;
+    try {
+      nc.setEnabled(false);
+    } catch (error) {
+      const message = safeErrorMessage(error);
+      setRuntimeError(message);
+      log.warn(`${TAG} Failed to disable after preference change`, {
+        data: { error: message },
+      });
+    }
+  }, [nc, nc.isEnabled, userPreferenceEnabled]);
+
+  useEffect(() => {
+    if (callingState !== CallingState.JOINED) return;
+    if (!userPreferenceEnabled) return;
+    if (manualOverrideRef.current) return;
+    if (!isSupported || nc.isEnabled) return;
+
+    try {
+      if (isDebugEnabled("CALLS")) {
+        log.debug(`${TAG} Auto-enabling`, {
+          data: {
+            dashboardMode,
+            sdkSupported: nc.isSupported,
+            deviceSupportsAdvanced,
+            nativeLinked: nativeState.nativeLinked,
+            callType,
+          },
+        });
+      }
+      nc.setEnabled(true);
+      setRuntimeError(null);
+    } catch (error) {
+      const message = safeErrorMessage(error);
+      setRuntimeError(message);
+      log.warn(`${TAG} Auto-enable failed`, { data: { error: message } });
+    }
   }, [
+    callType,
+    callingState,
     dashboardMode,
+    deviceSupportsAdvanced,
     isSupported,
-    isEnabled,
-    deviceSupportsAdvancedAudioProcessing,
+    nativeState.nativeLinked,
+    nc,
+    nc.isEnabled,
+    nc.isSupported,
+    userPreferenceEnabled,
   ]);
 
-  return null;
-}
+  const effectiveError =
+    runtimeError ??
+    (nativeState.phase === "unavailable" ? nativeState.error : null);
 
-// ---------------------------------------------------------------------------
-// Auto-enable effect (runs inside provider)
-// ---------------------------------------------------------------------------
-//
-// Stream's NoiseCancellationProvider does NOT auto-activate Krisp even when
-// the dashboard mode is "available". The app must explicitly call
-// setEnabled(true) once the native module reports isSupported. We gate on
-// `isSupported` (covers dashboard "available" + device capability + native
-// bridge present) and only flip the switch on — we never force-off, so the
-// user can still mute noise cancellation from call UI if that's exposed.
-// This is what was previously missing and is why Stream was crediting zero
-// noise-cancellation minutes for this app.
-function NoiseCancellationAutoEnable() {
-  if (!useNoiseCancellation || !useCallStateHooks) return null;
-  // eslint-disable-next-line react-hooks/rules-of-hooks
-  const { isSupported, isEnabled, setEnabled } = useNoiseCancellation();
-  // eslint-disable-next-line react-hooks/rules-of-hooks
-  const { useCallSettings } = useCallStateHooks();
-  // eslint-disable-next-line react-hooks/rules-of-hooks
-  const settings = useCallSettings();
-  const dashboardMode = settings?.audio?.noise_cancellation?.mode ?? null;
+  const contextValue = useMemo<NoiseCancellationStatus>(
+    () => ({
+      dashboardMode,
+      isSupported,
+      sdkSupported: nc.isSupported,
+      isEnabled: nc.isEnabled,
+      deviceSupportsAdvanced,
+      setEnabled: setNoiseCancellationEnabled,
+      isAvailable: nativeState.phase === "ready",
+      isLoading,
+      error: effectiveError,
+      packageInstalled: nativeState.packageInstalled,
+      nativeLinked: nativeState.nativeLinked,
+      providerMounted: true,
+      userPreferenceEnabled,
+      callType,
+    }),
+    [
+      callType,
+      dashboardMode,
+      deviceSupportsAdvanced,
+      effectiveError,
+      isLoading,
+      isSupported,
+      nativeState.nativeLinked,
+      nativeState.packageInstalled,
+      nativeState.phase,
+      nc.isEnabled,
+      nc.isSupported,
+      setNoiseCancellationEnabled,
+      userPreferenceEnabled,
+    ],
+  );
 
-  // eslint-disable-next-line react-hooks/rules-of-hooks
+  const debugSnapshotRef = useRef("");
   useEffect(() => {
-    // Dashboard "auto-on" already flips isEnabled internally; only push
-    // ourselves when the dashboard is "available" (opt-in) and the
-    // native + device stack reports support.
-    if (isSupported && !isEnabled && dashboardMode !== "disabled") {
-      if (isDebugEnabled("CALLS")) {
-        log.debug(`${TAG} Auto-enabling`, { dashboardMode });
-      }
-      setEnabled(true);
-    }
-  }, [isSupported, isEnabled, dashboardMode, setEnabled]);
+    if (!isDebugEnabled("CALLS")) return;
+    const snapshot = JSON.stringify({
+      dashboardMode,
+      sdkSupported: nc.isSupported,
+      deviceSupportsAdvanced,
+      enabled: nc.isEnabled,
+      supported: isSupported,
+      loading: isLoading,
+      nativeLinked: nativeState.nativeLinked,
+      providerMounted: true,
+      userPreferenceEnabled,
+      callType,
+      error: effectiveError,
+    });
+    if (debugSnapshotRef.current === snapshot) return;
+    debugSnapshotRef.current = snapshot;
+    log.debug(`${TAG} State`, {
+      data: {
+        dashboardMode,
+        sdkSupported: nc.isSupported,
+        deviceSupportsAdvanced,
+        enabled: nc.isEnabled,
+        supported: isSupported,
+        loading: isLoading,
+        nativeLinked: nativeState.nativeLinked,
+        providerMounted: true,
+        userPreferenceEnabled,
+        callType,
+        error: effectiveError,
+      },
+    });
+  }, [
+    callType,
+    dashboardMode,
+    deviceSupportsAdvanced,
+    effectiveError,
+    isLoading,
+    isSupported,
+    nativeState.nativeLinked,
+    nc.isEnabled,
+    nc.isSupported,
+    userPreferenceEnabled,
+  ]);
 
-  return null;
+  return (
+    <NoiseCancellationStatusContext.Provider value={contextValue}>
+      {children}
+    </NoiseCancellationStatusContext.Provider>
+  );
 }
-
-// ---------------------------------------------------------------------------
-// Public wrapper component
-// ---------------------------------------------------------------------------
 
 /**
- * Place this inside <StreamCall> to enable Stream/Krisp noise cancellation.
+ * Place this inside StreamCall to enable Stream/Krisp noise cancellation.
  * Falls back gracefully when the native module is unavailable.
  */
 export function NoiseCancellationWrapper({
@@ -148,100 +483,43 @@ export function NoiseCancellationWrapper({
 }: {
   children: React.ReactNode;
 }) {
-  // Instantiate the native Krisp bridge once per wrapper mount. Without
-  // passing this as the `noiseCancellation` prop to NoiseCancellationProvider
-  // the provider is a no-op and produces zero Stream-side noise cancellation
-  // minutes, regardless of dashboard configuration.
-  const noiseCancellation = useMemo(() => {
-    if (!NoiseCancellationImpl) return null;
-    try {
-      return new NoiseCancellationImpl();
-    } catch (err) {
-      log.warn(`${TAG} Failed to construct NoiseCancellation instance`, err);
-      return null;
-    }
-  }, []);
+  const nativeState = useNativeNoiseCancellationPreflight();
 
-  if (!NoiseCancellationProvider) {
-    // Native module not available — render children directly
-    return <>{children}</>;
-  }
+  const fallbackStatus = useMemo<NoiseCancellationStatus>(
+    () => ({
+      ...defaultNoiseCancellationStatus,
+      packageInstalled: nativeState.packageInstalled,
+      nativeLinked: nativeState.nativeLinked,
+      deviceSupportsAdvanced: nativeState.deviceSupportsAdvanced,
+      isLoading: nativeState.phase === "checking",
+      error: nativeState.error,
+    }),
+    [
+      nativeState.deviceSupportsAdvanced,
+      nativeState.error,
+      nativeState.nativeLinked,
+      nativeState.packageInstalled,
+      nativeState.phase,
+    ],
+  );
 
-  if (!noiseCancellation) {
-    // Provider exists but Krisp bridge missing — providing the provider
-    // without the bridge would still be a no-op, so skip it and log once
-    // so it's obvious in TestFlight logs why NC isn't running.
-    log.warn(
-      `${TAG} NoiseCancellationProvider present but Krisp native bridge is not linked — noise cancellation disabled.`,
+  if (nativeState.phase !== "ready") {
+    return (
+      <NoiseCancellationStatusContext.Provider value={fallbackStatus}>
+        {children}
+      </NoiseCancellationStatusContext.Provider>
     );
-    return <>{children}</>;
   }
 
   return (
-    <NoiseCancellationProvider noiseCancellation={noiseCancellation}>
-      <NoiseCancellationAutoEnable />
-      <NoiseCancellationDebugLogger />
-      {children}
-    </NoiseCancellationProvider>
+    <StreamNoiseCancellationProvider>
+      <NoiseCancellationRuntimeBridge nativeState={nativeState}>
+        {children}
+      </NoiseCancellationRuntimeBridge>
+    </StreamNoiseCancellationProvider>
   );
 }
 
-// ---------------------------------------------------------------------------
-// Status hook for call UIs (safe to call outside NoiseCancellationProvider —
-// returns null values when the provider isn't present)
-// ---------------------------------------------------------------------------
-
-export interface NoiseCancellationStatus {
-  /** Dashboard mode: "available" | "disabled" | "auto-on" | null */
-  dashboardMode: string | null;
-  /** true if the native module + dashboard allow NC */
-  isSupported: boolean | undefined;
-  /** true if NC is currently active on this call */
-  isEnabled: boolean;
-  /** true if the device has Apple Neural Engine / Android AUDIO_PRO */
-  deviceSupportsAdvanced: boolean | undefined;
-  /** Toggle NC on/off (no-op if not supported) */
-  setEnabled: (fn: boolean | ((prev: boolean) => boolean)) => void;
-  /** Whether the full noise cancellation stack is available */
-  isAvailable: boolean;
-}
-
-/**
- * Use inside a component that is a child of NoiseCancellationWrapper.
- * Returns null-safe defaults when the native module isn't loaded.
- */
 export function useNoiseCancellationStatus(): NoiseCancellationStatus {
-  const noopSetEnabled = React.useCallback(
-    (_fn: boolean | ((prev: boolean) => boolean)) => {},
-    [],
-  );
-
-  if (!useNoiseCancellation || !useCallStateHooks) {
-    return {
-      dashboardMode: null,
-      isSupported: undefined,
-      isEnabled: false,
-      deviceSupportsAdvanced: undefined,
-      setEnabled: noopSetEnabled,
-      isAvailable: false,
-    };
-  }
-
-  // eslint-disable-next-line react-hooks/rules-of-hooks
-  const nc = useNoiseCancellation();
-  // eslint-disable-next-line react-hooks/rules-of-hooks
-  const { useCallSettings } = useCallStateHooks();
-  // eslint-disable-next-line react-hooks/rules-of-hooks
-  const settings = useCallSettings();
-
-  const dashboardMode = settings?.audio?.noise_cancellation?.mode ?? null;
-
-  return {
-    dashboardMode,
-    isSupported: nc.isSupported,
-    isEnabled: nc.isEnabled,
-    deviceSupportsAdvanced: nc.deviceSupportsAdvancedAudioProcessing,
-    setEnabled: nc.setEnabled,
-    isAvailable: true,
-  };
+  return useContext(NoiseCancellationStatusContext);
 }

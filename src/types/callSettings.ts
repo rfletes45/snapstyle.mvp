@@ -22,6 +22,7 @@ export interface CallSettings {
   mirrorFrontCamera: boolean;
   autoEnableVideo: boolean;
   defaultAudioOutput: AudioOutput;
+  /** Enable Stream/Krisp noise cancellation by default for eligible calls. */
   noiseSuppression: boolean;
   echoCancellation: boolean;
   autoGainControl: boolean;

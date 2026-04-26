@@ -42,7 +42,7 @@ import {
   useCall,
   useCallStateHooks,
 } from "@stream-io/video-react-native-sdk";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Dimensions,
@@ -56,7 +56,10 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { NoiseCancellationWrapper } from "@/components/stream/NoiseCancellationWrapper";
+import {
+  NoiseCancellationWrapper,
+  useNoiseCancellationStatus,
+} from "@/components/stream/NoiseCancellationWrapper";
 import { useStableCallInsets } from "@/components/stream/useStableCallInsets";
 
 let callManager: any = null;
@@ -310,6 +313,19 @@ function VoiceChannelContent({
   } = useCameraState();
   const isJoined = callingState === CallingState.JOINED;
   const call = useCall();
+  const noiseCancellationStatus = useNoiseCancellationStatus();
+  const noiseCancellationControl = useMemo(
+    () => ({
+      show: true,
+      isEnabled: noiseCancellationStatus.isEnabled,
+      isSupported: noiseCancellationStatus.isSupported === true,
+      isLoading: noiseCancellationStatus.isLoading,
+      error: noiseCancellationStatus.error,
+      onToggle: () =>
+        noiseCancellationStatus.setEnabled((enabled) => !enabled),
+    }),
+    [noiseCancellationStatus],
+  );
 
   // Post-join mic publish reconciliation.
   // The service layer already does a forceRefreshMicrophoneCapture right
@@ -685,6 +701,7 @@ function VoiceChannelContent({
         showSpeaker={!!callManager?.speaker?.setForceSpeakerphoneOn}
         isSpeakerOn={isSpeakerOn}
         onToggleSpeaker={handleToggleSpeaker}
+        noiseCancellation={noiseCancellationControl}
         onLeave={onLeave}
         leaveLabel="Disconnect"
       />

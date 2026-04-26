@@ -323,6 +323,7 @@ export default function ChatListScreen() {
     key: string;
     expiresAt: number;
   } | null>(null);
+  const pendingPinMutationKeysRef = useRef<Set<string>>(new Set());
   const suppressPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
@@ -970,6 +971,20 @@ export default function ChatListScreen() {
 
   const handlePinToggleRequest = useCallback(
     (conversation: InboxConversation, source: "context-menu" | "swipe") => {
+      const mutationKey = getConversationInteractionKey(conversation);
+      if (pendingPinMutationKeysRef.current.has(mutationKey)) {
+        if (__DEV__) {
+          interactionLog.debug("pin toggle ignored while mutation pending", {
+            data: {
+              conversationId: conversation.id,
+              type: conversation.type,
+              source,
+            },
+          });
+        }
+        return;
+      }
+
       const wasPinned = !!conversation.memberState.pinnedAt;
       if (__DEV__) {
         interactionLog.debug("pin toggle requested", {
@@ -982,6 +997,7 @@ export default function ChatListScreen() {
         });
       }
 
+      pendingPinMutationKeysRef.current.add(mutationKey);
       togglePinOptimistic(conversation.id, conversation.type);
       void togglePinAction(conversation)
         .then(() => {
@@ -1009,9 +1025,12 @@ export default function ChatListScreen() {
             },
           );
           togglePinOptimistic(conversation.id, conversation.type);
+        })
+        .finally(() => {
+          pendingPinMutationKeysRef.current.delete(mutationKey);
         });
     },
-    [togglePinAction, togglePinOptimistic],
+    [getConversationInteractionKey, togglePinAction, togglePinOptimistic],
   );
 
   const handleContextMenuPin = useCallback(() => {

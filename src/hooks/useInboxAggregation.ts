@@ -41,9 +41,16 @@ import {
   type OptimisticInboxUpdate,
 } from "@/services/chat/inboxOptimisticUpdates";
 import {
+  applyPendingPinOverrides,
+  clearConfirmedPendingPinOverrides,
+  getConversationKey,
+  resolveGroupAvatarUrl,
+  type PendingPinOverride,
+} from "@/services/chat/inboxPinOverrides";
+import {
   getDefaultMemberState,
-  normalizeInboxTimestamp,
   normalizeConversationFromInboxEntry,
+  normalizeInboxTimestamp,
   RECENTLY_READ_TTL_MS,
   sortInboxConversations,
 } from "@/services/chat/normalizeInboxRow";
@@ -282,11 +289,33 @@ export function useInboxAggregation(uid: string): UseInboxAggregationResult {
     new Map(),
   );
   const persistedActivityKeysRef = useRef<Set<string>>(new Set());
+  const entriesRef = useRef<InboxConversation[]>([]);
+  const pendingPinOverridesRef = useRef<Map<string, PendingPinOverride>>(
+    new Map(),
+  );
   // Keep the expensive shadow aggregation path opt-in. The active production
   // path is controlled by CHAT_INBOX_AGGREGATION; PERF can temporarily enable
   // it for diagnostics when fan-out is active.
   const enabled =
     CHAT_FEATURES.CHAT_INBOX_AGGREGATION || isDebugEnabled("PERF");
+
+  const setTrackedEntries = useCallback(
+    (
+      nextOrUpdater:
+        | InboxConversation[]
+        | ((prev: InboxConversation[]) => InboxConversation[]),
+    ) => {
+      setEntries((prev) => {
+        const next =
+          typeof nextOrUpdater === "function"
+            ? nextOrUpdater(prev)
+            : nextOrUpdater;
+        entriesRef.current = next;
+        return next;
+      });
+    },
+    [],
+  );
 
   // ── Blocked users tracking ──────────────────────────────────────────
   const blockedUserIdsRef = useRef<Set<string>>(new Set());
@@ -352,8 +381,21 @@ export function useInboxAggregation(uid: string): UseInboxAggregationResult {
     persistedActivityKeysRef.current = nextKeys;
     pruneOptimisticActivity();
 
-    setEntries((prev) => sortInboxConversations(applyOptimisticActivity(prev)));
-  }, [applyOptimisticActivity, enabled, pruneOptimisticActivity, uid]);
+    setTrackedEntries((prev) =>
+      sortInboxConversations(
+        applyPendingPinOverrides(
+          applyOptimisticActivity(prev),
+          pendingPinOverridesRef.current,
+        ),
+      ),
+    );
+  }, [
+    applyOptimisticActivity,
+    enabled,
+    pruneOptimisticActivity,
+    setTrackedEntries,
+    uid,
+  ]);
 
   useEffect(() => {
     if (!uid || !enabled) return;
@@ -381,27 +423,30 @@ export function useInboxAggregation(uid: string): UseInboxAggregationResult {
         });
       }
 
-      setEntries((prev) =>
+      setTrackedEntries((prev) =>
         sortInboxConversations(
-          prev.map((conversation) =>
-            applyOptimisticInboxUpdate(conversation, update, uid),
+          applyPendingPinOverrides(
+            prev.map((conversation) =>
+              applyOptimisticInboxUpdate(conversation, update, uid),
+            ),
+            pendingPinOverridesRef.current,
           ),
         ),
       );
     });
-  }, [enabled, pruneOptimisticActivity, uid]);
+  }, [enabled, pruneOptimisticActivity, setTrackedEntries, uid]);
 
   useEffect(() => {
     if (!uid || !enabled) return;
 
     return subscribeToGroupBackgroundState((update) => {
-      setEntries((prev) =>
+      setTrackedEntries((prev) =>
         prev.map((conversation) =>
           applyGroupBackgroundStateToConversation(conversation, update),
         ),
       );
     });
-  }, [enabled, uid]);
+  }, [enabled, setTrackedEntries, uid]);
 
   // -------------------------------------------------------
   // Subscribe to Users/{uid}/Inbox ordered by lastActivityAt
@@ -417,7 +462,14 @@ export function useInboxAggregation(uid: string): UseInboxAggregationResult {
     // Load cold-start cache for instant render
     loadAggCache(uid).then((cached) => {
       if (cached && !isCancelled) {
-        setEntries(cached.conversations);
+        setTrackedEntries(
+          sortInboxConversations(
+            applyPendingPinOverrides(
+              applyOptimisticActivity(cached.conversations),
+              pendingPinOverridesRef.current,
+            ),
+          ),
+        );
         setLoading(false);
       }
     });
@@ -527,6 +579,13 @@ export function useInboxAggregation(uid: string): UseInboxAggregationResult {
             );
           }
 
+          const previousEntriesByKey = new Map(
+            entriesRef.current.map((conversation) => [
+              getConversationKey(conversation.type, conversation.id),
+              conversation,
+            ]),
+          );
+
           const convos = visibleEntries.map(({ entry, state }) => {
             const convo = normalizeConversationFromInboxEntry(
               entry,
@@ -548,12 +607,18 @@ export function useInboxAggregation(uid: string): UseInboxAggregationResult {
 
             // Hydrate group avatar from fetched Group doc
             if (entry.scope === "group") {
+              const previousConversation = previousEntriesByKey.get(
+                getConversationKey("group", entry.conversationId),
+              );
               const visuals = groupVisualsMap.get(entry.conversationId);
               const visualsSource = groupVisualSourceMap.get(
                 entry.conversationId,
               );
               const entryBackgroundUrl = convo.backgroundUrl ?? null;
-              convo.avatarUrl = visuals?.avatarUrl ?? null;
+              convo.avatarUrl = resolveGroupAvatarUrl(
+                visuals?.avatarUrl,
+                previousConversation?.avatarUrl,
+              );
               convo.backgroundUrl = visuals ? visuals.backgroundUrl : null;
 
               if (__DEV__) {
@@ -594,7 +659,7 @@ export function useInboxAggregation(uid: string): UseInboxAggregationResult {
                 entry.conversationId,
                 {
                   name: convo.name,
-                  avatarUrl: visuals?.avatarUrl ?? null,
+                  avatarUrl: convo.avatarUrl,
                   backgroundUrl: convo.backgroundUrl,
                 },
                 visualsSource === "cache"
@@ -608,14 +673,34 @@ export function useInboxAggregation(uid: string): UseInboxAggregationResult {
             return convo;
           });
 
+          const authoritativeConversations = applyOptimisticActivity(convos);
+          const clearedPinOverrides = clearConfirmedPendingPinOverrides(
+            authoritativeConversations,
+            pendingPinOverridesRef.current,
+          );
+          if (clearedPinOverrides.length > 0 && __DEV__) {
+            log.debug("pending pin overrides cleared", {
+              data: {
+                keys: clearedPinOverrides,
+                count: clearedPinOverrides.length,
+              },
+            });
+          }
+
           const sorted = sortInboxConversations(
-            applyOptimisticActivity(convos),
+            applyPendingPinOverrides(
+              authoritativeConversations,
+              pendingPinOverridesRef.current,
+            ),
           );
           if (!isCancelled) {
-            setEntries(sorted);
+            setTrackedEntries(sorted);
             setError(null);
             // Persist for cold-start
-            saveAggCache(uid, sorted);
+            saveAggCache(
+              uid,
+              sortInboxConversations(authoritativeConversations),
+            );
             if (shouldLogInboxPerf()) {
               log.debug("inbox snapshot processed", {
                 data: {
@@ -653,7 +738,7 @@ export function useInboxAggregation(uid: string): UseInboxAggregationResult {
         log.debug("inbox listener detached", { data: { uid } });
       }
     };
-  }, [uid, enabled, refreshKey, applyOptimisticActivity]);
+  }, [uid, enabled, refreshKey, applyOptimisticActivity, setTrackedEntries]);
 
   // -------------------------------------------------------
   // Memoised derived lists
@@ -712,7 +797,7 @@ export function useInboxAggregation(uid: string): UseInboxAggregationResult {
         }
       }
 
-      setEntries((prev) =>
+      setTrackedEntries((prev) =>
         prev.map((conversation) => {
           if (conversation.id !== conversationId) return conversation;
           if (conversationType && conversation.type !== conversationType) {
@@ -730,29 +815,54 @@ export function useInboxAggregation(uid: string): UseInboxAggregationResult {
         }),
       );
     },
-    [],
+    [setTrackedEntries],
   );
 
   const togglePinOptimistic = useCallback(
     (conversationId: string, conversationType?: "dm" | "group") => {
       const now = Date.now();
-      setEntries((prev) =>
-        prev.map((conversation) => {
+      setTrackedEntries((prev) => {
+        let nextOverride: PendingPinOverride | null = null;
+        const next = prev.map((conversation) => {
           if (conversation.id !== conversationId) return conversation;
           if (conversationType && conversation.type !== conversationType) {
             return conversation;
           }
+          const nextPinnedAt = conversation.memberState.pinnedAt ? null : now;
+          nextOverride = {
+            pinnedAt: nextPinnedAt,
+            requestedAt: now,
+          };
           return {
             ...conversation,
             memberState: {
               ...conversation.memberState,
-              pinnedAt: conversation.memberState.pinnedAt ? null : now,
+              pinnedAt: nextPinnedAt,
             },
           };
-        }),
-      );
+        });
+
+        if (nextOverride) {
+          const scope = conversationType ?? "dm";
+          pendingPinOverridesRef.current.set(
+            getConversationKey(scope, conversationId),
+            nextOverride,
+          );
+          if (__DEV__) {
+            log.debug("pending pin override applied", {
+              data: {
+                conversationId,
+                scope,
+                pinned: !!nextOverride.pinnedAt,
+              },
+            });
+          }
+        }
+
+        return sortInboxConversations(next);
+      });
     },
-    [],
+    [setTrackedEntries],
   );
 
   return {

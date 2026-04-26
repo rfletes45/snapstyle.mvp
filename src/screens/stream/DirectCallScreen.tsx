@@ -54,7 +54,10 @@ import React, {
 import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { NoiseCancellationWrapper } from "@/components/stream/NoiseCancellationWrapper";
+import {
+  NoiseCancellationWrapper,
+  useNoiseCancellationStatus,
+} from "@/components/stream/NoiseCancellationWrapper";
 import { useStableCallInsets } from "@/components/stream/useStableCallInsets";
 import { VideoRenderErrorBoundary } from "@/components/stream/VideoRenderErrorBoundary";
 import {
@@ -217,6 +220,19 @@ function DirectCallContent({
   const call = useCall();
   const isJoined = callingState === CallingState.JOINED;
   const isInPiPMode = useIsInPiPMode();
+  const noiseCancellationStatus = useNoiseCancellationStatus();
+  const noiseCancellationControl = useMemo(
+    () => ({
+      show: true,
+      isEnabled: noiseCancellationStatus.isEnabled,
+      isSupported: noiseCancellationStatus.isSupported === true,
+      isLoading: noiseCancellationStatus.isLoading,
+      error: noiseCancellationStatus.error,
+      onToggle: () =>
+        noiseCancellationStatus.setEnabled((enabled) => !enabled),
+    }),
+    [noiseCancellationStatus],
+  );
 
   // PiP restore: When PiP exits (isInPiPMode: true → false), the native
   // RTCMTLVideoView (Metal) often fails to resume rendering because Metal
@@ -700,6 +716,7 @@ function DirectCallContent({
               showSpeaker={!!callManager?.speaker?.setForceSpeakerphoneOn}
               isSpeakerOn={isSpeakerOn}
               onToggleSpeaker={handleToggleSpeaker}
+              noiseCancellation={noiseCancellationControl}
               onLeave={onEndCall}
               leaveLabel="End"
             />
@@ -826,6 +843,7 @@ function DirectCallContent({
         showSpeaker={!!callManager?.speaker?.setForceSpeakerphoneOn}
         isSpeakerOn={isSpeakerOn}
         onToggleSpeaker={handleToggleSpeaker}
+        noiseCancellation={noiseCancellationControl}
         onLeave={onEndCall}
         leaveLabel="End"
       />

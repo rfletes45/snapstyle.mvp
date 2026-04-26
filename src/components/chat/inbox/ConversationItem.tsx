@@ -20,7 +20,14 @@ import type { InboxConversation } from "@/types/messaging";
 import { formatRelativeTime, toTimestamp } from "@/utils/dates";
 import { createLogger, isDebugEnabled } from "@/utils/log";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import React, { memo, useCallback, useEffect, useMemo, useRef } from "react";
+import React, {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   StyleSheet,
   TouchableOpacity,
@@ -31,8 +38,10 @@ import { Badge, Text } from "react-native-paper";
 import { formatUnreadBadge } from "./unreadBadge";
 
 const interactionLog = createLogger("InboxInteraction");
+const avatarLog = createLogger("InboxAvatar");
 
 const DEFAULT_TOUCH_POSITION = { pageX: 100, pageY: 200 };
+const GROUP_AVATAR_RETRY_DELAY_MS = 250;
 
 function getTouchPosition(event?: GestureResponderEvent) {
   if (!event?.nativeEvent) return null;
@@ -113,6 +122,95 @@ export interface ConversationItemProps {
 }
 
 export { formatUnreadBadge } from "./unreadBadge";
+
+interface GroupConversationAvatarProps {
+  avatarUrl?: string | null;
+  conversationId: string;
+}
+
+const GroupConversationAvatar = memo(function GroupConversationAvatar({
+  avatarUrl,
+  conversationId,
+}: GroupConversationAvatarProps) {
+  const { colors } = useAppTheme();
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [retryNonce, setRetryNonce] = useState(0);
+  const [hasRetried, setHasRetried] = useState(false);
+
+  useEffect(() => {
+    setRetryNonce(0);
+    setHasRetried(false);
+    if (retryTimerRef.current) {
+      clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
+    }
+  }, [avatarUrl]);
+
+  useEffect(() => {
+    return () => {
+      if (retryTimerRef.current) {
+        clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  const handleLoad = useCallback(() => {
+    if (__DEV__ && isDebugEnabled("CHAT")) {
+      avatarLog.debug("group avatar loaded", {
+        data: {
+          conversationId,
+          hasAvatarUrl: !!avatarUrl,
+        },
+      });
+    }
+  }, [avatarUrl, conversationId]);
+
+  const handleError = useCallback(() => {
+    if (__DEV__) {
+      avatarLog.warn("group avatar load failed", {
+        data: {
+          conversationId,
+          hasAvatarUrl: !!avatarUrl,
+          willRetry: !!avatarUrl && !hasRetried,
+        },
+      });
+    }
+
+    if (!avatarUrl || hasRetried) return;
+    setHasRetried(true);
+    retryTimerRef.current = setTimeout(() => {
+      retryTimerRef.current = null;
+      setRetryNonce((prev) => prev + 1);
+    }, GROUP_AVATAR_RETRY_DELAY_MS);
+  }, [avatarUrl, conversationId, hasRetried]);
+
+  return (
+    <View
+      style={[
+        styles.avatarPlaceholder,
+        styles.groupAvatarFrame,
+        { backgroundColor: colors.surfaceVariant },
+      ]}
+    >
+      <MaterialCommunityIcons
+        name="account-group"
+        size={27}
+        color={colors.textSecondary}
+      />
+      {avatarUrl ? (
+        <AppImage
+          key={`${avatarUrl}:${retryNonce}`}
+          source={{ uri: avatarUrl }}
+          style={styles.groupAvatarImage}
+          debugLabel="ConversationAvatar"
+          onLoad={handleLoad}
+          onError={handleError}
+        />
+      ) : null}
+    </View>
+  );
+});
 
 // =============================================================================
 // Component
@@ -320,10 +418,7 @@ export const ConversationItem = memo(function ConversationItem({
 
   return (
     <TouchableOpacity
-      style={[
-        styles.container,
-        { backgroundColor: colors.background },
-      ]}
+      style={[styles.container, { backgroundColor: colors.background }]}
       onPress={handlePress}
       onPressIn={handlePressIn}
       onLongPress={onLongPress ? handleLongPress : undefined}
@@ -339,28 +434,11 @@ export const ConversationItem = memo(function ConversationItem({
         style={styles.avatarContainer}
         accessibilityLabel={`View ${type === "dm" ? "profile" : "group info"}`}
       >
-        {type === "group" && avatarUrl ? (
-          <AppImage
-            source={{ uri: avatarUrl }}
-            style={[
-              styles.avatarPlaceholder,
-              { width: 50, height: 50, borderRadius: 25 },
-            ]}
-            debugLabel="ConversationAvatar"
+        {type === "group" ? (
+          <GroupConversationAvatar
+            avatarUrl={avatarUrl}
+            conversationId={conversation.id}
           />
-        ) : type === "group" ? (
-          <View
-            style={[
-              styles.avatarPlaceholder,
-              { backgroundColor: colors.surfaceVariant },
-            ]}
-          >
-            <MaterialCommunityIcons
-              name="account-group"
-              size={27}
-              color={colors.textSecondary}
-            />
-          </View>
         ) : (
           <ProfilePictureWithDecoration
             pictureUrl={profilePictureUrl || avatarUrl}
@@ -495,6 +573,12 @@ const styles = StyleSheet.create({
     borderRadius: 25,
     alignItems: "center",
     justifyContent: "center",
+  },
+  groupAvatarFrame: {
+    overflow: "hidden",
+  },
+  groupAvatarImage: {
+    ...StyleSheet.absoluteFillObject,
   },
   onlineIndicator: {
     position: "absolute",
