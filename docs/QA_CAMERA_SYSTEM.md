@@ -183,8 +183,8 @@ The following files were deleted:
 Related state/types removed from: `CameraContext.tsx`, `types/camera.ts`,
 `useCameraHooks.ts`, `CameraScreen.tsx`.
 
-The `react-native-vision-camera-face-detector` package can be safely
-uninstalled from `package.json` if no other code depends on it.
+The unused `react-native-vision-camera-face-detector` package has been removed
+from `package.json`.
 
 ## Future Improvements
 

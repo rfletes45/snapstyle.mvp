@@ -10,6 +10,7 @@
  */
 
 import { CALL_FEATURES } from "@/constants/featureFlags";
+import { createLogger, isDebugEnabled } from "@/utils/log";
 import React, { useEffect, useMemo } from "react";
 
 // ---------------------------------------------------------------------------
@@ -58,6 +59,7 @@ if (CALL_FEATURES.CALLS_ENABLED) {
 }
 
 const TAG = "[NoiseCancellation]";
+const log = createLogger("stream/noiseCancellation");
 
 // ---------------------------------------------------------------------------
 // Debug Logger (must be inside NoiseCancellationProvider + StreamCall)
@@ -78,7 +80,8 @@ function NoiseCancellationDebugLogger() {
 
   // eslint-disable-next-line react-hooks/rules-of-hooks
   useEffect(() => {
-    console.info(`${TAG} State:`, {
+    if (!isDebugEnabled("CALLS")) return;
+    log.debug(`${TAG} State`, {
       dashboardMode,
       isSupported,
       isEnabled,
@@ -122,9 +125,9 @@ function NoiseCancellationAutoEnable() {
     // ourselves when the dashboard is "available" (opt-in) and the
     // native + device stack reports support.
     if (isSupported && !isEnabled && dashboardMode !== "disabled") {
-      console.info(
-        `${TAG} Auto-enabling noise cancellation (dashboard=${dashboardMode})`,
-      );
+      if (isDebugEnabled("CALLS")) {
+        log.debug(`${TAG} Auto-enabling`, { dashboardMode });
+      }
       setEnabled(true);
     }
   }, [isSupported, isEnabled, dashboardMode, setEnabled]);
@@ -154,10 +157,7 @@ export function NoiseCancellationWrapper({
     try {
       return new NoiseCancellationImpl();
     } catch (err) {
-      console.warn(
-        `${TAG} Failed to construct NoiseCancellation instance:`,
-        err,
-      );
+      log.warn(`${TAG} Failed to construct NoiseCancellation instance`, err);
       return null;
     }
   }, []);
@@ -171,7 +171,7 @@ export function NoiseCancellationWrapper({
     // Provider exists but Krisp bridge missing — providing the provider
     // without the bridge would still be a no-op, so skip it and log once
     // so it's obvious in TestFlight logs why NC isn't running.
-    console.warn(
+    log.warn(
       `${TAG} NoiseCancellationProvider present but Krisp native bridge is not linked — noise cancellation disabled.`,
     );
     return <>{children}</>;

@@ -85,6 +85,8 @@ export const DEBUG_FLAGS = {
   PICKER_PRELOAD: false,
   /** Camera filter lifecycle, picker, and export diagnostics */
   CAMERA_FILTERS: false,
+  /** Stream call and native audio diagnostics */
+  CALLS: false,
 } as const;
 
 export type DebugFlagKey = keyof typeof DEBUG_FLAGS;

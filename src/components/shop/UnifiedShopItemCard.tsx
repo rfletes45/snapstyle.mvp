@@ -9,8 +9,17 @@
 
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { memo } from "react";
-import { Image, Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 
+import { CosmeticImage } from "@/components/CosmeticImage";
+import {
+  BubbleColorPreviewSurface,
+  ThemeModeBadge,
+  ThemePreviewSurface,
+  getBubblePreviewColor,
+  getThemePreviewMeta,
+} from "@/components/customization/CosmeticPreviewSurfaces";
+import { BorderRadius, Spacing } from "@/constants/theme";
 import { getCosmeticAsset } from "@/cosmetics/assetRegistry";
 import type { CosmeticDefinition, CosmeticRarity } from "@/cosmetics/types";
 import type { ThemeColors } from "@/store/ThemeContext";
@@ -68,13 +77,16 @@ function UnifiedShopItemCardImpl({
   onPress,
   badge,
 }: UnifiedShopItemCardProps) {
+  const isTheme = item.type === "theme";
+  const isBubbleColor = item.type === "chat_bubble_color";
   const asset = getCosmeticAsset(item.type, item.assetKey ?? item.id);
+  const isDecoration = item.type === "decoration";
+  const themeMeta = isTheme ? getThemePreviewMeta(item.id) : null;
+  const bubbleColorHex = isBubbleColor ? getBubblePreviewColor(item) : null;
   const rarity = item.rarity;
   const rarityColor = RARITY_COLORS[rarity] ?? RARITY_COLORS.common;
-  const swatchColor =
-    typeof item.metadata?.bubbleColorValue === "string"
-      ? (item.metadata.bubbleColorValue as string)
-      : null;
+  const isOwnedLike = state === "owned" || state === "equipped";
+  const usesCustomizePreview = isTheme || isBubbleColor;
 
   const actionLabel = (() => {
     switch (state) {
@@ -107,18 +119,27 @@ function UnifiedShopItemCardImpl({
   })();
 
   const actionBg = (() => {
-    if (state === "equipped") return colors.surfaceVariant;
+    if (state === "equipped") return colors.primary + "18";
     if (state === "owned") return colors.primary;
     if (state === "insufficient") return colors.surfaceVariant;
     return colors.primary;
   })();
 
   const actionFg = (() => {
-    if (state === "equipped") return colors.textSecondary;
+    if (state === "equipped") return colors.primary;
     if (state === "owned") return colors.onPrimary ?? "#fff";
     if (state === "insufficient") return colors.textMuted;
     return colors.onPrimary ?? "#fff";
   })();
+
+  const actionBorder =
+    state === "equipped" ? colors.primary + "35" : colors.border;
+  const cardBorderColor = isOwnedLike
+    ? colors.primary
+    : usesCustomizePreview
+      ? colors.border
+      : rarityColor + "33";
+  const previewBackgroundColor = colors.surfaceVariant ?? colors.surface;
 
   return (
     <Pressable
@@ -128,8 +149,8 @@ function UnifiedShopItemCardImpl({
         styles.card,
         {
           backgroundColor: colors.surface,
-          borderColor: colors.border,
-          opacity: pressed ? 0.92 : 1,
+          borderColor: cardBorderColor,
+          opacity: pressed ? 0.9 : 1,
         },
       ]}
       accessibilityRole="button"
@@ -139,25 +160,51 @@ function UnifiedShopItemCardImpl({
     >
       {/* Preview */}
       <View
-        style={[
-          styles.previewBox,
-          { backgroundColor: colors.surfaceVariant, borderColor: rarityColor },
-        ]}
+        style={[styles.previewBox, { backgroundColor: previewBackgroundColor }]}
       >
-        {swatchColor ? (
-          <View style={[styles.swatch, { backgroundColor: swatchColor }]} />
+        {!usesCustomizePreview ? (
+          <View style={[styles.rarityDot, { backgroundColor: rarityColor }]} />
+        ) : null}
+
+        {isOwnedLike ? (
+          <View
+            style={[styles.statusBadge, { backgroundColor: colors.primary }]}
+          >
+            <MaterialCommunityIcons
+              name={state === "equipped" ? "check-circle" : "check"}
+              size={11}
+              color="#fff"
+            />
+          </View>
+        ) : null}
+
+        {themeMeta ? (
+          <ThemePreviewSurface meta={themeMeta} />
+        ) : bubbleColorHex ? (
+          <BubbleColorPreviewSurface colorHex={bubbleColorHex} />
         ) : asset ? (
-          <Image
-            source={asset}
-            style={styles.previewImage}
-            resizeMode="cover"
-          />
+          <View
+            style={[
+              styles.previewMedia,
+              isDecoration && styles.previewMediaDecoration,
+            ]}
+          >
+            <CosmeticImage
+              source={asset}
+              style={styles.previewImage}
+              contentFit={isDecoration ? "contain" : "cover"}
+              recyclingKey={item.id}
+              debugLabel={`shop-card-${item.id}`}
+            />
+          </View>
         ) : (
-          <MaterialCommunityIcons
-            name="image-off-outline"
-            size={28}
-            color={colors.textMuted}
-          />
+          <View style={styles.previewMedia}>
+            <MaterialCommunityIcons
+              name="image-off-outline"
+              size={28}
+              color={colors.textMuted}
+            />
+          </View>
         )}
 
         {/* Badge */}
@@ -166,30 +213,31 @@ function UnifiedShopItemCardImpl({
             <Text style={styles.badgeText}>{badge}</Text>
           </View>
         ) : null}
+      </View>
 
-        {/* Equipped overlay */}
-        {state === "equipped" ? (
-          <View style={styles.equippedOverlay}>
-            <MaterialCommunityIcons
-              name="check-circle"
-              size={28}
-              color="#fff"
-            />
+      {/* Name + rarity */}
+      <View style={[styles.infoBlock, themeMeta && styles.infoBlockTheme]}>
+        <Text numberOfLines={1} style={[styles.name, { color: colors.text }]}>
+          {item.name}
+        </Text>
+        <Text numberOfLines={1} style={[styles.rarity, { color: rarityColor }]}>
+          {RARITY_LABELS[rarity]}
+        </Text>
+        {themeMeta ? (
+          <View style={styles.themeModeRow}>
+            <ThemeModeBadge isDark={themeMeta.isDark} colors={colors} />
           </View>
         ) : null}
       </View>
 
-      {/* Name + rarity */}
-      <Text numberOfLines={1} style={[styles.name, { color: colors.text }]}>
-        {item.name}
-      </Text>
-      <Text numberOfLines={1} style={[styles.rarity, { color: rarityColor }]}>
-        {RARITY_LABELS[rarity]}
-      </Text>
-
       {/* Price + action */}
       <View style={styles.actionRow}>
-        <View style={styles.priceRow}>
+        <View
+          style={[
+            styles.priceRow,
+            { backgroundColor: colors.surfaceVariant ?? colors.surface },
+          ]}
+        >
           <MaterialCommunityIcons
             name="star-circle"
             size={14}
@@ -199,7 +247,15 @@ function UnifiedShopItemCardImpl({
             {(item.priceTokens ?? 0).toLocaleString()}
           </Text>
         </View>
-        <View style={[styles.actionPill, { backgroundColor: actionBg }]}>
+        <View
+          style={[
+            styles.actionPill,
+            {
+              backgroundColor: actionBg,
+              borderColor: actionBorder,
+            },
+          ]}
+        >
           <MaterialCommunityIcons
             name={actionIcon as any}
             size={12}
@@ -223,32 +279,56 @@ export const UnifiedShopItemCard = memo(UnifiedShopItemCardImpl);
 const styles = StyleSheet.create({
   card: {
     flex: 1,
-    borderRadius: 16,
-    borderWidth: StyleSheet.hairlineWidth,
-    padding: 10,
-    gap: 6,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1.5,
+    padding: Spacing.sm,
+    gap: Spacing.sm,
   },
   previewBox: {
     aspectRatio: 1,
-    borderRadius: 12,
-    borderWidth: 2,
+    borderRadius: BorderRadius.md,
     overflow: "hidden",
     alignItems: "center",
     justifyContent: "center",
+    position: "relative",
+  },
+  previewMedia: {
+    width: "100%",
+    height: "100%",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  previewMediaDecoration: {
+    padding: Spacing.sm,
   },
   previewImage: {
     width: "100%",
     height: "100%",
   },
-  swatch: {
-    width: "70%",
-    height: "70%",
-    borderRadius: 12,
+  rarityDot: {
+    position: "absolute",
+    top: 8,
+    left: 8,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    zIndex: 2,
+  },
+  statusBadge: {
+    position: "absolute",
+    top: 8,
+    right: 8,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 2,
   },
   badge: {
     position: "absolute",
-    top: 6,
-    left: 6,
+    left: 8,
+    bottom: 8,
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 6,
@@ -259,49 +339,52 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     letterSpacing: 0.4,
   },
-  equippedOverlay: {
-    position: "absolute",
-    top: 0,
-    right: 0,
-    bottom: 0,
-    left: 0,
-    backgroundColor: "rgba(0,0,0,0.32)",
-    alignItems: "center",
-    justifyContent: "center",
+  infoBlock: {
+    gap: 2,
+    minHeight: 32,
+  },
+  infoBlockTheme: {
+    minHeight: 50,
   },
   name: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "600",
-    marginTop: 4,
   },
   rarity: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: "600",
     textTransform: "uppercase",
-    letterSpacing: 0.4,
+    letterSpacing: 0.5,
+  },
+  themeModeRow: {
+    marginTop: Spacing.xs,
   },
   actionRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginTop: 4,
+    gap: Spacing.xs,
   },
   priceRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
   },
   price: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: "700",
   },
   actionPill: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
   },
   actionText: {
     fontSize: 11,

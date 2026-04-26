@@ -50,19 +50,19 @@ Important limitation: this dossier is code-grounded, but not device-verified in 
 
 ## 3. Build And Runtime Foundation
 
-| Area                   | Current state                                                                               | Implication                                                                                            |
-| ---------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| Framework              | React Native `0.81.5`, Expo `~54.0.31`, React `19.1.0`                                      | Native build behavior matters more than Expo Go behavior for TestFlight.                               |
-| Primary camera libs    | `react-native-vision-camera`, `expo-camera`, `expo-image-picker`                            | The app intentionally supports multiple capture backends.                                              |
-| Filter/render libs     | `@shopify/react-native-skia`, `react-native-view-shot`                                      | The preview/export pipeline is mixed: GPU filter rendering plus screenshot compositing fallback.       |
-| Upload/storage         | Firebase Storage, Firestore, Cloud Functions                                                | Media output paths differ by feature area.                                                             |
-| iOS build config       | `app.config.ts` sets iOS build number `41` and deployment target `16.0`                     | TestFlight uses the native module/plugin configuration from Expo config, not Expo Go fallbacks.        |
-| VisionCamera plugin    | `react-native-vision-camera` plugin enabled with frame processors and microphone permission | Live filtered preview depends on native frame-processor support being present in the TestFlight build. |
-| Camera backend flag    | `USE_VISION_CAMERA = true`                                                                  | Native builds should prefer VisionCamera, but the code still supports fallback loading.                |
-| Local messaging flag   | `USE_LOCAL_STORAGE = true` on native                                                        | Chat media sends use local-first optimistic insertion and background sync.                             |
-| Staged upload flag     | `CHAT_FEATURES.CHAT_STAGED_UPLOADS = false`                                                 | The newer staged chat-media pipeline exists but is not the active production path.                     |
-| Optional media library | `expo-media-library` is not present in `package.json`                                       | Saving to the actual Photos library is conditional and may silently fall back to app-local storage.    |
-| Dead native surface    | `react-native-vision-camera-face-detector` is installed but unused in current source        | Extra native surface remains in the build without being part of the active camera feature set.         |
+| Area                   | Current state                                                                                | Implication                                                                                            |
+| ---------------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Framework              | React Native `0.81.5`, Expo `~54.0.31`, React `19.1.0`                                       | Native build behavior matters more than Expo Go behavior for TestFlight.                               |
+| Primary camera libs    | `react-native-vision-camera`, `expo-camera`, `expo-image-picker`                             | The app intentionally supports multiple capture backends.                                              |
+| Filter/render libs     | `@shopify/react-native-skia`, `react-native-view-shot`                                       | The preview/export pipeline is mixed: GPU filter rendering plus screenshot compositing fallback.       |
+| Upload/storage         | Firebase Storage, Firestore, Cloud Functions                                                 | Media output paths differ by feature area.                                                             |
+| iOS build config       | `app.config.ts` sets iOS build number `41` and deployment target `16.0`                      | TestFlight uses the native module/plugin configuration from Expo config, not Expo Go fallbacks.        |
+| VisionCamera plugin    | `react-native-vision-camera` plugin enabled with frame processors and microphone permission  | Live filtered preview depends on native frame-processor support being present in the TestFlight build. |
+| Camera backend flag    | `USE_VISION_CAMERA = true`                                                                   | Native builds should prefer VisionCamera, but the code still supports fallback loading.                |
+| Local messaging flag   | `USE_LOCAL_STORAGE = true` on native                                                         | Chat media sends use local-first optimistic insertion and background sync.                             |
+| Staged upload flag     | `CHAT_FEATURES.CHAT_STAGED_UPLOADS = false`                                                  | The newer staged chat-media pipeline exists but is not the active production path.                     |
+| Optional media library | `expo-media-library` is not present in `package.json`                                        | Saving to the actual Photos library is conditional and may silently fall back to app-local storage.    |
+| Removed native surface | `react-native-vision-camera-face-detector` was unused in current source and has been removed | The active camera feature set no longer carries this extra native dependency.                          |
 
 ### iOS privacy string observations
 
@@ -851,7 +851,7 @@ Those last two chains are not the same feature backend.
 
 1. Flash UI exists, but preview torch is hardcoded off in VisionCamera.
 2. The data model includes settings like white balance and autofocus, but the main UI exposes only a subset.
-3. `react-native-vision-camera-face-detector` remains installed but inactive in the codebase.
+3. The unused `react-native-vision-camera-face-detector` native dependency has been removed.
 4. Call camera flows share user-facing camera behavior but live outside the main camera system.
 
 ### Test coverage gap

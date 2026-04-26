@@ -127,10 +127,10 @@ export const PROFILE_TABS: {
   label: string;
   icon: string;
 }[] = [
+  { id: "theme", label: "Themes", icon: "palette" },
   { id: "decoration", label: "Decorations", icon: "star-circle" },
   { id: "background", label: "Backgrounds", icon: "image" },
   { id: "badge", label: "Badges", icon: "shield-star" },
-  { id: "theme", label: "Themes", icon: "palette" },
 ];
 
 /**
@@ -186,7 +186,7 @@ export function useCustomizationHub(
   } = options;
 
   // ── State ───────────────────────────────────────────────────────────────────
-  const [activeTab, setActiveTab] = useState<CustomizationTab>("decoration");
+  const [activeTab, setActiveTab] = useState<CustomizationTab>("theme");
   const [searchQuery, setSearchQuery] = useState("");
   const [entitlements, setEntitlements] = useState<Entitlement[]>([]);
   const [entitlementsLoading, setEntitlementsLoading] = useState(true);

@@ -25,6 +25,12 @@ expo-env.d.ts
 npm-debug.*
 yarn-debug.*
 yarn-error.*
+dev-server*.log
+tsc_*.txt
+tsc_output*.txt
+
+# generated audit artifacts
+audit/
 
 # macOS
 .DS_Store

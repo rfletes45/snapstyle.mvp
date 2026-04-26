@@ -81,7 +81,7 @@ export const GamePickerModal = forwardRef<
   },
   ref,
 ) {
-  const { colors, isDark } = useAppTheme();
+  const { colors } = useAppTheme();
   const insets = useSafeAreaInsets();
   const sheetRef = useRef<DraggableBottomSheetHandle>(null);
 
@@ -124,10 +124,11 @@ export const GamePickerModal = forwardRef<
     return result;
   }, [multiplayerOnly]);
 
-  const textColor = isDark ? "#FFF" : "#000";
-  const subtextColor = isDark ? "#999" : "#666";
-  const borderColor = isDark ? "#333" : "#E0E0E0";
-  const sheetSurface = isDark ? "#1C1C1E" : "#FFFFFF";
+  const textColor = colors.text;
+  const subtextColor = colors.textSecondary;
+  const borderColor = colors.divider;
+  const surfaceVariantColor = colors.inputBackground ?? colors.surfaceVariant;
+  const sheetSurface = colors.keyboardSurface ?? colors.surface;
 
   const renderGame = (game: GameMetadata) => {
     const isImplemented = IMPLEMENTED_GAME_IDS.has(game.gameId);
@@ -147,10 +148,7 @@ export const GamePickerModal = forwardRef<
         activeOpacity={isImplemented ? 0.6 : 1}
       >
         <View
-          style={[
-            styles.gameIcon,
-            { backgroundColor: isDark ? "#2C2C2E" : "#F2F2F7" },
-          ]}
+          style={[styles.gameIcon, { backgroundColor: surfaceVariantColor }]}
         >
           <MaterialCommunityIcons
             name={game.icon as keyof typeof MaterialCommunityIcons.glyphMap}

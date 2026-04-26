@@ -48,7 +48,7 @@ export default function WelcomeScreen({ navigation }: any) {
             variant="displayMedium"
             style={[styles.appName, { color: theme.colors.primary }]}
           >
-            WIP
+            Vibe
           </Text>
 
           <Text

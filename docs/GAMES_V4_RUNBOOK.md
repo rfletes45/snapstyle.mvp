@@ -42,13 +42,13 @@ Run in order. All steps assume two test accounts (Alice, Bob) in a shared group 
 
 Solo games bypass the invite/lobby/pin system entirely (see SYSTEM doc §6.7).
 
-| #   | Action                               | Expected                                                       | Firestore check                                                                         |
-| --- | ------------------------------------ | -------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| 1   | Alice opens Games Hub → taps 2048    | Client calls `resumeOrCreateSoloSession({ gameId: "play_2048" })`      | `GameSessionsV4/{id}` created, `status: "active"`, `inviteId: ""`, `conversationId: ""` |
-| 2   | (auto-navigates to Play2048ScreenV4) | Board appears with 2 tiles. **No invite, no lobby, no pin**    | No `GameInvitesV4` doc. No `pinnedGameInviteIds` change                                 |
-| 3   | Swipe in all 4 directions            | Tiles slide + merge. Score updates. `GamePresence` doc written | `Users/{uid}/GamePresence/{sessionId}` exists with `activeAt`                           |
-| 4   | Play until game over (or resign)     | Auto-navigates to GameOverScreenV4 with score + XP             | `GameResultsV4/{id}` exists, session `status: "resolved"`, `rewardsProcessed: true`     |
-| 5   | Check My Stats screen                | PB recorded, `game_first_play` achievement unlocked            | `Users/{uid}/GamePB/play_2048` exists with `integrityHash`                              |
+| #   | Action                               | Expected                                                          | Firestore check                                                                         |
+| --- | ------------------------------------ | ----------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| 1   | Alice opens Games Hub → taps 2048    | Client calls `resumeOrCreateSoloSession({ gameId: "play_2048" })` | `GameSessionsV4/{id}` created, `status: "active"`, `inviteId: ""`, `conversationId: ""` |
+| 2   | (auto-navigates to Play2048ScreenV4) | Board appears with 2 tiles. **No invite, no lobby, no pin**       | No `GameInvitesV4` doc. No `pinnedGameInviteIds` change                                 |
+| 3   | Swipe in all 4 directions            | Tiles slide + merge. Score updates. `GamePresence` doc written    | `Users/{uid}/GamePresence/{sessionId}` exists with `activeAt`                           |
+| 4   | Play until game over (or resign)     | Auto-navigates to GameOverScreenV4 with score + XP                | `GameResultsV4/{id}` exists, session `status: "resolved"`, `rewardsProcessed: true`     |
+| 5   | Check My Stats screen                | PB recorded, `game_first_play` achievement unlocked               | `Users/{uid}/GamePB/play_2048` exists with `integrityHash`                              |
 
 **Connect Four smoke test (2-player):**
 
@@ -140,29 +140,26 @@ cd firebase-backend/functions && npm run build && cd ../..
 
 The `scripts/` directory contains utility scripts. **None are V4-game-specific** — there are no admin scripts for session cleanup, lobby management, or game data repair. All game lifecycle management is handled by the watchdog and Cloud Functions.
 
-| Script                                    | Purpose                                | Relevance to V4                       |
-| ----------------------------------------- | -------------------------------------- | ------------------------------------- |
-| `seed-firestore.js`                       | Seeds Firestore with initial test data | Low — no V4 data                      |
-| `seed-firestore-rest.js`                  | REST-based seed variant                | Low                                   |
-| `debug-all-users.js`                      | Dumps all user profiles                | Useful for checking XP/level          |
-| `migrate-profiles.ts`                     | Profile migration (game score display) | Low — profile fields, not V4 sessions |
-| `check-streak.js` / `fix-streak.js`       | Streak repair                          | None                                  |
-| `check-cosmetics.js` / `fix-cosmetics.js` | Cosmetics repair                       | None                                  |
+| Script                   | Purpose                                | Relevance to V4                       |
+| ------------------------ | -------------------------------------- | ------------------------------------- |
+| `seed-firestore.js`      | Seeds Firestore with initial test data | Low — no V4 data                      |
+| `seed-firestore-rest.js` | REST-based seed variant                | Low                                   |
+| `migrate-profiles.ts`    | Profile migration (game score display) | Low — profile fields, not V4 sessions |
 
 ### Useful Firebase Console Paths
 
-| What                    | Firebase Console path                                      |
-| ----------------------- | ---------------------------------------------------------- |
-| V4 invites              | Firestore > `GameInvitesV4`                                |
-| V4 sessions             | Firestore > `GameSessionsV4`                               |
-| V4 results              | Firestore > `GameResultsV4`                                |
-| User PBs                | Firestore > `Users/{uid}` > `GamePB` subcollection         |
-| User achievements       | Firestore > `Users/{uid}` > `Achievements` subcollection   |
-| User rate limits        | Firestore > `Users/{uid}` > `RateLimits` subcollection     |
-| User game presence      | Firestore > `Users/{uid}` > `GamePresence` subcollection   |
-| Cloud Function logs     | Functions > Logs (filter by `[gamesV4]` or `[watchdogV4]`) |
-| Watchdog schedule       | Cloud Scheduler > `watchdogGamesV4`                        |
-| Deployed functions list | Functions > Dashboard (should show 16 user callables, 2 admin callables, 3 triggers, 1 scheduled job, plus internal helper exports in code)        |
+| What                    | Firebase Console path                                                                                                                       |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| V4 invites              | Firestore > `GameInvitesV4`                                                                                                                 |
+| V4 sessions             | Firestore > `GameSessionsV4`                                                                                                                |
+| V4 results              | Firestore > `GameResultsV4`                                                                                                                 |
+| User PBs                | Firestore > `Users/{uid}` > `GamePB` subcollection                                                                                          |
+| User achievements       | Firestore > `Users/{uid}` > `Achievements` subcollection                                                                                    |
+| User rate limits        | Firestore > `Users/{uid}` > `RateLimits` subcollection                                                                                      |
+| User game presence      | Firestore > `Users/{uid}` > `GamePresence` subcollection                                                                                    |
+| Cloud Function logs     | Functions > Logs (filter by `[gamesV4]` or `[watchdogV4]`)                                                                                  |
+| Watchdog schedule       | Cloud Scheduler > `watchdogGamesV4`                                                                                                         |
+| Deployed functions list | Functions > Dashboard (should show 16 user callables, 2 admin callables, 3 triggers, 1 scheduled job, plus internal helper exports in code) |
 
 ---
 
@@ -929,15 +926,15 @@ Client-side: Games tab will show "Game service is not available" errors (handled
 
 ### Known limitations at launch
 
-| Limitation               | Impact                             | Tracking             |
-| ------------------------ | ---------------------------------- | -------------------- |
-| 17 of 25 catalog games enabled | Remaining catalog entries still show `Coming Soon` | See current inventory in SYSTEM doc |
-| Realtime framework still evolving | Shared client/server abstractions exist, but docs and gameplay QA still need per-game verification for realtime titles | See `docs/REALTIME_FRAMEWORK.md` |
-| No emulator setup        | All dev testing hits production    | §2 above             |
-| No performance bonus XP  | Up to 10 bonus XP unused           | Gap G5               |
-| Metadata duplication remains | Client and backend game metadata can still drift if both are not updated | See SYSTEM doc known inconsistencies |
-| Hidden-info client optimism is partial | Server reads private state correctly, but local shell validation remains intentionally incomplete | See SYSTEM doc hidden-information notes |
-| Game-started notif       | No push when lobby → active        | Gap G11              |
+| Limitation                             | Impact                                                                                                                 | Tracking                                |
+| -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
+| 17 of 25 catalog games enabled         | Remaining catalog entries still show `Coming Soon`                                                                     | See current inventory in SYSTEM doc     |
+| Realtime framework still evolving      | Shared client/server abstractions exist, but docs and gameplay QA still need per-game verification for realtime titles | See `docs/REALTIME_FRAMEWORK.md`        |
+| No emulator setup                      | All dev testing hits production                                                                                        | §2 above                                |
+| No performance bonus XP                | Up to 10 bonus XP unused                                                                                               | Gap G5                                  |
+| Metadata duplication remains           | Client and backend game metadata can still drift if both are not updated                                               | See SYSTEM doc known inconsistencies    |
+| Hidden-info client optimism is partial | Server reads private state correctly, but local shell validation remains intentionally incomplete                      | See SYSTEM doc hidden-information notes |
+| Game-started notif                     | No push when lobby → active                                                                                            | Gap G11                                 |
 
 ---
 
@@ -1079,4 +1076,3 @@ The field selection is driven by `LEADERBOARD_DESCRIPTORS[gameId].metric` in `sr
 | TTT leaderboard shows 0 or 1           | Old data from before the fix (score was binary)                 | Old entries will self-correct as users play more games within the week. Historical weeks are frozen.                |
 | Friends shows 0, Global shows correct  | PB doc has `totalWins: 0` but leaderboard entry has accumulated | User has not won any games yet. `totalWins` only increments on wins.                                                |
 | All players show same score on friends | All PB docs have `pbValue` = 1 (old binary metric)              | After the fix, friends LB reads `totalWins` for wins-based games, which should be correct. Force-reload the screen. |
-

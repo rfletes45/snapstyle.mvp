@@ -7,9 +7,10 @@
  *
  * Layout (top → bottom):
  *   1. Section filter bar (Profile / Chat) — Games-screen styling
- *   2. Category filter bar (section-aware) — Games-screen styling
- *   3. Search input — Games-screen styling
- *   4. Scrollable item grid (owned items only, equipped-first / rarity-desc)
+ *   2. Search input — Games-screen styling
+ *   3. Divider line
+ *   4. Category filter bar (section-aware) — Games-screen styling
+ *   5. Scrollable item grid (owned items only, equipped-first / rarity-desc)
  *
  * Note: Profile previews were intentionally removed from the top of this
  * screen so the customization browse experience stays focused. Fonts and
@@ -23,6 +24,7 @@ import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   Dimensions,
   FlatList,
@@ -34,17 +36,22 @@ import {
 } from "react-native";
 import { Searchbar, Text } from "react-native-paper";
 
+import {
+  BubbleColorPreviewSurface,
+  ThemeModeBadge,
+  ThemePreviewSurface,
+  getBubblePreviewColor,
+  getThemePreviewMeta,
+} from "@/components/customization/CosmeticPreviewSurfaces";
 import { ScreenHeader } from "@/components/shared/ScreenHeader";
 
 import { CosmeticImage } from "@/components/CosmeticImage";
-import { BorderRadius, Spacing, THEME_METADATA } from "@/constants/theme";
+import { BorderRadius, Spacing } from "@/constants/theme";
 import {
   DEFAULT_ANIMAL_THEME_ID,
   getAnimalImage,
 } from "@/cosmetics/animalAssets";
 import { getCosmeticAsset, hasCosmeticAsset } from "@/cosmetics/assetRegistry";
-import { relativeLuminance } from "@/cosmetics/chatAppearanceResolver";
-import { CHAT_BUBBLE_COLORS } from "@/cosmetics/chatDefaults";
 import type { ChatAppearance, CosmeticDefinition } from "@/cosmetics/types";
 import {
   CHAT_TABS,
@@ -58,11 +65,6 @@ import { useAuth } from "@/store/AuthContext";
 import { useAppTheme, useColors } from "@/store/ThemeContext";
 import { useUser } from "@/store/UserContext";
 import { ItemDetailSheet } from "./ItemDetailSheet";
-
-import { createLogger } from "@/utils/log";
-import { ActivityIndicator } from "react-native";
-
-const logger = createLogger("screens/customization/CustomizationHubScreen");
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const GRID_COLUMNS = 3;
@@ -151,6 +153,7 @@ const GridItem = React.memo(function GridItem({
   onPress,
 }: GridItemProps) {
   const colors = useColors();
+  const isDecoration = item.type === "decoration";
   const hasAsset = hasCosmeticAsset(item.type, item.assetKey ?? item.id);
   const assetSource = hasAsset
     ? getCosmeticAsset(item.type, item.assetKey ?? item.id)
@@ -170,33 +173,41 @@ const GridItem = React.memo(function GridItem({
       ]}
     >
       {/* Image or placeholder */}
-      {assetSource ? (
-        <CosmeticImage
-          source={assetSource}
-          style={styles.gridItemImage}
-          recyclingKey={item.id}
-          debugLabel={`custom-grid-${item.id}`}
-        />
-      ) : (
-        <View
-          style={[
-            styles.gridItemPlaceholder,
-            { backgroundColor: rarityColor + "15" },
-          ]}
-        >
-          <MaterialCommunityIcons
-            name={
-              item.type === "badge"
-                ? "shield-star"
-                : item.type === "theme"
-                  ? "palette"
-                  : "image"
-            }
-            size={28}
-            color={rarityColor}
+      <View
+        style={[
+          styles.gridItemPreview,
+          isDecoration && styles.gridItemPreviewDecoration,
+        ]}
+      >
+        {assetSource ? (
+          <CosmeticImage
+            source={assetSource}
+            style={styles.gridItemImage}
+            contentFit={isDecoration ? "contain" : "cover"}
+            recyclingKey={item.id}
+            debugLabel={`custom-grid-${item.id}`}
           />
-        </View>
-      )}
+        ) : (
+          <View
+            style={[
+              styles.gridItemPlaceholder,
+              { backgroundColor: rarityColor + "15" },
+            ]}
+          >
+            <MaterialCommunityIcons
+              name={
+                item.type === "badge"
+                  ? "shield-star"
+                  : item.type === "theme"
+                    ? "palette"
+                    : "image"
+              }
+              size={28}
+              color={rarityColor}
+            />
+          </View>
+        )}
+      </View>
 
       {/* Name */}
       <Text
@@ -235,14 +246,12 @@ const ThemeCard = React.memo(function ThemeCard({
   onPress,
 }: ThemeCardProps) {
   const colors = useColors();
-  const meta = THEME_METADATA[item.id as keyof typeof THEME_METADATA];
+  const meta = getThemePreviewMeta(item.id);
 
   // Fallback if theme metadata somehow missing
   if (!meta) {
     return <GridItem item={item} isEquipped={isEquipped} onPress={onPress} />;
   }
-
-  const [bgColor, primaryColor, accentColor] = meta.previewColors;
 
   return (
     <Pressable
@@ -259,55 +268,7 @@ const ThemeCard = React.memo(function ThemeCard({
     >
       {/* Color Preview */}
       <View style={styles.themePreview}>
-        <View style={[styles.themePreviewBg, { backgroundColor: bgColor }]}>
-          {/* Primary accent bar */}
-          <View
-            style={[
-              styles.themePreviewAccent,
-              { backgroundColor: primaryColor },
-            ]}
-          />
-          {/* Text preview lines */}
-          <View style={styles.themePreviewContent}>
-            <View
-              style={[
-                styles.themePreviewLine,
-                {
-                  backgroundColor: meta.isDark ? "#ffffff" : "#000000",
-                  width: "70%",
-                  opacity: 0.8,
-                },
-              ]}
-            />
-            <View
-              style={[
-                styles.themePreviewLine,
-                {
-                  backgroundColor: meta.isDark ? "#ffffff" : "#000000",
-                  width: "50%",
-                  opacity: 0.5,
-                },
-              ]}
-            />
-          </View>
-          {/* Surface card preview */}
-          <View
-            style={[
-              styles.themePreviewSwatch,
-              { backgroundColor: accentColor },
-            ]}
-          >
-            <View
-              style={[
-                styles.themePreviewLineSm,
-                {
-                  backgroundColor: meta.isDark ? "#ffffff" : "#000000",
-                  opacity: 0.8,
-                },
-              ]}
-            />
-          </View>
-        </View>
+        <ThemePreviewSurface meta={meta} />
       </View>
 
       {/* Theme Info */}
@@ -338,26 +299,7 @@ const ThemeCard = React.memo(function ThemeCard({
         </Text>
         {/* Light / Dark badge */}
         <View style={styles.themeCardBadges}>
-          <View
-            style={[
-              styles.themeCardBadge,
-              { backgroundColor: colors.surfaceVariant },
-            ]}
-          >
-            <Ionicons
-              name={meta.isDark ? "moon" : "sunny"}
-              size={10}
-              color={colors.textSecondary}
-            />
-            <Text
-              style={[
-                styles.themeCardBadgeText,
-                { color: colors.textSecondary },
-              ]}
-            >
-              {meta.isDark ? "Dark" : "Light"}
-            </Text>
-          </View>
+          <ThemeModeBadge isDark={meta.isDark} colors={colors} />
         </View>
       </View>
     </Pressable>
@@ -380,13 +322,7 @@ const BubbleColorCard = React.memo(function BubbleColorCard({
   onPress,
 }: BubbleColorCardProps) {
   const colors = useColors();
-  const bubbleHex =
-    (item.metadata?.bubbleColorValue as string) ??
-    CHAT_BUBBLE_COLORS[item.id] ??
-    "#1976D2";
-  // Compute contrast text for the swatch preview
-  const textColor = relativeLuminance(bubbleHex) > 0.179 ? "#000" : "#FFF";
-
+  const bubbleHex = getBubblePreviewColor(item);
   return (
     <Pressable
       onPress={() => onPress(item)}
@@ -404,19 +340,8 @@ const BubbleColorCard = React.memo(function BubbleColorCard({
       ]}
     >
       {/* Color swatch */}
-      <View style={[styles.bubbleSwatch, { backgroundColor: bubbleHex }]}>
-        <View style={styles.bubblePreviewRow}>
-          <View
-            style={[
-              styles.bubbleMini,
-              { backgroundColor: bubbleHex, borderColor: textColor + "22" },
-            ]}
-          >
-            <Text style={[styles.bubbleMiniText, { color: textColor }]}>
-              Hello!
-            </Text>
-          </View>
-        </View>
+      <View style={styles.bubbleSwatch}>
+        <BubbleColorPreviewSurface colorHex={bubbleHex} />
       </View>
       {/* Label */}
       <View style={styles.bubbleCardInfo}>
@@ -549,8 +474,10 @@ export default function CustomizationHubScreen({
   const currentDecorationId = decoration?.decorationId ?? null;
   const currentBackgroundId = profile?.equippedBackgroundId ?? null;
   const currentThemeId = (profile as any)?.theme?.equippedThemeId ?? "default";
-  const currentBadgeIds: string[] =
-    (profile as any)?.featuredBadges?.badgeIds ?? [];
+  const currentBadgeIds = useMemo<string[]>(
+    () => (profile as any)?.featuredBadges?.badgeIds ?? [],
+    [profile],
+  );
 
   // Current equipped state — chat
   const currentChatAppearance: ChatAppearance = baseProfile?.chatAppearance ?? {
@@ -578,7 +505,6 @@ export default function CustomizationHubScreen({
     setAppTheme,
   });
 
-  // Tabs for the current section
   const sectionTabs = section === "chat" ? CHAT_TABS : PROFILE_TABS;
 
   // ── Dev-only performance metrics ──
@@ -823,7 +749,7 @@ export default function CustomizationHubScreen({
                   if (s === "chat") {
                     hub.setActiveTab("chat_bubble_color");
                   } else {
-                    hub.setActiveTab("decoration");
+                    hub.setActiveTab("theme");
                   }
                   hub.setSearchQuery("");
                 }}
@@ -870,6 +796,10 @@ export default function CustomizationHubScreen({
             elevation={0}
           />
         </View>
+
+        <View
+          style={[styles.searchDivider, { backgroundColor: colors.border }]}
+        />
 
         {/* Category pill filter (section-aware, horizontally scrollable with edge fades) */}
         <View style={styles.pillRowWrapper}>
@@ -929,10 +859,6 @@ export default function CustomizationHubScreen({
             style={styles.pillFadeRight}
           />
         </View>
-
-        <View
-          style={[styles.searchDivider, { backgroundColor: colors.border }]}
-        />
       </View>
 
       {/* Item Count */}
@@ -1329,7 +1255,7 @@ const styles = StyleSheet.create({
   // ── Category pill row (below search bar) ─────────────────────────────
   pillRowWrapper: {
     position: "relative",
-    paddingTop: 6,
+    paddingTop: 8,
     paddingBottom: 10,
   },
   pillRowContent: {
@@ -1393,13 +1319,22 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     overflow: "hidden",
   },
-  gridItemImage: {
+  gridItemPreview: {
     width: "100%",
     height: ITEM_SIZE * 0.75,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  gridItemPreviewDecoration: {
+    padding: Spacing.xs + 2,
+  },
+  gridItemImage: {
+    width: "100%",
+    height: "100%",
   },
   gridItemPlaceholder: {
     width: "100%",
-    height: ITEM_SIZE * 0.75,
+    height: "100%",
     justifyContent: "center",
     alignItems: "center",
   },
@@ -1480,38 +1415,6 @@ const styles = StyleSheet.create({
     height: 80,
     overflow: "hidden",
   },
-  themePreviewBg: {
-    flex: 1,
-    padding: Spacing.sm,
-  },
-  themePreviewAccent: {
-    height: 4,
-    width: "40%",
-    borderRadius: 2,
-    marginBottom: Spacing.xs,
-  },
-  themePreviewContent: {
-    gap: 4,
-  },
-  themePreviewLine: {
-    height: 6,
-    borderRadius: 3,
-  },
-  themePreviewSwatch: {
-    position: "absolute",
-    bottom: Spacing.sm,
-    right: Spacing.sm,
-    width: 50,
-    height: 30,
-    borderRadius: BorderRadius.sm,
-    padding: 6,
-    justifyContent: "center",
-  },
-  themePreviewLineSm: {
-    height: 4,
-    width: "80%",
-    borderRadius: 2,
-  },
   themeCardInfo: {
     padding: Spacing.sm,
   },
@@ -1541,18 +1444,6 @@ const styles = StyleSheet.create({
     marginTop: Spacing.xs,
     gap: 4,
   },
-  themeCardBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-    gap: 3,
-  },
-  themeCardBadgeText: {
-    fontSize: 10,
-    fontWeight: "500",
-  },
   themeShopHint: {
     flexDirection: "row",
     alignItems: "center",
@@ -1576,24 +1467,6 @@ const styles = StyleSheet.create({
   },
   bubbleSwatch: {
     height: 64,
-    justifyContent: "center",
-    alignItems: "flex-end",
-    paddingHorizontal: Spacing.sm,
-  },
-  bubblePreviewRow: {
-    flexDirection: "row",
-    justifyContent: "flex-end",
-  },
-  bubbleMini: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 12,
-    borderBottomRightRadius: 3,
-    borderWidth: 1,
-  },
-  bubbleMiniText: {
-    fontSize: 12,
-    fontWeight: "500",
   },
   bubbleCardInfo: {
     flexDirection: "row",

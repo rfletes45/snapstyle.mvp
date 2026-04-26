@@ -49,7 +49,6 @@ import { subscribeEntitlements } from "@/services/entitlements";
 import {
   DAILY_SHOP_CATEGORIES,
   DAILY_SHOP_ITEMS_PER_CATEGORY,
-  DailyShopCategoryId,
   formatDailyShopCountdown,
   getDailyShopResetTime,
   getDailyShopSeed,
@@ -138,8 +137,9 @@ export default function ShopHubScreen() {
 
   // UI state
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [pendingItem, setPendingItem] =
-    useState<CosmeticDefinition | null>(null);
+  const [pendingItem, setPendingItem] = useState<CosmeticDefinition | null>(
+    null,
+  );
   const [purchasing, setPurchasing] = useState(false);
   const [purchaseError, setPurchaseError] = useState<string | null>(null);
 
@@ -322,7 +322,7 @@ export default function ShopHubScreen() {
                 styles.walletText,
                 {
                   color: walletError
-                    ? colors.error ?? "#ff4444"
+                    ? (colors.error ?? "#ff4444")
                     : colors.text,
                 },
               ]}
@@ -454,12 +454,6 @@ export default function ShopHubScreen() {
         {/* Daily Shop category sections */}
         {dailySections.map(({ category, items }) => (
           <View key={category.id} style={styles.categorySection}>
-            <Text
-              style={[styles.categoryTitle, { color: colors.text }]}
-              numberOfLines={1}
-            >
-              {category.label}
-            </Text>
             <View style={styles.gridRow}>
               {items.map((item) => (
                 <View key={item.id} style={styles.gridCell}>
@@ -492,9 +486,7 @@ export default function ShopHubScreen() {
           style={({ pressed }) => [
             styles.historyBtn,
             {
-              backgroundColor: pressed
-                ? colors.surfaceVariant
-                : colors.surface,
+              backgroundColor: pressed ? colors.surfaceVariant : colors.surface,
               borderColor: colors.border,
             },
           ]}
@@ -519,8 +511,8 @@ export default function ShopHubScreen() {
         </Pressable>
 
         <Text style={[styles.footer, { color: colors.textMuted }]}>
-          Daily Shop selections refresh every day at midnight (local time).
-          Earn tokens through achievements and tasks.
+          Daily Shop selections refresh every day at midnight (local time). Earn
+          tokens through achievements and tasks.
         </Text>
       </ScrollView>
 
