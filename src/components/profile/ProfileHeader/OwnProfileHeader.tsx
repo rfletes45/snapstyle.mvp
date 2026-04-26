@@ -26,6 +26,10 @@ import type { LevelInfo } from "@/types/profile";
 import type { ProfileBio, ProfileStatus } from "@/types/userProfile";
 import { MOOD_CONFIG } from "@/types/userProfile";
 
+const PROFILE_IMAGE_STATUS_SURFACE = "rgba(0,0,0,0.62)";
+const PROFILE_IMAGE_CARD_SURFACE = "rgba(0,0,0,0.58)";
+const PROFILE_IMAGE_LEVEL_SURFACE = "rgba(0,0,0,0.64)";
+
 // =============================================================================
 // Types
 // =============================================================================
@@ -121,6 +125,15 @@ function OwnProfileHeaderBase({
         textShadowRadius: 3,
       }
     : {};
+  const statusSurface = backgroundSource
+    ? PROFILE_IMAGE_STATUS_SURFACE
+    : colors.surfaceElevated;
+  const cardSurface = backgroundSource
+    ? PROFILE_IMAGE_CARD_SURFACE
+    : colors.surfaceElevated;
+  const levelSurface = backgroundSource
+    ? PROFILE_IMAGE_LEVEL_SURFACE
+    : colors.surfaceElevated;
 
   return (
     <View
@@ -228,17 +241,17 @@ function OwnProfileHeaderBase({
               activeOpacity={0.7}
               style={[
                 styles.statusContainer,
-                { backgroundColor: colors.surfaceVariant },
+                { backgroundColor: statusSurface },
               ]}
             >
               <Text style={styles.statusEmoji}>{moodConfig.emoji}</Text>
-              <Text style={[styles.statusText, { color: colors.text }]}>
+              <Text style={[styles.statusText, { color: primaryTextColor }]}>
                 {status.text || moodConfig.label}
               </Text>
               <MaterialCommunityIcons
                 name="chevron-right"
                 size={16}
-                color={colors.textSecondary}
+                color={secondaryTextColor}
               />
             </TouchableOpacity>
           )}
@@ -267,19 +280,19 @@ function OwnProfileHeaderBase({
             activeOpacity={0.7}
             style={[
               styles.bioContainer,
-              { backgroundColor: colors.surfaceVariant },
+              { backgroundColor: cardSurface },
             ]}
           >
             {bio?.text ? (
               <Text
-                style={[styles.bioText, { color: colors.text }]}
+                style={[styles.bioText, { color: primaryTextColor }]}
                 numberOfLines={3}
               >
                 {bio.text}
               </Text>
             ) : (
               <Text
-                style={[styles.bioPlaceholder, { color: colors.textSecondary }]}
+                style={[styles.bioPlaceholder, { color: secondaryTextColor }]}
               >
                 Add a bio to tell people about yourself...
               </Text>
@@ -287,7 +300,7 @@ function OwnProfileHeaderBase({
             <MaterialCommunityIcons
               name="pencil-outline"
               size={14}
-              color={colors.textSecondary}
+              color={secondaryTextColor}
               style={styles.bioEditIcon}
             />
           </TouchableOpacity>
@@ -297,9 +310,7 @@ function OwnProfileHeaderBase({
             style={[
               styles.levelContainer,
               {
-                backgroundColor: backgroundSource
-                  ? "rgba(0,0,0,0.55)"
-                  : `${colors.surfaceVariant}D9`,
+                backgroundColor: levelSurface,
                 borderRadius: BorderRadius.md,
                 paddingHorizontal: 14,
                 paddingVertical: 10,

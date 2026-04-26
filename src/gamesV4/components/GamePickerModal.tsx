@@ -18,6 +18,7 @@ import {
   IMPLEMENTED_GAME_IDS,
   type GameMetadata,
 } from "@/gamesV4/constants";
+import { GameIcon } from "@/gamesV4/components/GameIcon";
 import type { GameId } from "@/gamesV4/types";
 import { useAppTheme } from "@/store/ThemeContext";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -147,15 +148,14 @@ export const GamePickerModal = forwardRef<
         }}
         activeOpacity={isImplemented ? 0.6 : 1}
       >
-        <View
-          style={[styles.gameIcon, { backgroundColor: surfaceVariantColor }]}
-        >
-          <MaterialCommunityIcons
-            name={game.icon as keyof typeof MaterialCommunityIcons.glyphMap}
-            size={24}
-            color={isImplemented ? colors.primary : subtextColor}
-          />
-        </View>
+        <GameIcon
+          metadata={game}
+          size={40}
+          borderRadius={10}
+          backgroundColor={surfaceVariantColor}
+          fallbackColor={isImplemented ? colors.primary : subtextColor}
+          style={styles.gameIcon}
+        />
         <View style={styles.gameInfo}>
           <Text style={[styles.gameName, { color: textColor }]}>
             {game.displayName}
@@ -288,11 +288,6 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   gameIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
-    justifyContent: "center",
-    alignItems: "center",
     marginRight: 12,
   },
   gameInfo: {

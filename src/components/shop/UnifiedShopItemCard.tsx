@@ -46,6 +46,24 @@ const RARITY_LABELS: Record<CosmeticRarity, string> = {
   mythic: "Mythic",
 };
 
+const IMAGE_LABEL_SURFACE_ALPHA = "E6";
+const IMAGE_ACTION_SURFACE_ALPHA = "E8";
+
+function withColorAlpha(color: string, alphaHex: string): string {
+  if (/^#[0-9a-fA-F]{6}$/.test(color)) return `${color}${alphaHex}`;
+  if (/^#[0-9a-fA-F]{3}$/.test(color)) {
+    const [, r, g, b] = color;
+    return `#${r}${r}${g}${g}${b}${b}${alphaHex}`;
+  }
+  const rgbMatch = color.match(/^rgba?\(([^)]+)\)$/);
+  if (rgbMatch) {
+    const [r, g, b] = rgbMatch[1].split(",").map((part) => part.trim());
+    const alpha = Math.round((parseInt(alphaHex, 16) / 255) * 100) / 100;
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  }
+  return color;
+}
+
 // =============================================================================
 // Types
 // =============================================================================
@@ -69,6 +87,46 @@ export interface UnifiedShopItemCardProps {
 // =============================================================================
 // Component
 // =============================================================================
+
+function ShopItemImageLabel({
+  name,
+  rarityLabel,
+  rarityColor,
+  colors,
+}: {
+  name: string;
+  rarityLabel: string;
+  rarityColor: string;
+  colors: ThemeColors;
+}) {
+  return (
+    <View
+      style={[
+        styles.imageLabel,
+        {
+          backgroundColor: withColorAlpha(
+            colors.surfaceElevated ?? colors.surface,
+            IMAGE_LABEL_SURFACE_ALPHA,
+          ),
+          borderColor: colors.border,
+        },
+      ]}
+    >
+      <Text
+        numberOfLines={1}
+        style={[styles.imageLabelName, { color: colors.text }]}
+      >
+        {name}
+      </Text>
+      <Text
+        numberOfLines={1}
+        style={[styles.imageLabelRarity, { color: rarityColor }]}
+      >
+        {rarityLabel}
+      </Text>
+    </View>
+  );
+}
 
 function UnifiedShopItemCardImpl({
   item,
@@ -162,10 +220,6 @@ function UnifiedShopItemCardImpl({
       <View
         style={[styles.previewBox, { backgroundColor: previewBackgroundColor }]}
       >
-        {!usesCustomizePreview ? (
-          <View style={[styles.rarityDot, { backgroundColor: rarityColor }]} />
-        ) : null}
-
         {isOwnedLike ? (
           <View
             style={[styles.statusBadge, { backgroundColor: colors.primary }]}
@@ -179,7 +233,7 @@ function UnifiedShopItemCardImpl({
         ) : null}
 
         {themeMeta ? (
-          <ThemePreviewSurface meta={themeMeta} />
+          <ThemePreviewSurface meta={themeMeta} variant="shopCard" />
         ) : bubbleColorHex ? (
           <BubbleColorPreviewSurface colorHex={bubbleColorHex} />
         ) : asset ? (
@@ -213,59 +267,62 @@ function UnifiedShopItemCardImpl({
             <Text style={styles.badgeText}>{badge}</Text>
           </View>
         ) : null}
-      </View>
 
-      {/* Name + rarity */}
-      <View style={[styles.infoBlock, themeMeta && styles.infoBlockTheme]}>
-        <Text numberOfLines={1} style={[styles.name, { color: colors.text }]}>
-          {item.name}
-        </Text>
-        <Text numberOfLines={1} style={[styles.rarity, { color: rarityColor }]}>
-          {RARITY_LABELS[rarity]}
-        </Text>
-        {themeMeta ? (
-          <View style={styles.themeModeRow}>
-            <ThemeModeBadge isDark={themeMeta.isDark} colors={colors} />
+        <ShopItemImageLabel
+          name={item.name}
+          rarityLabel={RARITY_LABELS[rarity]}
+          rarityColor={rarityColor}
+          colors={colors}
+        />
+
+        {/* Price + action */}
+        <View style={styles.actionRow}>
+          <View
+            style={[
+              styles.priceRow,
+              {
+                backgroundColor: withColorAlpha(
+                  colors.surfaceVariant ?? colors.surface,
+                  IMAGE_ACTION_SURFACE_ALPHA,
+                ),
+              },
+            ]}
+          >
+            <MaterialCommunityIcons
+              name="star-circle"
+              size={14}
+              color="#FFD700"
+            />
+            <Text style={[styles.price, { color: colors.text }]}>
+              {(item.priceTokens ?? 0).toLocaleString()}
+            </Text>
           </View>
-        ) : null}
+          <View
+            style={[
+              styles.actionPill,
+              {
+                backgroundColor: actionBg,
+                borderColor: actionBorder,
+              },
+            ]}
+          >
+            <MaterialCommunityIcons
+              name={actionIcon as any}
+              size={12}
+              color={actionFg}
+            />
+            <Text style={[styles.actionText, { color: actionFg }]}>
+              {actionLabel}
+            </Text>
+          </View>
+        </View>
       </View>
 
-      {/* Price + action */}
-      <View style={styles.actionRow}>
-        <View
-          style={[
-            styles.priceRow,
-            { backgroundColor: colors.surfaceVariant ?? colors.surface },
-          ]}
-        >
-          <MaterialCommunityIcons
-            name="star-circle"
-            size={14}
-            color="#FFD700"
-          />
-          <Text style={[styles.price, { color: colors.text }]}>
-            {(item.priceTokens ?? 0).toLocaleString()}
-          </Text>
+      {themeMeta ? (
+        <View style={styles.themeModeRow}>
+          <ThemeModeBadge isDark={themeMeta.isDark} colors={colors} />
         </View>
-        <View
-          style={[
-            styles.actionPill,
-            {
-              backgroundColor: actionBg,
-              borderColor: actionBorder,
-            },
-          ]}
-        >
-          <MaterialCommunityIcons
-            name={actionIcon as any}
-            size={12}
-            color={actionFg}
-          />
-          <Text style={[styles.actionText, { color: actionFg }]}>
-            {actionLabel}
-          </Text>
-        </View>
-      </View>
+      ) : null}
     </Pressable>
   );
 }
@@ -305,14 +362,31 @@ const styles = StyleSheet.create({
     width: "100%",
     height: "100%",
   },
-  rarityDot: {
+  imageLabel: {
     position: "absolute",
-    top: 8,
-    left: 8,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    zIndex: 2,
+    top: 0,
+    left: 0,
+    maxWidth: "72%",
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRightWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderTopLeftRadius: 0,
+    borderTopRightRadius: 0,
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: BorderRadius.md,
+    zIndex: 3,
+  },
+  imageLabelName: {
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  imageLabelRarity: {
+    marginTop: 1,
+    fontSize: 9,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
   },
   statusBadge: {
     position: "absolute",
@@ -339,31 +413,20 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     letterSpacing: 0.4,
   },
-  infoBlock: {
-    gap: 2,
-    minHeight: 32,
-  },
-  infoBlockTheme: {
-    minHeight: 50,
-  },
-  name: {
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  rarity: {
-    fontSize: 10,
-    fontWeight: "600",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
   themeModeRow: {
-    marginTop: Spacing.xs,
+    minHeight: 22,
+    justifyContent: "center",
   },
   actionRow: {
+    position: "absolute",
+    left: 8,
+    right: 8,
+    bottom: 8,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     gap: Spacing.xs,
+    zIndex: 4,
   },
   priceRow: {
     flexDirection: "row",

@@ -28,15 +28,26 @@ export function getBubblePreviewColor(
 
 interface ThemePreviewSurfaceProps {
   meta: ThemeMeta;
+  variant?: "default" | "shopCard";
 }
 
-function ThemePreviewSurfaceImpl({ meta }: ThemePreviewSurfaceProps) {
+function ThemePreviewSurfaceImpl({
+  meta,
+  variant = "default",
+}: ThemePreviewSurfaceProps) {
   const [bgColor, primaryColor, accentColor] = meta.previewColors;
   const lineColor = meta.isDark ? "#FFFFFF" : "#000000";
+  const isShopCard = variant === "shopCard";
 
   return (
     <View style={styles.fill}>
-      <View style={[styles.themePreviewBg, { backgroundColor: bgColor }]}>
+      <View
+        style={[
+          styles.themePreviewBg,
+          isShopCard && styles.themePreviewBgShopCard,
+          { backgroundColor: bgColor },
+        ]}
+      >
         <View
           style={[styles.themePreviewAccent, { backgroundColor: primaryColor }]}
         />
@@ -63,7 +74,11 @@ function ThemePreviewSurfaceImpl({ meta }: ThemePreviewSurfaceProps) {
           />
         </View>
         <View
-          style={[styles.themePreviewSwatch, { backgroundColor: accentColor }]}
+          style={[
+            styles.themePreviewSwatch,
+            isShopCard && styles.themePreviewSwatchShopCard,
+            { backgroundColor: accentColor },
+          ]}
         >
           <View
             style={[
@@ -150,6 +165,9 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: Spacing.sm,
   },
+  themePreviewBgShopCard: {
+    paddingTop: 46,
+  },
   themePreviewAccent: {
     height: 4,
     width: "40%",
@@ -172,6 +190,9 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.sm,
     padding: 6,
     justifyContent: "center",
+  },
+  themePreviewSwatchShopCard: {
+    bottom: 48,
   },
   themePreviewLineSm: {
     height: 4,

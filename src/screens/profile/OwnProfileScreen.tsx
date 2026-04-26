@@ -60,6 +60,7 @@ import type { ProfileBio, ProfileStatus } from "@/types/userProfile";
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("screens/profile/OwnProfileScreen");
+const CUSTOMIZE_TOOLBAR_BOTTOM_OFFSET = 0;
 
 // =============================================================================
 // Types
@@ -568,10 +569,7 @@ export default function OwnProfileScreen({
 
       {/* Customize Toolbar — Overlay above scroll content */}
       {isCustomizing && (
-        <View
-          style={[styles.toolbarOverlay, { paddingTop: insets.top }]}
-          pointerEvents="box-none"
-        >
+        <View style={styles.toolbarOverlay} pointerEvents="box-none">
           <CustomizeModeToolbar
             saving={board.saving}
             onDone={board.actions.exitCustomize}
@@ -632,9 +630,10 @@ const styles = StyleSheet.create({
   },
   toolbarOverlay: {
     position: "absolute",
-    top: 0,
     left: 0,
     right: 0,
+    // Tab scenes already end at the top edge of the bottom tab bar.
+    bottom: CUSTOMIZE_TOOLBAR_BOTTOM_OFFSET,
     zIndex: 100,
   },
 });

@@ -69,7 +69,7 @@ function ProfileStatusBase({
   const colors = {
     text: profileColors.text,
     textSecondary: profileColors.textSecondary,
-    surfaceVariant: profileColors.surfaceVariant,
+    statusSurface: profileColors.surfaceElevated,
     primary: profileColors.primary,
     border: profileColors.outline,
   };
@@ -153,7 +153,7 @@ function ProfileStatusBase({
       style={[
         styles.container,
         {
-          backgroundColor: colors.surfaceVariant,
+          backgroundColor: colors.statusSurface,
           padding: sizeStyles.padding,
           paddingHorizontal: sizeStyles.padding + 4,
           borderRadius: sizeStyles.borderRadius,

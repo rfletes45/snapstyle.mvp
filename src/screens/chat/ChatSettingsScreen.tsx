@@ -381,7 +381,7 @@ export default function ChatSettingsScreen({
         {/* Notifications Section */}
         <List.Section>
           <List.Subheader
-            style={[styles.sectionHeader, { color: colors.textSecondary }]}
+            style={[styles.sectionHeader, { color: colors.primary }]}
           >
             Notifications
           </List.Subheader>
@@ -397,13 +397,13 @@ export default function ChatSettingsScreen({
                 color={
                   settings?.mutedUntil
                     ? theme.colors.primary
-                    : colors.textSecondary
+                    : colors.primary
                 }
               />
             )}
             right={(props) => <List.Icon {...props} icon="chevron-right" />}
             onPress={() => setMuteModalVisible(true)}
-            style={{ backgroundColor: colors.surface, paddingVertical: 4 }}
+            style={styles.listItem}
             titleStyle={{ color: colors.text, fontSize: 16 }}
             descriptionStyle={{ color: colors.textSecondary, fontSize: 13 }}
           />
@@ -424,15 +424,15 @@ export default function ChatSettingsScreen({
               <List.Icon
                 {...props}
                 icon="bell-outline"
-                color={colors.textSecondary}
+                color={colors.primary}
               />
             )}
-            style={{ backgroundColor: colors.surface, paddingVertical: 4 }}
+            style={styles.listItem}
             titleStyle={{ color: colors.text, fontSize: 16 }}
             descriptionStyle={{ color: colors.textSecondary, fontSize: 13 }}
           />
 
-          <View style={{ backgroundColor: colors.surface, paddingLeft: 40 }}>
+          <View style={styles.radioGroup}>
             <RadioButton.Group
               onValueChange={(value) =>
                 handleNotifyLevelChange(value as "all" | "mentions" | "none")
@@ -469,7 +469,7 @@ export default function ChatSettingsScreen({
         {/* Privacy Section */}
         <List.Section>
           <List.Subheader
-            style={[styles.sectionHeader, { color: colors.textSecondary }]}
+            style={[styles.sectionHeader, { color: colors.primary }]}
           >
             Privacy
           </List.Subheader>
@@ -482,7 +482,7 @@ export default function ChatSettingsScreen({
               <List.Icon
                 {...props}
                 icon="check-all"
-                color={colors.textSecondary}
+                color={colors.primary}
               />
             )}
             right={() => (
@@ -493,7 +493,7 @@ export default function ChatSettingsScreen({
                 color={theme.colors.primary}
               />
             )}
-            style={{ backgroundColor: colors.surface, paddingVertical: 4 }}
+            style={styles.listItem}
             titleStyle={{ color: colors.text, fontSize: 16 }}
             descriptionStyle={{ color: colors.textSecondary, fontSize: 13 }}
           />
@@ -506,7 +506,7 @@ export default function ChatSettingsScreen({
               <List.Icon
                 {...props}
                 icon="trophy-outline"
-                color={colors.textSecondary}
+                color={colors.primary}
               />
             )}
             right={() => (
@@ -517,7 +517,7 @@ export default function ChatSettingsScreen({
                 color={theme.colors.primary}
               />
             )}
-            style={{ backgroundColor: colors.surface, paddingVertical: 4 }}
+            style={styles.listItem}
             titleStyle={{ color: colors.text, fontSize: 16 }}
             descriptionStyle={{ color: colors.textSecondary, fontSize: 13 }}
           />
@@ -531,7 +531,7 @@ export default function ChatSettingsScreen({
                 <List.Icon
                   {...props}
                   icon="palette-outline"
-                  color={colors.textSecondary}
+                  color={colors.primary}
                 />
               )}
               right={() => (
@@ -542,7 +542,7 @@ export default function ChatSettingsScreen({
                   color={theme.colors.primary}
                 />
               )}
-              style={{ backgroundColor: colors.surface, paddingVertical: 4 }}
+              style={styles.listItem}
               titleStyle={{ color: colors.text, fontSize: 16 }}
               descriptionStyle={{ color: colors.textSecondary, fontSize: 13 }}
             />
@@ -552,7 +552,7 @@ export default function ChatSettingsScreen({
         {/* Keyboard Section — global preference, applies to every chat */}
         <List.Section>
           <List.Subheader
-            style={[styles.sectionHeader, { color: colors.textSecondary }]}
+            style={[styles.sectionHeader, { color: colors.primary }]}
           >
             Keyboard
           </List.Subheader>
@@ -564,7 +564,7 @@ export default function ChatSettingsScreen({
               <List.Icon
                 {...props}
                 icon="keyboard-outline"
-                color={colors.textSecondary}
+                color={colors.primary}
               />
             )}
             right={() => (
@@ -574,7 +574,7 @@ export default function ChatSettingsScreen({
                 color={theme.colors.primary}
               />
             )}
-            style={{ backgroundColor: colors.surface, paddingVertical: 4 }}
+            style={styles.listItem}
             titleStyle={{ color: colors.text, fontSize: 16 }}
             descriptionStyle={{ color: colors.textSecondary, fontSize: 13 }}
           />
@@ -583,7 +583,7 @@ export default function ChatSettingsScreen({
         {/* Chat Management Section */}
         <List.Section>
           <List.Subheader
-            style={[styles.sectionHeader, { color: colors.textSecondary }]}
+            style={[styles.sectionHeader, { color: colors.primary }]}
           >
             Chat Management
           </List.Subheader>
@@ -596,7 +596,7 @@ export default function ChatSettingsScreen({
               <List.Icon
                 {...props}
                 icon="archive-outline"
-                color={colors.textSecondary}
+                color={colors.primary}
               />
             )}
             right={() => (
@@ -607,7 +607,7 @@ export default function ChatSettingsScreen({
                 color={theme.colors.primary}
               />
             )}
-            style={{ backgroundColor: colors.surface, paddingVertical: 4 }}
+            style={styles.listItem}
             titleStyle={{ color: colors.text, fontSize: 16 }}
             descriptionStyle={{ color: colors.textSecondary, fontSize: 13 }}
           />
@@ -701,6 +701,12 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 0.5,
     marginTop: 16,
+  },
+  listItem: {
+    paddingVertical: 4,
+  },
+  radioGroup: {
+    paddingLeft: 40,
   },
   radioItem: {
     paddingVertical: 2,

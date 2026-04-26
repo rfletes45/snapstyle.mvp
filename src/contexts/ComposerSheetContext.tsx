@@ -36,6 +36,9 @@ const SCREEN_HEIGHT = Dimensions.get("window").height;
 
 /** Sensible default keyboard height per platform (used when no keyboard has been opened yet) */
 const DEFAULT_KEYBOARD_HEIGHT = Platform.select({ ios: 336, default: 280 });
+const SHEET_HANDOFF_SAFETY_TIMEOUT_MS = 450;
+const SHEET_HANDOFF_RELEASE_MS = 160;
+const SHEET_DISMISS_DECAY_MS = 220;
 
 // Toggle for handoff diagnostics — set to true to trace the full
 // sheet→keyboard transition timeline in dev builds.
@@ -105,7 +108,7 @@ export interface ComposerSheetContextValue {
    *       the footer stays put until the keyboard rises to meet it.
    *    3. Non-handoff dismiss smooth decay — deactivateSheet's non-handoff
    *       branch snapshots the current unified offset into the floor and
-   *       then animates it to 0 via `withTiming(0, 260ms)`.  This makes
+   *       then animates it to 0 via a short timing curve.  This makes
    *       the composer slide down smoothly instead of teleporting.
    */
   handoffFloor: SharedValue<number>;
@@ -184,12 +187,12 @@ export function ComposerSheetProvider({
       // `deactivateSheet` only clears it on the wasHandoff branch.
       // That stale flag was the root cause of the "slow drag → picker
       // closes but toolbar stays lifted" bug: a slow interactive drag
-      // that took > 600 ms to trigger `dismissActiveSheet` would hit
+      // that took longer than the safety window to trigger `dismissActiveSheet` would hit
       // `deactivateSheet` with `handoffPendingRef === true`, take the
       // handoff branch, and capture a `handoffFloor` that no catch-up
       // reaction could clear (sheet is already dismissed, no keyboard
       // is rising to meet it).  Fast drags and taps completed inside
-      // the 600 ms safety timer window from the previous activateSheet,
+      // the safety timer window from the previous activateSheet,
       // which would then decay the bogus floor via `withTiming(0)` —
       // masking the bug for everything except the slow-drag path.
       const hadPendingHandoff = handoffPendingRef.current;
@@ -278,14 +281,16 @@ export function ComposerSheetProvider({
       sheetTranslateY.value = SCREEN_HEIGHT - initialSheetHeight;
 
       // Safety: if the picker never mounts or never drives sheetTranslateY
-      // (edge case), decay the lock after 600ms so the UI isn't stuck.
+      // (edge case), decay the lock so the UI isn't stuck.
       if (kbH > 0) {
         handoffTimerRef.current = setTimeout(() => {
           handoffTimerRef.current = null;
           if (handoffFloor.value > 0) {
-            handoffFloor.value = withTiming(0, { duration: 200 });
+            handoffFloor.value = withTiming(0, {
+              duration: SHEET_HANDOFF_RELEASE_MS,
+            });
           }
-        }, 600);
+        }, SHEET_HANDOFF_SAFETY_TIMEOUT_MS);
       }
 
       chatDbg("activateSheet", {
@@ -387,7 +392,7 @@ export function ComposerSheetProvider({
       //
       // Strategy: capture the current effective footer offset (the visual
       // height the composer is currently lifted by) into `handoffFloor`,
-      // then animate the floor to 0 via `withTiming(260ms)`.  The
+      // then animate the floor to 0.  The
       // sheet-inactive branches of `useEffectiveBottomInset`,
       // `unifiedFooterOffset`, and `useKeyboardBackdropHeight` are all
       // `max(kbH, floor)` — as the floor decays the composer follows it
@@ -400,7 +405,7 @@ export function ComposerSheetProvider({
       // force-clamped the offset to 0 in a single frame — a visual
       // teleport.  The animated floor decay makes every non-handoff
       // dismiss (tap, slow drag, fast drag, swipe down, backdrop tap)
-      // look identical: a clean 260 ms slide to baseline.
+      // look identical: a clean short slide to baseline.
       const currentEffectiveOffset = Math.max(
         preKbH,
         // Sheet-active branch was using max(kbH, clamped, floor).  Mirror
@@ -418,13 +423,15 @@ export function ComposerSheetProvider({
         // now reads `max(kbH, floor) = currentEffectiveOffset`).  Then
         // animate the floor to 0.
         handoffFloor.value = currentEffectiveOffset;
-        handoffFloor.value = withTiming(0, { duration: 260 });
+        handoffFloor.value = withTiming(0, {
+          duration: SHEET_DISMISS_DECAY_MS,
+        });
       } else {
         handoffFloor.value = 0;
       }
 
       // Cancel the activateSheet safety timer so a stale `withTiming(0)`
-      // doesn't fire 600 ms later and re-animate our floor.
+      // doesn't fire later and re-animate our floor.
       if (handoffTimerRef.current) {
         clearTimeout(handoffTimerRef.current);
         handoffTimerRef.current = null;
@@ -501,11 +508,11 @@ export function ComposerSheetProvider({
     }
 
     // Safety: if the keyboard never opens (e.g. hardware keyboard, edge
-    // case), smoothly decay the floor after 600 ms so the UI isn't stuck.
+    // case), smoothly decay the floor so the UI isn't stuck.
     //
     // Critically: ALSO reset `handoffPendingRef` when this timer fires.
     // Without that reset, if the user never triggers a sheet dismiss
-    // within 600 ms, the pending-handoff flag latches `true` forever and
+    // within the safety window, the pending-handoff flag latches `true` forever and
     // the next sheet dismiss incorrectly takes the handoff branch —
     // causing the slow-drag "toolbar stays open" bug.
     if (handoffTimerRef.current) clearTimeout(handoffTimerRef.current);
@@ -522,13 +529,15 @@ export function ComposerSheetProvider({
             floor: handoffFloor.value,
           });
         }
-        handoffFloor.value = withTiming(0, { duration: 200 });
+        handoffFloor.value = withTiming(0, {
+          duration: SHEET_HANDOFF_RELEASE_MS,
+        });
       }
       chatDbg("beginKeyboardHandoff:safetyTimerFired", {
         clearedPending: hadPending,
         floorAtFire: Math.round(handoffFloor.value),
       });
-    }, 600);
+    }, SHEET_HANDOFF_SAFETY_TIMEOUT_MS);
   }, [
     handoffFloor,
     isSheetActive,

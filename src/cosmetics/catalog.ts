@@ -754,11 +754,21 @@ const VALUE_BASED_TYPES = new Set<string>([
   "chat_animal_theme",
 ]);
 
+const HIDDEN_FROM_SHOP_TYPES = new Set<CosmeticType>([
+  "chat_font",
+  "chat_font_color",
+]);
+
+function isVisibleInShop(item: CosmeticDefinition): boolean {
+  return !HIDDEN_FROM_SHOP_TYPES.has(item.type);
+}
+
 /** Get all purchasable cosmetics with assets (themes & chat cosmetics exempt — they are value-based). */
 export function getShopCosmetics(): CosmeticDefinition[] {
   return COSMETICS_CATALOG.filter(
     (c) =>
       c.source === "shop" &&
+      isVisibleInShop(c) &&
       !c.metadata?.comingSoon &&
       (VALUE_BASED_TYPES.has(c.type) || isCosmeticAvailable(c)),
   ).sort((a, b) => (a.sortOrder ?? 999) - (b.sortOrder ?? 999));
@@ -778,6 +788,7 @@ export function getFreeCosmetics(): CosmeticDefinition[] {
 export function isPurchasableCosmetic(item: CosmeticDefinition): boolean {
   return (
     item.source === "shop" &&
+    isVisibleInShop(item) &&
     typeof item.priceTokens === "number" &&
     item.priceTokens > 0 &&
     !item.metadata?.comingSoon
@@ -790,14 +801,13 @@ export type ShopSection = "profile" | "chat";
 /** Chat cosmetic types. */
 const CHAT_SECTION_TYPES = new Set<CosmeticType>([
   "chat_bubble_color",
-  "chat_font",
   "chat_animal_theme",
 ]);
 
 /**
  * List purchasable cosmetics filtered by shop section.
  * - "profile": decorations, backgrounds, themes, badges
- * - "chat": chat_bubble_color, chat_font, chat_animal_theme
+ * - "chat": chat_bubble_color, chat_animal_theme
  */
 export function listPurchasableBySection(
   section: ShopSection,
@@ -872,6 +882,7 @@ export function getUnownedShopCosmeticsByType(
   return COSMETICS_CATALOG.filter((c) => {
     if (c.type !== type) return false;
     if (c.source !== "shop") return false;
+    if (!isVisibleInShop(c)) return false;
     if (ownedIds.has(c.id)) return false;
     return true;
   }).sort((a, b) => (a.sortOrder ?? 999) - (b.sortOrder ?? 999));
@@ -911,6 +922,7 @@ export function validateCatalog(): {
     // Shop items should have asset (except themes and chat cosmetics — palette/value-based)
     if (
       item.source === "shop" &&
+      isVisibleInShop(item) &&
       item.type !== "theme" &&
       item.type !== "chat_bubble_color" &&
       item.type !== "chat_font" &&
@@ -969,7 +981,12 @@ export function validateCatalog(): {
 
   // Also check: any client shop item NOT in pricing table (would fail purchase)
   for (const item of COSMETICS_CATALOG) {
-    if (item.source !== "shop" || item.metadata?.comingSoon) continue;
+    if (
+      item.source !== "shop" ||
+      item.metadata?.comingSoon ||
+      !isVisibleInShop(item)
+    )
+      continue;
     const inPricing = pricingItems.some((p) => p.id === item.id);
     if (!inPricing) {
       warnings.push(

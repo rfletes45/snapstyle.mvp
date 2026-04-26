@@ -59,6 +59,14 @@ const FOOTER_SCREEN_HEIGHT = Dimensions.get("window").height;
 const KEYBOARD_BACKDROP_Z_INDEX = 10;
 const CHAT_FOOTER_Z_INDEX = 20;
 const ENABLE_KEYBOARD_BACKDROP_DEBUG = false;
+const KEYBOARD_GATE_MIN_DURATION_MS = 40;
+const KEYBOARD_GATE_MAX_DURATION_MS = 80;
+const KEYBOARD_GATE_DEFAULT_DURATION_MS = 60;
+const KEYBOARD_OPEN_GATE_SAFETY_SLACK_MS = 20;
+const KEYBOARD_CLOSE_GATE_SAFETY_SLACK_MS = 15;
+const KEYBOARD_OPEN_GATE_POST_SETTLE_MS = 16;
+const KEYBOARD_CLOSE_GATE_POST_SETTLE_MS = 4;
+const CLOSE_GATE_COMPOSER_REGION_PX = 220;
 
 // Fixed height of the chat header (see ChatHeader.tsx → HEADER_LAYOUT.height).
 // Used by the keyboard-transition interaction gate to position its overlay
@@ -145,6 +153,20 @@ function clampSheetToInitialSnap(
   return Math.min(sheetVisibleHeight, Math.max(0, initialSnapHeight));
 }
 
+function getKeyboardGateSafetyDelay(
+  duration: number | undefined,
+  slack: number,
+): number {
+  const clampedDuration = Math.max(
+    KEYBOARD_GATE_MIN_DURATION_MS,
+    Math.min(
+      KEYBOARD_GATE_MAX_DURATION_MS,
+      duration ?? KEYBOARD_GATE_DEFAULT_DURATION_MS,
+    ),
+  );
+  return clampedDuration + slack;
+}
+
 export const ChatKeyboardScrollViewComponent = forwardRef<any, ScrollViewProps>(
   (props, ref) => {
     if (!kcsvAvailable || !KeyboardChatScrollView) {
@@ -188,7 +210,7 @@ export function useKeyboardBackdropHeight(): SharedValue<number> {
     if (isSheetActive.value === 0) {
       // Sheet inactive.  After a non-handoff dismiss `handoffFloor` is
       // seeded to the current effective offset then animated to 0 via
-      // `withTiming(260ms)`, so `max(kbH, floor)` produces a smooth
+      // a short timing curve, so `max(kbH, floor)` produces a smooth
       // backdrop collapse that tracks the composer's downward slide.
       return Math.max(kbH, floor);
     }
@@ -360,7 +382,7 @@ export function ChatFooterWrapper({ children }: { children: React.ReactNode }) {
       //   - sheet→KB handoff: floor captures current sheet visible,
       //     held until the rising keyboard catches up.
       //   - non-handoff dismiss: floor seeded to current effective
-      //     offset, then `withTiming(0, 260ms)` animates it down —
+      //     offset, then a short timing curve animates it down —
       //     composer slides smoothly to baseline without teleporting.
       return Math.max(kbH, floor);
     }
@@ -551,7 +573,7 @@ function useEffectiveBottomInset(): SharedValue<number> {
     if (isSheetActive.value === 0) {
       // Sheet inactive.  After a non-handoff dismiss `handoffFloor` is
       // seeded to the current effective inset and then animated down to
-      // 0 via `withTiming(260ms)` — so `max(kbH, floor)` produces a
+      // 0 via a short timing curve — so `max(kbH, floor)` produces a
       // smooth composer slide to baseline regardless of whether the
       // OS keyboard is still retracting from a search-TextInput blur.
       // During a sheet→keyboard handoff the floor keeps the inset
@@ -644,7 +666,6 @@ function FallbackKeyboardContainer({
   const effectiveInset = useEffectiveBottomInset();
   const { height: keyboardHeight } = useReanimatedKeyboardAnimationCompat();
   const { isSheetActive, handoffFloor } = useComposerSheet();
-  const safeAreaTop = useSafeAreaInsets().top;
 
   const animatedStyle = useAnimatedStyle(() => ({
     paddingBottom: effectiveInset.value,
@@ -656,12 +677,13 @@ function FallbackKeyboardContainer({
   // different UX:
   //
   //  • OPEN gate (`isKbOpening`) — raised on `keyboardWillShow`, released
-  //    200ms after `keyboardDidShow` (or by safety timeout).  Blocks the
-  //    full chat body below the header so re-taps cannot start a second
-  //    overlapping transition while the keyboard is rising.
+  //    shortly after `keyboardDidShow` (or by safety timeout).  Blocks only
+  //    the composer region so repeated taps on the Message box cannot start
+  //    a second overlapping transition while the keyboard is rising, while
+  //    the chat list remains scrollable.
   //
   //  • CLOSE gate (`isKbClosing`) — raised on `keyboardWillHide`, released
-  //    exactly at `keyboardDidHide` (no post-settle hold).  Blocks ONLY
+  //    shortly after `keyboardDidHide`.  Blocks ONLY
   //    the Message box (composer region) so the user cannot re-focus the
   //    TextInput while the keyboard is dismissing; chat list + header
   //    remain interactive.
@@ -699,48 +721,53 @@ function FallbackKeyboardContainer({
     const raiseOpen = (e?: { duration?: number }) => {
       setIsKbOpening(true);
       clearOpen();
-      // Safety: if `keyboardDidShow` never fires, release the gate after
-      // native duration + slack.  If `didShow` fires first it schedules
-      // its own post-settle release.
-      const d = Math.max(100, Math.min(600, e?.duration ?? 250)) + 400;
+      // Safety: release quickly using a capped slice of the native duration.
+      // This keeps the anti-jitter shield, but scrolling comes back almost
+      // immediately instead of waiting for the full keyboard animation.
+      const d = getKeyboardGateSafetyDelay(
+        e?.duration,
+        KEYBOARD_OPEN_GATE_SAFETY_SLACK_MS,
+      );
       openSafetyRef.current = setTimeout(() => {
         setIsKbOpening(false);
         openSafetyRef.current = null;
       }, d);
     };
     const releaseOpen = () => {
-      // Hold the gate for 20ms after the keyboard reports settled.
-      // On some iOS builds the keyboard frame keeps micro-adjusting for
-      // a few frames past `keyboardDidShow`; re-taps landing in that
-      // window still produce the overlapping-transition desync.
+      // Hold the gate for a tiny post-settle buffer after the keyboard
+      // reports settled. This protects against iOS frame jitter without
+      // making the chat feel locked after the keyboard is visible.
       clearOpen();
       openSafetyRef.current = setTimeout(() => {
         setIsKbOpening(false);
         openSafetyRef.current = null;
-      }, 20);
+      }, KEYBOARD_OPEN_GATE_POST_SETTLE_MS);
     };
 
     const raiseClose = (e?: { duration?: number }) => {
       setIsKbClosing(true);
       clearClose();
-      // Safety: release the close gate by native duration + slack if
-      // `keyboardDidHide` never fires.  If `didHide` fires first it
-      // schedules its own post-settle release.
-      const d = Math.max(100, Math.min(600, e?.duration ?? 250)) + 200;
+      // Safety: release quickly using a capped slice of the native duration.
+      // The composer-region shield only needs to catch the risky start of
+      // the close transition, not the entire keyboard animation.
+      const d = getKeyboardGateSafetyDelay(
+        e?.duration,
+        KEYBOARD_CLOSE_GATE_SAFETY_SLACK_MS,
+      );
       closeSafetyRef.current = setTimeout(() => {
         setIsKbClosing(false);
         closeSafetyRef.current = null;
       }, d);
     };
     const releaseClose = () => {
-      // Hold the close gate for 20ms past `keyboardDidHide` to cover
-      // any post-settle frame jitter while the composer-region block
-      // drops shortly after the keyboard is fully closed.
+      // Hold the close gate for a tiny post-settle buffer past
+      // `keyboardDidHide` to cover any frame jitter while the composer
+      // region block drops shortly after the keyboard is fully closed.
       clearClose();
       closeSafetyRef.current = setTimeout(() => {
         setIsKbClosing(false);
         closeSafetyRef.current = null;
-      }, 20);
+      }, KEYBOARD_CLOSE_GATE_POST_SETTLE_MS);
     };
 
     const subs = [
@@ -931,21 +958,12 @@ function FallbackKeyboardContainer({
       <KeyboardBackdropLayer backgroundColor={keyboardBackdropColor} />
       {children}
       {isKbOpening ? (
-        // OPEN gate: transparent touch-eater covering the chat body +
-        // composer while the keyboard is rising.  Positioned BELOW the
-        // chat header (`top = safeArea.top + CHAT_HEADER_HEIGHT`) so the
-        // header — back button, title tap, right-side actions — remains
-        // interactive at all times, per product requirement.  Mounted
-        // only during the open transition, so steady-state interaction
-        // is unaffected.  `accessibilityElementsHidden` +
-        // `importantForAccessibility` keep VoiceOver from landing on
-        // the overlay during its brief lifetime.
+        // OPEN gate: block only the composer stack while the keyboard is
+        // rising so the chat list stays scrollable instead of feeling
+        // frozen during auto-open entry.
         <View
           pointerEvents="auto"
-          style={[
-            StyleSheet.absoluteFill,
-            { top: safeAreaTop + CHAT_HEADER_HEIGHT },
-          ]}
+          style={styles.closeGate}
           accessibilityElementsHidden
           importantForAccessibility="no-hide-descendants"
         />
@@ -1062,7 +1080,7 @@ const styles = StyleSheet.create({
     // Animated.View's content box; the animated paddingBottom tracks the
     // receding keyboard so the composer remains within this region
     // throughout the close transition.
-    height: 220,
+    height: CLOSE_GATE_COMPOSER_REGION_PX,
     zIndex: CHAT_FOOTER_Z_INDEX + 1,
   },
 });

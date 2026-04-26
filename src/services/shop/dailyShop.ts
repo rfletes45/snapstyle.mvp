@@ -42,12 +42,7 @@ export const DAILY_SHOP_CATEGORIES: ReadonlyArray<DailyShopCategoryDef> = [
   {
     id: "chat",
     label: "Chat",
-    types: [
-      "chat_bubble_color",
-      "chat_font",
-      "chat_font_color",
-      "chat_animal_theme",
-    ],
+    types: ["chat_bubble_color", "chat_animal_theme"],
   },
 ];
 

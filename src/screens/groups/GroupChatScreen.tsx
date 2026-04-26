@@ -1553,16 +1553,11 @@ export default function GroupChatScreen({ route, navigation }: Props) {
 
       let cancelled = false;
       const task = InteractionManager.runAfterInteractions(() => {
-        const timeoutId = setTimeout(() => {
-          if (cancelled) return;
-          composerFocusRef.current?.focus();
-        }, 120);
-        (task as any).__timeoutId = timeoutId;
+        if (cancelled) return;
+        composerFocusRef.current?.focus();
       });
       return () => {
         cancelled = true;
-        const timeoutId = (task as any).__timeoutId;
-        if (timeoutId) clearTimeout(timeoutId);
         task.cancel?.();
       };
     }, [autoOpenKeyboard, targetMessageId]),
@@ -2879,8 +2874,21 @@ export default function GroupChatScreen({ route, navigation }: Props) {
 
       {/* Games V4: Invite creation loading overlay */}
       {gameInviteCreating && (
-        <View style={styles.gameInviteLoadingOverlay}>
-          <View style={styles.gameInviteLoadingBox}>
+        <View
+          style={[
+            styles.gameInviteLoadingOverlay,
+            { backgroundColor: colors.overlay },
+          ]}
+        >
+          <View
+            style={[
+              styles.gameInviteLoadingBox,
+              {
+                backgroundColor: colors.surface,
+                borderColor: colors.border,
+              },
+            ]}
+          >
             <ActivityIndicator size="small" color={colors.primary} />
             <Text
               style={[styles.gameInviteLoadingText, { color: colors.text }]}
@@ -3002,13 +3010,12 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "rgba(0,0,0,0.3)",
     zIndex: 100,
   },
   gameInviteLoadingBox: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#fff",
+    borderWidth: StyleSheet.hairlineWidth,
     borderRadius: 12,
     paddingHorizontal: 20,
     paddingVertical: 14,

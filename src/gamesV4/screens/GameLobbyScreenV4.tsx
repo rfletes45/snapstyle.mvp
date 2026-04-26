@@ -15,6 +15,7 @@
  */
 
 import LobbySettingsPanel from "@/gamesV4/components/LobbySettingsPanel";
+import { GameIcon } from "@/gamesV4/components/GameIcon";
 import UserAvatar from "@/gamesV4/components/UserAvatar";
 import { GAME_METADATA, IMPLEMENTED_GAME_IDS } from "@/gamesV4/constants";
 import { useGameLobbyV4 } from "@/gamesV4/hooks/useGameLobbyV4";
@@ -119,12 +120,18 @@ export default function GameLobbyScreenV4() {
   const participantMap = useMemo(() => {
     const map = new Map<
       string,
-      { displayName: string; profilePictureUrl: string | null }
+      {
+        displayName: string;
+        profilePictureUrl: string | null;
+        decorationId: string | null;
+      }
     >();
     for (const s of invite?.participantSummaries ?? []) {
       map.set(s.uid, {
         displayName: s.displayName,
         profilePictureUrl: s.profilePictureUrl,
+        decorationId:
+          (s as { decorationId?: string | null }).decorationId ?? null,
       });
     }
     return map;
@@ -133,12 +140,18 @@ export default function GameLobbyScreenV4() {
   const spectatorMap = useMemo(() => {
     const map = new Map<
       string,
-      { displayName: string; profilePictureUrl: string | null }
+      {
+        displayName: string;
+        profilePictureUrl: string | null;
+        decorationId: string | null;
+      }
     >();
     for (const s of invite?.spectatorSummaries ?? []) {
       map.set(s.uid, {
         displayName: s.displayName,
         profilePictureUrl: s.profilePictureUrl,
+        decorationId:
+          (s as { decorationId?: string | null }).decorationId ?? null,
       });
     }
     return map;
@@ -161,16 +174,24 @@ export default function GameLobbyScreenV4() {
   // Client-side profile enrichment: fetch real profiles for any participant
   // whose summary is missing a profilePictureUrl (backend may not have it yet).
   const [fetchedProfiles, setFetchedProfiles] = useState<
-    Map<string, { displayName: string; profilePictureUrl: string | null }>
+    Map<
+      string,
+      {
+        displayName: string;
+        profilePictureUrl: string | null;
+        decorationId: string | null;
+      }
+    >
   >(new Map());
 
   useEffect(() => {
     if (!invite) return;
     const allIds = [...invite.participantIds, ...invite.spectatorIds];
     const needsFetch = allIds.filter((id) => {
+      if (fetchedProfiles.has(id)) return false;
       const summary = participantMap.get(id) ?? spectatorMap.get(id);
-      // Fetch if no summary at all, or summary has no pfp URL
-      return !summary || !summary.profilePictureUrl;
+      // Fetch if no summary, missing pfp, or missing decoration data.
+      return !summary || !summary.profilePictureUrl || !summary.decorationId;
     });
     if (needsFetch.length === 0) return;
 
@@ -183,6 +204,10 @@ export default function GameLobbyScreenV4() {
           uid: id,
           displayName: profile.displayName || profile.username || "Player",
           profilePictureUrl: profile.profilePicture?.url ?? null,
+          decorationId:
+            profile.avatarDecoration?.decorationId ??
+            (profile as { decorationId?: string | null }).decorationId ??
+            null,
         };
       }),
     ).then((results) => {
@@ -193,6 +218,7 @@ export default function GameLobbyScreenV4() {
           map.set(r.uid, {
             displayName: r.displayName,
             profilePictureUrl: r.profilePictureUrl,
+            decorationId: r.decorationId,
           });
       }
       setFetchedProfiles(map);
@@ -202,10 +228,12 @@ export default function GameLobbyScreenV4() {
       cancelled = true;
     };
   }, [
+    invite,
     invite?.participantIds,
     invite?.spectatorIds,
     participantMap,
     spectatorMap,
+    fetchedProfiles,
   ]);
 
   // Merged lookup: prefer server summary, fall back to client-fetched profile
@@ -218,6 +246,8 @@ export default function GameLobbyScreenV4() {
         displayName: summary?.displayName || fetched?.displayName || "Player",
         profilePictureUrl:
           summary?.profilePictureUrl || fetched?.profilePictureUrl || null,
+        decorationId:
+          summary?.decorationId ?? fetched?.decorationId ?? null,
       };
     },
     [participantMap, spectatorMap, fetchedProfiles],
@@ -489,13 +519,12 @@ export default function GameLobbyScreenV4() {
           { backgroundColor: theme.isDark ? "#1C1C1E" : "#F2F2F7" },
         ]}
       >
-        <MaterialCommunityIcons
-          name={
-            (meta?.icon ??
-              "gamepad-variant") as keyof typeof MaterialCommunityIcons.glyphMap
-          }
-          size={48}
-          color={colors.primary}
+        <GameIcon
+          metadata={meta}
+          size={64}
+          borderRadius={16}
+          backgroundColor={colors.surface}
+          fallbackColor={colors.primary}
         />
         <Text
           style={[styles.gameName, { color: theme.isDark ? "#FFF" : "#000" }]}
@@ -559,6 +588,7 @@ export default function GameLobbyScreenV4() {
                 profilePictureUrl={pfpUrl}
                 displayName={isOptimisticEntry ? "You" : info.displayName}
                 uid={playerId}
+                decorationId={isOptimisticEntry ? null : info.decorationId}
                 size={32}
               />
               <Text
@@ -622,6 +652,7 @@ export default function GameLobbyScreenV4() {
                   profilePictureUrl={pfpUrl}
                   displayName={specInfo.displayName}
                   uid={specId}
+                  decorationId={specInfo.decorationId}
                   size={32}
                   fallbackIcon="eye"
                 />
@@ -874,9 +905,10 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 14,
     borderBottomWidth: StyleSheet.hairlineWidth,
     gap: 10,
+    overflow: "visible",
   },
   playerName: {
     flex: 1,

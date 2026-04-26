@@ -61,6 +61,28 @@ export interface WidgetAdapterProps {
  * large (4×2): Medium card — PFP, name, username, level, status
  * hero (4×4): Full rich header — PFP, name, bio, status, level, background
  */
+const PROFILE_WIDGET_IMAGE_STATUS_SURFACE = "rgba(0,0,0,0.62)";
+const PROFILE_WIDGET_IMAGE_CARD_SURFACE = "rgba(0,0,0,0.58)";
+const PROFILE_WIDGET_IMAGE_LEVEL_SURFACE = "rgba(0,0,0,0.64)";
+
+function getProfileWidgetStatusSurface(colors: any, hasBackground: boolean) {
+  return hasBackground
+    ? PROFILE_WIDGET_IMAGE_STATUS_SURFACE
+    : colors.surfaceElevated;
+}
+
+function getProfileWidgetCardSurface(colors: any, hasBackground: boolean) {
+  return hasBackground
+    ? PROFILE_WIDGET_IMAGE_CARD_SURFACE
+    : colors.surfaceElevated;
+}
+
+function getProfileWidgetLevelSurface(colors: any, hasBackground: boolean) {
+  return hasBackground
+    ? PROFILE_WIDGET_IMAGE_LEVEL_SURFACE
+    : colors.surfaceElevated;
+}
+
 export const ProfileHeaderAdapter = memo(function ProfileHeaderAdapter({
   size,
   data,
@@ -188,6 +210,14 @@ const ProfileHeaderLarge = memo(function ProfileHeaderLarge({
         textShadowRadius: 3,
       }
     : {};
+  const statusSurface = getProfileWidgetStatusSurface(
+    colors,
+    !!backgroundSource,
+  );
+  const levelSurface = getProfileWidgetLevelSurface(
+    colors,
+    !!backgroundSource,
+  );
 
   return (
     <View
@@ -249,9 +279,7 @@ const ProfileHeaderLarge = memo(function ProfileHeaderLarge({
                 style={[
                   headerStyles.largeStatusChip,
                   {
-                    backgroundColor: backgroundSource
-                      ? "rgba(0,0,0,0.35)"
-                      : colors.surfaceVariant + "90",
+                    backgroundColor: statusSurface,
                   },
                 ]}
               >
@@ -314,9 +342,7 @@ const ProfileHeaderLarge = memo(function ProfileHeaderLarge({
         style={[
           headerStyles.largeBottomBar,
           {
-            backgroundColor: backgroundSource
-              ? "rgba(0,0,0,0.45)"
-              : `${colors.surfaceVariant}D9`,
+            backgroundColor: levelSurface,
           },
         ]}
       >
@@ -440,6 +466,15 @@ const ProfileHeaderHero = memo(function ProfileHeaderHero({
         textShadowRadius: 3,
       }
     : {};
+  const statusSurface = getProfileWidgetStatusSurface(
+    colors,
+    !!backgroundSource,
+  );
+  const cardSurface = getProfileWidgetCardSurface(colors, !!backgroundSource);
+  const levelSurface = getProfileWidgetLevelSurface(
+    colors,
+    !!backgroundSource,
+  );
 
   return (
     <View
@@ -521,9 +556,7 @@ const ProfileHeaderHero = memo(function ProfileHeaderHero({
             style={[
               headerStyles.heroStatusChip,
               {
-                backgroundColor: backgroundSource
-                  ? "rgba(255,255,255,0.2)"
-                  : colors.surfaceVariant,
+                backgroundColor: statusSurface,
               },
             ]}
           >
@@ -567,9 +600,7 @@ const ProfileHeaderHero = memo(function ProfileHeaderHero({
             style={[
               headerStyles.heroBio,
               {
-                backgroundColor: backgroundSource
-                  ? "rgba(0,0,0,0.3)"
-                  : colors.surfaceVariant,
+                backgroundColor: cardSurface,
               },
             ]}
           >
@@ -633,9 +664,7 @@ const ProfileHeaderHero = memo(function ProfileHeaderHero({
         style={[
           headerStyles.heroLevelBar,
           {
-            backgroundColor: backgroundSource
-              ? "rgba(0,0,0,0.45)"
-              : `${colors.surfaceVariant}D9`,
+            backgroundColor: levelSurface,
           },
         ]}
       >
@@ -754,6 +783,15 @@ const ProfileHeaderMega = memo(function ProfileHeaderMega({
         textShadowRadius: 3,
       }
     : {};
+  const statusSurface = getProfileWidgetStatusSurface(
+    colors,
+    !!backgroundSource,
+  );
+  const cardSurface = getProfileWidgetCardSurface(colors, !!backgroundSource);
+  const levelSurface = getProfileWidgetLevelSurface(
+    colors,
+    !!backgroundSource,
+  );
 
   return (
     <View
@@ -835,9 +873,7 @@ const ProfileHeaderMega = memo(function ProfileHeaderMega({
             style={[
               headerStyles.megaStatusChip,
               {
-                backgroundColor: backgroundSource
-                  ? "rgba(255,255,255,0.2)"
-                  : colors.surfaceVariant,
+                backgroundColor: statusSurface,
               },
             ]}
           >
@@ -881,9 +917,7 @@ const ProfileHeaderMega = memo(function ProfileHeaderMega({
             style={[
               headerStyles.megaBio,
               {
-                backgroundColor: backgroundSource
-                  ? "rgba(0,0,0,0.3)"
-                  : colors.surfaceVariant,
+                backgroundColor: cardSurface,
               },
             ]}
           >
@@ -901,9 +935,7 @@ const ProfileHeaderMega = memo(function ProfileHeaderMega({
             style={[
               headerStyles.megaBio,
               {
-                backgroundColor: backgroundSource
-                  ? "rgba(0,0,0,0.3)"
-                  : colors.surfaceVariant,
+                backgroundColor: cardSurface,
               },
             ]}
           >
@@ -969,9 +1001,7 @@ const ProfileHeaderMega = memo(function ProfileHeaderMega({
         style={[
           headerStyles.megaLevelBar,
           {
-            backgroundColor: backgroundSource
-              ? "rgba(0,0,0,0.45)"
-              : `${colors.surfaceVariant}D9`,
+            backgroundColor: levelSurface,
           },
         ]}
       >

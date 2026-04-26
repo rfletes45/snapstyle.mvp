@@ -118,6 +118,7 @@ describe("groupShopItemsByDecorationCategory", () => {
     mkItem("th1", "theme"),
     mkItem("c1", "chat_bubble_color"),
     mkItem("c2", "chat_font"),
+    mkItem("c3", "chat_font_color"),
     mkItem("bad", "decoration", { priceTokens: 0 }), // ineligible
   ];
 
@@ -127,7 +128,7 @@ describe("groupShopItemsByDecorationCategory", () => {
     expect(g.background.map((i) => i.id)).toEqual(["bg1"]);
     expect(g.badge.map((i) => i.id)).toEqual(["ba1"]);
     expect(g.theme.map((i) => i.id)).toEqual(["th1"]);
-    expect(g.chat.map((i) => i.id).sort()).toEqual(["c1", "c2"]);
+    expect(g.chat.map((i) => i.id).sort()).toEqual(["c1"]);
   });
 
   it("does not place an item in more than one category", () => {

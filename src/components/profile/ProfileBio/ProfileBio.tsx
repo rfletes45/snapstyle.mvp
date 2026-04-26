@@ -47,7 +47,7 @@ function ProfileBioBase({
   const colors = {
     text: profileColors.text,
     textSecondary: profileColors.textSecondary,
-    surfaceVariant: profileColors.surfaceVariant,
+    bioSurface: profileColors.surfaceElevated,
     primary: profileColors.primary,
     border: profileColors.outline,
   };
@@ -89,7 +89,7 @@ function ProfileBioBase({
     <View
       style={[
         styles.container,
-        { backgroundColor: colors.surfaceVariant },
+        { backgroundColor: colors.bioSurface },
         style,
       ]}
     >

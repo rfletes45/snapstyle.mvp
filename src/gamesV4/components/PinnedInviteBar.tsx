@@ -11,6 +11,7 @@
  */
 
 import { GAME_METADATA } from "@/gamesV4/constants";
+import { GameIcon } from "@/gamesV4/components/GameIcon";
 import { usePinnedInvites } from "@/gamesV4/hooks/usePinnedInvites";
 import {
   adminClearGame,
@@ -21,7 +22,6 @@ import { isCancelledInvite } from "@/gamesV4/utils/inviteState";
 import { useAuth } from "@/store/AuthContext";
 import { useAppTheme } from "@/store/ThemeContext";
 import type { MainStackParamList } from "@/types/navigation/root";
-import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import React, { useCallback } from "react";
@@ -235,13 +235,12 @@ export function PinnedInviteBar({
         onLongPress={() => handleLongPress(item)}
         activeOpacity={0.7}
       >
-        <MaterialCommunityIcons
-          name={
-            (meta?.icon ??
-              "gamepad-variant") as keyof typeof MaterialCommunityIcons.glyphMap
-          }
-          size={16}
-          color={statusColor}
+        <GameIcon
+          metadata={meta}
+          size={20}
+          borderRadius={5}
+          backgroundColor={theme.colors.surface}
+          fallbackColor={statusColor}
         />
         <Text
           style={[styles.chipName, { color: theme.colors.text }]}

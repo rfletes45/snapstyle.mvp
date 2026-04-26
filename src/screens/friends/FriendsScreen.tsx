@@ -120,6 +120,7 @@ const SEARCH_ROW_HEIGHT = 38;
 const HEADER_EXPANDED = HEADER_ROW_HEIGHT + SEARCH_ROW_HEIGHT;
 const HEADER_COLLAPSED = HEADER_ROW_HEIGHT;
 const SEARCH_BAR_HEIGHT = 32;
+const FRIENDS_REFRESH_PROGRESS_OFFSET = SEARCH_ROW_HEIGHT + 8;
 // SCROLL_RANGE must match the search bar's actual travel distance so
 // the bar and the 1:1-scrolling content stay visually synchronized.
 // Travel = searchExpandedTop − searchCollapsedTop
@@ -1561,7 +1562,9 @@ export default function FriendsScreen({ navigation }: any) {
           keyExtractor={(item: FriendWithProfile) => item.id}
           contentContainerStyle={[
             styles.listContent,
-            { paddingTop: SEARCH_ROW_HEIGHT },
+            {
+              paddingTop: SEARCH_ROW_HEIGHT,
+            },
           ]}
           stickySectionHeadersEnabled
           scrollIndicatorInsets={{ top: 0 }}
@@ -1575,7 +1578,11 @@ export default function FriendsScreen({ navigation }: any) {
           automaticallyAdjustsScrollIndicatorInsets={false}
           onScrollToIndexFailed={() => {}}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              progressViewOffset={FRIENDS_REFRESH_PROGRESS_OFFSET}
+            />
           }
           ListHeaderComponent={
             normalizedQuery || loading ? null : renderRequestsHeader

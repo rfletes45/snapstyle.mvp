@@ -18,6 +18,7 @@ import {
   ConversationPickerModal,
   type ConversationPickerResult,
 } from "@/gamesV4/components/ConversationPickerModal";
+import { GameIcon } from "@/gamesV4/components/GameIcon";
 import {
   GAME_DESCRIPTIONS,
   GAME_METADATA,
@@ -378,13 +379,13 @@ export default function GameDetailScreenV4() {
         {/* ─── 1. Overview ───────────────────────────────────────── */}
         <View style={[styles.card, { backgroundColor: cardBg }]}>
           <View style={styles.overviewHeader}>
-            <View style={[styles.gameIconLarge, { backgroundColor: accentBg }]}>
-              <MaterialCommunityIcons
-                name={meta.icon as keyof typeof MaterialCommunityIcons.glyphMap}
-                size={40}
-                color={theme.colors.primary}
-              />
-            </View>
+            <GameIcon
+              metadata={meta}
+              size={64}
+              borderRadius={16}
+              backgroundColor={accentBg}
+              fallbackColor={theme.colors.primary}
+            />
             <View style={styles.overviewInfo}>
               <Text style={[styles.gameTitleLarge, { color: textColor }]}>
                 {meta.displayName}
@@ -993,13 +994,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 14,
     gap: 14,
-  },
-  gameIconLarge: {
-    width: 64,
-    height: 64,
-    borderRadius: 16,
-    justifyContent: "center",
-    alignItems: "center",
   },
   overviewInfo: { flex: 1 },
   gameTitleLarge: { fontSize: 22, fontWeight: "800" },

@@ -27,6 +27,10 @@ import type {
 } from "@/types/userProfile";
 import { MOOD_CONFIG } from "@/types/userProfile";
 
+const PROFILE_IMAGE_STATUS_SURFACE = "rgba(0,0,0,0.62)";
+const PROFILE_IMAGE_CARD_SURFACE = "rgba(0,0,0,0.58)";
+const PROFILE_IMAGE_LEVEL_SURFACE = "rgba(0,0,0,0.64)";
+
 // =============================================================================
 // Types
 // =============================================================================
@@ -150,6 +154,15 @@ function UserProfileHeaderBase({
         textShadowRadius: 3,
       }
     : {};
+  const statusSurface = backgroundSource
+    ? PROFILE_IMAGE_STATUS_SURFACE
+    : colors.surfaceElevated;
+  const cardSurface = backgroundSource
+    ? PROFILE_IMAGE_CARD_SURFACE
+    : colors.surfaceElevated;
+  const levelSurface = backgroundSource
+    ? PROFILE_IMAGE_LEVEL_SURFACE
+    : colors.surfaceElevated;
 
   return (
     <View style={[styles.outerWrapper, style]}>
@@ -220,11 +233,11 @@ function UserProfileHeaderBase({
             <View
               style={[
                 styles.statusContainer,
-                { backgroundColor: colors.surfaceVariant },
+                { backgroundColor: statusSurface },
               ]}
             >
               <Text style={styles.statusEmoji}>{moodConfig.emoji}</Text>
-              <Text style={[styles.statusText, { color: colors.text }]}>
+              <Text style={[styles.statusText, { color: primaryTextColor }]}>
                 {status.text || moodConfig.label}
               </Text>
             </View>
@@ -291,11 +304,11 @@ function UserProfileHeaderBase({
             <View
               style={[
                 styles.bioContainer,
-                { backgroundColor: colors.surfaceVariant },
+                { backgroundColor: cardSurface },
               ]}
             >
               <Text
-                style={[styles.bioText, { color: colors.text }]}
+                style={[styles.bioText, { color: primaryTextColor }]}
                 numberOfLines={4}
               >
                 {bio.text}
@@ -305,7 +318,12 @@ function UserProfileHeaderBase({
 
           {/* Level Progress */}
           {level && (
-            <View style={styles.levelContainer}>
+            <View
+              style={[
+                styles.levelContainer,
+                { backgroundColor: levelSurface },
+              ]}
+            >
               <LevelProgress level={level} compact={!!backgroundSource} />
             </View>
           )}
@@ -422,6 +440,8 @@ const styles = StyleSheet.create({
   levelContainer: {
     width: "100%",
     paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 12,
     marginTop: 12,
   },
 });

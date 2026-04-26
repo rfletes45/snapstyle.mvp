@@ -1239,16 +1239,11 @@ export default function ChatScreen({
 
       let cancelled = false;
       const task = InteractionManager.runAfterInteractions(() => {
-        const timeoutId = setTimeout(() => {
-          if (cancelled) return;
-          composerFocusRef.current?.focus();
-        }, 120);
-        (task as any).__timeoutId = timeoutId;
+        if (cancelled) return;
+        composerFocusRef.current?.focus();
       });
       return () => {
         cancelled = true;
-        const timeoutId = (task as any).__timeoutId;
-        if (timeoutId) clearTimeout(timeoutId);
         task.cancel?.();
       };
     }, [autoOpenKeyboard, targetMessageId, dmBlocked]),
@@ -2070,8 +2065,21 @@ export default function ChatScreen({
 
       {/* Games V4: Invite creation loading overlay */}
       {gameInviteCreating && (
-        <View style={styles.gameInviteLoadingOverlay}>
-          <View style={styles.gameInviteLoadingBox}>
+        <View
+          style={[
+            styles.gameInviteLoadingOverlay,
+            { backgroundColor: theme.colors.backdrop },
+          ]}
+        >
+          <View
+            style={[
+              styles.gameInviteLoadingBox,
+              {
+                backgroundColor: theme.colors.surface,
+                borderColor: theme.colors.outlineVariant,
+              },
+            ]}
+          >
             <ActivityIndicator size="small" color={theme.colors.primary} />
             <Text
               style={[
@@ -2139,13 +2147,12 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "rgba(0,0,0,0.3)",
     zIndex: 100,
   },
   gameInviteLoadingBox: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#fff",
+    borderWidth: StyleSheet.hairlineWidth,
     borderRadius: 12,
     paddingHorizontal: 20,
     paddingVertical: 14,
