@@ -120,7 +120,13 @@ function useDailyShopCountdown(): {
 // Component
 // =============================================================================
 
-export default function ShopHubScreen() {
+export interface ShopHubScreenProps {
+  mainNavRoot?: boolean;
+}
+
+export default function ShopHubScreen({
+  mainNavRoot = false,
+}: ShopHubScreenProps) {
   const navigation = useNavigation<any>();
   const { colors } = useAppTheme();
   const insets = useSafeAreaInsets();
@@ -295,6 +301,7 @@ export default function ShopHubScreen() {
       {/* App-level Shop header (preserved) */}
       <ScreenHeader
         title="Shop"
+        showBack={!mainNavRoot}
         renderRight={() => (
           <Pressable
             style={[

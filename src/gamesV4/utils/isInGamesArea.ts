@@ -22,6 +22,8 @@ import type { GameRuntimeType } from "@/gamesV4/types/common";
 const GAMES_AREA_ROUTES: ReadonlySet<string> = new Set([
   // Tab root
   "Games",
+  "GamesRoot",
+  "GamesHub",
   // Game flow screens
   "GameLobbyV4",
   "GamePlayV4",

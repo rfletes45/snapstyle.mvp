@@ -1,4 +1,3 @@
-import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import {
   NavigationContainer,
@@ -7,12 +6,12 @@ import {
 } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import React, { useCallback, useEffect, useMemo, useRef } from "react";
-import { Linking, StyleSheet, View } from "react-native";
+import { Linking } from "react-native";
 
 import type { HydrationState } from "@/components/AppGate";
 import AppGate from "@/components/AppGate";
 import ErrorBoundary from "@/components/ErrorBoundary";
-import { ButtonCornerBadge } from "@/components/ui/ButtonCornerBadge";
+import { MainNavBar } from "@/components/navigation/MainNavBar";
 import WarningModal from "@/components/WarningModal";
 import { ComposerSheetProvider } from "@/contexts/ComposerSheetContext";
 import { useUnreadMessagesBadgeCount } from "@/hooks/useUnreadMessagesBadgeCount";
@@ -136,13 +135,6 @@ const MainStack_Nav = createNativeStackNavigator<MainStackParamList>();
 const ProfileSetupStack_Nav =
   createNativeStackNavigator<ProfileSetupStackParamList>();
 const Tab = createBottomTabNavigator<AppTabsParamList>();
-
-const styles = StyleSheet.create({
-  tabIconWrapper: {
-    position: "relative",
-    overflow: "visible",
-  },
-});
 
 function AuthStack() {
   const { colors } = useAppTheme();
@@ -311,106 +303,69 @@ function ProfileStack() {
  * Main App Tabs
  * Messages | Calls | Profile
  */
+function ShopRootScreen() {
+  return <ShopHubScreen mainNavRoot />;
+}
+
+function GamesRootScreen() {
+  return <GamesHubScreenV4 mainNavRoot />;
+}
+
+function CustomizeRootScreen(
+  props: React.ComponentProps<typeof CustomizationHubScreen>,
+) {
+  return <CustomizationHubScreen {...props} mainNavRoot />;
+}
+
 function AppTabs() {
   const { colors } = useAppTheme();
   const { currentFirebaseUser } = useAuth();
   const unreadMessagesCount = useUnreadMessagesBadgeCount(
     currentFirebaseUser?.uid,
   );
-  const hasUnreadMessages = unreadMessagesCount > 0;
-  type MaterialCommunityIconName = React.ComponentProps<
-    typeof MaterialCommunityIcons
-  >["name"];
-
-  const defaultTabBarStyle = {
-    backgroundColor: colors.background,
-    borderTopColor: colors.border,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    elevation: 0,
-    height: 110,
-    paddingTop: 10,
-    paddingBottom: 28,
-    overflow: "visible" as const,
-  };
-
-  const tabBarItemStyle = {
-    paddingTop: 8,
-    paddingBottom: 4,
-    overflow: "visible" as const,
-  };
 
   return (
     <Tab.Navigator
       initialRouteName="Messages"
-      screenOptions={({ route }) => ({
-        headerShown: true,
-        headerStyle: {
-          backgroundColor: colors.headerBackground,
-        },
-        headerTintColor: colors.headerText,
-        headerTitleStyle: {
-          fontWeight: "600",
-          fontSize: 18,
-        },
-        headerShadowVisible: false,
-        tabBarActiveTintColor: colors.tabActive,
-        tabBarInactiveTintColor: colors.tabInactive,
+      tabBar={(props) => (
+        <MainNavBar {...props} unreadMessagesCount={unreadMessagesCount} />
+      )}
+      screenOptions={{
+        headerShown: false,
         tabBarHideOnKeyboard: true,
-        tabBarStyle: defaultTabBarStyle,
-        tabBarItemStyle: tabBarItemStyle,
         sceneStyle: { backgroundColor: colors.background },
         lazy: true,
-        tabBarIcon: ({ color, size }) => {
-          let iconName: MaterialCommunityIconName = "message-outline";
-
-          switch (route.name) {
-            case "Profile":
-              iconName = "account-circle-outline";
-              break;
-            case "Messages":
-              iconName = "message-outline";
-              break;
-            case "Calls":
-              iconName = "phone-outline";
-              break;
-          }
-
-          return (
-            <View style={styles.tabIconWrapper}>
-              <MaterialCommunityIcons
-                name={iconName}
-                size={size}
-                color={color}
-              />
-              {route.name === "Messages" && (
-                <ButtonCornerBadge
-                  visible={hasUnreadMessages}
-                  badgeColor={colors.error}
-                  borderColor={colors.background}
-                  accessibilityLabel="Unread messages"
-                />
-              )}
-            </View>
-          );
-        },
-      })}
+      }}
     >
       <Tab.Screen
         name="Messages"
         component={InboxStack}
-        options={{
-          headerShown: false,
-        }}
+        options={{ title: "Messages" }}
       />
       <Tab.Screen
         name="Calls"
         component={CallsScreen}
-        options={{ headerShown: false }}
+        options={{ title: "Calls" }}
       />
       <Tab.Screen
         name="Profile"
         component={ProfileStack}
-        options={{ headerShown: false }}
+        options={{ title: "Profile" }}
+      />
+      <Tab.Screen
+        name="ShopRoot"
+        component={ShopRootScreen}
+        options={{ title: "Shop" }}
+      />
+      <Tab.Screen
+        name="GamesRoot"
+        component={GamesRootScreen}
+        options={{ title: "Games" }}
+      />
+      <Tab.Screen
+        name="CustomizeRoot"
+        component={CustomizeRootScreen}
+        options={{ title: "Customize" }}
       />
     </Tab.Navigator>
   );

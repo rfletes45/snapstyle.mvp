@@ -89,7 +89,13 @@ const FILTER_PILLS: { key: FilterKey; label: string }[] = [
 // Component
 // =============================================================================
 
-export default function GamesHubScreenV4() {
+export interface GamesHubScreenV4Props {
+  mainNavRoot?: boolean;
+}
+
+export default function GamesHubScreenV4({
+  mainNavRoot = false,
+}: GamesHubScreenV4Props) {
   const { theme } = useAppTheme();
   const { currentFirebaseUser } = useAuth();
   const navigation = useNavigation<Nav>();
@@ -468,6 +474,7 @@ export default function GamesHubScreenV4() {
       {/* Header */}
       <ScreenHeader
         title="Games"
+        showBack={!mainNavRoot}
         style={styles.headerNoBorder}
         renderRight={() => (
           <View style={styles.headerRightRow}>

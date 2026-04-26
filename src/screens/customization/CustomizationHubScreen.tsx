@@ -43,6 +43,7 @@ import {
   getBubblePreviewColor,
   getThemePreviewMeta,
 } from "@/components/customization/CosmeticPreviewSurfaces";
+import { MainNavCustomizationSheet } from "@/components/navigation/MainNavCustomizationSheet";
 import { ScreenHeader } from "@/components/shared/ScreenHeader";
 
 import { CosmeticImage } from "@/components/CosmeticImage";
@@ -87,6 +88,7 @@ interface CustomizationHubScreenProps {
   route?: {
     params?: { initialTab?: string; initialSection?: "profile" | "chat" };
   };
+  mainNavRoot?: boolean;
 }
 
 type CustomizationSection = "profile" | "chat";
@@ -446,6 +448,7 @@ const AnimalThemeCard = React.memo(function AnimalThemeCard({
 export default function CustomizationHubScreen({
   navigation,
   route,
+  mainNavRoot = false,
 }: CustomizationHubScreenProps) {
   const colors = useColors();
   const { setTheme: setAppTheme } = useAppTheme();
@@ -469,6 +472,7 @@ export default function CustomizationHubScreen({
   const [section, setSection] = useState<CustomizationSection>(
     initialSection === "chat" ? "chat" : "profile",
   );
+  const [mainNavSheetOpen, setMainNavSheetOpen] = useState(false);
 
   // Current equipped state — profile
   const currentDecorationId = decoration?.decorationId ?? null;
@@ -686,6 +690,14 @@ export default function CustomizationHubScreen({
 
   const keyExtractor = useCallback((item: CosmeticDefinition) => item.id, []);
 
+  const handleOpenMainNavSheet = useCallback(() => {
+    setMainNavSheetOpen(true);
+  }, []);
+
+  const handleCloseMainNavSheet = useCallback(() => {
+    setMainNavSheetOpen(false);
+  }, []);
+
   const renderAnimalThemeItem = useCallback(
     ({ item }: { item: CosmeticDefinition }) => (
       <AnimalThemeCard
@@ -706,10 +718,24 @@ export default function CustomizationHubScreen({
       {/* App bar */}
       <ScreenHeader
         title="Customize"
+        showBack={!mainNavRoot}
         style={styles.headerNoBorder}
-        onBack={() => navigation.goBack()}
+        onBack={mainNavRoot ? undefined : () => navigation.goBack()}
         renderRight={() => (
           <View style={styles.headerActions}>
+            <Pressable
+              onPress={handleOpenMainNavSheet}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              accessibilityLabel="Customize main navigation"
+              accessibilityRole="button"
+              style={styles.headerActionButton}
+            >
+              <MaterialCommunityIcons
+                name="navigation-variant-outline"
+                size={22}
+                color={colors.text}
+              />
+            </Pressable>
             <Pressable
               onPress={() => navigation.navigate("Shop" as any)}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -1169,6 +1195,11 @@ export default function CustomizationHubScreen({
       )}
 
       {/* Item Detail Sheet */}
+      <MainNavCustomizationSheet
+        visible={mainNavSheetOpen}
+        onClose={handleCloseMainNavSheet}
+      />
+
       <ItemDetailSheet
         visible={detailVisible}
         item={selectedItem}

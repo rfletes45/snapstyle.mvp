@@ -42,6 +42,11 @@ export type AppTabsParamList = {
   Profile: NavigatorScreenParams<ProfileTabStackParamList> | undefined;
   Messages: NavigatorScreenParams<InboxStackParamList> | undefined;
   Calls: undefined;
+  ShopRoot: undefined;
+  GamesRoot: undefined;
+  CustomizeRoot:
+    | { initialTab?: string; initialSection?: "profile" | "chat" }
+    | undefined;
 };
 
 export type MainStackParamList = {
