@@ -282,6 +282,11 @@ export interface XPAward {
 export interface AchievementUnlock {
   uid: string;
   achievementType: string;
+  name?: string;
+  description?: string;
+  sectionId?: string;
+  tokenReward?: number;
+  rewardTransactionId?: string;
   badgeId?: string;
   earnedAt: TimestampLike;
 }

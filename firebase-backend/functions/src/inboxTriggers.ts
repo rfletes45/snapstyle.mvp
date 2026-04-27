@@ -27,6 +27,8 @@ function getDb() {
   return admin.firestore();
 }
 
+type InboxScope = "dm" | "group";
+
 // =============================================================================
 // Helpers
 // =============================================================================
@@ -75,6 +77,96 @@ async function getGroupMemberUids(groupId: string): Promise<string[]> {
     });
     return [];
   }
+}
+
+function isHiddenDeleted(
+  data: FirebaseFirestore.DocumentData | undefined,
+): boolean {
+  return Boolean(data?.deletedAt && data?.hiddenUntilNewMessage);
+}
+
+function buildThreadId(scope: InboxScope, conversationId: string): string {
+  return `${scope}:${conversationId}`;
+}
+
+async function deleteUserInboxThread(
+  uid: string,
+  threadId: string,
+): Promise<void> {
+  await getDb()
+    .collection("Users")
+    .doc(uid)
+    .collection("Inbox")
+    .doc(threadId)
+    .delete();
+}
+
+async function shouldDeleteDmInboxThread(
+  uid: string,
+  chatId: string,
+  threadData?: FirebaseFirestore.DocumentData,
+): Promise<boolean> {
+  const db = getDb();
+  const chatRef = db.collection("Chats").doc(chatId);
+  const [chatDoc, privateDoc] = await Promise.all([
+    chatRef.get(),
+    chatRef.collection("MembersPrivate").doc(uid).get(),
+  ]);
+
+  if (isHiddenDeleted(privateDoc.data())) return true;
+  if (!chatDoc.exists) return true;
+
+  const members = chatDoc.data()?.members;
+  if (!Array.isArray(members) || !members.includes(uid)) return true;
+
+  const otherUid =
+    members.find(
+      (memberUid: unknown) =>
+        typeof memberUid === "string" && memberUid !== uid,
+    ) || threadData?.otherUserId;
+  if (!otherUid || typeof otherUid !== "string") return true;
+  if (!members.includes(otherUid)) return true;
+
+  const otherUserDoc = await db.collection("Users").doc(otherUid).get();
+  return !otherUserDoc.exists;
+}
+
+async function shouldDeleteGroupInboxThread(
+  uid: string,
+  groupId: string,
+): Promise<boolean> {
+  const db = getDb();
+  const groupRef = db.collection("Groups").doc(groupId);
+  const [groupDoc, memberDoc, privateDoc] = await Promise.all([
+    groupRef.get(),
+    groupRef.collection("Members").doc(uid).get(),
+    groupRef.collection("MembersPrivate").doc(uid).get(),
+  ]);
+
+  if (isHiddenDeleted(privateDoc.data())) return true;
+  if (!groupDoc.exists) return true;
+
+  const memberIds = groupDoc.data()?.memberIds;
+  if (Array.isArray(memberIds) && !memberIds.includes(uid)) return true;
+
+  return !memberDoc.exists;
+}
+
+async function cleanupInboxThreadIfStale(
+  uid: string,
+  scope: InboxScope,
+  conversationId: string,
+  threadData?: FirebaseFirestore.DocumentData,
+): Promise<boolean> {
+  const threadId = buildThreadId(scope, conversationId);
+  const shouldDelete =
+    scope === "dm"
+      ? await shouldDeleteDmInboxThread(uid, conversationId, threadData)
+      : await shouldDeleteGroupInboxThread(uid, conversationId);
+
+  if (!shouldDelete) return false;
+  await deleteUserInboxThread(uid, threadId);
+  return true;
 }
 
 // =============================================================================
@@ -134,6 +226,17 @@ export const onDMMessageInbox = functions.firestore
 
         const isSender = uid === senderId;
         const otherUid = members.find((m) => m !== uid) || "";
+        const privateDoc = await db
+          .collection("Chats")
+          .doc(chatId)
+          .collection("MembersPrivate")
+          .doc(uid)
+          .get();
+
+        if (isHiddenDeleted(privateDoc.data())) {
+          batch.delete(inboxRef);
+          continue;
+        }
 
         // Fetch other user's name for display (best-effort)
         let otherUserName = "";
@@ -244,6 +347,17 @@ export const onGroupMessageInbox = functions.firestore
             .doc(threadId);
 
           const isSender = uid === senderId;
+          const privateDoc = await db
+            .collection("Groups")
+            .doc(groupId)
+            .collection("MembersPrivate")
+            .doc(uid)
+            .get();
+
+          if (isHiddenDeleted(privateDoc.data())) {
+            batch.delete(inboxRef);
+            continue;
+          }
 
           const baseUpdate: Record<string, unknown> = {
             threadId,
@@ -347,6 +461,61 @@ export const markInboxRead = secureCallableRuntime().https.onCall(
   },
 );
 
+export const cleanupStaleInboxThread = secureCallableRuntime().https.onCall(
+  async (
+    data: { threadId?: string; scope?: string; conversationId?: string },
+    context,
+  ): Promise<{ success: boolean; cleaned: boolean }> => {
+    if (!context.auth) {
+      throw new functions.https.HttpsError(
+        "unauthenticated",
+        "Must be logged in",
+      );
+    }
+
+    const { threadId, scope, conversationId } = data;
+    if (
+      typeof threadId !== "string" ||
+      (scope !== "dm" && scope !== "group") ||
+      typeof conversationId !== "string" ||
+      threadId !== buildThreadId(scope, conversationId)
+    ) {
+      throw new functions.https.HttpsError(
+        "invalid-argument",
+        "A valid threadId, scope, and conversationId are required",
+      );
+    }
+
+    const uid = context.auth.uid;
+    const inboxRef = getDb()
+      .collection("Users")
+      .doc(uid)
+      .collection("Inbox")
+      .doc(threadId);
+
+    try {
+      const inboxDoc = await inboxRef.get();
+      const cleaned = await cleanupInboxThreadIfStale(
+        uid,
+        scope,
+        conversationId,
+        inboxDoc.data(),
+      );
+      return { success: true, cleaned };
+    } catch (error) {
+      functions.logger.error("[cleanupStaleInboxThread] Error", {
+        uid,
+        threadId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw new functions.https.HttpsError(
+        "internal",
+        "Failed to clean up stale inbox thread",
+      );
+    }
+  },
+);
+
 // =============================================================================
 // D) Member State Sync Triggers
 //
@@ -390,6 +559,14 @@ export const onDMMemberStateChanged = functions.firestore
       .doc(threadId);
 
     try {
+      if (isHiddenDeleted(after)) {
+        await inboxRef.delete();
+        return;
+      }
+
+      const inboxDoc = await inboxRef.get();
+      if (!inboxDoc.exists) return;
+
       await inboxRef.set(
         {
           pinnedAt: after.pinnedAt ?? null,
@@ -446,6 +623,14 @@ export const onGroupMemberStateChanged = functions.firestore
       .doc(threadId);
 
     try {
+      if (isHiddenDeleted(after)) {
+        await inboxRef.delete();
+        return;
+      }
+
+      const inboxDoc = await inboxRef.get();
+      if (!inboxDoc.exists) return;
+
       await inboxRef.set(
         {
           pinnedAt: after.pinnedAt ?? null,
@@ -461,6 +646,36 @@ export const onGroupMemberStateChanged = functions.firestore
       );
     } catch (error) {
       functions.logger.error("[onGroupMemberStateChanged] Error", {
+        groupId,
+        uid,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
+
+export const onDMMemberRemovedInboxCleanup = functions.firestore
+  .document("Chats/{chatId}/Members/{uid}")
+  .onDelete(async (_snap, context) => {
+    const { chatId, uid } = context.params;
+    try {
+      await deleteUserInboxThread(uid, buildThreadId("dm", chatId));
+    } catch (error) {
+      functions.logger.error("[onDMMemberRemovedInboxCleanup] Error", {
+        chatId,
+        uid,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
+
+export const onGroupMemberRemovedInboxCleanup = functions.firestore
+  .document("Groups/{groupId}/Members/{uid}")
+  .onDelete(async (_snap, context) => {
+    const { groupId, uid } = context.params;
+    try {
+      await deleteUserInboxThread(uid, buildThreadId("group", groupId));
+    } catch (error) {
+      functions.logger.error("[onGroupMemberRemovedInboxCleanup] Error", {
         groupId,
         uid,
         error: error instanceof Error ? error.message : String(error),

@@ -8,7 +8,7 @@
  * Achievement architecture:
  * - **Sections**: Thematic groupings (Getting Started, Grinder, etc.)
  * - **Difficulty**: easy → medium → hard → expert → legendary
- * - **Rewards**: Token reward on each unlock, section badge on section completion
+ * - **Rewards**: Token reward automatically granted on each unlock
  *
  * Achievement categories:
  * - Milestone: cumulative play/win thresholds (10/50/100/250 games)
@@ -16,9 +16,10 @@
  * - Game-specific: per-game mastery (TicTacToe perfect, Connect Four streak, etc.)
  *
  * Idempotent: achievements that already exist in Firestore are skipped.
- * Writes:
+ * Writes atomically:
  *   Users/{uid}/Achievements/{achievementType}
  *   Wallets/{uid}  (token reward increment)
+ *   Transactions/{deterministicAchievementRewardTxId}
  *
  * @module gamesV4/achievements
  */
@@ -58,6 +59,9 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ACHIEVEMENT_SECTIONS = exports.LEGACY_SECTION_MAP = void 0;
 exports.resolveSection = resolveSection;
+exports.getAchievementRewardTransactionId = getAchievementRewardTransactionId;
+exports.formatAchievementDisplayName = formatAchievementDisplayName;
+exports.awardExistingUnclaimedAchievementReward = awardExistingUnclaimedAchievementReward;
 exports.evaluateAchievementsV4 = evaluateAchievementsV4;
 exports.getAchievementTypesForSection = getAchievementTypesForSection;
 exports.getSectionDef = getSectionDef;
@@ -3405,6 +3409,214 @@ const GAME_ACHIEVEMENTS = [
         },
     },
 ];
+const ACHIEVEMENT_SCHEMA_VERSION = 3;
+function getAchievementRewardTransactionId(uid, achievementType) {
+    return `achievement_reward_${uid}_${achievementType}`.replace(/\//g, "_");
+}
+function formatAchievementDisplayName(achievementType, displayName) {
+    if (displayName && displayName.trim().length > 0)
+        return displayName.trim();
+    return achievementType
+        .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+        .replace(/[_-]+/g, " ")
+        .trim()
+        .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+function normalizeTokenReward(value) {
+    return typeof value === "number" && Number.isFinite(value)
+        ? Math.max(0, value)
+        : 0;
+}
+function writeAchievementRewardTransaction(tx, params) {
+    const walletRef = params.db.collection("Wallets").doc(params.uid);
+    const transactionRef = params.db
+        .collection("Transactions")
+        .doc(params.transactionId);
+    tx.set(walletRef, {
+        tokensBalance: admin.firestore.FieldValue.increment(params.tokenReward),
+        totalEarned: admin.firestore.FieldValue.increment(params.tokenReward),
+        updatedAt: Date.now(),
+    }, { merge: true });
+    tx.set(transactionRef, {
+        uid: params.uid,
+        type: "earn",
+        amount: params.tokenReward,
+        reason: "achievement_reward",
+        title: params.achievementName,
+        description: "Achievement unlocked",
+        refId: params.achievementType,
+        refType: "achievement",
+        createdAt: params.now,
+        transactionId: params.transactionId,
+        source: "achievement",
+        sourceType: "achievement_auto_award",
+        sourceId: params.achievementType,
+        achievementId: params.achievementType,
+        gameId: params.gameId,
+        metadata: {
+            achievementId: params.achievementType,
+            achievementType: params.achievementType,
+            achievementName: params.achievementName,
+            achievementDescription: params.achievementDescription,
+            difficulty: params.difficulty,
+            sectionId: params.sectionId,
+            gameId: params.gameId,
+            sessionId: params.sessionId,
+            previousClaimState: params.previousClaimState,
+            autoAwarded: true,
+        },
+    });
+}
+async function createAchievementWithAutoReward(params) {
+    const { db, uid, def, session, result, now } = params;
+    const achievementRef = db
+        .collection("Users")
+        .doc(uid)
+        .collection("Achievements")
+        .doc(def.type);
+    const transactionId = getAchievementRewardTransactionId(uid, def.type);
+    const tokenReward = normalizeTokenReward(def.tokenReward);
+    const outcome = await db.runTransaction(async (tx) => {
+        const achievementSnap = await tx.get(achievementRef);
+        if (achievementSnap.exists) {
+            return { created: false, transactionId: null };
+        }
+        const transactionRef = db.collection("Transactions").doc(transactionId);
+        const transactionSnap = tokenReward > 0 ? await tx.get(transactionRef) : null;
+        const alreadyRewarded = !!transactionSnap?.exists;
+        tx.set(achievementRef, {
+            type: def.type,
+            name: def.name,
+            description: def.description,
+            sectionId: def.sectionId,
+            difficulty: def.difficulty,
+            tokenReward,
+            earnedAt: now,
+            claimedAt: now,
+            rewardGrantedAt: tokenReward > 0 ? now : null,
+            rewardTransactionId: tokenReward > 0 ? transactionId : null,
+            status: "claimed",
+            schemaVersion: ACHIEVEMENT_SCHEMA_VERSION,
+            gameId: session.gameId,
+            sessionId: result.sessionId,
+            rewardSource: "achievement",
+            autoAwarded: true,
+            ...(def.badgeId ? { badgeId: def.badgeId } : {}),
+        });
+        if (tokenReward > 0 && !alreadyRewarded) {
+            writeAchievementRewardTransaction(tx, {
+                db,
+                uid,
+                achievementType: def.type,
+                achievementName: def.name,
+                achievementDescription: def.description,
+                sectionId: def.sectionId,
+                difficulty: def.difficulty,
+                gameId: session.gameId,
+                sessionId: result.sessionId,
+                tokenReward,
+                transactionId,
+                now,
+                previousClaimState: null,
+            });
+        }
+        return {
+            created: true,
+            transactionId: tokenReward > 0 ? transactionId : null,
+        };
+    });
+    if (!outcome.created)
+        return null;
+    return {
+        uid,
+        achievementType: def.type,
+        name: def.name,
+        description: def.description,
+        sectionId: def.sectionId,
+        tokenReward,
+        rewardTransactionId: outcome.transactionId ?? undefined,
+        ...(def.badgeId ? { badgeId: def.badgeId } : {}),
+        earnedAt: now,
+    };
+}
+async function awardExistingUnclaimedAchievementReward(params) {
+    const { db, uid, achievementType } = params;
+    const achievementRef = db
+        .collection("Users")
+        .doc(uid)
+        .collection("Achievements")
+        .doc(achievementType);
+    const transactionId = getAchievementRewardTransactionId(uid, achievementType);
+    return db.runTransaction(async (tx) => {
+        const achievementSnap = await tx.get(achievementRef);
+        if (!achievementSnap.exists) {
+            return {
+                achievementType,
+                awarded: false,
+                repaired: false,
+                tokensAwarded: 0,
+                transactionId: null,
+            };
+        }
+        const data = achievementSnap.data() ?? {};
+        if (data.status !== "earned_unclaimed") {
+            return {
+                achievementType,
+                awarded: false,
+                repaired: false,
+                tokensAwarded: 0,
+                transactionId: null,
+            };
+        }
+        const tokenReward = normalizeTokenReward(data.tokenReward);
+        const now = admin.firestore.Timestamp.now();
+        const transactionRef = db.collection("Transactions").doc(transactionId);
+        const transactionSnap = tokenReward > 0 ? await tx.get(transactionRef) : null;
+        const alreadyRewarded = !!transactionSnap?.exists;
+        const achievementName = formatAchievementDisplayName(achievementType, typeof data.name === "string" ? data.name : null);
+        const achievementDescription = typeof data.description === "string" ? data.description : "";
+        const sectionId = typeof data.sectionId === "string" ? data.sectionId : null;
+        const difficulty = typeof data.difficulty === "string" ? data.difficulty : null;
+        const gameId = typeof data.gameId === "string" ? data.gameId : null;
+        const sessionId = typeof data.sessionId === "string" ? data.sessionId : null;
+        tx.update(achievementRef, {
+            name: achievementName,
+            claimedAt: now,
+            rewardGrantedAt: tokenReward > 0 ? now : null,
+            rewardTransactionId: tokenReward > 0 ? transactionId : null,
+            status: "claimed",
+            schemaVersion: ACHIEVEMENT_SCHEMA_VERSION,
+            rewardSource: "achievement",
+            autoAwarded: true,
+            migratedFromClaimFlow: true,
+            migratedAt: now,
+        });
+        if (tokenReward > 0 && !alreadyRewarded) {
+            writeAchievementRewardTransaction(tx, {
+                db,
+                uid,
+                achievementType,
+                achievementName,
+                achievementDescription,
+                sectionId,
+                difficulty,
+                gameId,
+                sessionId,
+                tokenReward,
+                transactionId,
+                now,
+                previousClaimState: "earned_unclaimed",
+            });
+        }
+        return {
+            achievementType,
+            awarded: tokenReward > 0 && !alreadyRewarded,
+            repaired: alreadyRewarded,
+            tokensAwarded: tokenReward > 0 && !alreadyRewarded ? tokenReward : 0,
+            transactionId: tokenReward > 0 ? transactionId : null,
+        };
+    });
+}
 // =============================================================================
 // Evaluator Entry Point
 // =============================================================================
@@ -3520,34 +3732,18 @@ async function evaluateAchievementsV4(db, session, result) {
                 continue;
             try {
                 if (def.evaluate(ctx)) {
-                    // Write achievement doc as earned_unclaimed (tokens NOT auto-credited)
-                    const achievementRef = db
-                        .collection("Users")
-                        .doc(uid)
-                        .collection("Achievements")
-                        .doc(def.type);
-                    await achievementRef.set({
-                        type: def.type,
-                        name: def.name,
-                        description: def.description,
-                        sectionId: def.sectionId,
-                        difficulty: def.difficulty,
-                        tokenReward: def.tokenReward,
-                        earnedAt: now,
-                        claimedAt: null,
-                        status: "earned_unclaimed",
-                        schemaVersion: 2,
-                        gameId: session.gameId,
-                        sessionId: result.sessionId,
-                        ...(def.badgeId ? { badgeId: def.badgeId } : {}),
-                    });
-                    unlocks.push({
+                    const unlock = await createAchievementWithAutoReward({
+                        db,
                         uid,
-                        achievementType: def.type,
-                        ...(def.badgeId ? { badgeId: def.badgeId } : {}),
-                        earnedAt: now,
+                        def,
+                        session,
+                        result,
+                        now,
                     });
-                    console.log(`[achievementsV4] ${uid} unlocked "${def.type}" (earned_unclaimed, +${def.tokenReward} tokens pending claim) in session ${result.sessionId}`);
+                    if (!unlock)
+                        continue;
+                    unlocks.push(unlock);
+                    console.log(`[achievementsV4] ${uid} unlocked "${def.type}" (+${def.tokenReward} tokens auto-awarded) in session ${result.sessionId}`);
                 }
             }
             catch (err) {

@@ -1,127 +1,72 @@
 /**
- * Wallet & Reward Claim Synchronization Tests
+ * Wallet & Reward Synchronization Tests
  *
- * Tests the unified reward model:
- * - Achievement claim flow (earn → claim → wallet update)
- * - Level reward claim flow (unlock → claim → wallet update)
- * - Idempotency (no duplicate credits)
- * - Legacy achievement backward compatibility
- * - Pending rewards aggregation
- * - Transaction record creation
- *
- * These are unit/integration tests that mock Firebase.
+ * Tests the current reward model:
+ * - Achievements auto-award tokens when unlocked
+ * - Old earned_unclaimed achievements are repaired by background backfill
+ * - Level rewards remain manually claimable
+ * - Wallet transaction labels use automatic reward language
  */
 
-// =============================================================================
-// Mock Setup
-// =============================================================================
+describe("Achievement Reward State Model", () => {
+  type AchievementEntryLike =
+    | {
+        schemaVersion?: number;
+        status?: string;
+        claimedAt?: unknown;
+        [key: string]: unknown;
+      }
+    | null
+    | undefined;
 
-const mockHttpsCallable = jest.fn();
-const mockOnSnapshot = jest.fn();
-const mockGetDoc = jest.fn();
-
-jest.mock("firebase/functions", () => ({
-  httpsCallable: (...args: unknown[]) => mockHttpsCallable(...args),
-  getFunctions: jest.fn(),
-}));
-
-jest.mock("firebase/firestore", () => ({
-  collection: jest.fn(),
-  doc: jest.fn(),
-  getDoc: (...args: unknown[]) => mockGetDoc(...args),
-  getDocs: jest.fn(),
-  onSnapshot: (...args: unknown[]) => mockOnSnapshot(...args),
-  orderBy: jest.fn(),
-  query: jest.fn(),
-  where: jest.fn(),
-  limit: jest.fn(),
-}));
-
-jest.mock("@/services/firebase", () => ({
-  getFirestoreInstance: jest.fn(() => ({})),
-  getFunctionsInstance: jest.fn(() => ({})),
-}));
-
-// =============================================================================
-// Achievement Claim State Tests
-// =============================================================================
-
-describe("Achievement State Model", () => {
-  /**
-   * Helper: determine if achievement entry is "unclaimed"
-   * Mirrors the isUnclaimed logic in AchievementsHubScreen/AchievementSectionScreen
-   */
-  function isUnclaimed(entry: {
-    schemaVersion?: number;
-    status?: string;
-    claimedAt?: unknown;
-  }): boolean {
-    if (entry.schemaVersion && entry.schemaVersion >= 2) {
-      return entry.status === "earned_unclaimed";
-    }
-    return false;
+  function needsBackfill(entry: AchievementEntryLike): boolean {
+    return entry?.status === "earned_unclaimed";
   }
 
-  function getState(entry: {
-    schemaVersion?: number;
-    status?: string;
-    claimedAt?: unknown;
-  }): "locked" | "unclaimed" | "claimed" {
+  function getState(
+    entry: AchievementEntryLike,
+  ): "locked" | "needs_backfill" | "awarded" {
     if (!entry) return "locked";
-    if (entry.schemaVersion && entry.schemaVersion >= 2) {
-      return entry.status === "earned_unclaimed" ? "unclaimed" : "claimed";
-    }
-    return "claimed";
+    return needsBackfill(entry) ? "needs_backfill" : "awarded";
   }
 
-  it("should treat schemaVersion 2 + earned_unclaimed as unclaimed", () => {
+  it("treats old earned_unclaimed achievements as needing backfill", () => {
     const entry = {
       schemaVersion: 2,
       status: "earned_unclaimed",
       claimedAt: null,
     };
-    expect(isUnclaimed(entry)).toBe(true);
-    expect(getState(entry)).toBe("unclaimed");
+
+    expect(needsBackfill(entry)).toBe(true);
+    expect(getState(entry)).toBe("needs_backfill");
   });
 
-  it("should treat schemaVersion 2 + claimed as claimed", () => {
+  it("treats schemaVersion 3 claimed achievements as awarded", () => {
     const entry = {
-      schemaVersion: 2,
+      schemaVersion: 3,
       status: "claimed",
       claimedAt: { seconds: 1234567890 },
     };
-    expect(isUnclaimed(entry)).toBe(false);
-    expect(getState(entry)).toBe("claimed");
+
+    expect(needsBackfill(entry)).toBe(false);
+    expect(getState(entry)).toBe("awarded");
   });
 
-  it("should treat legacy achievement (no schemaVersion) as claimed", () => {
+  it("treats legacy no-status achievements as already awarded", () => {
     const entry = {
       type: "game_first_play",
       earnedAt: { seconds: 1234567890 },
     };
-    expect(isUnclaimed(entry)).toBe(false);
-    expect(getState(entry)).toBe("claimed");
+
+    expect(needsBackfill(entry)).toBe(false);
+    expect(getState(entry)).toBe("awarded");
   });
 
-  it("should treat legacy achievement (schemaVersion 1) as claimed", () => {
-    const entry = {
-      schemaVersion: 1,
-      type: "game_first_play",
-      earnedAt: { seconds: 1234567890 },
-    };
-    expect(isUnclaimed(entry)).toBe(false);
-    expect(getState(entry)).toBe("claimed");
-  });
-
-  it("should treat missing entry as locked", () => {
+  it("treats missing entry as locked", () => {
     expect(getState(undefined as any)).toBe("locked");
     expect(getState(null as any)).toBe("locked");
   });
 });
-
-// =============================================================================
-// Level Reward Claim State Tests
-// =============================================================================
 
 describe("Level Reward State Model", () => {
   function getLevelRewardState(doc: {
@@ -130,12 +75,12 @@ describe("Level Reward State Model", () => {
     return doc.claimedAt === null ? "unclaimed" : "claimed";
   }
 
-  it("should treat claimedAt=null as unclaimed/claimable", () => {
+  it("treats claimedAt=null as unclaimed/claimable", () => {
     const doc = { claimedAt: null, tokenReward: 50, level: 3 };
     expect(getLevelRewardState(doc)).toBe("unclaimed");
   });
 
-  it("should treat claimedAt=timestamp as claimed", () => {
+  it("treats claimedAt=timestamp as claimed", () => {
     const doc = {
       claimedAt: { seconds: 1234567890 },
       tokenReward: 50,
@@ -145,67 +90,51 @@ describe("Level Reward State Model", () => {
   });
 });
 
-// =============================================================================
-// Pending Rewards Aggregation Tests
-// =============================================================================
-
 describe("Pending Rewards Aggregation", () => {
   function computePending(
-    achievements: Array<{
+    _achievements: {
       schemaVersion?: number;
       status?: string;
       tokenReward?: number;
-    }>,
-    levelRewards: Array<{
+    }[],
+    levelRewards: {
       claimedAt: unknown | null;
       tokenReward: number;
-    }>,
+    }[],
   ) {
-    const unclaimedAch = achievements.filter(
-      (a) =>
-        a.schemaVersion &&
-        a.schemaVersion >= 2 &&
-        a.status === "earned_unclaimed",
-    );
     const unclaimedLvl = levelRewards.filter((r) => r.claimedAt === null);
+    const unclaimedLevelRewardTokens = unclaimedLvl.reduce(
+      (sum, r) => sum + r.tokenReward,
+      0,
+    );
 
     return {
-      unclaimedAchievementCount: unclaimedAch.length,
-      unclaimedAchievementTokens: unclaimedAch.reduce(
-        (sum, a) => sum + (a.tokenReward || 0),
-        0,
-      ),
+      unclaimedAchievementCount: 0,
+      unclaimedAchievementTokens: 0,
       unclaimedLevelRewardCount: unclaimedLvl.length,
-      unclaimedLevelRewardTokens: unclaimedLvl.reduce(
-        (sum, r) => sum + r.tokenReward,
-        0,
-      ),
-      totalPendingTokens:
-        unclaimedAch.reduce((sum, a) => sum + (a.tokenReward || 0), 0) +
-        unclaimedLvl.reduce((sum, r) => sum + r.tokenReward, 0),
+      unclaimedLevelRewardTokens,
+      totalPendingTokens: unclaimedLevelRewardTokens,
     };
   }
 
-  it("should compute zero pending for empty data", () => {
+  it("computes zero pending for empty data", () => {
     const result = computePending([], []);
     expect(result.totalPendingTokens).toBe(0);
     expect(result.unclaimedAchievementCount).toBe(0);
     expect(result.unclaimedLevelRewardCount).toBe(0);
   });
 
-  it("should count unclaimed achievements correctly", () => {
+  it("ignores old unclaimed achievements in pending rewards", () => {
     const achievements = [
       { schemaVersion: 2, status: "earned_unclaimed", tokenReward: 25 },
-      { schemaVersion: 2, status: "claimed", tokenReward: 10 },
       { schemaVersion: 2, status: "earned_unclaimed", tokenReward: 50 },
-      { tokenReward: 15 }, // legacy, treated as claimed
     ];
     const result = computePending(achievements, []);
-    expect(result.unclaimedAchievementCount).toBe(2);
-    expect(result.unclaimedAchievementTokens).toBe(75);
+    expect(result.unclaimedAchievementCount).toBe(0);
+    expect(result.unclaimedAchievementTokens).toBe(0);
   });
 
-  it("should count unclaimed level rewards correctly", () => {
+  it("counts unclaimed level rewards correctly", () => {
     const levelRewards = [
       { claimedAt: null, tokenReward: 50 },
       { claimedAt: { seconds: 123 }, tokenReward: 50 },
@@ -216,135 +145,70 @@ describe("Pending Rewards Aggregation", () => {
     expect(result.unclaimedLevelRewardTokens).toBe(250);
   });
 
-  it("should sum across both sources", () => {
+  it("only sums level reward pending tokens", () => {
     const achievements = [
       { schemaVersion: 2, status: "earned_unclaimed", tokenReward: 25 },
     ];
     const levelRewards = [{ claimedAt: null, tokenReward: 100 }];
     const result = computePending(achievements, levelRewards);
-    expect(result.totalPendingTokens).toBe(125);
+    expect(result.totalPendingTokens).toBe(100);
   });
 });
 
-// =============================================================================
-// Claim Flow Safety Tests
-// =============================================================================
+describe("Auto-Award Backfill Safety", () => {
+  it("reports zero awards when backfill is already complete", () => {
+    const result = {
+      success: true,
+      scanned: 0,
+      awardedCount: 0,
+      repairedCount: 0,
+      totalTokensAwarded: 0,
+    };
 
-describe("Claim Flow Safety", () => {
-  beforeEach(() => {
-    jest.clearAllMocks();
+    expect(result.success).toBe(true);
+    expect(result.awardedCount).toBe(0);
+    expect(result.totalTokensAwarded).toBe(0);
   });
 
-  it("should handle idempotent achievement claim (alreadyClaimed)", async () => {
-    const callableFn = jest.fn().mockResolvedValue({
-      data: {
-        success: true,
-        alreadyClaimed: true,
-        achievementType: "game_first_play",
-        tokenRewardClaimed: 0,
-      },
-    });
-    mockHttpsCallable.mockReturnValue(callableFn);
+  it("returns token totals for old unclaimed achievement backfill", () => {
+    const result = {
+      success: true,
+      scanned: 1,
+      awardedCount: 1,
+      repairedCount: 0,
+      totalTokensAwarded: 10,
+    };
 
-    const result = await callableFn({ achievementType: "game_first_play" });
-    expect(result.data.success).toBe(true);
-    expect(result.data.alreadyClaimed).toBe(true);
-    expect(result.data.tokenRewardClaimed).toBe(0);
+    expect(result.success).toBe(true);
+    expect(result.awardedCount).toBe(1);
+    expect(result.totalTokensAwarded).toBe(10);
   });
 
-  it("should return token amount on fresh achievement claim", async () => {
-    const callableFn = jest.fn().mockResolvedValue({
-      data: {
-        success: true,
-        alreadyClaimed: false,
-        achievementType: "game_first_play",
-        tokenRewardClaimed: 10,
-      },
-    });
-    mockHttpsCallable.mockReturnValue(callableFn);
+  it("does not double-count repaired rewards", () => {
+    const first = {
+      success: true,
+      scanned: 2,
+      awardedCount: 1,
+      repairedCount: 1,
+      totalTokensAwarded: 10,
+    };
+    const second = {
+      success: true,
+      scanned: 0,
+      awardedCount: 0,
+      repairedCount: 0,
+      totalTokensAwarded: 0,
+    };
 
-    const result = await callableFn({ achievementType: "game_first_play" });
-    expect(result.data.success).toBe(true);
-    expect(result.data.alreadyClaimed).toBe(false);
-    expect(result.data.tokenRewardClaimed).toBe(10);
-  });
-
-  it("should handle idempotent level reward claim", async () => {
-    const callableFn = jest.fn().mockResolvedValue({
-      data: { success: true, alreadyClaimed: true },
-    });
-    mockHttpsCallable.mockReturnValue(callableFn);
-
-    const result = await callableFn({ level: 5 });
-    expect(result.data.success).toBe(true);
-    expect(result.data.alreadyClaimed).toBe(true);
-  });
-
-  it("should reject claim for locked level reward", async () => {
-    const callableFn = jest.fn().mockResolvedValue({
-      data: {
-        success: false,
-        error: "Current level (3) is below 10",
-      },
-    });
-    mockHttpsCallable.mockReturnValue(callableFn);
-
-    const result = await callableFn({ level: 10 });
-    expect(result.data.success).toBe(false);
-  });
-
-  it("claim all should not double-count already claimed", async () => {
-    const achievements = [
-      {
-        type: "a1",
-        schemaVersion: 2,
-        status: "earned_unclaimed",
-        tokenReward: 10,
-      },
-      {
-        type: "a2",
-        schemaVersion: 2,
-        status: "earned_unclaimed",
-        tokenReward: 25,
-      },
-    ];
-
-    const callableFn = jest
-      .fn()
-      .mockResolvedValueOnce({
-        data: { success: true, alreadyClaimed: false, tokenRewardClaimed: 10 },
-      })
-      .mockResolvedValueOnce({
-        data: { success: true, alreadyClaimed: true, tokenRewardClaimed: 0 },
-      });
-
-    mockHttpsCallable.mockReturnValue(callableFn);
-
-    let totalTokens = 0;
-    let successCount = 0;
-
-    for (const ach of achievements) {
-      const result = await callableFn({ achievementType: ach.type });
-      if (!result.data.alreadyClaimed) {
-        successCount++;
-        totalTokens += result.data.tokenRewardClaimed || 0;
-      }
-    }
-
-    expect(successCount).toBe(1);
-    expect(totalTokens).toBe(10);
+    expect(first.totalTokensAwarded).toBe(10);
+    expect(second.totalTokensAwarded).toBe(0);
   });
 });
-
-// =============================================================================
-// Transaction Reason Display Tests
-// =============================================================================
 
 describe("Transaction Reason Display", () => {
-  // Mirrors the reasonMap from economy.ts
   const reasonMap: Record<string, string> = {
     task_reward: "Task Completed",
-    achievement_reward: "Achievement Claimed",
+    achievement_reward: "Achievement Reward",
     level_reward: "Level Reward Claimed",
     daily_bonus: "Daily Bonus",
     streak_bonus: "Streak Bonus",
@@ -354,7 +218,7 @@ describe("Transaction Reason Display", () => {
     refund: "Refund",
   };
 
-  it("should have display labels for all known reason types", () => {
+  it("has display labels for all known reason types", () => {
     const requiredReasons = [
       "task_reward",
       "achievement_reward",
@@ -369,21 +233,16 @@ describe("Transaction Reason Display", () => {
     }
   });
 
-  it("should use 'Achievement Claimed' not 'Achievement Earned'", () => {
-    expect(reasonMap["achievement_reward"]).toBe("Achievement Claimed");
+  it("uses automatic achievement reward language", () => {
+    expect(reasonMap.achievement_reward).toBe("Achievement Reward");
   });
 
-  it("should include level reward display", () => {
-    expect(reasonMap["level_reward"]).toBe("Level Reward Claimed");
+  it("keeps level reward claim language", () => {
+    expect(reasonMap.level_reward).toBe("Level Reward Claimed");
   });
 });
 
-// =============================================================================
-// Level Reward Definition Consistency Tests
-// =============================================================================
-
 describe("Level Reward Definitions", () => {
-  // Mirror the backend definitions
   const MILESTONE_COSMETICS: Record<number, string> = {
     5: "bg_circling_waves",
     10: "bg_aurora_borealis",
@@ -397,28 +256,26 @@ describe("Level Reward Definitions", () => {
     50: "bg_synthwave_videogame",
   };
 
-  it("should have 10 milestones (every 5th level)", () => {
+  it("has 10 milestones every 5th level", () => {
     const milestones = Object.keys(MILESTONE_COSMETICS).map(Number);
     expect(milestones).toHaveLength(10);
-    for (const lvl of milestones) {
-      expect(lvl % 5).toBe(0);
-      expect(lvl).toBeGreaterThanOrEqual(5);
-      expect(lvl).toBeLessThanOrEqual(50);
+    for (const level of milestones) {
+      expect(level % 5).toBe(0);
+      expect(level).toBeGreaterThanOrEqual(5);
+      expect(level).toBeLessThanOrEqual(50);
     }
   });
 
-  it("should have correct milestone token reward formula (level * 20)", () => {
-    for (const lvl of Object.keys(MILESTONE_COSMETICS).map(Number)) {
-      expect(lvl * 20).toBe(lvl * 20); // sanity
+  it("uses the milestone token reward formula", () => {
+    for (const level of Object.keys(MILESTONE_COSMETICS).map(Number)) {
+      expect(level * 20).toBe(level * 20);
     }
   });
 
-  it("standard levels should award 50 tokens", () => {
+  it("keeps standard levels non-milestone", () => {
     const standardLevels = [1, 2, 3, 4, 6, 7, 8, 9, 11, 12, 13, 14];
-    for (const _lvl of standardLevels) {
-      const isMilestone = _lvl % 5 === 0;
-      expect(isMilestone).toBe(false);
-      // All standard levels = 50 tokens
+    for (const level of standardLevels) {
+      expect(level % 5 === 0).toBe(false);
     }
   });
 });

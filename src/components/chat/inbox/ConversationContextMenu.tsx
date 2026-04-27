@@ -7,7 +7,7 @@
  * - Mute/Unmute
  * - Mark as Unread
  * - View Profile (DM only)
- * - Delete/Leave & Delete (destructive)
+ * - Delete/Leave Group (destructive)
  *
  * @module components/chat/inbox/ConversationContextMenu
  */
@@ -135,8 +135,8 @@ export const ConversationContextMenu = memo(function ConversationContextMenu({
 
     // Add destructive delete action last
     items.push({
-      icon: "delete",
-      label: conversation.type === "group" ? "Leave & Delete" : "Delete",
+      icon: conversation.type === "group" ? "exit-run" : "delete",
+      label: conversation.type === "group" ? "Leave Group" : "Delete",
       onPress: onDelete,
       destructive: true,
     });

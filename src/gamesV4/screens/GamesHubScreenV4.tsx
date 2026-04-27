@@ -7,9 +7,8 @@
  * - Game catalog grouped by category (Solo, Turn-Based, Realtime)
  * - Quick-access to My Stats and Leaderboards
  *
- * Tapping a game in the catalog opens the GamePickerModal-style selection
- * which guides the user to pick a conversation for multiplayer, or starts
- * a solo game invite directly.
+ * Tapping a game in the catalog opens the game detail screen. Solo games can
+ * still be launched quickly from the long-press actions.
  *
  * Route: Games tab (AppTabs)
  *
@@ -30,7 +29,6 @@ import type { LevelRewardDocV4 } from "@/gamesV4/services/gameServiceV4";
 import {
   archiveSoloSession,
   resumeOrCreateSoloSession,
-  subscribeToAchievementSections,
   subscribeToActiveSoloSessions,
   subscribeToLevelRewards,
   subscribeToMyActiveInvites,
@@ -112,10 +110,6 @@ export default function GamesHubScreenV4({
   const [activeSoloSessions, setActiveSoloSessions] = useState<
     Record<string, string>
   >({});
-  /** Set of gameIds whose achievement section badge has been claimed (mastered). */
-  const [masteredGameIds, setMasteredGameIds] = useState<Set<string>>(
-    new Set(),
-  );
   /** Tracks which game sections are collapsed. */
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(
     new Set(),
@@ -185,28 +179,6 @@ export default function GamesHubScreenV4({
     return unsub;
   }, [uid]);
 
-  // ── Subscribe to achievement section badges (mastery detection) ────────
-  useEffect(() => {
-    if (!uid) return;
-    const unsub = subscribeToAchievementSections(
-      uid,
-      (sections) => {
-        const claimed = new Set<string>();
-        for (const s of sections) {
-          if (s.claimed) claimed.add(s.sectionId);
-        }
-        setMasteredGameIds(claimed);
-      },
-      (err) => {
-        console.warn(
-          "[GamesHub] AchievementSections subscription error:",
-          err.message,
-        );
-      },
-    );
-    return unsub;
-  }, [uid]);
-
   // ── Game sections ──────────────────────────────────────────────────────
   const sections = useMemo<GameSection[]>(() => {
     const all = Object.values(GAME_METADATA).filter(
@@ -268,41 +240,40 @@ export default function GamesHubScreenV4({
   );
 
   const handleGameTap = useCallback(
-    async (_gameId: GameId) => {
+    (_gameId: GameId) => {
       if (!IMPLEMENTED_GAME_IDS.has(_gameId)) {
         // Placeholder game — no playable implementation yet
         return;
       }
 
-      const meta = GAME_METADATA[_gameId];
-
-      // Solo games: resume existing session or create new one, then navigate to play
-      if (meta?.runtimeType === "solo") {
-        if (launchingSolo) return; // Prevent double-tap
-        setLaunchingSolo(_gameId);
-        try {
-          const { sessionId, resumed } = await resumeOrCreateSoloSession({
-            gameId: _gameId,
-          });
-          if (resumed) {
-            console.log(
-              `[GamesHub] Resuming existing solo session ${sessionId} for ${_gameId}`,
-            );
-          }
-          navigation.navigate("GamePlayV4", { sessionId, gameId: _gameId });
-        } catch (err: unknown) {
-          const msg = mapSoloLaunchError(err);
-          Alert.alert("Error", msg);
-        } finally {
-          setLaunchingSolo(null);
-        }
-        return;
-      }
-
-      // Multiplayer games: open game detail page
       navigation.navigate("GameDetailV4", { gameId: _gameId });
     },
-    [navigation, launchingSolo],
+    [navigation],
+  );
+
+  const handleSoloPlayNow = useCallback(
+    async (_gameId: GameId) => {
+      if (!IMPLEMENTED_GAME_IDS.has(_gameId) || launchingSolo) return;
+
+      setLaunchingSolo(_gameId);
+      try {
+        const { sessionId, resumed } = await resumeOrCreateSoloSession({
+          gameId: _gameId,
+        });
+        if (resumed) {
+          console.log(
+            `[GamesHub] Resuming existing solo session ${sessionId} for ${_gameId}`,
+          );
+        }
+        navigation.navigate("GamePlayV4", { sessionId, gameId: _gameId });
+      } catch (err: unknown) {
+        const msg = mapSoloLaunchError(err);
+        Alert.alert("Error", msg);
+      } finally {
+        setLaunchingSolo(null);
+      }
+    },
+    [launchingSolo, navigation],
   );
 
   const handleMyStats = useCallback(() => {
@@ -322,16 +293,16 @@ export default function GamesHubScreenV4({
       const isPersistent = isPersistentSoloGame(_gameId);
       const activeSessionId = activeSoloSessions[_gameId];
 
-      const buttons: Array<{
+      const buttons: {
         text: string;
         onPress?: () => void;
         style?: "cancel" | "destructive";
-      }> = [];
+      }[] = [];
 
       // Primary action
       buttons.push({
         text: isPersistent && activeSessionId ? "Resume Run" : "Play Now",
-        onPress: () => handleGameTap(_gameId),
+        onPress: () => handleSoloPlayNow(_gameId),
       });
 
       // Archive existing persistent run (destructive)
@@ -372,13 +343,6 @@ export default function GamesHubScreenV4({
         onPress: () => navigation.navigate("GameDetailV4", { gameId: _gameId }),
       });
       buttons.push({
-        text: "View Achievements",
-        onPress: () =>
-          navigation.navigate("AchievementSection", {
-            sectionId: _gameId,
-          }),
-      });
-      buttons.push({
         text: "View Leaderboard",
         onPress: () =>
           navigation.navigate("GameLeaderboardV4", { gameId: _gameId }),
@@ -387,12 +351,8 @@ export default function GamesHubScreenV4({
 
       Alert.alert(meta.displayName, undefined, buttons);
     },
-    [navigation, handleGameTap, activeSoloSessions],
+    [navigation, handleSoloPlayNow, activeSoloSessions],
   );
-
-  const handleAchievements = useCallback(() => {
-    navigation.navigate("AchievementsHub");
-  }, [navigation]);
 
   const toggleSectionCollapse = useCallback((title: string) => {
     setCollapsedSections((prev) => {
@@ -497,17 +457,6 @@ export default function GamesHubScreenV4({
               >
                 My Stats
               </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={handleAchievements}
-              style={[styles.headerCircleButton, { backgroundColor: accentBg }]}
-              activeOpacity={0.7}
-            >
-              <MaterialCommunityIcons
-                name="trophy-outline"
-                size={20}
-                color={theme.colors.primary}
-              />
             </TouchableOpacity>
             <MainSettingsHeaderButton
               iconColor={theme.colors.primary}
@@ -775,7 +724,6 @@ export default function GamesHubScreenV4({
                     const isImplemented = IMPLEMENTED_GAME_IDS.has(game.gameId);
                     const isLaunching = launchingSolo === game.gameId;
                     const isSolo = game.runtimeType === "solo";
-                    const isMastered = masteredGameIds.has(game.gameId);
                     const hasThumbnail = !!game.thumbnail;
 
                     // Unified app-icon-style tile: square box with optional
@@ -787,10 +735,6 @@ export default function GamesHubScreenV4({
                             styles.tileBox,
                             { backgroundColor: cardBg },
                             !isImplemented && { opacity: 0.5 },
-                            isMastered && {
-                              borderColor: "#DAA520",
-                              borderWidth: 2,
-                            },
                           ]}
                           onPress={() => handleGameTap(game.gameId)}
                           onLongPress={

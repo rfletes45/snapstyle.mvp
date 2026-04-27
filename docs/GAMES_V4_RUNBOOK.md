@@ -889,9 +889,13 @@ All writes except Phase 1 are **outside** the transaction, so they don't contend
 3. Deploy Cloud Functions:
    npx firebase deploy --only functions
 
+   After the achievement auto-award migration, delete the retired manual claim
+   callables if they exist in the deployed project:
+   npx firebase functions:delete claimAchievementV4 claimAchievementSectionBadgeV4
+
 4. Verify in Firebase Console:
    - Functions tab shows the current V4 surface:
-     User callables (16): createGameInviteV4, cancelGameInviteV4, joinInviteLobbyV4, leaveInviteLobbyV4, startGameFromInviteV4, updateLobbySettingsV4, createSoloSessionV4, resumeOrCreateSoloSessionV4, restartSoloSessionV4, suspendSoloSessionV4, archiveSoloSessionV4, submitTurnMoveV4, resignSessionV4, claimLevelRewardV4, claimAchievementV4, claimAchievementSectionBadgeV4
+   User callables (15): createGameInviteV4, cancelGameInviteV4, joinInviteLobbyV4, leaveInviteLobbyV4, startGameFromInviteV4, updateLobbySettingsV4, createSoloSessionV4, resumeOrCreateSoloSessionV4, restartSoloSessionV4, suspendSoloSessionV4, archiveSoloSessionV4, submitTurnMoveV4, resignSessionV4, claimLevelRewardV4, backfillUnclaimedAchievementRewardsV4
      Admin callables (2): adminClearGameV4, adminClearConversationGamesV4
      Triggers (3): onGameInviteV4Deleted, onSessionV4StatusChanged, onRealtimeResolutionRequest
      Scheduled (1): watchdogGamesV4
@@ -919,7 +923,7 @@ Cloud Functions support traffic splitting. If V4 functions cause issues:
 
 ```powershell
 # Delete only V4 callable + trigger + scheduled functions (preserves all existing functions)
-npx firebase functions:delete createGameInviteV4 cancelGameInviteV4 joinInviteLobbyV4 leaveInviteLobbyV4 startGameFromInviteV4 updateLobbySettingsV4 createSoloSessionV4 resumeOrCreateSoloSessionV4 restartSoloSessionV4 suspendSoloSessionV4 archiveSoloSessionV4 submitTurnMoveV4 resignSessionV4 claimLevelRewardV4 claimAchievementV4 claimAchievementSectionBadgeV4 adminClearGameV4 adminClearConversationGamesV4 onGameInviteV4Deleted onSessionV4StatusChanged onRealtimeResolutionRequest watchdogGamesV4
+npx firebase functions:delete createGameInviteV4 cancelGameInviteV4 joinInviteLobbyV4 leaveInviteLobbyV4 startGameFromInviteV4 updateLobbySettingsV4 createSoloSessionV4 resumeOrCreateSoloSessionV4 restartSoloSessionV4 suspendSoloSessionV4 archiveSoloSessionV4 submitTurnMoveV4 resignSessionV4 claimLevelRewardV4 backfillUnclaimedAchievementRewardsV4 adminClearGameV4 adminClearConversationGamesV4 onGameInviteV4Deleted onSessionV4StatusChanged onRealtimeResolutionRequest watchdogGamesV4
 ```
 
 Client-side: Games tab will show "Game service is not available" errors (handled gracefully). The tab and pinned bar degrade to empty/error states — no crash.

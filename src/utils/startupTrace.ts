@@ -16,7 +16,7 @@ export function logStartupEvent(
   event: string,
   data?: Record<string, unknown>,
 ): void {
-  log.warn(event, {
+  log.info(event, {
     data: {
       startupSessionId,
       ...(data ?? {}),

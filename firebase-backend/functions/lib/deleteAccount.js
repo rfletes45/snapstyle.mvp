@@ -253,6 +253,14 @@ async function step_cleanupChats(uid) {
         const chatData = chatDoc.data();
         const members = chatData.members || [];
         const otherMembers = members.filter((m) => m !== uid);
+        const threadId = `dm:${chatDoc.id}`;
+        await Promise.all(members.map((memberUid) => db
+            .collection("Users")
+            .doc(memberUid)
+            .collection("Inbox")
+            .doc(threadId)
+            .delete()
+            .catch(() => { })));
         // Delete user's membership subdocs
         const memberDoc = chatDoc.ref.collection("Members").doc(uid);
         const memberPrivDoc = chatDoc.ref.collection("MembersPrivate").doc(uid);

@@ -14,6 +14,11 @@
 
 import { CHAT_FEATURES } from "@/constants/featureFlags";
 import {
+  clearSuppressedInboxConversations,
+  requestRemoteInboxThreadCleanup,
+  suppressInboxConversationsLocally,
+} from "@/services/chat/inboxConversationSuppression";
+import {
   MemberStatePrivate,
   MemberStatePublic,
   TYPING_THROTTLE_MS,
@@ -335,7 +340,7 @@ export async function clearTypingIndicator(
         typingAt: null,
       });
       log.debug("Typing indicator cleared via server", ctx({ chatId, uid }));
-    } catch (error) {
+    } catch {
       log.debug("Could not clear typing via server", ctx({ chatId, uid }));
     }
     return;
@@ -350,7 +355,7 @@ export async function clearTypingIndicator(
     });
 
     log.debug("Cleared typing indicator", ctx({ chatId, uid }));
-  } catch (error) {
+  } catch {
     // May fail if doc doesn't exist yet, which is fine
     log.debug("Could not clear typing indicator", ctx({ chatId, uid }));
   }
@@ -1105,8 +1110,8 @@ export async function getDMPinnedAt(
 /**
  * Soft delete a DM conversation
  *
- * This hides the conversation from the inbox without deleting any messages.
- * The conversation will reappear when a new message arrives.
+ * This permanently removes the conversation from the local inbox and the
+ * server-managed inbox feed for this user.
  *
  * @param chatId - Chat document ID
  * @param uid - User ID
@@ -1128,6 +1133,10 @@ export async function softDeleteDM(chatId: string, uid: string): Promise<void> {
       },
       { merge: true },
     );
+
+    const ref = { scope: "dm" as const, conversationId: chatId };
+    await suppressInboxConversationsLocally(uid, [ref]);
+    void requestRemoteInboxThreadCleanup(ref);
 
     log.info("Soft deleted DM", ctx({ chatId }));
   } catch (error) {
@@ -1158,6 +1167,10 @@ export async function restoreDM(chatId: string, uid: string): Promise<void> {
       },
       { merge: true },
     );
+
+    await clearSuppressedInboxConversations(uid, [
+      { scope: "dm", conversationId: chatId },
+    ]);
 
     log.info("Restored DM", ctx({ chatId }));
   } catch (error) {

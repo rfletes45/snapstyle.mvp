@@ -1,12 +1,7 @@
-import {
-  doc,
-  getDoc,
-  setDoc,
-  Timestamp,
-} from "firebase/firestore";
+import { clearSuppressedInboxConversations } from "@/services/chat/inboxConversationSuppression";
+import { doc, getDoc, setDoc, Timestamp } from "firebase/firestore";
 import { hasBlockBetweenUsers } from "./blocking";
 import { getFirestoreInstance } from "./firebase";
-
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("services/chat");
@@ -47,6 +42,19 @@ export async function getOrCreateChat(
         lastMessageAt: Timestamp.now(),
       });
     }
+
+    await clearSuppressedInboxConversations(currentUid, [
+      { scope: "dm", conversationId: chatId },
+    ]);
+    await setDoc(
+      doc(db, "Chats", chatId, "MembersPrivate", currentUid),
+      {
+        uid: currentUid,
+        deletedAt: null,
+        hiddenUntilNewMessage: false,
+      },
+      { merge: true },
+    );
 
     return chatId;
   } catch (error) {

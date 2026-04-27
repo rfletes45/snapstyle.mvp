@@ -260,10 +260,15 @@ async function notifyPlayerJoinedLobby(invite, joinerDisplayName) {
     });
 }
 async function notifyAchievementUnlocked(params) {
-    const { uid, achievementIds, achievementTitles, sectionId, gameId, sessionId, } = params;
+    const { uid, achievementIds, achievementTitles, tokenRewards, sectionId, gameId, sessionId, } = params;
     if (achievementIds.length === 0)
         return;
     const achievementCount = achievementIds.length;
+    const readableTitles = achievementIds.map((id, index) => toAchievementTitle(achievementTitles?.[index] ?? id));
+    const totalTokenReward = (tokenRewards ?? []).reduce((sum, amount) => sum + (Number.isFinite(amount) ? Math.max(0, amount) : 0), 0);
+    const rewardBody = totalTokenReward > 0
+        ? `+${totalTokenReward} token${totalTokenReward === 1 ? "" : "s"} added to your wallet`
+        : "Achievement saved to your profile";
     await (0, notificationCenter_1.notifyUser)({
         recipientUid: uid,
         type: "achievement_unlocked",
@@ -271,30 +276,39 @@ async function notifyAchievementUnlocked(params) {
         dedupeKey: `achievement_unlocked:${uid}:${sessionId ?? achievementIds.join(",")}`,
         collapseKey: `achievement_unlocked:${uid}`,
         title: achievementCount === 1
-            ? "Achievement Unlocked!"
+            ? `Achievement unlocked: ${readableTitles[0]}`
             : `${achievementCount} Achievements Unlocked!`,
         body: achievementCount === 1
-            ? achievementTitles?.[0] || "You earned a new achievement"
-            : `${achievementTitles?.slice(0, 2).join(", ") || "Multiple achievements"} and more`,
+            ? rewardBody
+            : `${readableTitles.slice(0, 2).join(", ")}${achievementCount > 2 ? " and more" : ""} · ${rewardBody}`,
         sectionId: sectionId ?? null,
         sessionId: sessionId ?? null,
         gameId: gameId ?? null,
-        route: sectionId
+        route: gameId
             ? {
-                screen: "AchievementSection",
-                params: { sectionId },
+                screen: "GameDetailV4",
+                params: { gameId },
             }
             : {
-                screen: "AchievementsHub",
+                screen: "GamesHub",
             },
         data: {
             achievementIds,
-            achievementTitles: achievementTitles ?? [],
+            achievementTitles: readableTitles,
+            tokenRewards: tokenRewards ?? [],
+            totalTokenReward,
             sectionId: sectionId ?? null,
             gameId: gameId ?? null,
             sourceSessionId: sessionId ?? null,
         },
     });
+}
+function toAchievementTitle(value) {
+    return value
+        .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+        .replace(/[_-]+/g, " ")
+        .trim()
+        .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 /**
  * Notify a user that a friend just overtook them on a friends leaderboard.

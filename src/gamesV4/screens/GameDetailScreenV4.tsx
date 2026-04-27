@@ -794,17 +794,42 @@ export default function GameDetailScreenV4() {
                       {def.description}
                     </Text>
                   </View>
-                  <View
-                    style={[
-                      styles.diffBadge,
-                      { backgroundColor: diffMeta.color + "20" },
-                    ]}
-                  >
-                    <Text
-                      style={[styles.diffBadgeText, { color: diffMeta.color }]}
+                  <View style={styles.achieveMeta}>
+                    <View
+                      style={[
+                        styles.rewardBadge,
+                        { backgroundColor: theme.colors.primary + "16" },
+                      ]}
                     >
-                      {diffMeta.label}
-                    </Text>
+                      <MaterialCommunityIcons
+                        name="circle-multiple"
+                        size={10}
+                        color={theme.colors.primary}
+                      />
+                      <Text
+                        style={[
+                          styles.rewardBadgeText,
+                          { color: theme.colors.primary },
+                        ]}
+                      >
+                        +{def.tokenReward} tokens
+                      </Text>
+                    </View>
+                    <View
+                      style={[
+                        styles.diffBadge,
+                        { backgroundColor: diffMeta.color + "20" },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.diffBadgeText,
+                          { color: diffMeta.color },
+                        ]}
+                      >
+                        {diffMeta.label}
+                      </Text>
+                    </View>
                   </View>
                 </View>
               );
@@ -1105,6 +1130,20 @@ const styles = StyleSheet.create({
   achieveInfo: { flex: 1 },
   achieveName: { fontSize: 14, fontWeight: "600" },
   achieveDesc: { fontSize: 12, marginTop: 1 },
+  achieveMeta: {
+    alignItems: "flex-end",
+    gap: 4,
+    minWidth: 78,
+  },
+  rewardBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  rewardBadgeText: { fontSize: 11, fontWeight: "700" },
   diffBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
   diffBadgeText: { fontSize: 11, fontWeight: "600" },
 

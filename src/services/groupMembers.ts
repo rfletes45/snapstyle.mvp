@@ -20,6 +20,7 @@ import {
   updateDoc,
 } from "firebase/firestore";
 import { getFirestoreInstance } from "./firebase";
+import { leaveGroup } from "./groups";
 
 // Type alias for notify level
 type NotifyLevel = "all" | "mentions" | "none";
@@ -656,52 +657,25 @@ export async function calculateGroupUnreadCount(
 // =============================================================================
 
 /**
- * Soft delete a group conversation (leave + hide)
- *
- * This removes the user from the group's member list and hides
- * the conversation from their inbox. The conversation will NOT
- * reappear when new messages arrive (unlike DMs).
- *
- * Note: Owners must transfer ownership before calling this.
+ * Leave a group and hide it from the current user's inbox.
  *
  * @param groupId - Group document ID
  * @param uid - User ID
- * @throws Error if user is the group owner
+ * Owners transfer ownership to an admin/member before leaving.
  */
 export async function leaveAndDeleteGroup(
   groupId: string,
   uid: string,
 ): Promise<void> {
   try {
-    // Get member state to check role
-    const memberState = await getGroupMemberPrivate(groupId, uid);
+    await leaveGroup(groupId, uid);
 
-    // Check if user is owner
-    const publicState = await getGroupMemberPublic(groupId, uid);
-    if (publicState?.role === "owner") {
-      throw new Error(
-        "Owners must transfer ownership before leaving the group",
-      );
-    }
-
-    // Update private state with soft delete
-    await updateDoc(getMemberPrivateRef(groupId, uid), {
-      deletedAt: Date.now(),
-      hiddenUntilNewMessage: true,
-      pinnedAt: null,
-      archived: false,
-    });
-
-    // Remove from public members list
-    // Note: We don't actually delete the member doc to preserve history
-    // The group's memberIds array should be updated via a separate call
-
-    log.info("Left and soft deleted group", {
-      operation: "leaveAndDelete",
+    log.info("Left group", {
+      operation: "leaveGroup",
       data: { groupId, uid },
     });
   } catch (error) {
-    log.error("Failed to leave and delete group", error);
+    log.error("Failed to leave group", error);
     throw error;
   }
 }

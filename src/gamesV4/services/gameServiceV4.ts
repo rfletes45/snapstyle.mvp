@@ -654,11 +654,13 @@ export interface AchievementEntryV4 {
   gameId: GameId;
   sessionId: string;
   badgeId?: string;
-  /** Claim state — null if unclaimed, timestamp if claimed. */
+  /** Reward grant state — old docs can be null before background backfill runs. */
   claimedAt?: unknown | null;
-  /** Achievement status — "earned_unclaimed" | "claimed". Legacy docs may lack this. */
+  /** Achievement status — new unlocks are claimed automatically; old docs may be earned_unclaimed. */
   status?: "earned_unclaimed" | "claimed";
-  /** Schema version — 2 for new model. Legacy docs lack this field. */
+  rewardGrantedAt?: unknown | null;
+  rewardTransactionId?: string | null;
+  /** Schema version — 3 for auto-award model. Legacy docs may lack this field. */
   schemaVersion?: number;
 }
 
@@ -831,80 +833,29 @@ export async function fetchUserStatsCache(uid: string): Promise<{
 }
 
 // =============================================================================
-// Achievement Section Badge Claim
+// Achievement Reward Backfill
 // =============================================================================
 
-/** Claim a section badge after completing all achievements in a section. */
-export async function claimAchievementSectionBadge(params: {
-  sectionId: string;
-}): Promise<{ success: boolean; alreadyClaimed: boolean; badgeId?: string }> {
-  const fn = httpsCallable<
-    typeof params,
-    { success: boolean; alreadyClaimed: boolean; badgeId?: string }
-  >(getFunctionsInstance(), "claimAchievementSectionBadgeV4");
-  const result = await fn(params);
-  return result.data;
-}
-
-/** Claim an individual achievement reward (new manual claim flow). */
-export async function claimAchievementReward(params: {
-  achievementType: string;
-}): Promise<{
+/** Backfill old earned_unclaimed achievements into the auto-award model. */
+export async function backfillUnclaimedAchievementRewards(): Promise<{
   success: boolean;
-  alreadyClaimed: boolean;
-  achievementType: string;
-  tokenRewardClaimed: number;
+  scanned: number;
+  awardedCount: number;
+  repairedCount: number;
+  totalTokensAwarded: number;
 }> {
   const fn = httpsCallable<
-    typeof params,
+    undefined,
     {
       success: boolean;
-      alreadyClaimed: boolean;
-      achievementType: string;
-      tokenRewardClaimed: number;
+      scanned: number;
+      awardedCount: number;
+      repairedCount: number;
+      totalTokensAwarded: number;
     }
-  >(getFunctionsInstance(), "claimAchievementV4");
-  const result = await fn(params);
+  >(getFunctionsInstance(), "backfillUnclaimedAchievementRewardsV4");
+  const result = await fn(undefined);
   return result.data;
-}
-
-// =============================================================================
-// Achievement Section Subscriptions
-// =============================================================================
-
-/** Subscribe to user's claimed achievement sections. */
-export function subscribeToAchievementSections(
-  uid: string,
-  onData: (
-    sections: Array<{
-      sectionId: string;
-      sectionName: string;
-      badgeId: string;
-      claimed: boolean;
-      claimedAt: unknown;
-    }>,
-  ) => void,
-  onError?: (error: Error) => void,
-): Unsubscribe {
-  const db = getFirestoreInstance();
-  const ref = collection(db, "Users", uid, "AchievementSections");
-  return onSnapshot(
-    ref,
-    (snap) => {
-      const sections = snap.docs.map((d) => ({
-        sectionId: d.id,
-        ...(d.data() as Record<string, unknown>),
-      })) as Array<{
-        sectionId: string;
-        sectionName: string;
-        badgeId: string;
-        claimed: boolean;
-        claimedAt: unknown;
-      }>;
-      onData(sections);
-    },
-    (err) => onError?.(err),
-  );
 }
 
 // =============================================================================

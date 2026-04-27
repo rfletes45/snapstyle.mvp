@@ -893,30 +893,13 @@ export default function GameOverScreenV4() {
                             marginTop: 2,
                           }}
                         >
-                          +{def.tokenReward} tokens (claim to collect)
+                          +{def.tokenReward} tokens added to wallet
                         </Text>
                       ) : null}
                     </View>
                   </View>
                 );
               })}
-              <TouchableOpacity
-                style={{
-                  marginTop: 8,
-                  paddingVertical: 8,
-                  paddingHorizontal: 14,
-                  backgroundColor: "#FF9500",
-                  borderRadius: 8,
-                  alignSelf: "center",
-                }}
-                onPress={() => navigation.navigate("AchievementsHub")}
-              >
-                <Text
-                  style={{ color: "#FFF", fontWeight: "700", fontSize: 13 }}
-                >
-                  🏆 Claim Achievements
-                </Text>
-              </TouchableOpacity>
             </View>
           </>
         )}

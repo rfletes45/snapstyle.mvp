@@ -28,13 +28,13 @@ import { useTheme } from "react-native-paper";
 import type { MessageViewModel } from "@/chat/displayMode";
 import { FEED_LAYOUT } from "@/chat/displayMode";
 import FeedImage from "@/components/AppImage";
-import { SwipeableMessage } from "@/components/chat";
 import { AnimalBubble } from "@/components/chat/AnimalBubble";
 import { DM_STACKED_CARD_PADDING_H } from "@/components/chat/groupedCardMetrics";
 import { LinkPreviewCard } from "@/components/chat/LinkPreviewCard";
 import { MessageHighlightOverlay } from "@/components/chat/MessageHighlightOverlay";
 import { ReactionPills } from "@/components/chat/ReactionBar";
 import { StackedReplyReference } from "@/components/chat/StackedReplyReference";
+import { SwipeableMessage } from "@/components/chat/SwipeableMessage";
 import { ThreadIndicator } from "@/components/chat/ThreadIndicator";
 import {
   useGroupedCardLayout,

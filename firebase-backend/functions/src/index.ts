@@ -89,9 +89,12 @@ import { cleanupStagingOrphans, mintChatMediaUrl } from "./chatMedia";
 
 // Inbox Aggregation Triggers (Segment 4)
 import {
+  cleanupStaleInboxThread,
   markInboxRead,
+  onDMMemberRemovedInboxCleanup,
   onDMMemberStateChanged,
   onDMMessageInbox,
+  onGroupMemberRemovedInboxCleanup,
   onGroupMemberStateChanged,
   onGroupMessageInbox,
 } from "./inboxTriggers";
@@ -130,9 +133,8 @@ import { incrementProfileViews } from "./profileViews";
 import {
   adminClearConversationGamesV4,
   adminClearGameV4,
+  backfillUnclaimedAchievementRewardsV4,
   cancelGameInviteV4,
-  claimAchievementSectionBadgeV4,
-  claimAchievementV4,
   claimLevelRewardV4,
   createGameInviteV4,
   createSoloSessionV4,
@@ -186,6 +188,7 @@ export {
   cleanupOldDeals,
   cleanupOldScheduledMessages,
   cleanupStagingOrphans,
+  cleanupStaleInboxThread,
   declineMessageRequest,
   expireGifts,
   generateDailyDeals,
@@ -201,10 +204,12 @@ export {
   markInboxRead,
   mintChatMediaUrl,
   onDeleteMessage,
+  onDMMemberRemovedInboxCleanup,
   onDMMemberStateChanged,
   onDMMessageInbox,
   onFriendAddedTaskProgress,
   onFriendRequestAccepted,
+  onGroupMemberRemovedInboxCleanup,
   onGroupMemberStateChanged,
   onGroupMessageInbox,
   onMessageRequestCreatedNotification,
@@ -269,9 +274,8 @@ export { onChatSettingsChanged, onInboxSettingsChanged };
 export {
   adminClearConversationGamesV4,
   adminClearGameV4,
+  backfillUnclaimedAchievementRewardsV4,
   cancelGameInviteV4,
-  claimAchievementSectionBadgeV4,
-  claimAchievementV4,
   claimLevelRewardV4,
   createGameInviteV4,
   createSoloSessionV4,

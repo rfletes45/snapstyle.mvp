@@ -21,11 +21,11 @@
  */
 
 import * as admin from "firebase-admin";
+import { SCORECARD_SENTINEL, SCORECARD_VISIBLE_TEXT } from "../messagePreview";
 import {
-  SCORECARD_SENTINEL,
-  SCORECARD_VISIBLE_TEXT,
-} from "../messagePreview";
-import { evaluateAchievementsV4, getAllAchievementDefs } from "./achievements";
+  evaluateAchievementsV4,
+  formatAchievementDisplayName,
+} from "./achievements";
 import {
   computeOutcome,
   extractPerformanceMetrics,
@@ -397,19 +397,15 @@ export async function resolveSessionV4Internal(
       unlocksByUid.set(unlock.uid, list);
     }
 
-    // Build a type→name lookup so notification bodies use human-readable names
-    const achNameMap = new Map(
-      getAllAchievementDefs().map((d) => [d.type, d.name]),
-    );
-
     const achievementNotifPromises = Array.from(unlocksByUid.entries()).map(
       ([uid, unlocks]) =>
         notifyAchievementUnlocked({
           uid,
           achievementIds: unlocks.map((u) => u.achievementType),
-          achievementTitles: unlocks.map(
-            (u) => achNameMap.get(u.achievementType) ?? u.achievementType,
+          achievementTitles: unlocks.map((u) =>
+            formatAchievementDisplayName(u.achievementType, u.name),
           ),
+          tokenRewards: unlocks.map((u) => u.tokenReward ?? 0),
           sectionId: undefined, // multiple sections possible
           gameId: session.gameId,
           sessionId: session.sessionId,

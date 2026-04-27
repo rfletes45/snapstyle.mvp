@@ -7,7 +7,7 @@
  * Achievement architecture:
  * - **Sections**: Thematic groupings (Getting Started, Grinder, etc.)
  * - **Difficulty**: easy → medium → hard → expert → legendary
- * - **Rewards**: Token reward on each unlock, section badge on section completion
+ * - **Rewards**: Token reward automatically granted on each unlock
  *
  * Achievement categories:
  * - Milestone: cumulative play/win thresholds (10/50/100/250 games)
@@ -15,9 +15,10 @@
  * - Game-specific: per-game mastery (TicTacToe perfect, Connect Four streak, etc.)
  *
  * Idempotent: achievements that already exist in Firestore are skipped.
- * Writes:
+ * Writes atomically:
  *   Users/{uid}/Achievements/{achievementType}
  *   Wallets/{uid}  (token reward increment)
+ *   Transactions/{deterministicAchievementRewardTxId}
  *
  * @module gamesV4/achievements
  */
@@ -43,6 +44,19 @@ export declare const LEGACY_SECTION_MAP: Record<string, string>;
 /** Resolve a possibly-legacy sectionId to the current sectionId. */
 export declare function resolveSection(sectionId: string): string;
 export declare const ACHIEVEMENT_SECTIONS: AchievementSectionDef[];
+export declare function getAchievementRewardTransactionId(uid: string, achievementType: string): string;
+export declare function formatAchievementDisplayName(achievementType: string, displayName?: string | null): string;
+export declare function awardExistingUnclaimedAchievementReward(params: {
+    db: FirebaseFirestore.Firestore;
+    uid: string;
+    achievementType: string;
+}): Promise<{
+    achievementType: string;
+    awarded: boolean;
+    repaired: boolean;
+    tokensAwarded: number;
+    transactionId: string | null;
+}>;
 /**
  * Evaluate all V4 achievements for each participant after a game resolves.
  *

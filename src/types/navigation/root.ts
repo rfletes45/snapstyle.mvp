@@ -92,7 +92,6 @@ export type MainStackParamList = {
     scope: "dm" | "group";
     rootMessageId: string;
   };
-  GroupChatCreate: undefined;
   GroupChatInfo: { groupId: string } | undefined;
   ChatSettings: OptionalRouteParams;
   InboxSettings: undefined;
@@ -135,8 +134,6 @@ export type MainStackParamList = {
   GameDetailV4: { gameId: string };
   GameLeaderboardV4: { gameId: string };
   GameStatsV4: undefined;
-  AchievementsHub: undefined;
-  AchievementSection: { sectionId: string };
   ProfileAchievements: {
     userId: string;
     displayName?: string;

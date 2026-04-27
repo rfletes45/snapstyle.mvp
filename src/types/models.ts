@@ -564,7 +564,7 @@ export type TransactionType = "earn" | "spend";
  */
 export type TransactionReason =
   | "task_reward" // Completed a task
-  | "achievement_reward" // Claimed an achievement reward
+  | "achievement_reward" // Earned an achievement reward
   | "level_reward" // Claimed a level reward
   | "daily_bonus" // Daily login bonus
   | "streak_bonus" // Streak milestone bonus
@@ -590,6 +590,8 @@ export interface Transaction {
   // Source identifiers for traceability
   sourceType?: string; // e.g. "achievement_claim", "level_reward_claim"
   sourceId?: string;
+  // Display title for source-specific transactions (for example achievement name)
+  title?: string;
   // Description for display
   description?: string;
   // Additional metadata

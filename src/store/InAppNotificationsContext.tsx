@@ -151,8 +151,7 @@ function buildToast(
     return null;
   }
 
-  // Resolve raw achievement type keys to human-readable names in the body.
-  // This guards against legacy notifications that were written with internal IDs.
+  // Resolve raw achievement type keys to human-readable names in legacy bodies.
   let body = notification.body;
   if (notification.type === "achievement_unlocked" && body) {
     const def = ACHIEVEMENT_BY_TYPE[body];
@@ -165,13 +164,18 @@ function buildToast(
       const ids = notification.data.achievementIds as string[] | undefined;
       if (titles && Array.isArray(titles) && titles.length > 0) {
         const resolvedTitles = titles.map(
-          (t: string) => ACHIEVEMENT_BY_TYPE[t]?.name ?? t,
+          (t: string) => ACHIEVEMENT_BY_TYPE[t]?.name ?? toTitleText(t),
         );
         const count = ids?.length ?? resolvedTitles.length;
+        const totalTokenReward = notification.data?.totalTokenReward as
+          | number
+          | undefined;
         body =
-          count === 1
-            ? resolvedTitles[0]
-            : `${resolvedTitles.slice(0, 2).join(", ")}${count > 2 ? " and more" : ""}`;
+          typeof totalTokenReward === "number" && totalTokenReward > 0
+            ? `+${totalTokenReward} token${totalTokenReward === 1 ? "" : "s"} added to your wallet`
+            : count === 1
+              ? resolvedTitles[0]
+              : `${resolvedTitles.slice(0, 2).join(", ")}${count > 2 ? " and more" : ""}`;
       }
     }
   }
@@ -196,6 +200,14 @@ function buildToast(
     timestamp: notification.createdAtMs || Date.now(),
     navigateTo: normalized.route,
   };
+}
+
+function toTitleText(value: string): string {
+  return value
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
 export function InAppNotificationsProvider({ children }: ProviderProps) {

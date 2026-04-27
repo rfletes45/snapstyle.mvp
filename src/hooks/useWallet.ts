@@ -2,7 +2,7 @@
  * useWallet — Shared wallet subscription hook.
  *
  * Provides a single source of truth for wallet balance and transaction history
- * that can be consumed by any screen (WalletScreen, AchievementsHub, etc.).
+ * that can be consumed by wallet and reward-related screens.
  *
  * Uses real-time Firestore subscriptions so all consumers stay in sync.
  *

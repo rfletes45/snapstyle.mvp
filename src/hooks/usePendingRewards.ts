@@ -1,25 +1,23 @@
 /**
- * usePendingRewards — Aggregates unclaimed achievement and level rewards.
+ * usePendingRewards — Aggregates unclaimed level rewards.
  *
- * Provides a unified view of all pending claimable rewards for the current user,
- * used by the Wallet screen and any other surface that needs reward awareness.
+ * Achievements now award tokens automatically when unlocked, so they are not
+ * part of this pending/manual reward summary.
  *
  * @module hooks/usePendingRewards
  */
 
 import {
-  subscribeToAchievements,
   subscribeToLevelRewards,
-  type AchievementEntryV4,
   type LevelRewardDocV4,
 } from "@/gamesV4/services/gameServiceV4";
 import { useAuth } from "@/store/AuthContext";
 import { useEffect, useMemo, useState } from "react";
 
 export interface PendingRewardsSummary {
-  /** Number of unclaimed achievement rewards */
+  /** Always zero: achievements auto-award and are not manually claimed. */
   unclaimedAchievementCount: number;
-  /** Total tokens available from unclaimed achievements */
+  /** Always zero: achievements auto-award and are not manually claimed. */
   unclaimedAchievementTokens: number;
   /** Number of unclaimed level rewards */
   unclaimedLevelRewardCount: number;
@@ -34,47 +32,22 @@ export interface PendingRewardsSummary {
 }
 
 /**
- * Determine if an achievement entry is "unclaimed" (earned but reward not yet collected).
- * Legacy docs (schemaVersion undefined / < 2) are treated as already claimed since tokens
- * were auto-credited before the manual-claim system was introduced.
- */
-function isUnclaimedAchievement(entry: AchievementEntryV4): boolean {
-  if (entry.schemaVersion && entry.schemaVersion >= 2) {
-    return entry.status === "earned_unclaimed";
-  }
-  return false;
-}
-
-/**
  * Subscribe to aggregated pending rewards for the current user.
  */
 export function usePendingRewards(): PendingRewardsSummary {
   const { currentFirebaseUser } = useAuth();
   const uid = currentFirebaseUser?.uid;
 
-  const [achievements, setAchievements] = useState<AchievementEntryV4[]>([]);
   const [levelRewards, setLevelRewards] = useState<LevelRewardDocV4[]>([]);
-  const [loadingAchievements, setLoadingAchievements] = useState(true);
   const [loadingLevelRewards, setLoadingLevelRewards] = useState(true);
 
   useEffect(() => {
     if (!uid) {
-      setLoadingAchievements(false);
       setLoadingLevelRewards(false);
       return;
     }
 
-    setLoadingAchievements(true);
     setLoadingLevelRewards(true);
-
-    const unsubAch = subscribeToAchievements(
-      uid,
-      (data) => {
-        setAchievements(data);
-        setLoadingAchievements(false);
-      },
-      () => setLoadingAchievements(false),
-    );
 
     const unsubLvl = subscribeToLevelRewards(
       uid,
@@ -86,33 +59,25 @@ export function usePendingRewards(): PendingRewardsSummary {
     );
 
     return () => {
-      unsubAch();
       unsubLvl();
     };
   }, [uid]);
 
   return useMemo(() => {
-    const unclaimedAch = achievements.filter(isUnclaimedAchievement);
     const unclaimedLvl = levelRewards.filter((r) => r.claimedAt === null);
-
-    const unclaimedAchievementTokens = unclaimedAch.reduce(
-      (sum, a) => sum + (a.tokenReward || 0),
-      0,
-    );
     const unclaimedLevelRewardTokens = unclaimedLvl.reduce(
       (sum, r) => sum + (r.tokenReward || 0),
       0,
     );
 
     return {
-      unclaimedAchievementCount: unclaimedAch.length,
-      unclaimedAchievementTokens,
+      unclaimedAchievementCount: 0,
+      unclaimedAchievementTokens: 0,
       unclaimedLevelRewardCount: unclaimedLvl.length,
       unclaimedLevelRewardTokens,
-      totalPendingTokens:
-        unclaimedAchievementTokens + unclaimedLevelRewardTokens,
-      totalPendingCount: unclaimedAch.length + unclaimedLvl.length,
-      loading: loadingAchievements || loadingLevelRewards,
+      totalPendingTokens: unclaimedLevelRewardTokens,
+      totalPendingCount: unclaimedLvl.length,
+      loading: loadingLevelRewards,
     };
-  }, [achievements, levelRewards, loadingAchievements, loadingLevelRewards]);
+  }, [levelRewards, loadingLevelRewards]);
 }

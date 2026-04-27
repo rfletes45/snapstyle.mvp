@@ -7,7 +7,7 @@
  * Suppression rules:
  *   - game_turn: always suppressed in Games area (user is already engaged)
  *   - achievement_unlocked:
- *       - Suppressed on hub/detail/achievement/leaderboard screens (redundant)
+ *       - Suppressed on hub/detail/leaderboard screens (redundant)
  *       - Suppressed during realtime gameplay (disruptive)
  *       - ALLOWED during solo and turn-based gameplay (non-disruptive reward feedback)
  *
@@ -32,9 +32,6 @@ const GAMES_AREA_ROUTES: ReadonlySet<string> = new Set([
   "GameDetailV4",
   "GameLeaderboardV4",
   "GameStatsV4",
-  // Achievements
-  "AchievementsHub",
-  "AchievementSection",
   // Level rewards (inside games area)
   "LevelRewards",
 ]);
@@ -64,7 +61,7 @@ export function isInGamesArea(
  * suppressed on the current screen.
  *
  * Returns true (suppress) when:
- *  - On a non-gameplay Games screen (hub, detail, achievements, etc.)
+ *  - On a non-gameplay Games screen (hub, detail, leaderboard, etc.)
  *  - On a gameplay screen during a realtime game
  *
  * Returns false (allow) when:
@@ -83,7 +80,7 @@ export function shouldSuppressAchievementBanner(
     return activeGameRuntimeType === "realtime";
   }
 
-  // All other Games-area screens: suppress (hub, detail, achievements, leaderboard, etc.)
+  // All other Games-area screens: suppress (hub, detail, leaderboard, etc.)
   return true;
 }
 

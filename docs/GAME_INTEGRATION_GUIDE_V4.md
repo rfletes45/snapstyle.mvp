@@ -232,8 +232,6 @@ Even if you do not edit these files, your game must fit them:
 - `src/gamesV4/screens/GameOverScreenV4.tsx`
 - `src/gamesV4/screens/GameLeaderboardScreenV4.tsx`
 - `src/gamesV4/screens/GameStatsScreenV4.tsx`
-- `src/gamesV4/screens/AchievementsHubScreen.tsx`
-- `src/gamesV4/screens/AchievementSectionScreen.tsx`
 - `src/gamesV4/screens/LevelRewardsScreen.tsx`
 
 ### 4.5 Shared hooks and services your game will indirectly depend on
@@ -841,7 +839,7 @@ A game-specific achievement section is not just a UI grouping. It needs:
 - backend section definition
 - backend evaluator defs
 - a coherent `sectionId`
-- optionally a badge claim path via `claimAchievementSectionBadgeV4`
+- token reward metadata that can be auto-awarded when the achievement unlocks
 
 ### 8.7 Reward model you must fit into
 
@@ -916,9 +914,9 @@ terminal move or resign
   -> XP
   -> PB
   -> leaderboard
-  -> achievements earned_unclaimed
+  -> achievements auto-awarded
   -> game-over screen
-  -> achievement and reward claim surfaces later
+  -> wallet history and achievement progress update automatically
 ```
 
 ### 9.5 Realtime resolution flow

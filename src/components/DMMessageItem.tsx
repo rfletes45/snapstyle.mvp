@@ -28,11 +28,12 @@ import Animated, {
 } from "react-native-reanimated";
 
 import MessageImage from "@/components/AppImage";
-import { ReplyBubble, SwipeableMessage } from "@/components/chat";
 import { AnimalBubble } from "@/components/chat/AnimalBubble";
 import { LinkPreviewCard } from "@/components/chat/LinkPreviewCard";
 import { MessageHighlightOverlay } from "@/components/chat/MessageHighlightOverlay";
 import { ReactionPills } from "@/components/chat/ReactionBar";
+import { ReplyBubble } from "@/components/chat/ReplyBubbleNew";
+import { SwipeableMessage } from "@/components/chat/SwipeableMessage";
 import { ThreadIndicator } from "@/components/chat/ThreadIndicator";
 import { VoiceMessagePlayer } from "@/components/chat/VoiceMessagePlayer";
 import { Spacing } from "@/constants/theme";

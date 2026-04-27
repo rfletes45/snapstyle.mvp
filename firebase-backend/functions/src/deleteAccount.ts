@@ -299,6 +299,19 @@ async function step_cleanupChats(uid: string): Promise<void> {
     const chatData = chatDoc.data();
     const members: string[] = chatData.members || [];
     const otherMembers = members.filter((m: string) => m !== uid);
+    const threadId = `dm:${chatDoc.id}`;
+
+    await Promise.all(
+      members.map((memberUid) =>
+        db
+          .collection("Users")
+          .doc(memberUid)
+          .collection("Inbox")
+          .doc(threadId)
+          .delete()
+          .catch(() => {}),
+      ),
+    );
 
     // Delete user's membership subdocs
     const memberDoc = chatDoc.ref.collection("Members").doc(uid);

@@ -28,6 +28,10 @@ import {
   PERMISSIONS_SCHEMA_VERSION,
 } from "@/permissions/groupPermissions";
 import {
+  requestRemoteInboxThreadCleanup,
+  suppressInboxConversationsLocally,
+} from "@/services/chat/inboxConversationSuppression";
+import {
   CreateGroupInput,
   Group,
   GROUP_LIMITS,
@@ -991,24 +995,55 @@ export async function getUserRole(
   return memberDoc.data().role as GroupRole;
 }
 
+function selectNextOwner(
+  members: { uid: string; role?: GroupRole; joinedAt?: number }[],
+  leavingUid: string,
+): { uid: string; role?: GroupRole; joinedAt?: number } | null {
+  const candidates = members.filter((member) => member.uid !== leavingUid);
+  if (candidates.length === 0) return null;
+
+  return candidates.sort((first, second) => {
+    const firstRank = first.role === "admin" ? 0 : 1;
+    const secondRank = second.role === "admin" ? 0 : 1;
+    if (firstRank !== secondRank) return firstRank - secondRank;
+    const joinedDelta = (first.joinedAt ?? 0) - (second.joinedAt ?? 0);
+    if (joinedDelta !== 0) return joinedDelta;
+    return first.uid.localeCompare(second.uid);
+  })[0];
+}
+
 /**
- * Leave a group
+ * Leave a group. If the leaving user is the owner, ownership is transferred
+ * to an admin first, then the longest-standing remaining member.
  */
 export async function leaveGroup(groupId: string, uid: string): Promise<void> {
   const db = getFirestoreInstance();
+  const groupRef = doc(db, "Groups", groupId);
 
-  // Check if user is owner
-  const memberDoc = await getDoc(doc(db, "Groups", groupId, "Members", uid));
+  const [groupDoc, memberDoc, membersSnapshot] = await Promise.all([
+    getDoc(groupRef),
+    getDoc(doc(db, "Groups", groupId, "Members", uid)),
+    getDocs(collection(db, "Groups", groupId, "Members")),
+  ]);
+
+  if (!groupDoc.exists()) {
+    throw new Error("Group no longer exists");
+  }
   if (!memberDoc.exists()) {
     throw new Error("You are not a member of this group");
   }
 
-  const memberData = memberDoc.data();
-  if (memberData.role === "owner") {
-    throw new Error(
-      "Group owner cannot leave. Transfer ownership or delete the group.",
-    );
-  }
+  const memberData = memberDoc.data() as GroupMember;
+  const remainingMembers = membersSnapshot.docs.map((docSnap) => {
+    const data = docSnap.data() as GroupMember;
+    return {
+      uid: docSnap.id,
+      role: data.role,
+      joinedAt: data.joinedAt,
+    };
+  });
+  const nextOwner =
+    memberData.role === "owner" ? selectNextOwner(remainingMembers, uid) : null;
 
   // Get user profile for system message
   const userProfile = await getUserProfileByUid(uid);
@@ -1017,32 +1052,72 @@ export async function leaveGroup(groupId: string, uid: string): Promise<void> {
   const now = Date.now();
   const batch = writeBatch(db);
 
+  batch.set(
+    doc(db, "Groups", groupId, "MembersPrivate", uid),
+    {
+      uid,
+      deletedAt: now,
+      hiddenUntilNewMessage: true,
+      pinnedAt: null,
+      archived: false,
+    },
+    { merge: true },
+  );
+
   // Remove member
   batch.delete(doc(db, "Groups", groupId, "Members", uid));
 
-  // Decrement member count and remove from memberIds
-  batch.update(doc(db, "Groups", groupId), {
+  const groupUpdates: Record<string, unknown> = {
     memberIds: arrayRemove(uid),
     memberCount: increment(-1),
     updatedAt: now,
-  });
-
-  // Add system message
-  const systemMessageRef = doc(collection(db, "Groups", groupId, "Messages"));
-  const systemMessage: Omit<GroupMessage, "id"> = {
-    groupId,
-    sender: uid,
-    senderDisplayName: displayName,
-    type: "system",
-    content: `${displayName} left the group`,
-    createdAt: now,
-    systemType: "member_left",
   };
-  batch.set(systemMessageRef, systemMessage);
+
+  if (memberData.role === "owner") {
+    if (!nextOwner) {
+      batch.delete(groupRef);
+    } else {
+      groupUpdates.ownerId = nextOwner.uid;
+      batch.update(doc(db, "Groups", groupId, "Members", nextOwner.uid), {
+        role: "owner",
+      });
+      batch.update(groupRef, groupUpdates);
+    }
+  } else {
+    batch.update(groupRef, groupUpdates);
+  }
+
+  if (nextOwner || memberData.role !== "owner") {
+    const systemMessageRef = doc(collection(db, "Groups", groupId, "Messages"));
+    const systemMessage: Omit<GroupMessage, "id"> = {
+      groupId,
+      sender: uid,
+      senderDisplayName: displayName,
+      type: "system",
+      content: `${displayName} left the group`,
+      createdAt: now,
+      systemType: "member_left",
+      ...(nextOwner
+        ? {
+            systemMeta: {
+              newOwnerUid: nextOwner.uid,
+            },
+          }
+        : {}),
+    };
+    batch.set(systemMessageRef, systemMessage);
+  }
 
   await batch.commit();
 
-  logger.debug(`[groups] User ${uid} left group ${groupId}`);
+  const ref = { scope: "group" as const, conversationId: groupId };
+  await suppressInboxConversationsLocally(uid, [ref]);
+  void requestRemoteInboxThreadCleanup(ref);
+
+  logger.debug(`[groups] User ${uid} left group ${groupId}`, {
+    transferredOwnershipTo: nextOwner?.uid ?? null,
+    deletedEmptyGroup: memberData.role === "owner" && !nextOwner,
+  });
 }
 
 /**

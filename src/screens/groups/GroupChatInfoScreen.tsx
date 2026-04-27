@@ -767,7 +767,7 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
     }
   }, [newGroupName, uid, groupId, showSuccess, showError]);
 
-  /** Leave group (non-owners) */
+  /** Leave group */
   const confirmLeaveGroup = useCallback(async () => {
     if (actionLockRef.current || !uid) return;
 
@@ -2232,27 +2232,24 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
              *  DANGER ZONE
              * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
             <View style={styles.dangerCard}>
-              {!isOwner && (
-                <TouchableOpacity
-                  style={styles.dangerRow}
-                  activeOpacity={0.6}
-                  onPress={() => setLeaveConfirmVisible(true)}
-                  disabled={actionLoading}
-                >
-                  <MaterialCommunityIcons
-                    name="logout"
-                    size={22}
-                    color={colors.error}
-                  />
-                  <Text style={[styles.dangerRowText, { color: colors.error }]}>
-                    Leave Group
-                  </Text>
-                </TouchableOpacity>
-              )}
+              <TouchableOpacity
+                style={styles.dangerRow}
+                activeOpacity={0.6}
+                onPress={() => setLeaveConfirmVisible(true)}
+                disabled={actionLoading}
+              >
+                <MaterialCommunityIcons
+                  name="logout"
+                  size={22}
+                  color={colors.error}
+                />
+                <Text style={[styles.dangerRowText, { color: colors.error }]}>
+                  Leave Group
+                </Text>
+              </TouchableOpacity>
 
               {isOwner && (
                 <>
-                  {/* Owners can't leave, but add visual separation if delete is present */}
                   <TouchableOpacity
                     style={styles.dangerRow}
                     activeOpacity={0.6}
@@ -2717,8 +2714,9 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
             Leave Group?
           </Text>
           <Text style={[styles.modalMessage, { color: colors.textSecondary }]}>
-            You will no longer receive messages from this group. You'll need a
-            new invite to rejoin.
+            {isOwner
+              ? "If another member remains, ownership will transfer before you leave. Admins are chosen first."
+              : "You will no longer receive messages from this group. You'll need a new invite to rejoin."}
           </Text>
           <View style={styles.modalActions}>
             <Button
@@ -2742,7 +2740,7 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
               disabled={actionLoading}
               style={styles.modalButtonFilled}
             >
-              Leave
+              Leave Group
             </Button>
           </View>
         </Modal>

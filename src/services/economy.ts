@@ -172,7 +172,11 @@ async function getTransactionHistory(
         createdAt: data.createdAt?.toMillis?.() || data.createdAt,
         refId: data.refId,
         refType: data.refType,
+        title: data.title,
         description: data.description,
+        sourceType: data.sourceType,
+        sourceId: data.sourceId,
+        metadata: data.metadata,
       } as Transaction;
     });
   } catch (error) {
@@ -214,7 +218,11 @@ export function subscribeToTransactions(
           createdAt: data.createdAt?.toMillis?.() || data.createdAt,
           refId: data.refId,
           refType: data.refType,
+          title: data.title,
           description: data.description,
+          sourceType: data.sourceType,
+          sourceId: data.sourceId,
+          metadata: data.metadata,
         } as Transaction;
       });
 
@@ -251,8 +259,8 @@ export function formatTokenAmount(amount: number): string {
 export function getTransactionReasonDisplay(reason: string): string {
   const reasonMap: Record<string, string> = {
     task_reward: "Task Completed",
-    achievement_reward: "Achievement Claimed",
-    achievement_claim: "Achievement Claimed",
+    achievement_reward: "Achievement Reward",
+    achievement_claim: "Achievement Reward",
     level_reward: "Level Reward Claimed",
     level_reward_claim: "Level Reward Claimed",
     daily_bonus: "Daily Bonus",

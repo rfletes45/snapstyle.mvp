@@ -62,6 +62,7 @@ import {
   InboxHeader,
   InboxTabs,
   MuteOptionsSheet,
+  NewMessageModal,
   PinnedSection,
   SwipeableConversation,
 } from "@/components/chat/inbox";
@@ -342,6 +343,9 @@ export default function ChatListScreen() {
   // Search sheet state
   const [searchSheetVisible, setSearchSheetVisible] = useState(false);
 
+  // New message compose modal state
+  const [newMessageModalVisible, setNewMessageModalVisible] = useState(false);
+
   React.useEffect(() => {
     if (!isDebugEnabled("CHAT")) return;
     interactionLog.debug("overlay state changed", {
@@ -354,6 +358,7 @@ export default function ChatListScreen() {
         deleteDialogVisible,
         deleteConversationId: deleteTargetConversation?.id ?? null,
         searchSheetVisible,
+        newMessageModalVisible,
       },
     });
   }, [
@@ -364,6 +369,7 @@ export default function ChatListScreen() {
     deleteTargetConversation?.id,
     muteSheetVisible,
     muteTargetConversation?.id,
+    newMessageModalVisible,
     searchSheetVisible,
   ]);
 
@@ -905,6 +911,20 @@ export default function ChatListScreen() {
     setSearchSheetVisible(false);
   }, []);
 
+  const handleNewMessagePress = useCallback(() => {
+    if (__DEV__) {
+      interactionLog.debug("new message modal open requested");
+    }
+    setNewMessageModalVisible(true);
+  }, []);
+
+  const handleNewMessageDismiss = useCallback(() => {
+    if (__DEV__) {
+      interactionLog.debug("new message modal dismissed");
+    }
+    setNewMessageModalVisible(false);
+  }, []);
+
   // =============================================================================
   // Swipe Action Handlers
   // =============================================================================
@@ -1298,7 +1318,13 @@ export default function ChatListScreen() {
       />
 
       {/* FAB */}
-      <InboxFAB visible={isFocused} />
+      <InboxFAB visible={isFocused} onNewMessagePress={handleNewMessagePress} />
+
+      {/* New Message Modal */}
+      <NewMessageModal
+        visible={newMessageModalVisible}
+        onDismiss={handleNewMessageDismiss}
+      />
 
       {/* Context Menu */}
       {contextMenu.conversation && (

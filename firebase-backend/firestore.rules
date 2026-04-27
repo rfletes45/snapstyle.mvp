@@ -2092,12 +2092,12 @@ service cloud.firestore {
     }
 
     // ACHIEVEMENT SECTIONS (subcollection of Users)
-    // Tracks section completion + badge claim. Written by claimAchievementSectionBadgeV4 callable.
+    // Legacy section completion data. Kept readable for compatibility; no client writes.
     match /Users/{userId}/AchievementSections/{sectionId} {
       // Read: any authenticated user (needed for profile achievements widget).
       allow read: if isAuth();
 
-      // Write: Cloud Functions only (via callable).
+      // Write: Cloud Functions only.
       allow create, update, delete: if false;
     }
 

@@ -1,4 +1,4 @@
-import ErrorBoundary from "@/components/ErrorBoundary";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import InAppToast from "@/components/InAppToast";
 import { FloatingVideoOverlay } from "@/components/stream/FloatingVideoOverlay";
 import IncomingCallHandler from "@/components/stream/IncomingCallHandler";
@@ -8,13 +8,14 @@ import {
   StreamVideoEffectsProvider,
 } from "@/contexts/StreamCallContext";
 import { loadCustomFonts } from "@/fonts/fontLoader";
+import { backfillUnclaimedAchievementRewards } from "@/gamesV4/services/gameServiceV4";
 import { useOutboxProcessor } from "@/hooks/useOutboxProcessor";
 import { lockToPortrait } from "@/hooks/useScreenOrientation";
 import RootNavigator from "@/navigation/RootNavigator";
 import { initializeFirebase } from "@/services/firebase";
 import { firebaseConfig } from "@/services/firebaseConfig";
 import { navigate as globalNavigate } from "@/services/navigationRef";
-import { AuthProvider } from "@/store/AuthContext";
+import { AuthProvider, useAuth } from "@/store/AuthContext";
 import { CameraProvider } from "@/store/CameraContext";
 import { ChatKeyboardPreferenceProvider } from "@/store/ChatKeyboardPreferenceContext";
 import { ConversationDisplayModeProvider } from "@/store/ConversationDisplayModeContext";
@@ -28,6 +29,7 @@ import {
   logStartupEvent,
   logStartupMount,
   logStartupUnmount,
+  logStartupWarning,
 } from "@/utils/startupTrace";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as SplashScreen from "expo-splash-screen";
@@ -103,20 +105,22 @@ function AppContent() {
 
   useEffect(() => {
     let mounted = true;
+    let fontTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
     logStartupEvent("Font loading started");
 
     // Race font loading against a 5-second timeout so a corrupt/missing
     // font asset can never hang the app indefinitely.
-    const fontTimeout = new Promise<boolean>((resolve) =>
-      setTimeout(() => {
-        logStartupEvent("Font loading timeout reached", {
+    const fontTimeout = new Promise<boolean>((resolve) => {
+      fontTimeoutId = setTimeout(() => {
+        fontTimeoutId = null;
+        logStartupWarning("Font loading timeout reached", {
           timeoutMs: 5_000,
         });
         console.warn("[BOOT] Font loading timed out after 5s");
         resolve(false);
-      }, 5_000),
-    );
+      }, 5_000);
+    });
 
     Promise.race([loadCustomFonts(), fontTimeout])
       .then((ok) => {
@@ -137,6 +141,10 @@ function AppContent() {
         }
       })
       .finally(() => {
+        if (fontTimeoutId) {
+          clearTimeout(fontTimeoutId);
+          fontTimeoutId = null;
+        }
         // Hide the native splash screen once fonts are resolved
         logStartupEvent("Splash screen hide requested");
         SplashScreen.hideAsync().catch(() => {});
@@ -144,6 +152,10 @@ function AppContent() {
 
     return () => {
       mounted = false;
+      if (fontTimeoutId) {
+        clearTimeout(fontTimeoutId);
+        fontTimeoutId = null;
+      }
     };
   }, []);
 
@@ -248,6 +260,7 @@ function AppContent() {
                             { backgroundColor: colors.background },
                           ]}
                         >
+                          <AchievementRewardsBackfillProvider />
                           <RootNavigator
                             onRouteChange={(routeName) =>
                               setCurrentRouteName(routeName)
@@ -296,6 +309,27 @@ function AppContent() {
  */
 function OutboxProcessorProvider(): null {
   useOutboxProcessor();
+  return null;
+}
+
+function AchievementRewardsBackfillProvider(): null {
+  const { currentFirebaseUser } = useAuth();
+  const processedUidRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const uid = currentFirebaseUser?.uid;
+    if (!uid || processedUidRef.current === uid) return;
+    processedUidRef.current = uid;
+
+    backfillUnclaimedAchievementRewards().catch((error) => {
+      processedUidRef.current = null;
+      console.warn(
+        "[achievements] Failed to backfill unclaimed rewards:",
+        error,
+      );
+    });
+  }, [currentFirebaseUser?.uid]);
+
   return null;
 }
 

@@ -80,7 +80,6 @@ import ShopHubScreen from "@/screens/shop/ShopHubScreen";
 import TasksScreen from "@/screens/tasks/TasksScreen";
 import WalletScreen from "@/screens/wallet/WalletScreen";
 
-import GroupChatCreateScreen from "@/screens/groups/GroupChatCreateScreen";
 import GroupChatInfoScreen from "@/screens/groups/GroupChatInfoScreen";
 import GroupChatScreen from "@/screens/groups/GroupChatScreen";
 import GroupInvitesScreen from "@/screens/groups/GroupInvitesScreen";
@@ -99,8 +98,6 @@ import ActivityFeedScreen from "@/screens/social/ActivityFeedScreen";
 import { CALL_FEATURES } from "@/constants/featureFlags";
 
 // Game V4 screens
-import AchievementSectionScreen from "@/gamesV4/screens/AchievementSectionScreen";
-import AchievementsHubScreen from "@/gamesV4/screens/AchievementsHubScreen";
 import GameDetailScreenV4 from "@/gamesV4/screens/GameDetailScreenV4";
 import GameLeaderboardScreenV4 from "@/gamesV4/screens/GameLeaderboardScreenV4";
 import GameLobbyScreenV4 from "@/gamesV4/screens/GameLobbyScreenV4";
@@ -503,11 +500,6 @@ function MainStack() {
         )}
       </MainStack_Nav.Screen>
       <MainStack_Nav.Screen
-        name="GroupChatCreate"
-        component={GroupChatCreateScreen}
-        options={{ headerShown: false }}
-      />
-      <MainStack_Nav.Screen
         name="GroupChatInfo"
         component={GroupChatInfoScreen}
         options={{ headerShown: false }}
@@ -655,16 +647,6 @@ function MainStack() {
       <MainStack_Nav.Screen
         name="GameStatsV4"
         component={GameStatsScreenV4}
-        options={{ headerShown: false }}
-      />
-      <MainStack_Nav.Screen
-        name="AchievementsHub"
-        component={AchievementsHubScreen}
-        options={{ headerShown: false }}
-      />
-      <MainStack_Nav.Screen
-        name="AchievementSection"
-        component={AchievementSectionScreen}
         options={{ headerShown: false }}
       />
       <MainStack_Nav.Screen

@@ -2,12 +2,12 @@
  * DeleteConfirmDialog Component
  *
  * Confirmation dialog before deleting a conversation.
- * Shows appropriate messaging for DMs vs Groups and warns
- * about data loss.
+ * Shows appropriate messaging for DMs vs Groups.
  *
  * @module components/chat/inbox/DeleteConfirmDialog
  */
 
+import { BorderRadius, Spacing } from "@/constants/theme";
 import { useAppTheme } from "@/store/ThemeContext";
 import { warning as hapticWarning } from "@/utils/haptics";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -19,7 +19,6 @@ import {
   View,
 } from "react-native";
 import { Button, Text } from "react-native-paper";
-import { BorderRadius, Spacing } from "@/constants/theme";
 
 // =============================================================================
 // Types
@@ -59,7 +58,7 @@ export const DeleteConfirmDialog = memo(function DeleteConfirmDialog({
     onConfirm();
   };
 
-  const title = isGroup ? "Leave and Delete Group?" : "Delete Conversation?";
+  const title = isGroup ? "Leave Group?" : "Delete Conversation?";
 
   const message = isGroup
     ? `Are you sure you want to leave "${conversationName}"? You will lose access to all messages and will need to be re-invited to rejoin.`
@@ -117,7 +116,7 @@ export const DeleteConfirmDialog = memo(function DeleteConfirmDialog({
                     color={colors.warning}
                   />
                   <Text style={[styles.warningText, { color: colors.warning }]}>
-                    This action cannot be undone
+                    You will need a new invite to rejoin
                   </Text>
                 </View>
               )}

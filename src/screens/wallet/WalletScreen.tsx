@@ -1,5 +1,5 @@
 /**
- * WalletScreen — Premium Token Wallet & Reward Command Center
+ * WalletScreen — Premium Token Wallet
  *
  * Redesign 2026-04-15:
  * - Calls-inspired ScreenHeader for consistent header language
@@ -9,8 +9,7 @@
  *
  * Features:
  * - Premium hero balance display with lifetime stats
- * - Always-visible pending rewards section with source breakdown
- * - Quick action shortcuts to Achievements, Level Rewards, Shop
+ * - Quick action shortcuts to Level Rewards and Shop
  * - Filterable transaction history / activity feed
  * - Real-time balance and transaction updates
  * - Polished skeleton loading and empty states
@@ -54,7 +53,6 @@ type FilterType = "all" | "earn" | "spend";
 
 // ─── Design Tokens ─────────────────────────────────────────────────────────
 const SUCCESS_GREEN = "#22C55E";
-const SUCCESS_GREEN_BG = "rgba(34, 197, 94, 0.12)";
 
 // ─── Filter Options (matching Calls screen pattern) ───────────────────────
 const FILTER_OPTIONS: FilterChipOption<FilterType>[] = [
@@ -158,23 +156,6 @@ function WalletSkeleton({ skeletonColor }: { skeletonColor: string }) {
         </View>
       </View>
 
-      {/* Pending skeleton */}
-      <View
-        style={{
-          borderRadius: BorderRadius.lg,
-          padding: Spacing.lg,
-          marginBottom: Spacing.lg,
-        }}
-      >
-        <SkeletonBlock width="55%" height={14} color={skeletonColor} />
-        <SkeletonBlock
-          width="35%"
-          height={11}
-          color={skeletonColor}
-          style={{ marginTop: Spacing.sm }}
-        />
-      </View>
-
       {/* Quick action skeletons */}
       <View
         style={{
@@ -184,7 +165,7 @@ function WalletSkeleton({ skeletonColor }: { skeletonColor: string }) {
           gap: Spacing.sm,
         }}
       >
-        {[1, 2, 3].map((i) => (
+        {[1, 2].map((i) => (
           <SkeletonBlock
             key={i}
             width="31%"
@@ -284,7 +265,8 @@ export default function WalletScreen({ navigation }: any) {
   const renderTransaction = ({ item }: { item: Transaction }) => {
     const color = getTransactionColor(item.type);
     const icon = getTransactionIcon(item.reason);
-    const reasonDisplay = getTransactionReasonDisplay(item.reason);
+    const reasonDisplay =
+      item.title ?? getTransactionReasonDisplay(item.reason);
     const amountDisplay = formatTransactionAmount(item.type, item.amount);
 
     return (
@@ -323,67 +305,8 @@ export default function WalletScreen({ navigation }: any) {
     );
   };
 
-  // ─── Pending Source Row ──────────────────────────────────────────────
-  const renderPendingSourceRow = (
-    icon: string,
-    iconColor: string,
-    label: string,
-    count: number,
-    tokens: number,
-    onPress: () => void,
-    isLast: boolean,
-  ) => (
-    <TouchableOpacity
-      key={label}
-      style={[
-        styles.pendingSourceRow,
-        !isLast && {
-          borderBottomWidth: StyleSheet.hairlineWidth,
-          borderBottomColor: colors.divider,
-        },
-      ]}
-      onPress={onPress}
-      activeOpacity={0.65}
-    >
-      <View
-        style={[
-          styles.pendingSourceIcon,
-          { backgroundColor: iconColor + "18" },
-        ]}
-      >
-        <MaterialCommunityIcons
-          name={icon as keyof typeof MaterialCommunityIcons.glyphMap}
-          size={18}
-          color={iconColor}
-        />
-      </View>
-      <View style={styles.pendingSourceInfo}>
-        <Text style={[styles.pendingSourceLabel, { color: colors.text }]}>
-          {label}
-        </Text>
-        <Text
-          style={[styles.pendingSourceMeta, { color: colors.textSecondary }]}
-        >
-          {count} unclaimed · +{formatTokenAmount(tokens)} tokens
-        </Text>
-      </View>
-      <View style={[styles.claimPill, { backgroundColor: colors.primary }]}>
-        <Text style={[styles.claimPillText, { color: colors.textOnPrimary }]}>
-          Claim
-        </Text>
-        <MaterialCommunityIcons
-          name="chevron-right"
-          size={14}
-          color={colors.textOnPrimary}
-        />
-      </View>
-    </TouchableOpacity>
-  );
-
   // ─── Header ──────────────────────────────────────────────────────────
   const renderHeader = () => {
-    const hasPending = pending.totalPendingCount > 0 && !pending.loading;
-
     return (
       <View style={styles.headerContainer}>
         {/* ═══ Hero Balance Card ═══════════════════════════════════════ */}
@@ -461,142 +384,9 @@ export default function WalletScreen({ navigation }: any) {
           )}
         </View>
 
-        {/* ═══ Pending Rewards Section ═════════════════════════════════ */}
-        {hasPending ? (
-          <View
-            style={[
-              styles.pendingCard,
-              {
-                backgroundColor: colors.surfaceVariant,
-                borderColor: colors.primary + "35",
-                borderLeftColor: colors.primary,
-              },
-            ]}
-          >
-            {/* Pending Header */}
-            <View style={styles.pendingHeader}>
-              <View
-                style={[
-                  styles.pendingHeaderIcon,
-                  { backgroundColor: colors.primary + "18" },
-                ]}
-              >
-                <MaterialCommunityIcons
-                  name="gift-outline"
-                  size={18}
-                  color={colors.primary}
-                />
-              </View>
-              <View style={styles.pendingHeaderText}>
-                <Text style={[styles.pendingTitle, { color: colors.text }]}>
-                  Rewards Ready to Claim
-                </Text>
-                <Text
-                  style={[
-                    styles.pendingSubtitle,
-                    { color: colors.textSecondary },
-                  ]}
-                >
-                  {pending.totalPendingCount} reward
-                  {pending.totalPendingCount !== 1 ? "s" : ""} waiting
-                </Text>
-              </View>
-              <View
-                style={[
-                  styles.pendingTokenBadge,
-                  { backgroundColor: colors.primary + "18" },
-                ]}
-              >
-                <MaterialCommunityIcons
-                  name="circle-multiple"
-                  size={12}
-                  color={colors.primary}
-                  style={{ marginRight: 3 }}
-                />
-                <Text
-                  style={[
-                    styles.pendingTokenBadgeText,
-                    { color: colors.primary },
-                  ]}
-                >
-                  +{formatTokenAmount(pending.totalPendingTokens)}
-                </Text>
-              </View>
-            </View>
-
-            {/* Pending Source Rows */}
-            <View style={styles.pendingSourceList}>
-              {pending.unclaimedAchievementCount > 0 &&
-                renderPendingSourceRow(
-                  "trophy",
-                  colors.warning,
-                  "Achievement Rewards",
-                  pending.unclaimedAchievementCount,
-                  pending.unclaimedAchievementTokens,
-                  () => navigation.navigate("AchievementsHub"),
-                  pending.unclaimedLevelRewardCount === 0,
-                )}
-              {pending.unclaimedLevelRewardCount > 0 &&
-                renderPendingSourceRow(
-                  "arrow-up-bold-circle",
-                  SUCCESS_GREEN,
-                  "Level Rewards",
-                  pending.unclaimedLevelRewardCount,
-                  pending.unclaimedLevelRewardTokens,
-                  () => navigation.navigate("LevelRewards"),
-                  true,
-                )}
-            </View>
-          </View>
-        ) : !pending.loading ? (
-          <View
-            style={[
-              styles.pendingCardEmpty,
-              {
-                backgroundColor: colors.surfaceVariant,
-                borderColor: SUCCESS_GREEN + "30",
-              },
-            ]}
-          >
-            <View
-              style={[
-                styles.pendingEmptyIcon,
-                { backgroundColor: SUCCESS_GREEN_BG },
-              ]}
-            >
-              <MaterialCommunityIcons
-                name="check-circle"
-                size={20}
-                color={SUCCESS_GREEN}
-              />
-            </View>
-            <View style={styles.pendingEmptyText}>
-              <Text style={[styles.pendingEmptyTitle, { color: colors.text }]}>
-                All Caught Up!
-              </Text>
-              <Text
-                style={[
-                  styles.pendingEmptySubtitle,
-                  { color: colors.textSecondary },
-                ]}
-              >
-                Play games to unlock new rewards
-              </Text>
-            </View>
-          </View>
-        ) : null}
-
         {/* ═══ Quick Actions ═══════════════════════════════════════════ */}
         <View style={styles.actionsRow}>
           {[
-            {
-              icon: "trophy" as const,
-              iconColor: colors.warning,
-              title: "Achievements",
-              subtitle: "Claim earned rewards",
-              badge: pending.unclaimedAchievementCount,
-              onPress: () => navigation.navigate("AchievementsHub"),
-            },
             {
               icon: "arrow-up-bold-circle" as const,
               iconColor: SUCCESS_GREEN,
@@ -906,122 +696,6 @@ const styles = StyleSheet.create({
   heroStatValue: {
     fontSize: FontSizes.md,
     fontWeight: FontWeights.bold,
-  },
-
-  // ─── Pending Rewards Card ──────────────────────────────────────────
-  pendingCard: {
-    borderRadius: BorderRadius.lg,
-    borderLeftWidth: 4,
-    borderWidth: 1,
-    marginBottom: Spacing.lg,
-    overflow: "hidden",
-  },
-  pendingHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.lg,
-    paddingBottom: Spacing.sm,
-  },
-  pendingHeaderIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: BorderRadius.full,
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: Spacing.sm,
-  },
-  pendingHeaderText: {
-    flex: 1,
-  },
-  pendingTitle: {
-    fontSize: FontSizes.md,
-    fontWeight: FontWeights.bold,
-  },
-  pendingSubtitle: {
-    fontSize: FontSizes.xs,
-    marginTop: 1,
-  },
-  pendingTokenBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: Spacing.xs,
-    borderRadius: BorderRadius.full,
-  },
-  pendingTokenBadgeText: {
-    fontSize: FontSizes.sm,
-    fontWeight: FontWeights.bold,
-  },
-  pendingSourceList: {
-    paddingHorizontal: Spacing.lg,
-    paddingBottom: Spacing.sm,
-  },
-  pendingSourceRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: Spacing.md,
-  },
-  pendingSourceIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: BorderRadius.full,
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: Spacing.sm,
-  },
-  pendingSourceInfo: {
-    flex: 1,
-  },
-  pendingSourceLabel: {
-    fontSize: FontSizes.sm,
-    fontWeight: FontWeights.semibold,
-  },
-  pendingSourceMeta: {
-    fontSize: FontSizes.xs,
-    marginTop: 1,
-  },
-  claimPill: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: Spacing.xs,
-    borderRadius: BorderRadius.full,
-  },
-  claimPillText: {
-    fontSize: FontSizes.xs,
-    fontWeight: FontWeights.bold,
-    marginRight: 2,
-  },
-
-  // ─── Pending Empty State ────────────────────────────────────────────
-  pendingCardEmpty: {
-    borderRadius: BorderRadius.lg,
-    borderWidth: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.lg,
-    marginBottom: Spacing.lg,
-  },
-  pendingEmptyIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: BorderRadius.full,
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: Spacing.md,
-  },
-  pendingEmptyText: {
-    flex: 1,
-  },
-  pendingEmptyTitle: {
-    fontSize: FontSizes.sm,
-    fontWeight: FontWeights.semibold,
-  },
-  pendingEmptySubtitle: {
-    fontSize: FontSizes.xs,
-    marginTop: 2,
   },
 
   // ─── Quick Actions ──────────────────────────────────────────────────

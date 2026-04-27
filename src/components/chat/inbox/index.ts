@@ -35,6 +35,9 @@ export type { EmptyStateProps } from "./EmptyState";
 export { InboxFAB } from "./InboxFAB";
 export type { InboxFABProps } from "./InboxFAB";
 
+export { NewMessageModal } from "./NewMessageModal";
+export type { NewMessageModalProps } from "./NewMessageModal";
+
 // Conversation Item Components
 export { ConversationContextMenu } from "./ConversationContextMenu";
 export type { ConversationContextMenuProps } from "./ConversationContextMenu";
@@ -50,4 +53,3 @@ export type { ContactsOnboardingCardProps } from "./ContactsOnboardingCard";
 
 export { MessageStatusIcon } from "./MessageStatusIcon";
 export type { MessageStatusIconProps } from "./MessageStatusIcon";
-

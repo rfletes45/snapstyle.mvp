@@ -57,7 +57,6 @@ const MAIN_STACK_SCREEN_NAMES = new Set([
   "ChatDetail",
   "GroupChat",
   "ThreadView",
-  "GroupChatCreate",
   "GroupChatInfo",
   "ChatSettings",
   "InboxSettings",
@@ -80,8 +79,6 @@ const MAIN_STACK_SCREEN_NAMES = new Set([
   "GameDetailV4",
   "GameLeaderboardV4",
   "GameStatsV4",
-  "AchievementsHub",
-  "AchievementSection",
   "ProfileAchievements",
   "LevelRewards",
   "Wallet",
@@ -307,23 +304,23 @@ export function normalizeNotificationPayload(
   }
 
   if (rawType === "achievement_unlocked") {
-    const sectionId = asString(payload.sectionId);
+    const gameId = asString(payload.gameId);
     return {
       type: "achievement_unlocked",
       notificationId,
       dedupeKey: buildDedupeKey(
         payload,
-        `achievement_unlocked:${sectionId ?? "hub"}`,
+        `achievement_unlocked:${gameId ?? "games"}`,
       ),
       route: resolveNotificationRoute(
         routeFromPayload,
-        sectionId
+        gameId
           ? {
-              screen: "AchievementSection",
-              params: { sectionId },
+              screen: "GameDetailV4",
+              params: { gameId },
             }
           : {
-              screen: "AchievementsHub",
+              screen: "GamesHub",
             },
       ),
     };

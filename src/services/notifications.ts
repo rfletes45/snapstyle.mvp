@@ -13,6 +13,7 @@ import { getFirestoreInstance } from "./firebase";
 const logger = createLogger("services/notifications");
 
 const NOTIFICATION_DEVICE_ID_KEY = "@vibe/notification_device_id";
+const IS_EXPO_GO = Constants.appOwnership === "expo";
 
 export interface NotificationSessionState {
   appState: string;
@@ -71,6 +72,11 @@ export async function registerForPushNotifications(): Promise<string | null> {
   try {
     if (Platform.OS === "web") {
       logger.info("Push registration skipped (web)");
+      return null;
+    }
+
+    if (IS_EXPO_GO) {
+      logger.info("Push registration skipped (Expo Go)");
       return null;
     }
 

@@ -48,13 +48,13 @@ describe("normalizeNotificationPayload", () => {
     });
     const achievement = normalizeNotificationPayload({
       type: "achievement_unlocked",
-      sectionId: "champion",
+      gameId: "tic_tac_toe",
     });
 
     expect(game?.route.screen).toBe("GamePlayV4");
     expect(game?.dedupeKey).toBe("game_turn:sess-1");
-    expect(achievement?.route.screen).toBe("AchievementSection");
-    expect(achievement?.dedupeKey).toBe("achievement_unlocked:champion");
+    expect(achievement?.route.screen).toBe("GameDetailV4");
+    expect(achievement?.dedupeKey).toBe("achievement_unlocked:tic_tac_toe");
   });
 
   it("returns null for unknown or malformed payloads", () => {

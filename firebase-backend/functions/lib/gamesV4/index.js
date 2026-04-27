@@ -8,12 +8,10 @@
  * @module gamesV4/index
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.resolveSessionV4Internal = exports.watchdogGamesV4 = exports.onSessionV4StatusChanged = exports.onRealtimeResolutionRequest = exports.onGameInviteV4Deleted = exports.suspendSoloSessionV4 = exports.resumeOrCreateSoloSessionV4 = exports.restartSoloSessionV4 = exports.createSoloSessionV4 = exports.archiveSoloSessionV4 = exports.submitTurnMoveV4 = exports.resolveRealtimeSessionV4 = exports.resignSessionV4 = exports.adminClearGameV4 = exports.adminClearConversationGamesV4 = exports.updateLobbySettingsV4 = exports.startGameFromInviteV4 = exports.leaveInviteLobbyV4 = exports.joinInviteLobbyV4 = exports.cancelGameInviteV4 = exports.claimLevelRewardV4 = exports.createGameInviteV4 = exports.claimAchievementSectionBadgeV4 = exports.claimAchievementV4 = void 0;
+exports.resolveSessionV4Internal = exports.watchdogGamesV4 = exports.onSessionV4StatusChanged = exports.onRealtimeResolutionRequest = exports.onGameInviteV4Deleted = exports.suspendSoloSessionV4 = exports.resumeOrCreateSoloSessionV4 = exports.restartSoloSessionV4 = exports.createSoloSessionV4 = exports.archiveSoloSessionV4 = exports.submitTurnMoveV4 = exports.resolveRealtimeSessionV4 = exports.resignSessionV4 = exports.adminClearGameV4 = exports.adminClearConversationGamesV4 = exports.updateLobbySettingsV4 = exports.startGameFromInviteV4 = exports.leaveInviteLobbyV4 = exports.joinInviteLobbyV4 = exports.cancelGameInviteV4 = exports.claimLevelRewardV4 = exports.createGameInviteV4 = exports.backfillUnclaimedAchievementRewardsV4 = void 0;
 // ─── Callables ─────────────────────────────────────────────────────────────
-var claimAchievement_1 = require("./claimAchievement");
-Object.defineProperty(exports, "claimAchievementV4", { enumerable: true, get: function () { return claimAchievement_1.claimAchievementV4; } });
-var claimSectionBadge_1 = require("./claimSectionBadge");
-Object.defineProperty(exports, "claimAchievementSectionBadgeV4", { enumerable: true, get: function () { return claimSectionBadge_1.claimAchievementSectionBadgeV4; } });
+var backfillAchievementRewards_1 = require("./backfillAchievementRewards");
+Object.defineProperty(exports, "backfillUnclaimedAchievementRewardsV4", { enumerable: true, get: function () { return backfillAchievementRewards_1.backfillUnclaimedAchievementRewardsV4; } });
 var invites_1 = require("./invites");
 Object.defineProperty(exports, "createGameInviteV4", { enumerable: true, get: function () { return invites_1.createGameInviteV4; } });
 var levelRewardsV4_1 = require("./levelRewardsV4");

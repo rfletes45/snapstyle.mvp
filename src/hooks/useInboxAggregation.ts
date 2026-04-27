@@ -35,8 +35,23 @@ import {
   traceGroupWallpaper,
 } from "@/services/chat/groupWallpaperDebug";
 import {
+  filterSuppressedInboxConversations,
+  getCachedSuppressedInboxConversationKeys,
+  loadSuppressedInboxConversationKeys,
+  parseInboxConversationSuppressionKey,
+  requestRemoteInboxThreadCleanups,
+  subscribeToSuppressedInboxConversationKeys,
+  suppressInboxConversationsLocally,
+  type SuppressedInboxConversationRef,
+} from "@/services/chat/inboxConversationSuppression";
+import { subscribeToMissingInboxEntities } from "@/services/chat/inboxEntityExistence";
+import {
   applyOptimisticInboxUpdate,
+  getOptimisticInboxConversationSeeds,
   getPersistedLocalInboxUpdates,
+  hydrateOptimisticInboxConversationSeeds,
+  mergeOptimisticInboxConversationSeeds,
+  subscribeToOptimisticInboxConversationSeeds,
   subscribeToOptimisticInboxUpdates,
   type OptimisticInboxUpdate,
 } from "@/services/chat/inboxOptimisticUpdates";
@@ -97,7 +112,17 @@ async function loadAggCache(uid: string): Promise<AggCacheData | null> {
     const raw = await AsyncStorage.getItem(`${AGG_CACHE_KEY}${uid}`);
     if (raw) {
       const data = JSON.parse(raw) as AggCacheData;
-      if (Date.now() - data.timestamp < AGG_CACHE_TTL) return data;
+      if (Date.now() - data.timestamp < AGG_CACHE_TTL) {
+        const suppressedKeys = await loadSuppressedInboxConversationKeys(uid);
+        return {
+          ...data,
+          conversations: filterSuppressedInboxConversations(
+            uid,
+            data.conversations ?? [],
+            suppressedKeys,
+          ),
+        };
+      }
     }
   } catch {
     // non-critical
@@ -110,9 +135,17 @@ async function saveAggCache(
   conversations: InboxConversation[],
 ): Promise<void> {
   try {
+    const suppressedKeys = await loadSuppressedInboxConversationKeys(uid);
     await AsyncStorage.setItem(
       `${AGG_CACHE_KEY}${uid}`,
-      JSON.stringify({ conversations, timestamp: Date.now() } as AggCacheData),
+      JSON.stringify({
+        conversations: filterSuppressedInboxConversations(
+          uid,
+          conversations,
+          suppressedKeys,
+        ),
+        timestamp: Date.now(),
+      } as AggCacheData),
     );
   } catch {
     // non-critical
@@ -284,6 +317,19 @@ export function useInboxAggregation(uid: string): UseInboxAggregationResult {
   const [filter, setFilter] = useState<InboxFilter>("all");
   const [showArchived, setShowArchived] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [optimisticConversationSeeds, setOptimisticConversationSeeds] =
+    useState(() => (uid ? getOptimisticInboxConversationSeeds(uid) : []));
+  const [missingConversationKeys, setMissingConversationKeys] = useState<
+    Set<string>
+  >(new Set());
+  const [entityExistenceReady, setEntityExistenceReady] = useState(false);
+  const [
+    lastValidatedEntityConversations,
+    setLastValidatedEntityConversations,
+  ] = useState<InboxConversation[]>([]);
+  const [suppressedConversationKeys, setSuppressedConversationKeys] = useState<
+    Set<string>
+  >(() => (uid ? getCachedSuppressedInboxConversationKeys(uid) : new Set()));
   const recentlyReadRef = useRef<Map<string, number>>(new Map());
   const optimisticActivityRef = useRef<Map<string, OptimisticInboxUpdate>>(
     new Map(),
@@ -298,6 +344,22 @@ export function useInboxAggregation(uid: string): UseInboxAggregationResult {
   // it for diagnostics when fan-out is active.
   const enabled =
     CHAT_FEATURES.CHAT_INBOX_AGGREGATION || isDebugEnabled("PERF");
+
+  useEffect(() => {
+    setLastValidatedEntityConversations([]);
+  }, [uid]);
+
+  useEffect(() => {
+    if (!uid || !enabled) {
+      setSuppressedConversationKeys(new Set());
+      return;
+    }
+
+    return subscribeToSuppressedInboxConversationKeys(
+      uid,
+      setSuppressedConversationKeys,
+    );
+  }, [enabled, uid]);
 
   const setTrackedEntries = useCallback(
     (
@@ -437,6 +499,25 @@ export function useInboxAggregation(uid: string): UseInboxAggregationResult {
   }, [enabled, pruneOptimisticActivity, setTrackedEntries, uid]);
 
   useEffect(() => {
+    if (!uid || !enabled) {
+      setOptimisticConversationSeeds([]);
+      return;
+    }
+
+    const syncSeeds = () => {
+      setOptimisticConversationSeeds(getOptimisticInboxConversationSeeds(uid));
+    };
+
+    syncSeeds();
+    void hydrateOptimisticInboxConversationSeeds(uid);
+
+    return subscribeToOptimisticInboxConversationSeeds((seed) => {
+      if (seed.ownerUid !== uid) return;
+      syncSeeds();
+    });
+  }, [enabled, uid]);
+
+  useEffect(() => {
     if (!uid || !enabled) return;
 
     return subscribeToGroupBackgroundState((update) => {
@@ -447,6 +528,59 @@ export function useInboxAggregation(uid: string): UseInboxAggregationResult {
       );
     });
   }, [enabled, setTrackedEntries, uid]);
+
+  const entityTrackedConversations = useMemo(
+    () =>
+      mergeOptimisticInboxConversationSeeds(
+        entries,
+        optimisticConversationSeeds,
+        uid,
+      ),
+    [entries, optimisticConversationSeeds, uid],
+  );
+
+  const visibleEntityTrackedConversations = useMemo(
+    () =>
+      filterSuppressedInboxConversations(
+        uid,
+        entityTrackedConversations,
+        suppressedConversationKeys,
+      ),
+    [entityTrackedConversations, suppressedConversationKeys, uid],
+  );
+
+  useEffect(() => {
+    if (!uid || !enabled) {
+      setMissingConversationKeys(new Set());
+      setEntityExistenceReady(true);
+      return;
+    }
+
+    if (visibleEntityTrackedConversations.length === 0) {
+      setMissingConversationKeys(new Set());
+      setEntityExistenceReady(true);
+      return;
+    }
+
+    setEntityExistenceReady(false);
+
+    return subscribeToMissingInboxEntities(
+      uid,
+      visibleEntityTrackedConversations,
+      (missingKeys) => {
+        setMissingConversationKeys(missingKeys);
+        setEntityExistenceReady(true);
+        if (missingKeys.size === 0) return;
+
+        const refs = Array.from(missingKeys)
+          .map(parseInboxConversationSuppressionKey)
+          .filter((ref): ref is SuppressedInboxConversationRef => !!ref);
+        void suppressInboxConversationsLocally(uid, refs).then((newRefs) => {
+          requestRemoteInboxThreadCleanups(newRefs);
+        });
+      },
+    );
+  }, [enabled, uid, visibleEntityTrackedConversations]);
 
   // -------------------------------------------------------
   // Subscribe to Users/{uid}/Inbox ordered by lastActivityAt
@@ -744,10 +878,47 @@ export function useInboxAggregation(uid: string): UseInboxAggregationResult {
   // Memoised derived lists
   // -------------------------------------------------------
 
+  const currentValidatedEntityConversations = useMemo(() => {
+    if (!enabled || !entityExistenceReady) return null;
+    return sortInboxConversations(
+      visibleEntityTrackedConversations.filter(
+        (conversation) =>
+          !missingConversationKeys.has(
+            `${conversation.type}:${conversation.id}`,
+          ),
+      ),
+    );
+  }, [
+    enabled,
+    entityExistenceReady,
+    visibleEntityTrackedConversations,
+    missingConversationKeys,
+  ]);
+
+  useEffect(() => {
+    if (!currentValidatedEntityConversations) return;
+    setLastValidatedEntityConversations(currentValidatedEntityConversations);
+  }, [currentValidatedEntityConversations]);
+
   const allConversations = useMemo(() => {
     if (!enabled) return [];
-    return entries;
-  }, [entries, enabled]);
+    if (currentValidatedEntityConversations) {
+      return currentValidatedEntityConversations;
+    }
+    if (visibleEntityTrackedConversations.length === 0) return [];
+    return lastValidatedEntityConversations;
+  }, [
+    enabled,
+    currentValidatedEntityConversations,
+    lastValidatedEntityConversations,
+    visibleEntityTrackedConversations.length,
+  ]);
+
+  const entityValidationPending =
+    !entityExistenceReady && visibleEntityTrackedConversations.length > 0;
+  const combinedLoading =
+    loading ||
+    (entityValidationPending && lastValidatedEntityConversations.length === 0);
 
   const conversations = useMemo(() => {
     const isArchivedFilter = filter === "archived";
@@ -870,7 +1041,7 @@ export function useInboxAggregation(uid: string): UseInboxAggregationResult {
     pinnedConversations,
     regularConversations,
     allConversations,
-    loading,
+    loading: combinedLoading,
     error,
     totalUnread,
     filter,

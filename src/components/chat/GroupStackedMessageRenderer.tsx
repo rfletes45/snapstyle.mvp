@@ -18,23 +18,21 @@ import {
   FEED_LAYOUT,
   hexToRgb,
 } from "@/chat/displayMode";
-import AppImage from "@/components/AppImage";
-import {
-  LinkPreviewCard,
-  MessageWithMentions,
-  ReactionPills,
-  SwipeableMessage,
-  ThreadIndicator,
-  VoiceMessagePlayer,
-} from "@/components/chat";
+import { AppImage } from "@/components/AppImage";
 import { AnimalBubble } from "@/components/chat/AnimalBubble";
 import { GROUP_STACKED_CARD_PADDING_H } from "@/components/chat/groupedCardMetrics";
+import { LinkPreviewCard } from "@/components/chat/LinkPreviewCard";
+import { MessageWithMentions } from "@/components/chat/MentionAutocomplete";
 import { MessageHighlightOverlay } from "@/components/chat/MessageHighlightOverlay";
+import { ReactionPills } from "@/components/chat/ReactionBar";
 import { StackedReplyReference } from "@/components/chat/StackedReplyReference";
+import { SwipeableMessage } from "@/components/chat/SwipeableMessage";
+import { ThreadIndicator } from "@/components/chat/ThreadIndicator";
 import {
   useGroupedCardLayout,
   type CardCornerWidthStore,
 } from "@/components/chat/useGroupedCardLayout";
+import { VoiceMessagePlayer } from "@/components/chat/VoiceMessagePlayer";
 import { ProfilePictureWithDecoration } from "@/components/profile/ProfilePicture";
 import { hasUrls } from "@/services/linkPreview";
 import type { MentionableMember } from "@/services/mentionParser";

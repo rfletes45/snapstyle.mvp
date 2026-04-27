@@ -80,8 +80,7 @@ User callables:
 - `submitTurnMoveV4`
 - `resignSessionV4`
 - `claimLevelRewardV4`
-- `claimAchievementV4`
-- `claimAchievementSectionBadgeV4`
+- `backfillUnclaimedAchievementRewardsV4`
 
 Admin callables:
 
@@ -127,21 +126,21 @@ Sketch Party:
 
 ### 2.1 Core terms
 
-| Term          | Meaning                                                             | Where defined                                             |
-| ------------- | ------------------------------------------------------------------- | --------------------------------------------------------- |
-| `GameId`      | Canonical append-only game key                                      | `src/gamesV4/types/common.ts`                             |
-| `runtimeType` | `solo`, `turnBased`, or `realtime`                                  | `src/gamesV4/types/common.ts`, `src/gamesV4/constants.ts` |
-| Invite        | Chat-facing pre-game object                                         | `GameInvitesV4/{inviteId}`                                |
-| Session       | Canonical lifecycle doc for an actual match or run                  | `GameSessionsV4/{sessionId}`                              |
-| Public state  | Shared game state visible to all allowed readers                    | `GameSessionsV4/{sessionId}/PublicState/state`            |
-| Private state | Per-player hidden state                                             | `GameSessionsV4/{sessionId}/PrivateState/{uid}`           |
-| Move doc      | Append-only move ledger entry                                       | `GameSessionsV4/{sessionId}/Moves/{moveId}`               |
-| Result        | Terminal result payload                                             | `GameResultsV4/{sessionId}`                               |
+| Term          | Meaning                                                              | Where defined                                             |
+| ------------- | -------------------------------------------------------------------- | --------------------------------------------------------- |
+| `GameId`      | Canonical append-only game key                                       | `src/gamesV4/types/common.ts`                             |
+| `runtimeType` | `solo`, `turnBased`, or `realtime`                                   | `src/gamesV4/types/common.ts`, `src/gamesV4/constants.ts` |
+| Invite        | Chat-facing pre-game object                                          | `GameInvitesV4/{inviteId}`                                |
+| Session       | Canonical lifecycle doc for an actual match or run                   | `GameSessionsV4/{sessionId}`                              |
+| Public state  | Shared game state visible to all allowed readers                     | `GameSessionsV4/{sessionId}/PublicState/state`            |
+| Private state | Per-player hidden state                                              | `GameSessionsV4/{sessionId}/PrivateState/{uid}`           |
+| Move doc      | Append-only move ledger entry                                        | `GameSessionsV4/{sessionId}/Moves/{moveId}`               |
+| Result        | Terminal result payload                                              | `GameResultsV4/{sessionId}`                               |
 | Scorecard     | Trusted chat message envelope carrying a structured game result card | `src/gamesV4/types/scorecard.ts`, chat message docs       |
-| PB            | Personal best plus play and win counters                            | `Users/{uid}/GamePB/{gameId}`                             |
-| Achievement   | Earned or claimed achievement doc                                   | `Users/{uid}/Achievements/{type}`                         |
-| Section badge | Claimed completion badge for a section                              | `Users/{uid}/AchievementSections/{sectionId}`             |
-| Presence      | Lightweight foreground presence marker for notification suppression | `Users/{uid}/GamePresence/{sessionId}`                    |
+| PB            | Personal best plus play and win counters                             | `Users/{uid}/GamePB/{gameId}`                             |
+| Achievement   | Earned achievement doc with automatic token reward metadata          | `Users/{uid}/Achievements/{type}`                         |
+| Section badge | Legacy section completion badge data                                 | `Users/{uid}/AchievementSections/{sectionId}`             |
+| Presence      | Lightweight foreground presence marker for notification suppression  | `Users/{uid}/GamePresence/{sessionId}`                    |
 
 ### 2.2 Invariants that must remain true
 
@@ -186,24 +185,24 @@ Game-specific or partially standardized:
 
 ### 3.1 Enabled and wired in the current workspace
 
-| GameId               | Runtime in metadata | Architecture                        | Integration state             | Notes                                                                                                                                                                                                                                                                                                                     |
-| -------------------- | ------------------- | ----------------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `play_2048`          | `solo`              | Firebase solo                       | Enabled, complete             | Canonical score-based solo implementation.                                                                                                                                                                                                                                                                                |
-| `brick_breaker`      | `solo`              | Firebase solo                       | Enabled, complete             | Uses shell pause registration and replay-like move payloads.                                                                                                                                                                                                                                                              |
-| `minesweeper`        | `solo`              | Firebase solo                       | Enabled, complete             | Score encoding is game-specific.                                                                                                                                                                                                                                                                                          |
-| `solitaire_klondike` | `solo`              | Firebase solo                       | Enabled, complete             | Uses standard solo lifecycle; persistent mode not enabled.                                                                                                                                                                                                                                                                |
-| `tic_tac_toe`        | `turnBased`         | Firebase turn-based                 | Enabled, complete             | Smallest reference game.                                                                                                                                                                                                                                                                                                  |
-| `connect_four`       | `turnBased`         | Firebase turn-based                 | Enabled, complete             | Same pipeline as Tic Tac Toe with larger board state.                                                                                                                                                                                                                                                                     |
-| `chess`              | `turnBased`         | Firebase turn-based                 | Enabled, complete             | Has custom engine logic and broader tests.                                                                                                                                                                                                                                                                                |
-| `reversi`            | `turnBased`         | Firebase turn-based                 | Enabled, complete             | Standard Firebase turn pipeline.                                                                                                                                                                                                                                                                                          |
-| `dots_and_boxes`     | `turnBased`         | Firebase turn-based                 | Enabled, complete             | Backend invite metadata drift was fixed; current runtime expects 2 players.                                                                                                                                                                                                                                               |
-| `crazy_eights`       | `turnBased`         | Firebase turn-based + private state | Enabled, complete             | Hidden-info card game; client optimism is intentionally limited.                                                                                                                                                                                                                                                          |
-| `battleship`         | `turnBased`         | Firebase turn-based + private state | Enabled, complete             | Backend invite metadata drift was fixed; validation remains server-authoritative.                                                                                                                                                                                                                                         |
-| `hex`                | `turnBased`         | Firebase turn-based                 | Enabled, complete             | Standard deterministic board-game pattern.                                                                                                                                                                                                                                                                                |
-| `sketch_party_game`  | `realtime`          | Hybrid Firebase + Colyseus          | Enabled, custom realtime path | Live gameplay authority sits in Colyseus, not Firestore.                                                                                                                                                                                                                                                                  |
-| `pong_game`          | `realtime`          | Hybrid Firebase + Colyseus          | Enabled, complete             | 1v1 paddle game. Colyseus room with server-authoritative physics and client-side extrapolation.                                                                                                                                                                                                                           |
+| GameId               | Runtime in metadata | Architecture                        | Integration state             | Notes                                                                                                                                                                                                                                                                                                                       |
+| -------------------- | ------------------- | ----------------------------------- | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `play_2048`          | `solo`              | Firebase solo                       | Enabled, complete             | Canonical score-based solo implementation.                                                                                                                                                                                                                                                                                  |
+| `brick_breaker`      | `solo`              | Firebase solo                       | Enabled, complete             | Uses shell pause registration and replay-like move payloads.                                                                                                                                                                                                                                                                |
+| `minesweeper`        | `solo`              | Firebase solo                       | Enabled, complete             | Score encoding is game-specific.                                                                                                                                                                                                                                                                                            |
+| `solitaire_klondike` | `solo`              | Firebase solo                       | Enabled, complete             | Uses standard solo lifecycle; persistent mode not enabled.                                                                                                                                                                                                                                                                  |
+| `tic_tac_toe`        | `turnBased`         | Firebase turn-based                 | Enabled, complete             | Smallest reference game.                                                                                                                                                                                                                                                                                                    |
+| `connect_four`       | `turnBased`         | Firebase turn-based                 | Enabled, complete             | Same pipeline as Tic Tac Toe with larger board state.                                                                                                                                                                                                                                                                       |
+| `chess`              | `turnBased`         | Firebase turn-based                 | Enabled, complete             | Has custom engine logic and broader tests.                                                                                                                                                                                                                                                                                  |
+| `reversi`            | `turnBased`         | Firebase turn-based                 | Enabled, complete             | Standard Firebase turn pipeline.                                                                                                                                                                                                                                                                                            |
+| `dots_and_boxes`     | `turnBased`         | Firebase turn-based                 | Enabled, complete             | Backend invite metadata drift was fixed; current runtime expects 2 players.                                                                                                                                                                                                                                                 |
+| `crazy_eights`       | `turnBased`         | Firebase turn-based + private state | Enabled, complete             | Hidden-info card game; client optimism is intentionally limited.                                                                                                                                                                                                                                                            |
+| `battleship`         | `turnBased`         | Firebase turn-based + private state | Enabled, complete             | Backend invite metadata drift was fixed; validation remains server-authoritative.                                                                                                                                                                                                                                           |
+| `hex`                | `turnBased`         | Firebase turn-based                 | Enabled, complete             | Standard deterministic board-game pattern.                                                                                                                                                                                                                                                                                  |
+| `sketch_party_game`  | `realtime`          | Hybrid Firebase + Colyseus          | Enabled, custom realtime path | Live gameplay authority sits in Colyseus, not Firestore.                                                                                                                                                                                                                                                                    |
+| `pong_game`          | `realtime`          | Hybrid Firebase + Colyseus          | Enabled, complete             | 1v1 paddle game. Colyseus room with server-authoritative physics and client-side extrapolation.                                                                                                                                                                                                                             |
 | `knockout_game`      | `realtime`          | Hybrid Firebase + Colyseus          | Enabled, complete             | Physics-based multiplayer combat, 2â€“8 players with spectate support.                                                                                                                                                                                                                                                      |
-| `dead_drop`          | `turnBased`         | Firebase turn-based + private state | Enabled, complete             | Deduction game, 4-player only with hidden team assignments and spymaster key map.                                                                                                                                                                                                                                         |
+| `dead_drop`          | `turnBased`         | Firebase turn-based + private state | Enabled, complete             | Deduction game, 4-player only with hidden team assignments and spymaster key map.                                                                                                                                                                                                                                           |
 | `metro_magnate`      | `turnBased`         | Firebase turn-based                 | Enabled, core-complete        | Property empire board game, 2â€“6 players. 36-space loop board with 6 sectors, auctions, improvements, and bankruptcy. 18 achievements. Take 6 hardened: 140 tests, 0 TS errors. **Known deferred**: multi-creditor debt (`pay_each`/`collect_from_each`), bank-bankruptcy auctions. These are scope limitations, not bugs. |
 
 ### 3.2 Implemented but intentionally disabled
@@ -457,8 +456,6 @@ Primary game-system screens:
 - `src/gamesV4/screens/GameOverScreenV4.tsx`
 - `src/gamesV4/screens/GameLeaderboardScreenV4.tsx`
 - `src/gamesV4/screens/GameStatsScreenV4.tsx`
-- `src/gamesV4/screens/AchievementsHubScreen.tsx`
-- `src/gamesV4/screens/AchievementSectionScreen.tsx`
 - `src/gamesV4/screens/LevelRewardsScreen.tsx`
 
 Important entry components outside `src/gamesV4/screens/`:
@@ -708,25 +705,25 @@ Important caveat:
 
 ### 7.1 Collections that matter most
 
-| Path                                                    | Primary writer                            | Purpose                                                                |
-| ------------------------------------------------------- | ----------------------------------------- | ---------------------------------------------------------------------- |
-| `GameInvitesV4/{inviteId}`                              | Cloud Functions                           | chat-facing invite and lobby state                                     |
-| `GameSessionsV4/{sessionId}`                            | Cloud Functions                           | canonical lifecycle doc                                                |
-| `GameSessionsV4/{sessionId}/PublicState/state`          | Cloud Functions                           | live public state for Firebase games, bootstrap state for Sketch Party |
-| `GameSessionsV4/{sessionId}/PrivateState/{uid}`         | Cloud Functions                           | hidden state for Battleship, Crazy Eights, and Dead Drop               |
-| `GameSessionsV4/{sessionId}/Moves/{moveId}`             | client create + Cloud Functions update    | move ledger                                                            |
-| `GameResultsV4/{sessionId}`                             | resolution pipeline                       | terminal payload used by game-over, history, PB, and reward surfaces   |
-| `Chats/{chatId}/Messages/scorecard_{sessionId}`         | resolution pipeline                       | hosted-DM multiplayer auto-posted scorecard                            |
-| `Groups/{groupId}/Messages/scorecard_{sessionId}`       | resolution pipeline                       | hosted-group multiplayer auto-posted scorecard                         |
-| `LeaderboardsV4/{gameId}/Weeks/{weekKey}/Entries/{uid}` | resolution pipeline                       | weekly leaderboard entry                                               |
-| `Users/{uid}/GamePB/{gameId}`                           | resolution pipeline                       | PB plus `totalPlays` and `totalWins`                                   |
-| `Users/{uid}/Achievements/{type}`                       | resolution pipeline + claim callable      | achievement earn and claim state                                       |
-| `Users/{uid}/AchievementSections/{sectionId}`           | section-badge claim callable              | section completion badge claim state                                   |
-| `Users/{uid}/LevelRewardsV4/{level}`                    | XP pipeline + claim callable              | unlocked and claimed level rewards                                     |
-| `Users/{uid}/GamePresence/{sessionId}`                  | client shell                              | in-game foreground presence                                            |
-| `Users/{uid}/Notifications/{notificationId}`            | shared notification center                | canonical in-app and push notification records                         |
-| `Wallets/{uid}`                                         | claim callables and economy backend       | token balance                                                          |
-| `Transactions/{txId}`                                   | claim callables and other economy writers | wallet audit ledger                                                    |
+| Path                                                    | Primary writer                             | Purpose                                                                |
+| ------------------------------------------------------- | ------------------------------------------ | ---------------------------------------------------------------------- |
+| `GameInvitesV4/{inviteId}`                              | Cloud Functions                            | chat-facing invite and lobby state                                     |
+| `GameSessionsV4/{sessionId}`                            | Cloud Functions                            | canonical lifecycle doc                                                |
+| `GameSessionsV4/{sessionId}/PublicState/state`          | Cloud Functions                            | live public state for Firebase games, bootstrap state for Sketch Party |
+| `GameSessionsV4/{sessionId}/PrivateState/{uid}`         | Cloud Functions                            | hidden state for Battleship, Crazy Eights, and Dead Drop               |
+| `GameSessionsV4/{sessionId}/Moves/{moveId}`             | client create + Cloud Functions update     | move ledger                                                            |
+| `GameResultsV4/{sessionId}`                             | resolution pipeline                        | terminal payload used by game-over, history, PB, and reward surfaces   |
+| `Chats/{chatId}/Messages/scorecard_{sessionId}`         | resolution pipeline                        | hosted-DM multiplayer auto-posted scorecard                            |
+| `Groups/{groupId}/Messages/scorecard_{sessionId}`       | resolution pipeline                        | hosted-group multiplayer auto-posted scorecard                         |
+| `LeaderboardsV4/{gameId}/Weeks/{weekKey}/Entries/{uid}` | resolution pipeline                        | weekly leaderboard entry                                               |
+| `Users/{uid}/GamePB/{gameId}`                           | resolution pipeline                        | PB plus `totalPlays` and `totalWins`                                   |
+| `Users/{uid}/Achievements/{type}`                       | resolution pipeline + backfill callable    | achievement unlock and automatic reward state                          |
+| `Users/{uid}/AchievementSections/{sectionId}`           | legacy backend data                        | historical section completion state                                    |
+| `Users/{uid}/LevelRewardsV4/{level}`                    | XP pipeline + claim callable               | unlocked and claimed level rewards                                     |
+| `Users/{uid}/GamePresence/{sessionId}`                  | client shell                               | in-game foreground presence                                            |
+| `Users/{uid}/Notifications/{notificationId}`            | shared notification center                 | canonical in-app and push notification records                         |
+| `Wallets/{uid}`                                         | reward callables and economy backend       | token balance                                                          |
+| `Transactions/{txId}`                                   | reward callables and other economy writers | wallet audit ledger                                                    |
 
 ### 7.2 Session document fields that drive behavior
 
@@ -983,7 +980,7 @@ Terminal condition detected
      -> compute scoreboard and metrics
      -> write GameResultsV4
      -> apply XP and unlock level rewards
-     -> write achievements earned_unclaimed docs
+      -> write achievements and auto-credit wallet rewards
      -> update weekly leaderboard entry
      -> update PB totals and pbValue if needed
      -> unpin invite
@@ -1264,12 +1261,13 @@ Current section inventory includes:
 - one shared `milestones` section
 - one section naming mismatch worth remembering: section ID `sketch_party` maps to game ID `sketch_party_game`
 
-Claim model:
+Reward model:
 
-- new achievements are written with `schemaVersion >= 2` and `status: "earned_unclaimed"`
-- tokens are not auto-credited
-- `claimAchievementV4` credits wallet balance and writes a transaction record
-- legacy achievements without schema version are treated as already claimed
+- new achievements are written with `schemaVersion >= 3`, `status: "claimed"`, and `autoAwarded: true`
+- tokens are credited in the same Firestore transaction that creates the achievement doc
+- `Transactions/{txId}` uses deterministic achievement reward IDs so retries cannot double-credit
+- old `status: "earned_unclaimed"` achievements are repaired by `backfillUnclaimedAchievementRewardsV4`
+- legacy achievements without schema version are treated as already awarded
 
 ### 10.5 XP and level rewards
 
@@ -1295,16 +1293,14 @@ Relevant client hooks:
 Relevant UI surfaces:
 
 - `src/screens/wallet/WalletScreen.tsx`
-- `src/gamesV4/screens/AchievementsHubScreen.tsx`
-- `src/gamesV4/screens/AchievementSectionScreen.tsx`
 - `src/gamesV4/screens/LevelRewardsScreen.tsx`
 - `src/gamesV4/screens/GameOverScreenV4.tsx`
 - `src/gamesV4/screens/GamesHubScreenV4.tsx`
 
 Why this matters to game-system work:
 
-- a game does not directly write wallet balances
-- game integration must produce correct achievements and level-reward unlock docs so the wallet and pending-reward surfaces stay accurate
+- game code does not directly write wallet balances; the trusted resolve pipeline does
+- game integration must produce correct achievements and level-reward unlock docs so wallet history, level rewards, and profile/game progress stay accurate
 
 ---
 
@@ -1324,8 +1320,6 @@ Relevant routes:
 - `GameDetailV4`
 - `GameLeaderboardV4`
 - `GameStatsV4`
-- `AchievementsHub`
-- `AchievementSection`
 - `LevelRewards`
 - `Wallet`
 
@@ -1451,11 +1445,11 @@ Rematch behavior matrix:
 
 ### 11.5.1 Scorecard share behavior matrix
 
-| Context | Auto-post into hosting chat | Manual share from Game Over | Personalization source |
-| ------- | --------------------------- | --------------------------- | ---------------------- |
-| solo | No | Yes | sender background |
-| hosted multiplayer DM | Yes, if host left `autoSendScorecards` enabled | Yes | auto-post uses winner background; manual share also carries sender background |
-| hosted multiplayer group | Yes, if host left `autoSendScorecards` enabled | Yes | auto-post uses winner background; manual share also carries sender background |
+| Context                  | Auto-post into hosting chat                    | Manual share from Game Over | Personalization source                                                        |
+| ------------------------ | ---------------------------------------------- | --------------------------- | ----------------------------------------------------------------------------- |
+| solo                     | No                                             | Yes                         | sender background                                                             |
+| hosted multiplayer DM    | Yes, if host left `autoSendScorecards` enabled | Yes                         | auto-post uses winner background; manual share also carries sender background |
+| hosted multiplayer group | Yes, if host left `autoSendScorecards` enabled | Yes                         | auto-post uses winner background; manual share also carries sender background |
 
 ---
 

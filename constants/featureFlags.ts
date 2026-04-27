@@ -19,6 +19,10 @@ import { NativeModules, Platform } from "react-native";
  * Used to gate features with platform-specific runtime requirements.
  */
 const IS_WEB = Platform.OS === "web";
+const IS_EXPO_GO =
+  Constants.executionEnvironment === "storeClient" ||
+  Constants.appOwnership === "expo" ||
+  Constants.expoVersion != null;
 
 /**
  * Opt in to Expo SQLite's experimental web runtime.
@@ -66,27 +70,13 @@ export const USE_LOCAL_STORAGE = !IS_WEB || EXPERIMENTAL_WEB_SQLITE;
 /**
  * Use VisionCamera (react-native-vision-camera) as the camera backend.
  *
- * When `true`  â†’ VisionCamera + Skia frame processors (pixel-perfect live
- *                filter preview, full GPU pipeline).  Requires a custom dev
- *                client or production build â€” does NOT work inside Expo Go.
+ * VisionCamera requires native modules from a custom dev client or production
+ * build. Expo Go cannot load it, so the flag is disabled there and the app uses
+ * the expo-camera fallback without emitting a fallback warning on every boot.
  *
- * When `false` â†’ expo-camera CameraView fallback with the simpler
- *                CameraFilterOverlay tint.  Works inside Expo Go for
- *                development & testing.
- *
- * â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
- * TODO(launch): flip to `true` and remove expo-camera from package.json
- *               once we ship via EAS builds only.
- * â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
- *
- * NOTE: Even when `true`, CameraScreen performs a runtime check:
- *       if VisionCamera fails to load (e.g. Expo Go) it gracefully falls
- *       back to expo-camera + CameraFilterOverlay.  So this is safe to
- *       leave `true` for EAS / dev-client / TestFlight / production builds.
- *
- * @default true â€" enables real-time GPU-filtered camera preview
+ * @default true outside Expo Go; false in Expo Go
  */
-export const USE_VISION_CAMERA = true;
+export const USE_VISION_CAMERA = !IS_EXPO_GO;
 
 /**
  * Experimental true live GPU filter preview.
@@ -235,11 +225,6 @@ export const PROFILE_V2_FEATURES = {
 // =============================================================================
 // Video Calling Feature Flags
 // =============================================================================
-
-const IS_EXPO_GO =
-  Constants.executionEnvironment === "storeClient" ||
-  Constants.appOwnership === "expo" ||
-  Constants.expoVersion != null;
 
 function hasStreamNativeModules(): boolean {
   const nativeModules = NativeModules as Record<string, unknown>;

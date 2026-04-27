@@ -19,6 +19,7 @@ export declare function notifyAchievementUnlocked(params: {
     uid: string;
     achievementIds: string[];
     achievementTitles?: string[];
+    tokenRewards?: number[];
     sectionId?: string;
     gameId?: string;
     sessionId?: string;

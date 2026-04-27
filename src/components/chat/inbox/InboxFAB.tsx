@@ -3,7 +3,6 @@
  *
  * Multi-action floating action button for the inbox:
  * - New Message (DM)
- * - New Group
  * - Add Friend
  *
  * Uses react-native-paper FAB.Group for expandable actions.
@@ -27,6 +26,8 @@ import { FAB, Portal } from "react-native-paper";
 export interface InboxFABProps {
   /** Whether the FAB is visible */
   visible?: boolean;
+  /** Opens the dedicated compose modal from the Messages screen */
+  onNewMessagePress: () => void;
   /** Optional custom actions */
   customActions?: FABAction[];
 }
@@ -47,6 +48,7 @@ const NAV_DEBOUNCE_MS = 500;
 
 export const InboxFAB = memo(function InboxFAB({
   visible = true,
+  onNewMessagePress,
   customActions,
 }: InboxFABProps) {
   const { colors, isDark } = useAppTheme();
@@ -74,17 +76,9 @@ export const InboxFAB = memo(function InboxFAB({
   const handleNewMessage = useCallback(() => {
     haptics.buttonPress();
     navigateOnce(() => {
-      // Open Friends list so the user can pick a friend to message
-      navigation.navigate("Friends", { tab: "all" });
+      onNewMessagePress();
     });
-  }, [navigation, navigateOnce]);
-
-  const handleNewGroup = useCallback(() => {
-    haptics.buttonPress();
-    navigateOnce(() => {
-      navigation.navigate("GroupChatCreate");
-    });
-  }, [navigation, navigateOnce]);
+  }, [navigateOnce, onNewMessagePress]);
 
   const handleAddFriend = useCallback(() => {
     haptics.buttonPress();
@@ -100,13 +94,7 @@ export const InboxFAB = memo(function InboxFAB({
       icon: "message-plus",
       label: "New Message",
       onPress: handleNewMessage,
-      accessibilityLabel: "New Message — pick a friend to start a conversation",
-    },
-    {
-      icon: "account-group-outline",
-      label: "New Group",
-      onPress: handleNewGroup,
-      accessibilityLabel: "New Group — create a new group chat",
+      accessibilityLabel: "New Message - compose a chat",
     },
     {
       icon: "account-plus",

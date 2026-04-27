@@ -6,8 +6,7 @@
  *
  * @module gamesV4/index
  */
-export { claimAchievementV4 } from "./claimAchievement";
-export { claimAchievementSectionBadgeV4 } from "./claimSectionBadge";
+export { backfillUnclaimedAchievementRewardsV4 } from "./backfillAchievementRewards";
 export { createGameInviteV4 } from "./invites";
 export { claimLevelRewardV4 } from "./levelRewardsV4";
 export { cancelGameInviteV4, joinInviteLobbyV4, leaveInviteLobbyV4, startGameFromInviteV4, updateLobbySettingsV4, } from "./lobby";

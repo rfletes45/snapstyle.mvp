@@ -31,12 +31,12 @@ import {
 
 // Group services
 import {
-  leaveAndDeleteGroup,
   markGroupAsRead,
   markGroupAsUnread,
   setGroupMuted,
   setGroupPinned,
 } from "@/services/groupMembers";
+import { leaveGroup } from "@/services/groups";
 
 // Settings service
 import { markAggregatedInboxRead } from "@/services/chat/inboxAggregation";
@@ -173,7 +173,7 @@ export function useConversationActions(
 
         // Check max pinned limit before pinning
         if (!isPinned) {
-          const settings = await getInboxSettings(uid);
+          await getInboxSettings(uid);
           // Note: We'd need to count current pinned here
           // For now, we'll let the UI handle this validation
         }
@@ -283,7 +283,7 @@ export function useConversationActions(
   );
 
   // =============================================================================
-  // Delete (Soft Delete)
+  // Delete / Leave
   // =============================================================================
 
   const deleteConversation = useCallback(
@@ -292,14 +292,14 @@ export function useConversationActions(
 
       try {
         setLoading(true);
-        setCurrentAction("Deleting");
+        setCurrentAction(conversation.type === "dm" ? "Deleting" : "Leaving");
 
         if (conversation.type === "dm") {
           await softDeleteDM(conversation.id, uid);
           showSuccess("Conversation deleted");
         } else {
-          await leaveAndDeleteGroup(conversation.id, uid);
-          showSuccess("Left and deleted group");
+          await leaveGroup(conversation.id, uid);
+          showSuccess("Left group");
         }
 
         log.info("Deleted conversation", {
@@ -309,12 +309,11 @@ export function useConversationActions(
       } catch (error: any) {
         log.error("Failed to delete conversation", { error });
 
-        // Handle specific error for group owners
-        if (error.message?.includes("transfer ownership")) {
-          showError("You must transfer ownership before leaving");
-        } else {
-          showError("Failed to delete conversation");
-        }
+        showError(
+          conversation.type === "group"
+            ? error.message || "Failed to leave group"
+            : "Failed to delete conversation",
+        );
         throw error;
       } finally {
         setLoading(false);

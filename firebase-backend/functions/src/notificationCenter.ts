@@ -237,10 +237,7 @@ function isRecipientViewingEquivalentSurface(
   }
 
   if (request.type === "achievement_unlocked") {
-    return (
-      session.currentScreen === "AchievementsHub" ||
-      session.currentScreen === "AchievementSection"
-    );
+    return session.currentScreen === "GameDetailV4";
   }
 
   if (request.type === "gift_received" || request.type === "gift_opened") {
@@ -417,10 +414,7 @@ async function chooseNotificationDecision(
   // Absolute self-suppression: never deliver a notification to the actor of
   // the event.  This is defense in depth — upstream triggers already filter
   // the sender out of the recipient list, but we do not trust that invariant.
-  if (
-    request.actorUid &&
-    request.actorUid === request.recipientUid
-  ) {
+  if (request.actorUid && request.actorUid === request.recipientUid) {
     return { channel: "none", reason: "actor_is_recipient" };
   }
 
@@ -485,9 +479,7 @@ async function chooseNotificationDecision(
       ? activeForeground
       : foregroundSessions;
 
-    const targetSession = targetPool.find(
-      (session) => session.inAppEnabled,
-    );
+    const targetSession = targetPool.find((session) => session.inAppEnabled);
     if (!targetSession) {
       return {
         channel: "none",
