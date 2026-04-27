@@ -20,15 +20,10 @@ import React, {
   useRef,
   useState,
 } from "react";
-import {
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { MainSettingsHeaderButton } from "@/components/navigation/MainSettingsHeaderButton";
 import { ProfileBioEditor } from "@/components/profile/ProfileBio/index";
 import { ProfilePictureEditor } from "@/components/profile/ProfilePicture";
 import {
@@ -39,7 +34,6 @@ import { CustomizeModeToolbar } from "@/components/profile/WidgetBoard/Customize
 import { ScreenHeader } from "@/components/shared/ScreenHeader";
 import { LoadingState } from "@/components/ui";
 import { prefetchCriticalProfileAssets } from "@/services/cosmeticsAssetCache";
-import { MaterialCommunityIcons } from "@expo/vector-icons";
 
 import { useGameStatsV4 } from "@/gamesV4/hooks/useGameStatsV4";
 import { useFullProfileData } from "@/hooks/useFullProfileData";
@@ -58,8 +52,6 @@ import { useAppTheme, useColors } from "@/store/ThemeContext";
 import { useUser } from "@/store/UserContext";
 import type { ProfileBio, ProfileStatus } from "@/types/userProfile";
 
-import { createLogger } from "@/utils/log";
-const logger = createLogger("screens/profile/OwnProfileScreen");
 const CUSTOMIZE_TOOLBAR_BOTTOM_OFFSET = 0;
 
 // =============================================================================
@@ -504,16 +496,7 @@ export default function OwnProfileScreen({
         title="Profile"
         showBack={false}
         renderRight={() => (
-          <TouchableOpacity
-            onPress={() => navigation.navigate("Settings")}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <MaterialCommunityIcons
-              name="cog-outline"
-              size={22}
-              color={colors.textSecondary}
-            />
-          </TouchableOpacity>
+          <MainSettingsHeaderButton iconColor={colors.textSecondary} />
         )}
       />
 

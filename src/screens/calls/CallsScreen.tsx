@@ -8,10 +8,12 @@
  * Uses Stream live data for active rooms and Firestore for durable history.
  */
 
+import { MainSettingsHeaderButton } from "@/components/navigation/MainSettingsHeaderButton";
 import {
   FilterChips,
   type FilterChipOption,
 } from "@/components/shared/FilterChips";
+import { ScreenHeader } from "@/components/shared/ScreenHeader";
 import ActiveRoomCard from "@/components/stream/ActiveRoomCard";
 import CallHistoryRow from "@/components/stream/CallHistoryRow";
 import { CALL_FEATURES } from "@/constants/featureFlags";
@@ -37,7 +39,6 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 // ---------------------------------------------------------------------------
 // Filter chips
@@ -56,7 +57,6 @@ const FILTER_OPTIONS: FilterChipOption<CallHistoryFilterType>[] = [
 
 export default function CallsScreen() {
   const { colors } = useAppTheme();
-  const insets = useSafeAreaInsets();
   const navigation =
     useNavigation<NativeStackNavigationProp<MainStackParamList>>();
 
@@ -114,11 +114,6 @@ export default function CallsScreen() {
     },
     [navigation],
   );
-
-  // Navigate to settings
-  const handleSettings = useCallback(() => {
-    navigation.navigate("CallSettings");
-  }, [navigation]);
 
   // Active rooms section header + cards
   const activeRoomsSection = useMemo(() => {
@@ -230,13 +225,13 @@ export default function CallsScreen() {
   if (!callsEnabled) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <View
-          style={[styles.header, { paddingTop: Math.max(insets.top, 8) + 8 }]}
-        >
-          <Text style={[styles.headerTitle, { color: colors.text }]}>
-            Calls
-          </Text>
-        </View>
+        <ScreenHeader
+          title="Calls"
+          showBack={false}
+          renderRight={() => (
+            <MainSettingsHeaderButton iconColor={colors.textSecondary} />
+          )}
+        />
         <View style={styles.emptyContainer}>
           <MaterialCommunityIcons
             name="phone-outline"
@@ -257,28 +252,13 @@ export default function CallsScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Header */}
-      <View
-        style={[
-          styles.header,
-          {
-            borderBottomColor: colors.border,
-            paddingTop: Math.max(insets.top, 8) + 8,
-          },
-        ]}
-      >
-        <Text style={[styles.headerTitle, { color: colors.text }]}>Calls</Text>
-        <TouchableOpacity
-          onPress={handleSettings}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-        >
-          <MaterialCommunityIcons
-            name="cog-outline"
-            size={22}
-            color={colors.textSecondary}
-          />
-        </TouchableOpacity>
-      </View>
+      <ScreenHeader
+        title="Calls"
+        showBack={false}
+        renderRight={() => (
+          <MainSettingsHeaderButton iconColor={colors.textSecondary} />
+        )}
+      />
 
       {/* Filter chips — uses shared component matching Messages screen */}
       <FilterChips
@@ -371,18 +351,6 @@ export default function CallsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 20,
-    paddingBottom: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  headerTitle: {
-    fontSize: 28,
-    fontWeight: "800",
   },
   sectionHeader: {
     flexDirection: "row",

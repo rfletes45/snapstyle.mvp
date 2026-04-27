@@ -11,9 +11,8 @@
  * Chat/messaging preferences live in InboxSettingsScreen.
  */
 
+import { CallSettingsSection } from "@/components/settings/CallSettingsSection";
 import { ScreenHeader } from "@/components/shared/ScreenHeader";
-import { CALL_FEATURES } from "@/constants/featureFlags";
-import { callSettingsService } from "@/services/calls/callSettingsService";
 import {
   DeleteAccountError,
   executeAccountDeletion,
@@ -31,17 +30,12 @@ import { useConversationDisplayMode } from "@/store/ConversationDisplayModeConte
 import { useSnackbar } from "@/store/SnackbarContext";
 import { useAppTheme } from "@/store/ThemeContext";
 import { useUser } from "@/store/UserContext";
-import {
-  DEFAULT_CALL_SETTINGS,
-  type CallSettings,
-  type CallsAllowedFrom,
-} from "@/types/callSettings";
 import { formatPhoneDisplay, isValidPhoneInput } from "@/utils/phone";
 import { isValidDisplayName } from "@/utils/validators";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import Constants from "expo-constants";
 import * as Haptics from "expo-haptics";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -61,7 +55,6 @@ import {
   Portal,
   Text,
   TextInput,
-  Switch,
   useTheme,
 } from "react-native-paper";
 
@@ -75,12 +68,6 @@ const logger = createLogger("screens/settings/SettingsScreen");
 interface SettingsScreenProps {
   navigation: any;
 }
-
-const CALLS_ALLOWED_LABELS: Record<CallsAllowedFrom, string> = {
-  everyone: "Everyone",
-  friends_only: "Friends only",
-  nobody: "Nobody",
-};
 
 // =============================================================================
 // Component
@@ -117,97 +104,9 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
   const [reauthLoading, setReauthLoading] = useState(false);
   const deleteInProgressRef = useRef(false);
 
-  // Calls section uses the same service as the dedicated Call Settings screen.
-  const [callSettings, setCallSettings] = useState<CallSettings>(
-    DEFAULT_CALL_SETTINGS,
-  );
-  const [callSettingsLoading, setCallSettingsLoading] = useState(
-    CALL_FEATURES.CALLS_ENABLED,
-  );
-  const [callSettingsSavingKey, setCallSettingsSavingKey] = useState<
-    keyof CallSettings | null
-  >(null);
-
-  useEffect(() => {
-    if (!CALL_FEATURES.CALLS_ENABLED) return;
-    let mounted = true;
-
-    callSettingsService
-      .getSettings()
-      .then((settings) => {
-        if (mounted) setCallSettings(settings);
-      })
-      .catch((err) => {
-        logger.error("Call settings load error:", err);
-        showError("Failed to load call settings");
-      })
-      .finally(() => {
-        if (mounted) setCallSettingsLoading(false);
-      });
-
-    const unsubscribe = callSettingsService.addListener((settings) => {
-      if (mounted) setCallSettings(settings);
-    });
-
-    return () => {
-      mounted = false;
-      unsubscribe();
-    };
-  }, [showError]);
-
   // =============================================================================
   // Handlers
   // =============================================================================
-
-  const updateCallSetting = useCallback(
-    async <K extends keyof CallSettings>(key: K, value: CallSettings[K]) => {
-      const previous = callSettings;
-      setCallSettings((prev) => ({ ...prev, [key]: value }));
-      setCallSettingsSavingKey(key);
-
-      try {
-        await callSettingsService.updateSettings({
-          [key]: value,
-        } as Partial<CallSettings>);
-      } catch (err: any) {
-        logger.error("Call settings update error:", err);
-        setCallSettings(previous);
-        showError(err?.message || "Failed to update call setting");
-      } finally {
-        setCallSettingsSavingKey(null);
-      }
-    },
-    [callSettings, showError],
-  );
-
-  const showAllowCallsPicker = useCallback(() => {
-    Alert.alert("Allow Calls From", "Choose who can start calls with you.", [
-      {
-        text: "Everyone",
-        onPress: () => updateCallSetting("allowCallsFrom", "everyone"),
-      },
-      {
-        text: "Friends Only",
-        onPress: () => updateCallSetting("allowCallsFrom", "friends_only"),
-      },
-      {
-        text: "Nobody",
-        style: "destructive",
-        onPress: () => updateCallSetting("allowCallsFrom", "nobody"),
-      },
-      { text: "Cancel", style: "cancel" },
-    ]);
-  }, [updateCallSetting]);
-
-  const handleCallDndToggle = useCallback(
-    (enabled: boolean) => {
-      updateCallSetting("dndSchedule", {
-        ...callSettings.dndSchedule,
-        enabled,
-      });
-    },
-    [callSettings.dndSchedule, updateCallSetting],
-  );
 
   const handleSaveDisplayName = useCallback(async () => {
     if (!editDisplayName.trim()) {
@@ -637,107 +536,9 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
 
         <Divider />
 
-        {/* Calls */}
-        {CALL_FEATURES.CALLS_ENABLED && (
-          <>
-            <List.Section>
-              <List.Subheader style={styles.sectionHeader}>
-                Calls
-              </List.Subheader>
+        <CallSettingsSection />
 
-              {callSettingsLoading ? (
-                <List.Item
-                  title="Loading call settings"
-                  description="Syncing your call preferences"
-                  left={(props) => (
-                    <List.Icon {...props} icon="phone-sync-outline" />
-                  )}
-                />
-              ) : (
-                <>
-                  <List.Item
-                    title="Allow Calls From"
-                    description={
-                      CALLS_ALLOWED_LABELS[callSettings.allowCallsFrom]
-                    }
-                    left={(props) => (
-                      <List.Icon {...props} icon="account-voice" />
-                    )}
-                    right={(props) => (
-                      <List.Icon {...props} icon="chevron-right" />
-                    )}
-                    onPress={showAllowCallsPicker}
-                  />
-
-                  <List.Item
-                    title="Audio Call Transcriptions"
-                    description="Allow eligible one-on-one audio calls to be transcribed on-device"
-                    left={(props) => (
-                      <List.Icon {...props} icon="text-recognition" />
-                    )}
-                    right={() => (
-                      <Switch
-                        value={callSettings.audioCallTranscriptionsEnabled}
-                        disabled={
-                          callSettingsSavingKey ===
-                          "audioCallTranscriptionsEnabled"
-                        }
-                        onValueChange={(enabled) =>
-                          updateCallSetting(
-                            "audioCallTranscriptionsEnabled",
-                            enabled,
-                          )
-                        }
-                      />
-                    )}
-                  />
-
-                  <List.Item
-                    title="Do Not Disturb"
-                    description="Use your call quiet-hours schedule"
-                    left={(props) => (
-                      <List.Icon {...props} icon="moon-waning-crescent" />
-                    )}
-                    right={() => (
-                      <Switch
-                        value={callSettings.dndSchedule.enabled}
-                        disabled={callSettingsSavingKey === "dndSchedule"}
-                        onValueChange={handleCallDndToggle}
-                      />
-                    )}
-                  />
-
-                  <List.Item
-                    title="Vibration"
-                    description="Vibrate for incoming calls"
-                    left={(props) => <List.Icon {...props} icon="vibrate" />}
-                    right={() => (
-                      <Switch
-                        value={callSettings.vibrationEnabled}
-                        disabled={callSettingsSavingKey === "vibrationEnabled"}
-                        onValueChange={(enabled) =>
-                          updateCallSetting("vibrationEnabled", enabled)
-                        }
-                      />
-                    )}
-                  />
-
-                  <List.Item
-                    title="More Call Settings"
-                    description="Camera, audio output, ringtone, video quality, and accessibility"
-                    left={(props) => <List.Icon {...props} icon="phone-cog" />}
-                    right={(props) => (
-                      <List.Icon {...props} icon="chevron-right" />
-                    )}
-                    onPress={() => navigation.navigate("CallSettings" as any)}
-                  />
-                </>
-              )}
-            </List.Section>
-
-            <Divider />
-          </>
-        )}
+        <Divider />
 
         {/* Privacy & Safety */}
         <List.Section>

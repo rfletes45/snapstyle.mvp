@@ -3,5 +3,4 @@
  */
 
 export { default as CallInfoScreen } from "./CallInfoScreen";
-export { CallSettingsScreen } from "./CallSettingsScreen";
 export { default as CallsScreen } from "./CallsScreen";

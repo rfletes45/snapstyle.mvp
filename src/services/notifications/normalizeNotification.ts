@@ -65,7 +65,6 @@ const MAIN_STACK_SCREEN_NAMES = new Set([
   "Camera",
   "DirectCall",
   "VoiceChannel",
-  "CallSettings",
   "CallInfo",
   "UserProfile",
   "SetStatus",
@@ -179,16 +178,13 @@ export function normalizeNotificationPayload(
       type: "dm_message",
       notificationId,
       dedupeKey: buildDedupeKey(payload, `dm_message:${chatId ?? senderId}`),
-      route: resolveNotificationRoute(
-        routeFromPayload,
-        {
-          screen: "ChatDetail",
-          params: {
-            friendUid: senderId,
-            initialData: chatId ? { chatId } : undefined,
-          },
+      route: resolveNotificationRoute(routeFromPayload, {
+        screen: "ChatDetail",
+        params: {
+          friendUid: senderId,
+          initialData: chatId ? { chatId } : undefined,
         },
-      ),
+      }),
     };
   }
 
@@ -205,19 +201,14 @@ export function normalizeNotificationPayload(
       type: "group_message",
       notificationId,
       dedupeKey: buildDedupeKey(payload, `group_message:${groupId}`),
-      route: resolveNotificationRoute(
-        routeFromPayload,
-        {
-          screen: "GroupChat",
-          params: {
-            groupId,
-            groupName: asString(payload.groupName),
-            ...(mentioned && messageId
-              ? { highlightMessageId: messageId }
-              : {}),
-          },
+      route: resolveNotificationRoute(routeFromPayload, {
+        screen: "GroupChat",
+        params: {
+          groupId,
+          groupName: asString(payload.groupName),
+          ...(mentioned && messageId ? { highlightMessageId: messageId } : {}),
         },
-      ),
+      }),
     };
   }
 
@@ -258,15 +249,12 @@ export function normalizeNotificationPayload(
       type: "friend_request_accepted",
       notificationId,
       dedupeKey: buildDedupeKey(payload, "friend_request_accepted"),
-      route: resolveNotificationRoute(
-        routeFromPayload,
-        {
-          screen: "Friends",
-          params: {
-            tab: "all",
-          },
+      route: resolveNotificationRoute(routeFromPayload, {
+        screen: "Friends",
+        params: {
+          tab: "all",
         },
-      ),
+      }),
     };
   }
 
@@ -278,13 +266,10 @@ export function normalizeNotificationPayload(
       type: rawType,
       notificationId,
       dedupeKey: buildDedupeKey(payload, `${rawType}:${inviteId}`),
-      route: resolveNotificationRoute(
-        routeFromPayload,
-        {
-          screen: "GameLobbyV4",
-          params: { inviteId },
-        },
-      ),
+      route: resolveNotificationRoute(routeFromPayload, {
+        screen: "GameLobbyV4",
+        params: { inviteId },
+      }),
     };
   }
 
@@ -296,16 +281,13 @@ export function normalizeNotificationPayload(
       type: "game_turn",
       notificationId,
       dedupeKey: buildDedupeKey(payload, `game_turn:${sessionId}`),
-      route: resolveNotificationRoute(
-        routeFromPayload,
-        {
-          screen: "GamePlayV4",
-          params: {
-            sessionId,
-            gameId: asString(payload.gameId),
-          },
+      route: resolveNotificationRoute(routeFromPayload, {
+        screen: "GamePlayV4",
+        params: {
+          sessionId,
+          gameId: asString(payload.gameId),
         },
-      ),
+      }),
     };
   }
 
@@ -317,13 +299,10 @@ export function normalizeNotificationPayload(
       type: "game_resolved",
       notificationId,
       dedupeKey: buildDedupeKey(payload, `game_resolved:${sessionId}`),
-      route: resolveNotificationRoute(
-        routeFromPayload,
-        {
-          screen: "GameOverV4",
-          params: { sessionId },
-        },
-      ),
+      route: resolveNotificationRoute(routeFromPayload, {
+        screen: "GameOverV4",
+        params: { sessionId },
+      }),
     };
   }
 
@@ -356,12 +335,9 @@ export function normalizeNotificationPayload(
       type: rawType,
       notificationId,
       dedupeKey: buildDedupeKey(payload, `${rawType}:${giftId ?? "history"}`),
-      route: resolveNotificationRoute(
-        routeFromPayload,
-        {
-          screen: "PurchaseHistory",
-        },
-      ),
+      route: resolveNotificationRoute(routeFromPayload, {
+        screen: "PurchaseHistory",
+      }),
     };
   }
 
@@ -378,12 +354,9 @@ export function normalizeNotificationPayload(
         payload,
         `${rawType}:${friendshipId ?? "streak"}`,
       ),
-      route: resolveNotificationRoute(
-        routeFromPayload,
-        {
-          screen: "Friends",
-        },
-      ),
+      route: resolveNotificationRoute(routeFromPayload, {
+        screen: "Friends",
+      }),
     };
   }
 
@@ -392,12 +365,9 @@ export function normalizeNotificationPayload(
       type: "cosmetic_unlock",
       notificationId,
       dedupeKey: buildDedupeKey(payload, "cosmetic_unlock"),
-      route: resolveNotificationRoute(
-        routeFromPayload,
-        {
-          screen: "Friends",
-        },
-      ),
+      route: resolveNotificationRoute(routeFromPayload, {
+        screen: "Friends",
+      }),
     };
   }
 
@@ -406,15 +376,12 @@ export function normalizeNotificationPayload(
       type: "story_viewed",
       notificationId,
       dedupeKey: buildDedupeKey(payload, "story_viewed"),
-      route: resolveNotificationRoute(
-        routeFromPayload,
-        {
-          screen: "MainTabs",
-          params: {
-            screen: "Profile",
-          },
+      route: resolveNotificationRoute(routeFromPayload, {
+        screen: "MainTabs",
+        params: {
+          screen: "Profile",
         },
-      ),
+      }),
     };
   }
 

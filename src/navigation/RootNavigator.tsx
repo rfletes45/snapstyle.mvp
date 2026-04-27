@@ -114,7 +114,7 @@ import LevelRewardsScreen from "@/gamesV4/screens/LevelRewardsScreen";
 import ProfileAchievementsScreen from "@/screens/profile/ProfileAchievementsScreen";
 
 // Call screens (Stream-based)
-import { CallInfoScreen, CallSettingsScreen } from "@/screens/calls";
+import { CallInfoScreen } from "@/screens/calls";
 import CallsScreen from "@/screens/calls/CallsScreen";
 // Lazy-load Stream screens to avoid native module crash in Expo Go
 const DirectCallScreen = CALL_FEATURES.CALLS_ENABLED
@@ -573,14 +573,6 @@ function MainStack() {
             }}
           />
 
-          <MainStack_Nav.Screen
-            name="CallSettings"
-            component={CallSettingsScreen}
-            options={{
-              headerShown: false,
-              animation: "slide_from_right",
-            }}
-          />
           <MainStack_Nav.Screen
             name="CallInfo"
             component={CallInfoScreen}

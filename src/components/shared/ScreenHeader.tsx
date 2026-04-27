@@ -8,6 +8,11 @@
  * @module components/shared/ScreenHeader
  */
 
+import {
+  MAIN_HEADER_BOTTOM_PADDING,
+  MAIN_HEADER_HORIZONTAL_PADDING,
+  MAIN_HEADER_TOP_PADDING,
+} from "@/components/navigation/MainSettingsHeaderButton";
 import { useAppTheme } from "@/store/ThemeContext";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
@@ -72,7 +77,9 @@ export function ScreenHeader({
         {
           backgroundColor: colors.background,
           borderBottomColor: colors.border,
-          paddingTop: Math.max(insets.top, 8) + 8,
+          paddingTop:
+            Math.max(insets.top, MAIN_HEADER_TOP_PADDING) +
+            MAIN_HEADER_TOP_PADDING,
         },
         style,
       ]}
@@ -110,8 +117,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 20,
-    paddingBottom: 12,
+    paddingHorizontal: MAIN_HEADER_HORIZONTAL_PADDING,
+    paddingBottom: MAIN_HEADER_BOTTOM_PADDING,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   left: {

@@ -11,9 +11,15 @@
  * @module components/chat/inbox/InboxHeader
  */
 
+import {
+  MAIN_HEADER_ACTION_GAP,
+  MAIN_HEADER_ACTION_SIZE,
+  MAIN_HEADER_BOTTOM_PADDING,
+  MAIN_HEADER_HORIZONTAL_PADDING,
+  MAIN_HEADER_TOP_PADDING,
+} from "@/components/navigation/MainSettingsHeaderButton";
 import { ProfilePictureWithDecoration } from "@/components/profile/ProfilePicture";
 import { ButtonCornerBadge } from "@/components/ui/ButtonCornerBadge";
-import { Spacing } from "@/constants/theme";
 import { useAppTheme } from "@/store/ThemeContext";
 import { useUser } from "@/store/UserContext";
 import * as haptics from "@/utils/haptics";
@@ -96,8 +102,9 @@ export const InboxHeader = React.memo(function InboxHeader({
     );
   }, [navigation]);
 
-  const safeTop = Math.max(insets.top, 0);
-  const headerContentHeight = 50;
+  const topPadding =
+    Math.max(insets.top, MAIN_HEADER_TOP_PADDING) + MAIN_HEADER_TOP_PADDING;
+  const headerContentHeight = 40;
   const iconBtnBg = isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.05)";
 
   return (
@@ -106,14 +113,27 @@ export const InboxHeader = React.memo(function InboxHeader({
         styles.header,
         {
           backgroundColor: colors.background,
-          paddingTop: safeTop,
-          height: headerContentHeight + safeTop,
-          minHeight: headerContentHeight + safeTop,
+          paddingTop: topPadding,
+          paddingBottom: MAIN_HEADER_BOTTOM_PADDING,
+          paddingHorizontal: MAIN_HEADER_HORIZONTAL_PADDING,
+          minHeight:
+            topPadding + MAIN_HEADER_BOTTOM_PADDING + headerContentHeight,
         },
       ]}
     >
       {/* Absolutely centered title */}
-      <View style={[styles.titleOverlay, { top: safeTop }]} pointerEvents="none">
+      <View
+        style={[
+          styles.titleOverlay,
+          {
+            top: topPadding,
+            bottom: MAIN_HEADER_BOTTOM_PADDING,
+            left: MAIN_HEADER_HORIZONTAL_PADDING,
+            right: MAIN_HEADER_HORIZONTAL_PADDING,
+          },
+        ]}
+        pointerEvents="none"
+      >
         <Text style={[styles.title, { color: colors.text }]}>Messages</Text>
       </View>
 
@@ -136,7 +156,7 @@ export const InboxHeader = React.memo(function InboxHeader({
           icon="magnify"
           iconColor={colors.textSecondary}
           containerColor={iconBtnBg}
-          size={24}
+          size={22}
           onPress={handleSearchPress}
           accessibilityLabel="Search conversations"
           style={styles.iconButton}
@@ -152,7 +172,7 @@ export const InboxHeader = React.memo(function InboxHeader({
           icon="gamepad-variant-outline"
           iconColor={colors.textSecondary}
           containerColor={iconBtnBg}
-          size={24}
+          size={22}
           onPress={handleGamesPress}
           accessibilityLabel="Games"
           style={styles.headerBtn}
@@ -162,7 +182,7 @@ export const InboxHeader = React.memo(function InboxHeader({
             icon="account-group-outline"
             iconColor={colors.textSecondary}
             containerColor={iconBtnBg}
-            size={24}
+            size={22}
             onPress={handleFriendsPress}
             accessibilityLabel={
               pendingFriendRequestCount > 0
@@ -199,26 +219,29 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     zIndex: 1,
-    gap: Spacing.sm,
+    gap: MAIN_HEADER_ACTION_GAP,
+    minHeight: MAIN_HEADER_ACTION_SIZE,
   },
   rightContainer: {
     flexDirection: "row",
     alignItems: "center",
     zIndex: 1,
-    gap: Spacing.sm,
-    marginRight: Spacing.md,
+    gap: MAIN_HEADER_ACTION_GAP,
+    minHeight: MAIN_HEADER_ACTION_SIZE,
   },
   spacer: {
     flex: 1,
   },
-  avatarContainer: {
-    marginLeft: Spacing.md,
-  },
+  avatarContainer: {},
   iconButton: {
     margin: 0,
+    width: MAIN_HEADER_ACTION_SIZE,
+    height: MAIN_HEADER_ACTION_SIZE,
   },
   headerBtn: {
     margin: 0,
+    width: MAIN_HEADER_ACTION_SIZE,
+    height: MAIN_HEADER_ACTION_SIZE,
   },
   friendsBtnWrapper: {
     position: "relative",
@@ -226,9 +249,6 @@ const styles = StyleSheet.create({
   },
   titleOverlay: {
     position: "absolute",
-    left: 0,
-    right: 0,
-    height: 50,
     justifyContent: "center",
     alignItems: "center",
   },

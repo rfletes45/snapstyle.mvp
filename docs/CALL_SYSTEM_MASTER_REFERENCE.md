@@ -800,8 +800,9 @@ These are used by `calls.ts` backend functions but NOT by any active client code
 MainStack (React Navigation)
   ├─ DirectCall (fullScreenModal, fade animation, headerShown: false, gestureEnabled: true)
   ├─ VoiceChannel (fullScreenModal, fade animation, headerShown: false, gestureEnabled: true)
-  └─ CallSettings (slide_from_right, headerShown: false)
 ```
+
+Call preferences no longer use a standalone `CallSettings` route. They now live in the main `Settings` screen under an integrated Calls section.
 
 Screens are lazy-loaded via `require()` when `CALL_FEATURES.CALLS_ENABLED` is true. When false, empty components substitute.
 

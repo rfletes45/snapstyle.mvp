@@ -35,6 +35,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { MainSettingsHeaderButton } from "@/components/navigation/MainSettingsHeaderButton";
 import { ScreenHeader } from "@/components/shared/ScreenHeader";
 import { PurchaseConfirmSheet } from "@/components/shop/PurchaseConfirmSheet";
 import { PurchaseHistoryModal } from "@/components/shop/PurchaseHistoryModal";
@@ -303,44 +304,7 @@ export default function ShopHubScreen({
         title="Shop"
         showBack={!mainNavRoot}
         renderRight={() => (
-          <Pressable
-            style={[
-              styles.walletPill,
-              { backgroundColor: "rgba(255, 215, 0, 0.15)" },
-            ]}
-            onPress={() => {
-              try {
-                navigation.navigate("Wallet");
-              } catch {
-                /* not in stack */
-              }
-            }}
-            hitSlop={10}
-            accessibilityRole="button"
-            accessibilityLabel={`Token balance: ${balance.toLocaleString()}`}
-          >
-            <MaterialCommunityIcons
-              name="star-circle"
-              size={18}
-              color="#FFD700"
-            />
-            <Text
-              style={[
-                styles.walletText,
-                {
-                  color: walletError
-                    ? (colors.error ?? "#ff4444")
-                    : colors.text,
-                },
-              ]}
-            >
-              {walletLoading
-                ? "..."
-                : walletError
-                  ? "Error"
-                  : balance.toLocaleString()}
-            </Text>
-          </Pressable>
+          <MainSettingsHeaderButton iconColor={colors.textSecondary} />
         )}
       />
 
@@ -374,8 +338,21 @@ export default function ShopHubScreen({
                 size={22}
                 color="#FFD700"
               />
-              <Text style={[styles.walletCardValue, { color: colors.text }]}>
-                {walletLoading ? "..." : balance.toLocaleString()}
+              <Text
+                style={[
+                  styles.walletCardValue,
+                  {
+                    color: walletError
+                      ? (colors.error ?? colors.text)
+                      : colors.text,
+                  },
+                ]}
+              >
+                {walletLoading
+                  ? "..."
+                  : walletError
+                    ? "Error"
+                    : balance.toLocaleString()}
               </Text>
             </View>
           </View>
@@ -548,16 +525,6 @@ export default function ShopHubScreen({
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-
-  walletPill: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    gap: 6,
-  },
-  walletText: { fontSize: 15, fontWeight: "700" },
 
   scroll: { flex: 1 },
   scrollContent: { padding: 16, gap: 18 },

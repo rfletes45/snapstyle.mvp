@@ -16,6 +16,7 @@
  * @module gamesV4/screens/GamesHubScreenV4
  */
 
+import { MainSettingsHeaderButton } from "@/components/navigation/MainSettingsHeaderButton";
 import { ScreenHeader } from "@/components/shared/ScreenHeader";
 import { MAX_REWARD_LEVEL } from "@/data/levelRewards";
 import {
@@ -508,6 +509,10 @@ export default function GamesHubScreenV4({
                 color={theme.colors.primary}
               />
             </TouchableOpacity>
+            <MainSettingsHeaderButton
+              iconColor={theme.colors.primary}
+              backgroundColor={accentBg}
+            />
           </View>
         )}
       />

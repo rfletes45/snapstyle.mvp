@@ -1,6 +1,6 @@
 # Settings Screen Architecture
 
-Last updated: 2026-04-15
+Last updated: 2026-04-26
 
 ## Overview
 
@@ -19,7 +19,7 @@ The Settings screen is organized as a **hub-style directory** with clean top-lev
 | -------------------- | -------------- | ---------------------------------------------------------------- |
 | **Account**          | Inline fields  | Display Name (editable), Email (read-only), Username (read-only) |
 | **Appearance**       | Inline control | Theme selector: Light / Dark / Auto buttons                      |
-| **Preferences**      | Navigation hub | Notifications →, Chats & Messaging →, Calls → (if enabled)       |
+| **Preferences**      | Mixed          | Notifications →, Chats & Messaging →, full inline Calls section  |
 | **Privacy & Safety** | Navigation hub | Privacy Settings →, Blocked Users →                              |
 | **Admin Tools**      | Navigation row | Reports Queue → (visible only to admins)                         |
 | **About**            | Info rows      | Privacy Policy (external link), App Version                      |
@@ -62,10 +62,10 @@ All notification toggles that previously cluttered the main Settings screen now 
 
 ### Calls
 
-**File:** `src/screens/calls/CallSettingsScreen.tsx`
-**Route:** `CallSettings` (in MainStack, gated by `CALL_FEATURES.CALLS_ENABLED`)
+**Files:** `src/screens/settings/SettingsScreen.tsx`, `src/components/settings/CallSettingsSection.tsx`
+**Route:** `Settings` (in ProfileStack)
 
-Camera, Audio, Ringtone, Do Not Disturb, Privacy, Quality & Data, Accessibility.
+Call settings now live inside the main Settings screen as a dedicated inline section. The section includes camera/video defaults, audio output, noise cancellation, ringtone/vibration, full Do Not Disturb controls, privacy, quality/data preferences, transcription, and reset-to-defaults.
 
 ### Privacy Settings
 
@@ -89,7 +89,6 @@ List of blocked users with unblock functionality.
 Settings (ProfileStack)
 ├── NotificationSettings (ProfileStack)
 ├── InboxSettings (navigate as MainStack overlay)
-├── CallSettings (navigate as MainStack overlay, if CALLS_ENABLED)
 ├── PrivacySettings (ProfileStack)
 ├── BlockedUsers (ProfileStack)
 └── AdminReports (ProfileStack, admin-only)
@@ -105,7 +104,7 @@ Settings (ProfileStack)
 
 3. **Privacy Policy moved to About** — It's informational, not a setting. Grouping it with version info under "About" is more natural than placing it under "Privacy & Safety" with actionable controls.
 
-4. **Calls row is feature-gated** — Only shown when `CALL_FEATURES.CALLS_ENABLED` is true, matching the existing call system gate.
+4. **Calls section is feature-gated** — The integrated call settings section is only shown when `CALL_FEATURES.CALLS_ENABLED` is true, matching the existing call system gate.
 
 5. **Hub-style rows with descriptions** — Each navigation row has a subtitle describing what lives inside, so users can find settings without opening every sub-screen.
 

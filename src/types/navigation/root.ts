@@ -109,7 +109,6 @@ export type MainStackParamList = {
     channelName: string;
     groupId: string;
   };
-  CallSettings: undefined;
   CallInfo: {
     /** Firestore StreamCallHistory entry id (required for durable reload) */
     entryId: string;
